@@ -1,296 +1,208 @@
-<!DOCTYPE html>
-<html lang="nl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>N-term Calculator</title>
-    <style>
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
+import React, { useState, useEffect } from 'react';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
 
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
+const NTermCalculator = () => {
+  const [maxPoints, setMaxPoints] = useState('');
+  const [nTerm, setNTerm] = useState('');
+  const [scoredPoints, setScoredPoints] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const [counter, setCounter] = useState(0);
 
-        .counter {
-            text-align: center;
-            padding: 10px;
-            margin-top: 20px;
-            font-size: 0.9em;
-            color: #666;
-            border-top: 1px dashed #ddd;
-        }
+  const API_BASE = 'https://api.counterapi.dev/v1';
+  const NAMESPACE = 'nterm-calculator';
+  const COUNTER_NAME = 'total';
 
-        .counter span {
-            display: inline-block;
-            background-color: #ffebee;
-            padding: 3px 8px;
-            border-radius: 12px;
-            color: #ff4081;
-            font-weight: bold;
-            margin: 0 4px;
-            animation: bounce 2s infinite;
-        }
+  useEffect(() => {
+    fetchCounter();
+  }, []);
 
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
+  const fetchCounter = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/${NAMESPACE}/${COUNTER_NAME}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setCounter(data.count);
+    } catch (error) {
+      console.warn('Using local counter:', error);
+      const localCount = parseInt(localStorage.getItem('ntermCalculateCount')) || 0;
+      setCounter(localCount);
+    }
+  };
 
-        .calculator {
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+  const incrementCounter = async () => {
+    try {
+      // Update local state immediately for better UX
+      const newCount = counter + 1;
+      setCounter(newCount);
+      localStorage.setItem('ntermCalculateCount', newCount.toString());
 
-        .input-group {
-            margin-bottom: 15px;
-        }
+      // Update remote counter
+      const response = await fetch(`${API_BASE}/${NAMESPACE}/${COUNTER_NAME}/up`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setCounter(data.count);
+    } catch (error) {
+      console.warn('Failed to update remote counter:', error);
+    }
+  };
 
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
+  const calculateGrade = () => {
+    // Reset error and result
+    setError('');
+    setResult(null);
 
-        input[type="number"] {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
+    // Validate inputs
+    const L = parseFloat(maxPoints);
+    const N = parseFloat(nTerm);
+    const S = parseFloat(scoredPoints);
 
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
+    if (isNaN(L) || isNaN(N) || isNaN(S)) {
+      setError("Vul alle velden in.");
+      return;
+    }
 
-        button:hover {
-            background-color: #0056b3;
-        }
+    if (N < -2.0 || N > 4.0) {
+      setError("N-term moet tussen -2.0 en 4.0 liggen.");
+      return;
+    }
 
-        .result {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #e9ecef;
-            border-radius: 4px;
-        }
+    if (S > L) {
+      setError("Behaalde punten kunnen niet hoger zijn dan het maximum.");
+      return;
+    }
 
-        .error {
-            color: red;
-            margin-top: 10px;
-        }
+    if (S < 0 || L <= 0) {
+      setError("Punten moeten positief zijn.");
+      return;
+    }
 
-        .explanation {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-    <div class="calculator">
-        <h1>N-term Calculator</h1>
-        
-        <div class="input-group">
-            <label for="maxPoints">Maximaal aantal punten (L):</label>
-            <input type="number" id="maxPoints" min="1" step="1" required>
+    // Calculate main formula
+    let C = (9 * S / L) + N;
+    let usedFormula = "Hoofdformule: C = 9·S/L + N";
+
+    // Check boundary relations
+    const boundary1 = 1 + 2 * S * 9 / L;
+    const boundary2 = 1 + 0.5 * S * 9 / L;
+    const boundary3 = 10 - 2 * (L - S) * 9 / L;
+    const boundary4 = 10 - 0.5 * (L - S) * 9 / L;
+
+    // Apply boundary relations if necessary
+    if (C > boundary1) {
+      C = boundary1;
+      usedFormula = "Grensrelatie 1: C = 1 + 2·S·9/L";
+    }
+    if (C < boundary2) {
+      C = boundary2;
+      usedFormula = "Grensrelatie 2: C = 1 + 0,5·S·9/L";
+    }
+    if (C < boundary3) {
+      C = boundary3;
+      usedFormula = "Grensrelatie 3: C = 10 - 2·(L-S)·9/L";
+    }
+    if (C > boundary4) {
+      C = boundary4;
+      usedFormula = "Grensrelatie 4: C = 10 - 0,5·(L-S)·9/L";
+    }
+
+    // Ensure grade is between 1 and 10
+    C = Math.max(1, Math.min(10, C));
+    
+    // Round to 1 decimal
+    C = Math.round(C * 10) / 10;
+
+    setResult({ grade: C.toFixed(1), formula: usedFormula });
+    incrementCounter();
+  };
+
+  return (
+    <Card className="w-full max-w-2xl mx-auto">
+      <CardHeader>
+        <h1 className="text-2xl font-bold">N-term Calculator</h1>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div>
+            <label className="block font-medium mb-1">
+              Maximaal aantal punten (L):
+            </label>
+            <input
+              type="number"
+              value={maxPoints}
+              onChange={(e) => setMaxPoints(e.target.value)}
+              className="w-full p-2 border rounded"
+              min="1"
+              step="1"
+            />
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">
+              N-term (tussen -2.0 en 4.0):
+            </label>
+            <input
+              type="number"
+              value={nTerm}
+              onChange={(e) => setNTerm(e.target.value)}
+              className="w-full p-2 border rounded"
+              min="-2.0"
+              max="4.0"
+              step="0.1"
+            />
+          </div>
+
+          <div>
+            <label className="block font-medium mb-1">
+              Behaalde punten (S):
+            </label>
+            <input
+              type="number"
+              value={scoredPoints}
+              onChange={(e) => setScoredPoints(e.target.value)}
+              className="w-full p-2 border rounded"
+              min="0"
+              step="1"
+            />
+          </div>
+
+          <button
+            onClick={calculateGrade}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors"
+          >
+            Bereken cijfer
+          </button>
+
+          {error && (
+            <div className="p-3 bg-red-100 text-red-700 rounded">
+              {error}
+            </div>
+          )}
+
+          {result && (
+            <div className="p-4 bg-gray-100 rounded">
+              <h2 className="text-xl font-bold mb-2">Resultaat</h2>
+              <p className="mb-2">Cijfer: <span className="font-bold">{result.grade}</span></p>
+              <p>Toegepaste formule: <span className="font-mono text-sm">{result.formula}</span></p>
+            </div>
+          )}
+
+          <div className="text-center pt-4 border-t">
+            <p className="text-gray-600">
+              Aantal N-termen berekend: 
+              <span className="inline-block bg-pink-100 text-pink-600 px-2 py-1 rounded-full mx-2 font-bold">
+                {counter}
+              </span>
+              🎉
+            </p>
+          </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+};
 
-        <div class="input-group">
-            <label for="nTerm">N-term (tussen -2.0 en 4.0):</label>
-            <input type="number" id="nTerm" min="-2.0" max="4.0" step="0.1" required>
-        </div>
-
-        <div class="input-group">
-            <label for="scoredPoints">Behaalde punten (S):</label>
-            <input type="number" id="scoredPoints" min="0" step="1" required>
-        </div>
-
-        <button id="calculateButton">Bereken cijfer</button>
-
-        <div id="result" class="result" style="display: none;">
-            <h2>Resultaat</h2>
-            <p>Cijfer: <span id="finalGrade"></span></p>
-            <p>Toegepaste formule: <span id="usedFormula"></span></p>
-        </div>
-
-        <div id="error" class="error" style="display: none;"></div>
-    </div>
-
-    <div class="counter">
-        Aantal N-termen berekend: <span id="calculateCounter">0</span> 🎉
-    </div>
-
-    <div class="explanation">
-        <h2>Uitleg berekening</h2>
-        <p>De berekening gebruikt de volgende formules:</p>
-        <p>Hoofdformule: C = 9·S/L + N</p>
-        <p>Grensrelaties:</p>
-        <ol>
-            <li>C < 1 + 2·S·9/L</li>
-            <li>C > 1 + 0,5·S·9/L</li>
-            <li>C > 10 - 2·(L-S)·9/L</li>
-            <li>C < 10 - 0,5·(L-S)·9/L</li>
-        </ol>
-    </div>
-
-    <script>
-        // Initialize counter using CounterAPI with local fallback
-        let calculateCount = parseInt(localStorage.getItem('ntermCalculateCount')) || 0;
-        document.getElementById('calculateCounter').textContent = calculateCount;
-
-        // Setup API constants - using exactly the same format as the test example
-        const API_BASE = 'https://api.counterapi.dev/v1';
-        const NAMESPACE = 'test';  // Using test namespace as shown in example
-        const COUNTER_NAME = 'test';  // Using test name as shown in example
-
-        // Function to get current count
-        async function getCount() {
-            try {
-                // Using exact format from the test example
-                const response = await fetch(`${API_BASE}/${NAMESPACE}/${COUNTER_NAME}`);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                calculateCount = data.count;
-                document.getElementById('calculateCounter').textContent = calculateCount;
-            } catch (error) {
-                console.warn('Using local counter:', error);
-            }
-        }
-
-        // Function to increment counter
-        async function incrementCounter() {
-            try {
-                // Increment local counter immediately for better UX
-                calculateCount++;
-                document.getElementById('calculateCounter').textContent = calculateCount;
-                localStorage.setItem('ntermCalculateCount', calculateCount);
-
-                // Then update the global counter using the /up endpoint
-                const response = await fetch(`${API_BASE}/${NAMESPACE}/${COUNTER_NAME}/up`);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-                calculateCount = data.count;
-                document.getElementById('calculateCounter').textContent = calculateCount;
-            } catch (error) {
-                console.warn('Using local counter:', error);
-            }
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            document.getElementById('result').style.display = 'none';
-        }
-
-        async function calculateGrade() {
-            // Get input values
-            const L = parseFloat(document.getElementById('maxPoints').value);
-            const N = parseFloat(document.getElementById('nTerm').value);
-            const S = parseFloat(document.getElementById('scoredPoints').value);
-            
-            // Validate inputs
-            if (isNaN(L) || isNaN(N) || isNaN(S)) {
-                showError("Vul alle velden in.");
-                return;
-            }
-            
-            if (N < -2.0 || N > 4.0) {
-                showError("N-term moet tussen -2.0 en 4.0 liggen.");
-                return;
-            }
-            
-            if (S > L) {
-                showError("Behaalde punten kunnen niet hoger zijn dan het maximum.");
-                return;
-            }
-            
-            if (S < 0 || L <= 0) {
-                showError("Punten moeten positief zijn.");
-                return;
-            }
-
-            // Calculate main formula
-            let C = (9 * S / L) + N;
-            let usedFormula = "Hoofdformule: C = 9·S/L + N";
-
-            // Check boundary relations
-            const boundary1 = 1 + 2 * S * 9 / L;
-            const boundary2 = 1 + 0.5 * S * 9 / L;
-            const boundary3 = 10 - 2 * (L - S) * 9 / L;
-            const boundary4 = 10 - 0.5 * (L - S) * 9 / L;
-
-            // Apply boundary relations if necessary
-            if (C > boundary1) {
-                C = boundary1;
-                usedFormula = "Grensrelatie 1: C = 1 + 2·S·9/L";
-            }
-            if (C < boundary2) {
-                C = boundary2;
-                usedFormula = "Grensrelatie 2: C = 1 + 0,5·S·9/L";
-            }
-            if (C < boundary3) {
-                C = boundary3;
-                usedFormula = "Grensrelatie 3: C = 10 - 2·(L-S)·9/L";
-            }
-            if (C > boundary4) {
-                C = boundary4;
-                usedFormula = "Grensrelatie 4: C = 10 - 0,5·(L-S)·9/L";
-            }
-
-            // Ensure grade is between 1 and 10
-            C = Math.max(1, Math.min(10, C));
-
-            // Round to 1 decimal
-            C = Math.round(C * 10) / 10;
-
-            // Display result
-            document.getElementById('result').style.display = 'block';
-            document.getElementById('finalGrade').textContent = C.toFixed(1);
-            document.getElementById('usedFormula').textContent = usedFormula;
-            document.getElementById('error').style.display = 'none';
-            
-            // Increment global counter
-            await incrementCounter();
-        }
-
-        function handleEnter(event) {
-            if (event.key === 'Enter') {
-                event.preventDefault(); // Prevent default form submission
-                calculateGrade();
-            }
-        }
-
-        // Add event listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            // Load initial count
-            getCount();
-
-            // Add event listeners for Enter key
-            document.getElementById('maxPoints').addEventListener('keydown', handleEnter);
-            document.getElementById('nTerm').addEventListener('keydown', handleEnter);
-            document.getElementById('scoredPoints').addEventListener('keydown', handleEnter);
-
-            // Add click listener for calculate button
-            document.getElementById('calculateButton').addEventListener('click', calculateGrade);
-        });
-    </script>
-    </script>
-</body>
-</html>
+export default NTermCalculator;
