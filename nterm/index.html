@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import 'katex/dist/katex.min.css';
+import katex from 'katex';
+
+const LatexFormula = ({ formula }) => {
+  const containerRef = React.useRef(null);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      katex.render(formula, containerRef.current, {
+        throwOnError: false,
+        displayMode: true
+      });
+    }
+  }, [formula]);
+
+  return <div ref={containerRef} />;
+};
 
 const NTermCalculator = () => {
   const [maxPoints, setMaxPoints] = useState('');
@@ -34,12 +51,10 @@ const NTermCalculator = () => {
 
   const incrementCounter = async () => {
     try {
-      // Update local state immediately for better UX
       const newCount = counter + 1;
       setCounter(newCount);
       localStorage.setItem('ntermCalculateCount', newCount.toString());
 
-      // Update remote counter
       const response = await fetch(`${API_BASE}/${NAMESPACE}/${COUNTER_NAME}/up`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -52,11 +67,9 @@ const NTermCalculator = () => {
   };
 
   const calculateGrade = () => {
-    // Reset error and result
     setError('');
     setResult(null);
 
-    // Validate inputs
     const L = parseFloat(maxPoints);
     const N = parseFloat(nTerm);
     const S = parseFloat(scoredPoints);
@@ -81,41 +94,44 @@ const NTermCalculator = () => {
       return;
     }
 
-    // Calculate main formula
     let C = (9 * S / L) + N;
-    let usedFormula = "Hoofdformule: C = 9·S/L + N";
+    let formulaText = "Hoofdformule";
+    let formulaLaTeX = "C = \\frac{9S}{L} + N";
 
-    // Check boundary relations
     const boundary1 = 1 + 2 * S * 9 / L;
     const boundary2 = 1 + 0.5 * S * 9 / L;
     const boundary3 = 10 - 2 * (L - S) * 9 / L;
     const boundary4 = 10 - 0.5 * (L - S) * 9 / L;
 
-    // Apply boundary relations if necessary
     if (C > boundary1) {
       C = boundary1;
-      usedFormula = "Grensrelatie 1: C = 1 + 2·S·9/L";
+      formulaText = "Grensrelatie 1";
+      formulaLaTeX = "C = 1 + \\frac{18S}{L}";
     }
     if (C < boundary2) {
       C = boundary2;
-      usedFormula = "Grensrelatie 2: C = 1 + 0,5·S·9/L";
+      formulaText = "Grensrelatie 2";
+      formulaLaTeX = "C = 1 + \\frac{4.5S}{L}";
     }
     if (C < boundary3) {
       C = boundary3;
-      usedFormula = "Grensrelatie 3: C = 10 - 2·(L-S)·9/L";
+      formulaText = "Grensrelatie 3";
+      formulaLaTeX = "C = 10 - \\frac{18(L-S)}{L}";
     }
     if (C > boundary4) {
       C = boundary4;
-      usedFormula = "Grensrelatie 4: C = 10 - 0,5·(L-S)·9/L";
+      formulaText = "Grensrelatie 4";
+      formulaLaTeX = "C = 10 - \\frac{4.5(L-S)}{L}";
     }
 
-    // Ensure grade is between 1 and 10
     C = Math.max(1, Math.min(10, C));
-    
-    // Round to 1 decimal
     C = Math.round(C * 10) / 10;
 
-    setResult({ grade: C.toFixed(1), formula: usedFormula });
+    setResult({ 
+      grade: C.toFixed(1), 
+      formulaText,
+      formulaLaTeX
+    });
     incrementCounter();
   };
 
@@ -185,19 +201,42 @@ const NTermCalculator = () => {
           {result && (
             <div className="p-4 bg-gray-100 rounded">
               <h2 className="text-xl font-bold mb-2">Resultaat</h2>
-              <p className="mb-2">Cijfer: <span className="font-bold">{result.grade}</span></p>
-              <p>Toegepaste formule: <span className="font-mono text-sm">{result.formula}</span></p>
+              <p className="mb-4">
+                Cijfer: <span className="text-4xl font-bold text-blue-600">{result.grade}</span>
+              </p>
+              <p className="text-sm text-gray-700">Toegepaste formule:</p>
+              <div className="mt-2 p-2 bg-white rounded shadow-sm overflow-x-auto">
+                <p>{result.formulaText}:</p>
+                <LatexFormula formula={result.formulaLaTeX} />
+              </div>
             </div>
           )}
 
-          <div className="text-center pt-4 border-t">
+          <div className="text-center pt-6 border-t">
             <p className="text-gray-600">
               Aantal N-termen berekend: 
-              <span className="inline-block bg-pink-100 text-pink-600 px-2 py-1 rounded-full mx-2 font-bold">
+              <span className="inline-block bg-pink-100 text-pink-600 px-3 py-1 rounded-full mx-2 font-bold text-lg">
                 {counter}
               </span>
               🎉
             </p>
+          </div>
+          
+          <div className="mt-6 p-4 bg-gray-50 rounded">
+            <h3 className="text-lg font-bold mb-3">Formules</h3>
+            <div className="space-y-2">
+              <div>
+                <p className="mb-1">Hoofdformule:</p>
+                <LatexFormula formula="C = \\frac{9S}{L} + N" />
+              </div>
+              <p className="mt-4 mb-2">Grensrelaties:</p>
+              <div className="space-y-2 pl-5">
+                <LatexFormula formula="C < 1 + \\frac{18S}{L}" />
+                <LatexFormula formula="C > 1 + \\frac{4.5S}{L}" />
+                <LatexFormula formula="C > 10 - \\frac{18(L-S)}{L}" />
+                <LatexFormula formula="C < 10 - \\frac{4.5(L-S)}{L}" />
+              </div>
+            </div>
           </div>
         </div>
       </CardContent>
