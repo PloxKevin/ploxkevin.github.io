@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5. XAI: Global Methods &mdash; 2IX30</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+</head>
+<body>
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+  <main class="main-content">
+
+    <h1 class="page-title">5. Explainable AI &mdash; Global Methods</h1>
+    <p class="page-subtitle">Linear/logistic regression, decision trees, PDP, ICE, Gini importance</p>
+
+    <!-- In-page TOC -->
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#taxonomy">1. XAI Taxonomy</a>
+      <a href="#motivations">2. Motivations for XAI</a>
+      <a href="#linear-regression">3. Linear Regression</a>
+      <a href="#logistic-regression">4. Logistic Regression</a>
+      <a href="#decision-trees">5. Decision Trees</a>
+      <a href="#global-surrogate">6. Global Surrogate</a>
+      <a href="#gini">7. Gini Importance</a>
+      <a href="#pdp">8. PDP</a>
+      <a href="#ice">9. ICE</a>
+      <a href="#pdp-ice-explorer" class="toc-interactive">Interactive: PDP vs ICE Explorer</a>
+      <a href="#flashcards" class="toc-interactive">&#9654; Flashcards</a>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 1: XAI Taxonomy -->
+    <!-- ============================================================ -->
+    <section id="taxonomy">
+      <h2 class="section-heading">XAI Taxonomy</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Explainability methods can be classified along three orthogonal axes: how deeply they access the model internals, what scope of the model they explain, and whether they are tied to a specific model type.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Axis</th>
+            <th>Category A</th>
+            <th>Category B</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Translucency</strong></td>
+            <td><strong>Intrinsic</strong> &mdash; the model is interpretable by design (e.g., linear regression, decision tree).</td>
+            <td><strong>Post-hoc</strong> &mdash; a separate explanation is derived after training (e.g., SHAP, LIME).</td>
+          </tr>
+          <tr>
+            <td><strong>Scope</strong></td>
+            <td><strong>Global</strong> &mdash; explains the overall model behaviour across all inputs.</td>
+            <td><strong>Local</strong> &mdash; explains the model&rsquo;s prediction for a single instance.</td>
+          </tr>
+          <tr>
+            <td><strong>Portability</strong></td>
+            <td><strong>Model-specific</strong> &mdash; exploits internal structure of one model family (e.g., tree-based Gini importance).</td>
+            <td><strong>Model-agnostic</strong> &mdash; treats the model as a black box; applicable to any model (e.g., PDP, ICE).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 2: Motivations for XAI -->
+    <!-- ============================================================ -->
+    <section id="motivations">
+      <h2 class="section-heading">Motivations for XAI</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Explanations serve different stakeholders and purposes. The following six motivations capture the main reasons explainability is required in practice.
+      </p>
+      <ol style="font-size:14px; line-height:2.1; padding-left:22px;">
+        <li><strong>Model validation</strong> &mdash; verify that the model has learned the right patterns, not spurious correlations.</li>
+        <li><strong>User acceptance</strong> &mdash; affected individuals are more willing to trust and act on a decision they can understand.</li>
+        <li><strong>Fairness assessment</strong> &mdash; check whether sensitive attributes or proxies drive predictions inappropriately.</li>
+        <li><strong>Knowledge discovery</strong> &mdash; extract novel, actionable insights from the data that experts may not have anticipated.</li>
+        <li><strong>Justification</strong> &mdash; satisfy regulatory or legal requirements (e.g., EU AI Act, GDPR right to explanation).</li>
+        <li><strong>Trust calibration</strong> &mdash; help users understand when to rely on the model and when to override it.</li>
+      </ol>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 3: Linear Regression -->
+    <!-- ============================================================ -->
+    <section id="linear-regression">
+      <h2 class="section-heading">Linear Regression</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Linear regression is the canonical intrinsically interpretable model for continuous targets. Its coefficients directly encode feature effects.
+      </p>
+
+      $$y = \beta_0 + \beta_1 x_1 + \dots + \beta_n x_n$$
+
+      <div class="definition-box">
+        <div class="box-label">Interpretation</div>
+        <p>
+          $\beta_j$ is the expected change in $y$ when $x_j$ increases by 1 unit, holding all other features constant (<em>ceteris paribus</em>).
+        </p>
+        <p style="margin-top:8px; font-size:13px; color:#555;">
+          On <strong>normalized data</strong> (zero mean, unit variance), 1 unit corresponds to 1 standard deviation. Coefficients are then on a common scale and directly comparable across features.
+        </p>
+      </div>
+
+      <h3 class="subsection-heading">Pros</h3>
+      <ul style="font-size:14px; line-height:2; padding-left:22px;">
+        <li>Coefficients have a clear, direct causal-style interpretation.</li>
+        <li>Confidence intervals and p-values are readily available.</li>
+        <li>Globally consistent &mdash; the same explanation applies everywhere.</li>
+        <li>Very fast to train and apply even at large scale.</li>
+      </ul>
+
+      <h3 class="subsection-heading">Cons</h3>
+      <ul style="font-size:14px; line-height:2; padding-left:22px;">
+        <li>Assumes a linear relationship; cannot capture nonlinear effects without manual feature engineering.</li>
+        <li>Cannot model feature interactions without explicit interaction terms.</li>
+        <li>Correlated features produce unstable, unreliable coefficient estimates.</li>
+        <li>Extrapolates beyond training data range, which can be dangerous.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 4: Logistic Regression -->
+    <!-- ============================================================ -->
+    <section id="logistic-regression">
+      <h2 class="section-heading">Logistic Regression</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Logistic regression extends linear regression to binary classification by modelling the log odds of the positive class.
+      </p>
+
+      $$\log\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \dots + \beta_n x_n$$
+
+      <div class="definition-box">
+        <div class="box-label">Interpretation</div>
+        <p>
+          Coefficients are <strong>log odds ratios</strong>. Increasing $x_j$ by 1 unit changes the log odds by $\beta_j$, or equivalently multiplies the odds by $e^{\beta_j}$.
+        </p>
+        <p style="margin-top:8px; font-size:13px; color:#555;">
+          Example: if $\beta_j = 0.4$, then $e^{0.4} \approx 1.49$ &mdash; the odds of the positive outcome are 49&nbsp;% higher for each additional unit of $x_j$.
+        </p>
+      </div>
+
+      <div class="warning-box">
+        <div class="box-label">Warning</div>
+        <p>
+          Normalization completely changes apparent feature importance rankings! Comparing raw coefficients across features with different scales is meaningless. Always normalize before comparing magnitudes.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 5: Decision Trees -->
+    <!-- ============================================================ -->
+    <section id="decision-trees">
+      <h2 class="section-heading">Decision Trees</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        A decision tree partitions the feature space recursively by greedily choosing the split that maximizes the reduction in impurity (e.g., Gini or entropy) at each node.
+      </p>
+
+      <div class="definition-box">
+        <div class="box-label">How Trees Are Built</div>
+        <p>
+          <strong>Greedy, top-down</strong> construction: at each node, evaluate every possible split on every feature and choose the one that maximizes purity gain. The process repeats recursively on each child node until a stopping criterion is met (max depth, min samples, or zero impurity).
+        </p>
+      </div>
+
+      <h3 class="subsection-heading">Pros</h3>
+      <ul style="font-size:14px; line-height:2; padding-left:22px;">
+        <li>Easily visualized as a flowchart that domain experts can read directly.</li>
+        <li>Naturally captures nonlinear decision boundaries without feature engineering.</li>
+        <li>Captures feature interactions: the effect of a feature can differ across branches.</li>
+        <li>Handles mixed data types (continuous and categorical) with minimal preprocessing.</li>
+      </ul>
+
+      <h3 class="subsection-heading">Cons</h3>
+      <ul style="font-size:14px; line-height:2; padding-left:22px;">
+        <li><strong>Unstable</strong>: small changes in training data can produce a completely different tree structure.</li>
+        <li><strong>No extrapolation</strong>: predictions are constant within leaves; the tree cannot predict beyond the training data range.</li>
+        <li><strong>Prone to overfitting</strong>: deep trees memorize noise; pruning or ensemble methods are typically required.</li>
+        <li>Greedy splitting is locally optimal but not globally optimal.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 6: Global Surrogate -->
+    <!-- ============================================================ -->
+    <section id="global-surrogate">
+      <h2 class="section-heading">Global Surrogate</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        A global surrogate is an interpretable model (e.g., linear regression or shallow decision tree) that is trained to approximate the predictions of a black-box model, not the true labels.
+      </p>
+
+      <div class="definition-box">
+        <div class="box-label">Fidelity</div>
+        <p>
+          <strong>Fidelity</strong> measures how well the surrogate replicates the black-box predictions (e.g., $R^2$ between surrogate output and black-box output). High fidelity means the surrogate closely mimics the black box.
+        </p>
+        <p style="margin-top:8px; font-size:13px; color:#555;">
+          However, <strong>high fidelity does not mean faithful representation of the black box&rsquo;s internal reasoning</strong>. A surrogate with high $R^2$ may still fail to capture the true mechanisms the black box uses, especially in regions of the input space that are underrepresented in the training data.
+        </p>
+      </div>
+
+      <div class="insight-box">
+        <div class="box-label">Key Insight</div>
+        <p>
+          The surrogate explains the black-box&rsquo;s <em>predictions</em>, not the black-box itself. If the black box is wrong, the surrogate inherits that wrongness. Surrogates are useful for communicating behaviour, not for auditing internal correctness.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 7: Gini Importance -->
+    <!-- ============================================================ -->
+    <section id="gini">
+      <h2 class="section-heading">Gini Importance</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Gini importance (also called Mean Decrease in Impurity, MDI) is a model-specific global feature importance measure for tree-based models.
+      </p>
+
+      <div class="definition-box">
+        <div class="box-label">Definition</div>
+        <p>
+          For each feature, sum the total <strong>Gini impurity reduction</strong> across all nodes where that feature is used as a split point, weighted by the fraction of samples reaching each node. The result is then normalized so all importances sum to 1.
+        </p>
+        <p style="margin-top:8px; font-size:13px; color:#555;">
+          Formally: $I(f) = \sum_{t: \text{split on } f} \frac{n_t}{N} \cdot \Delta\text{Gini}(t)$, normalized over all features.
+        </p>
+      </div>
+
+      <div class="warning-box">
+        <div class="box-label">Bias Warning</div>
+        <p>
+          Gini importance is <strong>biased toward continuous and high-cardinality features</strong>. Features with many possible split points have more opportunities to reduce impurity at each node, inflating their apparent importance even if they are not truly more informative.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 8: PDP -->
+    <!-- ============================================================ -->
+    <section id="pdp">
+      <h2 class="section-heading">PDP &mdash; Partial Dependence Plot</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        A Partial Dependence Plot (PDP) shows the <em>marginal average effect</em> of one (or two) features on the model&rsquo;s predicted outcome, averaging out the influence of all other features.
+      </p>
+
+      $$\hat{f}_j(x_j) = \frac{1}{n}\sum_{i=1}^{n} f(x_j,\, x_{-j}^{(i)})$$
+
+      <div class="definition-box">
+        <div class="box-label">How It Works</div>
+        <p>
+          For a fixed value $x_j$, replace the $j$-th feature for every training instance with that value, run the model on all $n$ modified instances, and average the predictions. Repeating this for a grid of $x_j$ values produces the PDP curve.
+        </p>
+      </div>
+
+      <div class="warning-box">
+        <div class="box-label">Limitation: OOD and Interactions</div>
+        <p>
+          PDPs average over the <em>marginal distribution</em> of other features, which can create <strong>out-of-distribution (OOD) data points</strong> when features are correlated &mdash; combinations that never appear in reality. More fundamentally, PDPs <strong>do not capture feature interactions</strong>: if the effect of $x_j$ varies across instances (interaction with another feature), the PDP shows only the average and conceals that variation.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 9: ICE -->
+    <!-- ============================================================ -->
+    <section id="ice">
+      <h2 class="section-heading">ICE &mdash; Individual Conditional Expectation</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        An ICE plot disaggregates the PDP by drawing one curve per training instance, showing how each individual instance&rsquo;s prediction changes as $x_j$ varies.
+      </p>
+
+      <div class="definition-box">
+        <div class="box-label">ICE vs. c-ICE</div>
+        <p>
+          A standard ICE plot can be hard to read when curves are at different vertical positions. <strong>Centered ICE (c-ICE)</strong> subtracts each curve&rsquo;s value at a reference point (usually the minimum of $x_j$), anchoring all curves at zero at that point and making it easier to compare slopes and shapes.
+        </p>
+      </div>
+
+      <div class="definition-box">
+        <div class="box-label">Detecting Interactions</div>
+        <p>
+          If ICE lines are <strong>parallel</strong>, there is no interaction between $x_j$ and other features: the effect of $x_j$ is the same for all instances.
+          If ICE lines are <strong>non-parallel</strong> (cross or diverge), there is an interaction: the effect of $x_j$ depends on the value of some other feature.
+        </p>
+      </div>
+
+      <div class="insight-box">
+        <div class="box-label">Key Insight</div>
+        <p>
+          ICE reveals interactions that PDP hides &mdash; but doesn&rsquo;t tell you WHICH feature is involved. To identify the interacting feature, you need to colour ICE lines by candidate features and look for systematic patterns.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Interactive: PDP vs ICE Explorer -->
+    <!-- ============================================================ -->
+    <div class="interactive-container" id="pdp-ice-explorer">
+      <div class="interactive-label">Interactive &mdash; PDP vs ICE: Detecting Interactions</div>
+
+      <!-- Controls row -->
+      <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:center; margin-bottom:14px;">
+        <!-- Function toggle -->
+        <div>
+          <span style="font-size:13px; font-weight:600; color:#374151;">Model:</span>
+          <label style="font-size:13px; margin-left:8px; cursor:pointer;">
+            <input type="radio" name="pdp-ice-fn" value="no-interaction" checked> No interaction
+          </label>
+          <label style="font-size:13px; margin-left:10px; cursor:pointer;">
+            <input type="radio" name="pdp-ice-fn" value="interaction"> With interaction
+          </label>
+        </div>
+        <!-- ICE / PDP toggles -->
+        <div style="display:flex; gap:14px; align-items:center;">
+          <label style="font-size:13px; cursor:pointer;">
+            <input type="checkbox" id="pdp-ice-show-ice" checked> Show ICE lines
+          </label>
+          <label style="font-size:13px; cursor:pointer;">
+            <input type="checkbox" id="pdp-ice-show-pdp" checked> Show PDP line
+          </label>
+          <label style="font-size:13px; cursor:pointer;">
+            <input type="checkbox" id="pdp-ice-center"> Center ICE (c-ICE)
+          </label>
+        </div>
+      </div>
+
+      <!-- SVG chart -->
+      <svg id="pdp-ice-svg" width="100%" viewBox="0 0 600 280"
+           style="border:1px solid #e5e7eb; border-radius:6px; background:#fafafa; display:block; max-width:600px; margin:0 auto;">
+      </svg>
+
+      <!-- Colour legend -->
+      <div style="display:flex; align-items:center; gap:8px; margin:10px auto 0; max-width:600px; font-size:12px; color:#555;">
+        <span>Low x&#8322;</span>
+        <svg width="120" height="12" style="flex-shrink:0;">
+          <defs>
+            <linearGradient id="pdp-legend-grad" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stop-color="#2563eb"/>
+              <stop offset="100%" stop-color="#dc2626"/>
+            </linearGradient>
+          </defs>
+          <rect x="0" y="2" width="120" height="8" rx="3" fill="url(#pdp-legend-grad)"/>
+        </svg>
+        <span>High x&#8322;</span>
+        <span style="margin-left:16px; display:flex; align-items:center; gap:5px;">
+          <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#111" stroke-width="2.5" stroke-dasharray="5,3"/></svg>
+          PDP (average)
+        </span>
+      </div>
+
+      <!-- Insight box -->
+      <div class="insight-box" id="pdp-ice-insight" style="margin-top:14px;">
+        <div class="box-label">Insight</div>
+        <p id="pdp-ice-insight-text"></p>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 10: Flashcards -->
+    <!-- ============================================================ -->
+    <section id="flashcards">
+      <h2 class="section-heading">Flashcards</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Test your understanding of the key concepts from this section. Your progress is saved automatically.
+      </p>
+      <div class="flashcard-container" id="flashcards-part5"></div>
+    </section>
+
+    <!-- Page Navigation -->
+    <div class="page-nav">
+      <a href="part4.html">&larr; 4. Beyond Fairness-Aware ML</a>
+      <a href="part6.html">6. XAI: Local Methods &rarr;</a>
+    </div>
+
+  </main>
+  <script src="components.js"></script>
+  <script>
+    /* ------------------------------------------------------------------ */
+    /* PDP vs ICE Explorer IIFE                                             */
+    /* ------------------------------------------------------------------ */
+    (function () {
+      /* --- Fixed synthetic instances (x2 values spread [0,1]) ---------- */
+      var instances = [
+        0.00, 0.05, 0.10, 0.16, 0.21, 0.26, 0.32, 0.37, 0.42, 0.47,
+        0.53, 0.58, 0.63, 0.68, 0.74, 0.79, 0.84, 0.89, 0.95, 1.00
+      ];
+
+      /* --- Model functions ---------------------------------------------- */
+      function fNoInteraction(x1, x2) { return 0.3 + 0.5 * x1 + 0.2 * x2; }
+      function fInteraction(x1, x2)   { return 0.3 + 0.3 * x1 + 0.1 * x2 + 0.6 * x1 * x2; }
+
+      /* --- SVG layout constants ----------------------------------------- */
+      var SVG_W = 600, SVG_H = 280;
+      var PAD = { top: 18, right: 24, bottom: 38, left: 48 };
+      var PLOT_W = SVG_W - PAD.left - PAD.right;
+      var PLOT_H = SVG_H - PAD.top  - PAD.bottom;
+      var N_STEPS = 40; /* x1 grid points */
+
+      /* --- Colour helper: blue(0) -> red(1) ----------------------------- */
+      function lerpColour(t) {
+        var r = Math.round(37  + (220 - 37)  * t);
+        var g = Math.round(99  + (38  - 99)  * t);
+        var b = Math.round(235 + (38  - 235) * t);
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+      }
+
+      /* --- Scale helpers (dynamic yMin/yMax passed in) ----------------- */
+      function sx(x1) { return PAD.left + x1 * PLOT_W; }
+
+      /* --- SVG element factory ----------------------------------------- */
+      var NS = 'http://www.w3.org/2000/svg';
+      function el(tag, attrs) {
+        var e = document.createElementNS(NS, tag);
+        Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+        return e;
+      }
+
+      /* --- Build x1 grid ----------------------------------------------- */
+      var x1Grid = [];
+      for (var i = 0; i <= N_STEPS; i++) x1Grid.push(i / N_STEPS);
+
+      /* --- Main draw function ------------------------------------------- */
+      function draw() {
+        var svg = document.getElementById('pdp-ice-svg');
+        /* clear */
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+        /* read controls */
+        var fnName   = document.querySelector('input[name="pdp-ice-fn"]:checked').value;
+        var showICE  = document.getElementById('pdp-ice-show-ice').checked;
+        var showPDP  = document.getElementById('pdp-ice-show-pdp').checked;
+        var centered = document.getElementById('pdp-ice-center').checked;
+        var fn = (fnName === 'interaction') ? fInteraction : fNoInteraction;
+
+        /* compute ICE curves: iceCurves[i][j] = f(x1Grid[j], instances[i]) */
+        var iceCurves = instances.map(function (x2) {
+          return x1Grid.map(function (x1) { return fn(x1, x2); });
+        });
+
+        /* center: subtract value at x1=0 for each curve */
+        if (centered) {
+          iceCurves = iceCurves.map(function (curve) {
+            var base = curve[0];
+            return curve.map(function (v) { return v - base; });
+          });
+        }
+
+        /* PDP: average of ICE curves at each grid point */
+        var pdpCurve = x1Grid.map(function (_, j) {
+          var sum = 0;
+          iceCurves.forEach(function (c) { sum += c[j]; });
+          return sum / iceCurves.length;
+        });
+
+        /* dynamic Y extent */
+        var allY = pdpCurve.slice();
+        if (showICE) iceCurves.forEach(function (c) { c.forEach(function (v) { allY.push(v); }); });
+        var yMin = centered ? Math.min(0, Math.min.apply(null, allY)) - 0.02 : 0;
+        var yMax = centered ? Math.max(0.7, Math.max.apply(null, allY)) + 0.02 : 1.2;
+
+        function syd(y) { return PAD.top + PLOT_H * (1 - (y - yMin) / (yMax - yMin)); }
+        function ptsd(xs, ys) {
+          var s = '';
+          for (var i = 0; i < xs.length; i++) s += sx(xs[i]) + ',' + syd(ys[i]) + ' ';
+          return s.trim();
+        }
+
+        /* --- axes -------------------------------------------------------- */
+        svg.appendChild(el('line', {
+          x1: PAD.left, y1: PAD.top, x2: PAD.left, y2: PAD.top + PLOT_H,
+          stroke: '#9ca3af', 'stroke-width': '1'
+        }));
+        svg.appendChild(el('line', {
+          x1: PAD.left, y1: PAD.top + PLOT_H, x2: PAD.left + PLOT_W, y2: PAD.top + PLOT_H,
+          stroke: '#9ca3af', 'stroke-width': '1'
+        }));
+
+        /* y tick labels */
+        var rawTicks = centered ? [-0.4, -0.2, 0, 0.2, 0.4, 0.6] : [0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2];
+        rawTicks.forEach(function (v) {
+          if (v < yMin - 0.01 || v > yMax + 0.01) return;
+          var yy = syd(v);
+          svg.appendChild(el('line', { x1: PAD.left - 4, y1: yy, x2: PAD.left, y2: yy, stroke: '#9ca3af', 'stroke-width': '1' }));
+          var lbl = el('text', { x: PAD.left - 7, y: yy + 4, 'text-anchor': 'end', 'font-size': '10', fill: '#6b7280' });
+          lbl.textContent = v.toFixed(1);
+          svg.appendChild(lbl);
+          svg.appendChild(el('line', { x1: PAD.left, y1: yy, x2: PAD.left + PLOT_W, y2: yy, stroke: '#f3f4f6', 'stroke-width': '1' }));
+        });
+
+        /* x tick labels */
+        [0, 0.25, 0.5, 0.75, 1.0].forEach(function (v) {
+          var xx = sx(v);
+          var yBase = PAD.top + PLOT_H;
+          svg.appendChild(el('line', { x1: xx, y1: yBase, x2: xx, y2: yBase + 4, stroke: '#9ca3af', 'stroke-width': '1' }));
+          var lbl = el('text', { x: xx, y: yBase + 14, 'text-anchor': 'middle', 'font-size': '10', fill: '#6b7280' });
+          lbl.textContent = v.toFixed(2);
+          svg.appendChild(lbl);
+        });
+
+        /* axis labels */
+        var xLbl = el('text', { x: PAD.left + PLOT_W / 2, y: SVG_H - 4, 'text-anchor': 'middle', 'font-size': '11', fill: '#374151' });
+        xLbl.textContent = 'x\u2081';
+        svg.appendChild(xLbl);
+
+        var yLblG = el('g', { transform: 'rotate(-90,' + (PAD.left - 36) + ',' + (PAD.top + PLOT_H / 2) + ')' });
+        var yLbl = el('text', { x: PAD.left - 36, y: PAD.top + PLOT_H / 2, 'text-anchor': 'middle', 'font-size': '11', fill: '#374151' });
+        yLbl.textContent = centered ? 'f(x\u2081,x\u2082) \u2212 f(0,x\u2082)' : 'f(x\u2081, x\u2082)';
+        yLblG.appendChild(yLbl);
+        svg.appendChild(yLblG);
+
+        /* --- ICE lines --------------------------------------------------- */
+        if (showICE) {
+          iceCurves.forEach(function (curve, i) {
+            var t = instances[i]; /* already in [0,1] */
+            svg.appendChild(el('polyline', {
+              points: ptsd(x1Grid, curve),
+              fill: 'none',
+              stroke: lerpColour(t),
+              'stroke-width': '1.2',
+              'stroke-opacity': '0.65'
+            }));
+          });
+        }
+
+        /* --- PDP line ---------------------------------------------------- */
+        if (showPDP) {
+          svg.appendChild(el('polyline', {
+            points: ptsd(x1Grid, pdpCurve),
+            fill: 'none',
+            stroke: '#111827',
+            'stroke-width': '2.5',
+            'stroke-dasharray': '6,4'
+          }));
+        }
+
+        /* --- Update insight box ----------------------------------------- */
+        var insightEl = document.getElementById('pdp-ice-insight-text');
+        if (fnName === 'interaction') {
+          insightEl.textContent = centered
+            ? 'c-ICE lines diverge from the anchor at x\u2081=0: instances with high x\u2082 gain prediction much faster as x\u2081 increases. The interaction is now visually unmistakable.'
+            : 'Lines diverge \u2192 instances with high x\u2082 show a steeper response to x\u2081. PDP (average) masks this \u2014 it shows a moderate slope that matches NO individual instance.';
+        } else {
+          insightEl.textContent = centered
+            ? 'c-ICE lines lie exactly on top of each other \u2192 all instances respond identically to x\u2081 regardless of x\u2082. No interaction present.'
+            : 'Lines are parallel \u2192 PDP accurately represents the individual effects. No interaction detected.';
+        }
+      }
+
+      /* --- Wire up controls -------------------------------------------- */
+      function wireControls() {
+        document.querySelectorAll('input[name="pdp-ice-fn"]').forEach(function (r) {
+          r.addEventListener('change', draw);
+        });
+        ['pdp-ice-show-ice', 'pdp-ice-show-pdp', 'pdp-ice-center'].forEach(function (id) {
+          document.getElementById(id).addEventListener('change', draw);
+        });
+      }
+
+      /* --- Init --------------------------------------------------------- */
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { wireControls(); draw(); });
+      } else {
+        wireControls();
+        draw();
+      }
+    })();
+
+    renderSidebar('part5');
+
+    initFlashcards('flashcards-part5', [
+      {
+        q: 'How do you interpret logistic regression coefficients on normalized data?',
+        a: 'Increasing x_j by 1 std dev changes the log odds by \u03b2_j and multiplies the odds by exp(\u03b2_j).'
+      },
+      {
+        q: 'Why does Gini importance favor continuous features?',
+        a: 'Continuous features have more possible split points, giving them more opportunities to reduce impurity at each node.'
+      },
+      {
+        q: 'What does PDP show and what can\'t it capture?',
+        a: 'PDP shows the average marginal effect of a feature on the model output. It cannot capture feature interactions (use ICE for that).'
+      },
+      {
+        q: 'How do you detect interactions in an ICE plot?',
+        a: 'If the ICE lines are not parallel, there is likely an interaction between that feature and another feature.'
+      }
+    ]);
+  </script>
+</body>
+</html>

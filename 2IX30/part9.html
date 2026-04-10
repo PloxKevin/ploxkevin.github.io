@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9. Federated Learning — 2IX30</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">9. Federated Learning</h1>
+    <p class="page-subtitle">FedAvg, client drift, DP in FL, secure aggregation</p>
+
+    <!-- In-page TOC -->
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#definition">1. Definition</a>
+      <a href="#fedavg">2. FedAvg Algorithm</a>
+      <a href="#global-loss">3. Global Loss</a>
+      <a href="#challenges">4. Challenges</a>
+      <a href="#dp-in-fl">5. DP in FL</a>
+      <a href="#secure-aggregation">6. Secure Aggregation</a>
+      <a href="#tradeoff">7. Three-Way Trade-off</a>
+      <a href="#flashcards" class="toc-interactive">&#9632; Flashcards</a>
+    </div>
+
+    <!-- ===================== DEFINITION ===================== -->
+    <h2 class="section-heading" id="definition">Definition</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Federated Learning</div>
+      <p style="font-size:14px;margin-top:4px;">
+        Distributed ML where the model is trained across multiple clients without sharing raw data. Data stays at the source.
+      </p>
+    </div>
+
+    <!-- ===================== FEDAVG ALGORITHM ===================== -->
+    <h2 class="section-heading" id="fedavg">FedAvg Algorithm</h2>
+
+    <ol style="font-size:14px;color:#444;line-height:2;padding-left:20px;">
+      <li>Sample subset $S$ of $M$ clients</li>
+      <li>Send global model $w^t$ to selected clients</li>
+      <li>Local updates: $K$ steps of SGD &mdash;
+        $w_i^{k+1} = w_i^k - \eta \nabla L_i(w_i^k)$
+      </li>
+      <li>Aggregate:</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Aggregation Formula</div>
+      <div class="math-block">
+        $$w^{t+1} = \sum_{i \in S} \frac{n_i}{N_S} w_i^K$$
+      </div>
+      <p style="font-size:13px;color:#555;margin-top:4px;">
+        where $n_i$ is the number of data points on client $i$ and $N_S = \sum_{i \in S} n_i$ is the total data points across sampled clients.
+      </p>
+    </div>
+
+    <!-- ===================== GLOBAL LOSS ===================== -->
+    <h2 class="section-heading" id="global-loss">Global Loss</h2>
+
+    <p style="font-size:14px;color:#444;margin-bottom:12px;">
+      The global objective is a weighted average of local loss functions, weighted by each client's share of the total data.
+    </p>
+
+    <div class="math-block">
+      $$L(w) = \sum_{m=1}^{M} \frac{n_m}{N} L_m(w)$$
+    </div>
+
+    <p style="font-size:13px;color:#555;margin-top:8px;">
+      where $N = \sum_{m=1}^{M} n_m$ is the total number of data points across all $M$ clients.
+    </p>
+
+    <!-- ===================== CHALLENGES ===================== -->
+    <h2 class="section-heading" id="challenges">Challenges</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Challenge</th>
+          <th>Description</th>
+          <th>Consequence</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Statistical heterogeneity</strong></td>
+          <td>Non-IID data across clients — each client's distribution differs from the global distribution.</td>
+          <td>Model may not converge to a good global optimum.</td>
+        </tr>
+        <tr>
+          <td><strong>Client drift</strong></td>
+          <td>More local steps $K$ cause each client's model to move toward its own local optimum.</td>
+          <td>Models drift away from the global optimum; aggregation degrades.</td>
+        </tr>
+        <tr>
+          <td><strong>System heterogeneity</strong></td>
+          <td>Clients differ in compute power, memory, and connectivity. Some clients are stragglers.</td>
+          <td>Slow clients delay training rounds or must be dropped, introducing bias.</td>
+        </tr>
+        <tr>
+          <td><strong>Communication cost</strong></td>
+          <td>More rounds of communication improve convergence but are expensive over bandwidth-limited links.</td>
+          <td>Trade-off between accuracy and total communication overhead.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key Insight</div>
+      <p style="font-size:14px;margin-top:4px;">
+        Key trade-off: More local updates $K$ = less communication but worse convergence (more drift).
+      </p>
+    </div>
+
+    <!-- ===================== DP IN FL ===================== -->
+    <h2 class="section-heading" id="dp-in-fl">DP in FL</h2>
+
+    <p style="font-size:14px;color:#444;margin-bottom:12px;">
+      Differential Privacy can be applied to federated learning to bound what the server learns from each client's update.
+    </p>
+
+    <ol style="font-size:14px;color:#444;line-height:2;padding-left:20px;">
+      <li>Clip updates: enforce $\|w_i^K - w^t\|_2 \leq C$ (L2 norm bounded by $C$)</li>
+      <li>Sensitivity $\leq C / N_S$</li>
+      <li>Add Gaussian noise to the aggregate</li>
+    </ol>
+
+    <div class="math-block">
+      $$w^{t+1} = \sum_{i \in S} \frac{n_i}{N_S} \text{clip}(w_i^K) + \mathcal{N}(0, \sigma^2 I)$$
+    </div>
+
+    <p style="font-size:14px;color:#444;margin-top:16px;margin-bottom:8px;">
+      <strong>Privacy levels:</strong>
+    </p>
+
+    <div class="definition-box">
+      <div class="box-label">Example-level DP</div>
+      <p style="font-size:14px;margin-top:4px;">
+        Protects individual data points within a client's dataset. Assumes the server knows which client contributed and only hides per-sample information. Less noise required.
+      </p>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">User-level DP</div>
+      <p style="font-size:14px;margin-top:4px;">
+        Protects an entire client's contribution — the server cannot determine whether a given client participated at all. Higher sensitivity means more noise is needed. Stronger but more costly guarantee.
+      </p>
+    </div>
+
+    <!-- ===================== SECURE AGGREGATION ===================== -->
+    <h2 class="section-heading" id="secure-aggregation">Secure Aggregation</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Secure Aggregation</div>
+      <p style="font-size:14px;margin-top:4px;">
+        A cryptographic protocol that allows the server to compute the aggregate of client updates without seeing any individual client's update.
+      </p>
+    </div>
+
+    <ul style="font-size:14px;color:#444;line-height:2;padding-left:20px;">
+      <li>Protects against an <strong>honest-but-curious</strong> server — one that follows the protocol but tries to infer private data from what it receives.</li>
+      <li>Does <strong>NOT</strong> protect against a malicious server that deviates from the protocol.</li>
+      <li>Complementary to Differential Privacy: secure aggregation hides individual updates; DP bounds inference from the aggregate.</li>
+    </ul>
+
+    <!-- ===================== THREE-WAY TRADE-OFF ===================== -->
+    <h2 class="section-heading" id="tradeoff">Three-Way Trade-off</h2>
+
+    <p style="font-size:14px;color:#444;margin-bottom:14px;">
+      Federated learning involves a fundamental tension between three desiderata. Improving any one of them typically degrades at least one of the others.
+    </p>
+
+    <div class="insight-box">
+      <div class="box-label">Trade-off Triangle</div>
+      <p style="font-size:14px;margin-top:4px;">
+        <strong>Performance</strong> &harr; <strong>Communication Cost</strong> &harr; <strong>Privacy</strong>
+      </p>
+      <ul style="font-size:14px;color:#444;margin-top:8px;padding-left:20px;line-height:1.9;">
+        <li><strong>More local steps</strong> reduces communication cost but increases client drift (hurts performance).</li>
+        <li><strong>Stronger DP</strong> (more noise) preserves privacy but degrades model performance.</li>
+        <li><strong>More communication rounds</strong> improves performance but raises communication cost and privacy exposure.</li>
+      </ul>
+    </div>
+
+    <!-- ===================== FLASHCARDS ===================== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+
+    <div class="flashcard-container" id="flashcards-part9"></div>
+
+    <!-- Page Navigation -->
+    <div class="page-nav">
+      <a href="part8.html">&larr; Part 8</a>
+      <a href="part10.html">Part 10 &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('part9');
+
+    const cards = [
+      {
+        q: "In FedAvg, what happens if you increase K from 1 to 100?",
+        a: "Communication cost decreases but client drift increases — each client diverges toward its local optimum."
+      },
+      {
+        q: "Why is user-level DP noisier than example-level?",
+        a: "User-level protects an entire client's contribution. Higher sensitivity → more noise needed."
+      },
+      {
+        q: "What does secure aggregation protect against?",
+        a: "An honest-but-curious server — computes aggregate without seeing individual updates. Does NOT protect against malicious servers."
+      },
+      {
+        q: "What is the three-way trade-off in FL?",
+        a: "Performance ↔ Communication Cost ↔ Privacy. Improving one typically hurts the others."
+      }
+    ];
+
+    initFlashcards('flashcards-part9', cards);
+  </script>
+</body>
+</html>

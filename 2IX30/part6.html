@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>6. XAI: Local Methods &mdash; 2IX30</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]})"></script>
+</head>
+<body>
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+  <main class="main-content">
+
+    <h1 class="page-title">6. Explainable AI &mdash; Local Methods</h1>
+    <p class="page-subtitle">LIME, SHAP, counterfactual explanations, OOD problem</p>
+
+    <!-- In-page TOC -->
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#lime">1. LIME</a>
+      <a href="#shap">2. SHAP</a>
+      <a href="#lime-vs-shap">3. LIME vs SHAP</a>
+      <a href="#counterfactuals">4. Counterfactual Explanations</a>
+      <a href="#ood">5. OOD Problem</a>
+      <a href="#shap-explorer" class="toc-interactive">Interactive: SHAP Waterfall Explorer</a>
+      <a href="#flashcards" class="toc-interactive">&#9654; Flashcards</a>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 1: LIME -->
+    <!-- ============================================================ -->
+    <section id="lime">
+      <h2 class="section-heading">LIME</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        LIME (Local Interpretable Model-agnostic Explanations) explains individual predictions of any black-box model by fitting a locally faithful interpretable model in the neighbourhood of the instance to be explained.
+      </p>
+
+      <h3 class="subsection-heading">6-Step Procedure</h3>
+      <ol style="font-size:14px; line-height:2.2; padding-left:22px; margin-bottom:16px;">
+        <li>Select instance $x$ to be explained.</li>
+        <li>Perturb $x$ to generate neighbourhood samples $z \in \mathcal{Z}$.</li>
+        <li>Get black-box predictions $f(z)$ for all perturbed samples.</li>
+        <li>Weight samples by proximity: $\pi_x(z) = \exp(-D(x,z)^2/\sigma^2)$</li>
+        <li>Fit LASSO on the weighted samples to obtain a sparse linear model.</li>
+        <li>Return the interpretable local model as the explanation.</li>
+      </ol>
+
+      <div class="definition-box">
+        <div class="box-label">Proximity Kernel</div>
+        <p>The kernel function used to assign weights to perturbed samples based on their distance from the original instance:</p>
+        <p style="margin-top:10px; text-align:center;">$$\pi_x(z) = \exp\!\left(-\frac{D(x,z)^2}{\sigma^2}\right)$$</p>
+        <p style="margin-top:8px; font-size:13px; color:#555;">
+          Samples close to $x$ receive weight near 1; samples far away receive weight near 0. The bandwidth parameter $\sigma$ controls the width of the locality.
+        </p>
+      </div>
+
+      <p style="font-size:14px; color:#555; margin-top:12px;">
+        <strong>Fidelity</strong> is measured by local $R^2$ &mdash; how well the local linear model fits the black-box predictions in the neighbourhood. LIME uses perturbations of the input, which means generated samples may fall outside the training data distribution (the OOD problem). LASSO regularization ensures <strong>selectivity</strong> (sparse, few-feature explanations), but does <em>not</em> guarantee <strong>consistency</strong> across different runs or models.
+      </p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 2: SHAP -->
+    <!-- ============================================================ -->
+    <section id="shap">
+      <h2 class="section-heading">SHAP</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        SHAP (SHapley Additive exPlanations) attributes the prediction for a given instance to each individual feature, using a game-theoretic foundation from cooperative game theory.
+      </p>
+
+      <div class="definition-box">
+        <div class="box-label">Core Property</div>
+        <p>Every prediction decomposes into a baseline plus the sum of feature attributions:</p>
+        <p style="margin-top:10px; text-align:center;">$$f(x) = \mathbb{E}[f] + \sum_{i=1}^{k} \phi_i$$</p>
+        <p style="font-size:13px; color:#555; margin-top:8px;">
+          Here $\mathbb{E}[f]$ is the mean prediction over the training data (the baseline), and each $\phi_i$ is the Shapley value of feature $i$ &mdash; its average marginal contribution across all possible feature coalitions.
+        </p>
+      </div>
+
+      <h3 class="subsection-heading">Shapley Value Formula</h3>
+      <p style="font-size:14px; color:#555; margin-bottom:8px;">
+        The Shapley value of feature $i$ is defined as the weighted average of its marginal contributions over all subsets $S$ of the other features:
+      </p>
+      <div class="math-block">
+        $$\phi_i = \sum_{S \subseteq N \setminus \{i\}} \frac{|S|!\,(n-|S|-1)!}{n!}\bigl[v(S \cup \{i\}) - v(S)\bigr]$$
+      </div>
+      <p style="font-size:13px; color:#555; margin-top:4px;">
+        $N$ is the full set of features, $n = |N|$, and $v(S)$ is the model's expected output when only the features in $S$ are observed (all others marginalized out).
+      </p>
+
+      <h3 class="subsection-heading">Four Shapley Axioms</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Efficiency</strong></td>
+            <td>Shapley values sum to the difference between the actual prediction and the baseline: $\sum_i \phi_i = f(x) - \mathbb{E}[f]$. No contribution is lost or invented.</td>
+          </tr>
+          <tr>
+            <td><strong>Symmetry</strong></td>
+            <td>Two features that make identical marginal contributions in every coalition receive the same Shapley value.</td>
+          </tr>
+          <tr>
+            <td><strong>Dummy</strong></td>
+            <td>A feature that never changes the prediction in any coalition receives a Shapley value of zero.</td>
+          </tr>
+          <tr>
+            <td><strong>Additivity</strong></td>
+            <td>For an ensemble of models, the Shapley value of the ensemble equals the sum of Shapley values from each constituent model.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="font-size:14px; color:#555; margin-top:8px;">
+        <strong>Computational cost:</strong> Exact Shapley values require evaluating all $2^d$ feature subsets, which is exponential in the number of features $d$. <strong>TreeSHAP</strong> exploits the tree structure to compute exact Shapley values in polynomial time for tree-based models (random forests, gradient boosting, etc.).
+      </p>
+
+      <div class="warning-box">
+        <div class="box-label">Common Misconception</div>
+        <p>
+          <strong>SHAP values are NOT regression coefficients.</strong> They are marginal contributions in a game-theoretic sense. The efficiency axiom provides a built-in correctness check: if $\mathbb{E}[f] + \sum_i \phi_i \neq f(x)$ for any instance, there is a bug in the implementation.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Interactive: SHAP Waterfall & Efficiency Checker -->
+    <!-- ============================================================ -->
+    <div class="interactive-container" id="shap-explorer">
+      <div class="interactive-label">Interactive &mdash; SHAP Waterfall &amp; Efficiency Checker</div>
+      <p style="font-size:13px; color:#555; margin-bottom:14px;">
+        Edit the base value, prediction, and SHAP values. The waterfall chart updates in real-time. The efficiency check flags whether the values are consistent.
+      </p>
+
+      <!-- Controls -->
+      <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-bottom:14px;">
+        <div>
+          <label class="slider-control" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;" for="shap-base">Base value $\mathbb{E}[f]$</label>
+          <input type="number" id="shap-base" step="0.01" value="0.80"
+            style="width:80px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+        </div>
+        <div>
+          <label class="slider-control" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;" for="shap-pred">Prediction $f(x)$</label>
+          <input type="number" id="shap-pred" step="0.01" value="0.64"
+            style="width:80px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+        </div>
+
+        <div style="border-left:1px solid #ddd; padding-left:12px; display:flex; flex-wrap:wrap; gap:12px;">
+          <div>
+            <label class="slider-control" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;" for="shap-phi1">$\phi_1$ study_time = 2-5h</label>
+            <input type="number" id="shap-phi1" step="0.01" value="0.03"
+              style="width:80px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          </div>
+          <div>
+            <label class="slider-control" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;" for="shap-phi2">$\phi_2$ resits = 1</label>
+            <input type="number" id="shap-phi2" step="0.01" value="-0.03"
+              style="width:80px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          </div>
+          <div>
+            <label class="slider-control" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;" for="shap-phi3">$\phi_3$ attendance = low</label>
+            <input type="number" id="shap-phi3" step="0.01" value="-0.05"
+              style="width:80px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          </div>
+          <div>
+            <label class="slider-control" style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;" for="shap-phi4">$\phi_4$ practice = high</label>
+            <input type="number" id="shap-phi4" step="0.01" value="0.05"
+              style="width:80px; padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px;">
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
+          <select id="shap-preset"
+            style="padding:4px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px; cursor:pointer;">
+            <option value="buggy">Exam example (buggy)</option>
+            <option value="fixed">Corrected values</option>
+            <option value="custom">Custom</option>
+          </select>
+          <button id="shap-fix-btn"
+            style="padding:5px 14px; background:#2563eb; color:#fff; border:none; border-radius:4px; font-size:13px; cursor:pointer; font-weight:600;">
+            Fix it
+          </button>
+        </div>
+      </div>
+
+      <!-- SVG Waterfall Chart -->
+      <div style="overflow-x:auto;">
+        <svg id="shap-waterfall" width="620" height="260" style="display:block; max-width:100%; font-family:inherit;">
+        </svg>
+      </div>
+
+      <!-- Efficiency Check -->
+      <div id="shap-efficiency-output" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 3: LIME vs SHAP -->
+    <!-- ============================================================ -->
+    <section id="lime-vs-shap">
+      <h2 class="section-heading">LIME vs SHAP</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Both methods produce local, additive feature attributions, but differ fundamentally in their approach, theoretical grounding, and what question they answer. They can and do disagree on the same instance.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>LIME</th>
+            <th>SHAP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Approach</strong></td>
+            <td>Sensitivity &mdash; perturb the input and observe how predictions change</td>
+            <td>Ablation &mdash; mask/marginalize features and measure their contribution</td>
+          </tr>
+          <tr>
+            <td><strong>Question answered</strong></td>
+            <td>Which features matter most for a local linear approximation near $x$?</td>
+            <td>What is each feature's average marginal contribution to the prediction at $x$?</td>
+          </tr>
+          <tr>
+            <td><strong>Baseline</strong></td>
+            <td>Implicit (neighborhood center)</td>
+            <td>Explicit: $\mathbb{E}[f]$ over the training distribution</td>
+          </tr>
+          <tr>
+            <td><strong>Theory</strong></td>
+            <td>Heuristic &mdash; no uniqueness guarantees; results depend on kernel choice and sampling</td>
+            <td>Axiomatic &mdash; Shapley values are the unique solution satisfying Efficiency, Symmetry, Dummy, and Additivity</td>
+          </tr>
+          <tr>
+            <td><strong>Can they disagree?</strong></td>
+            <td colspan="2" style="text-align:center;">Yes &mdash; they answer different questions and may rank features differently on the same instance</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 4: Counterfactual Explanations -->
+    <!-- ============================================================ -->
+    <section id="counterfactuals">
+      <h2 class="section-heading">Counterfactual Explanations</h2>
+
+      <div class="definition-box">
+        <div class="box-label">Definition</div>
+        <p>
+          A counterfactual explanation is the <strong>smallest change(s) to input features that would change the prediction</strong> to a desired outcome.
+        </p>
+        <p style="margin-top:8px; font-size:13px; color:#555;">
+          Standard format: <em>"If X had been v instead of v', the prediction would have been Y'."</em>
+        </p>
+      </div>
+
+      <p style="font-size:14px; color:#555; margin-top:10px; margin-bottom:14px;">
+        Counterfactual explanations are considered <strong>human-friendly</strong> because they are <em>contrastive</em> &mdash; they explain why outcome A occurred rather than outcome B, which matches the way humans naturally seek and process causal explanations.
+      </p>
+
+      <h3 class="subsection-heading">Eight Desirable Properties</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Validity</strong></td>
+            <td>The counterfactual must actually achieve the desired prediction outcome.</td>
+          </tr>
+          <tr>
+            <td><strong>Proximity</strong></td>
+            <td>The counterfactual should be as close as possible to the original instance (few, small changes).</td>
+          </tr>
+          <tr>
+            <td><strong>Actionability</strong></td>
+            <td>Suggested changes must be feasible for the individual to make (e.g., not "change your age").</td>
+          </tr>
+          <tr>
+            <td><strong>Sparsity</strong></td>
+            <td>Explanations should change as few features as possible to remain interpretable.</td>
+          </tr>
+          <tr>
+            <td><strong>Diversity</strong></td>
+            <td>Multiple distinct counterfactuals should be provided, offering different actionable paths.</td>
+          </tr>
+          <tr>
+            <td><strong>Plausibility</strong></td>
+            <td>The counterfactual instance should lie in a realistic region of the input space (on-manifold).</td>
+          </tr>
+          <tr>
+            <td><strong>Causality</strong></td>
+            <td>Changes should respect known causal structure between features (e.g., education before occupation).</td>
+          </tr>
+          <tr>
+            <td><strong>Robustness</strong></td>
+            <td>Small perturbations to the counterfactual should not flip the explanation's conclusion.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 class="subsection-heading">Wachter Optimization</h3>
+      <p style="font-size:14px; color:#555; margin-bottom:8px;">
+        The Wachter et al. method finds a counterfactual $x'$ by minimizing a two-term loss that trades off prediction validity against proximity to the original instance:
+      </p>
+      <div class="math-block">
+        $$\mathcal{L} = \lambda\bigl(f(x') - y'\bigr)^2 + d(x,\, x')$$
+      </div>
+      <p style="font-size:13px; color:#555; margin-top:6px;">
+        The regularization parameter $\lambda$ is increased iteratively until the counterfactual $x'$ achieves the desired target prediction $y'$. <strong>Limitation:</strong> this formulation does not incorporate actionability constraints &mdash; it may suggest changes to immutable features.
+      </p>
+
+      <h3 class="subsection-heading">Counterfactual Fairness Auditing</h3>
+      <p style="font-size:14px; color:#555; margin-top:8px;">
+        Counterfactual explanations can be used as a fairness audit tool. The procedure is:
+      </p>
+      <ol style="font-size:14px; line-height:2; padding-left:22px;">
+        <li>Generate $n$ counterfactual explanations per instance for a representative sample of the population.</li>
+        <li>Compare the <em>cost to flip</em> (e.g., distance $d(x, x')$ or number of feature changes) across demographic groups.</li>
+        <li>If one group systematically requires a larger cost to flip, the model imposes a disparate burden &mdash; a form of unfairness.</li>
+      </ol>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 5: OOD Problem -->
+    <!-- ============================================================ -->
+    <section id="ood">
+      <h2 class="section-heading">OOD Problem</h2>
+
+      <div class="warning-box">
+        <div class="box-label">Warning: Affects All Perturbation-Based Methods</div>
+        <p>
+          The out-of-distribution (OOD) problem affects <strong>all perturbation-based explanation methods</strong>: LIME, SHAP, PDP, and ICE. When features are perturbed independently, the resulting synthetic instances may represent impossible or highly unrealistic feature combinations that never appear in the training data.
+        </p>
+      </div>
+
+      <p style="font-size:14px; color:#555; margin-top:12px; margin-bottom:8px;">
+        The model's behavior on OOD inputs is undefined &mdash; the model was not trained to make meaningful predictions there. Explanations derived from such predictions may be misleading, as they describe how the model behaves in regions of the input space it has never seen.
+      </p>
+
+      <p style="font-size:14px; color:#555; margin-bottom:8px;">
+        <strong>Example:</strong> Perturbing features independently can produce absurd combinations such as:
+      </p>
+      <div class="definition-box">
+        <div class="box-label">OOD Example</div>
+        <p style="font-family: 'Courier New', Courier, monospace; font-size:13px;">
+          education = "preschool" &nbsp;&amp;&nbsp; occupation = "database architect"
+        </p>
+        <p style="font-size:13px; color:#555; margin-top:8px;">
+          This combination is essentially impossible in reality. A model forced to predict on this input will interpolate or extrapolate in an uncontrolled way, and any explanation derived from it is not grounded in meaningful model behavior.
+        </p>
+      </div>
+
+      <p style="font-size:14px; color:#555; margin-top:10px;">
+        Mitigation strategies include generating perturbations that respect the empirical joint distribution of features (e.g., using conditional sampling or in-distribution perturbations), at the cost of increased computational complexity.
+      </p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 6: Flashcards -->
+    <!-- ============================================================ -->
+    <section id="flashcards">
+      <h2 class="section-heading">Flashcards</h2>
+      <p style="font-size:14px; color:#555; margin-bottom:12px;">
+        Test your understanding of the key concepts from this section. Your progress is saved automatically.
+      </p>
+      <div class="flashcard-container" id="flashcards-part6"></div>
+    </section>
+
+    <!-- Page Navigation -->
+    <div class="page-nav">
+      <a href="part5.html">&larr; 5. XAI: Global Methods</a>
+      <a href="part7.html">7. Evaluating Explanations &rarr;</a>
+    </div>
+
+  </main>
+  <script src="components.js"></script>
+  <script>
+  /* ------------------------------------------------------------------ */
+  /* SHAP Waterfall & Efficiency Checker — IIFE                          */
+  /* ------------------------------------------------------------------ */
+  (function () {
+    var PRESETS = {
+      buggy: { base: 0.80, pred: 0.64, phis: [0.03, -0.03, -0.05, 0.05] },
+      fixed: { base: 0.80, pred: 0.64, phis: [0.03, -0.03, -0.21, 0.05] }
+    };
+
+    var FEATURES = [
+      'study_time = 2-5h',
+      'resits = 1',
+      'attendance = low',
+      'practice = high'
+    ];
+
+    function getValues() {
+      return {
+        base: parseFloat(document.getElementById('shap-base').value) || 0,
+        pred: parseFloat(document.getElementById('shap-pred').value) || 0,
+        phis: [
+          parseFloat(document.getElementById('shap-phi1').value) || 0,
+          parseFloat(document.getElementById('shap-phi2').value) || 0,
+          parseFloat(document.getElementById('shap-phi3').value) || 0,
+          parseFloat(document.getElementById('shap-phi4').value) || 0
+        ]
+      };
+    }
+
+    function setValues(preset) {
+      var p = PRESETS[preset];
+      document.getElementById('shap-base').value = p.base.toFixed(2);
+      document.getElementById('shap-pred').value = p.pred.toFixed(2);
+      document.getElementById('shap-phi1').value = p.phis[0].toFixed(2);
+      document.getElementById('shap-phi2').value = p.phis[1].toFixed(2);
+      document.getElementById('shap-phi3').value = p.phis[2].toFixed(2);
+      document.getElementById('shap-phi4').value = p.phis[3].toFixed(2);
+    }
+
+    function render() {
+      var v = getValues();
+      renderWaterfall(v);
+      renderEfficiency(v);
+    }
+
+    /* ---- Waterfall SVG ---- */
+    function renderWaterfall(v) {
+      var svg = document.getElementById('shap-waterfall');
+      svg.innerHTML = '';
+
+      var W = 620, H = 260;
+      var marginL = 160, marginR = 20, marginT = 30, marginB = 40;
+      var chartW = W - marginL - marginR;
+      var chartH = H - marginT - marginB;
+
+      /* Segments: base, phi1..phi4, final */
+      var segments = [];
+      var cumulative = v.base;
+      segments.push({ label: 'E[f] (base)', value: v.base, start: 0, end: v.base, kind: 'base' });
+      for (var i = 0; i < 4; i++) {
+        var phi = v.phis[i];
+        segments.push({ label: '\u03c6' + (i + 1) + ' ' + FEATURES[i], value: phi, start: cumulative, end: cumulative + phi, kind: phi >= 0 ? 'pos' : 'neg' });
+        cumulative += phi;
+      }
+      segments.push({ label: 'f(x) (pred)', value: v.pred, start: 0, end: v.pred, kind: 'pred' });
+
+      /* Determine x-axis range */
+      var allVals = segments.map(function (s) { return s.start; }).concat(segments.map(function (s) { return s.end; })).concat([v.pred]);
+      var xMin = Math.min.apply(null, allVals);
+      var xMax = Math.max.apply(null, allVals);
+      var pad = Math.max((xMax - xMin) * 0.15, 0.05);
+      xMin -= pad; xMax += pad;
+      var xRange = xMax - xMin;
+
+      function xScale(val) { return marginL + (val - xMin) / xRange * chartW; }
+
+      var barH = Math.floor(chartH / (segments.length + 1));
+      var barGap = 4;
+      var barThick = barH - barGap;
+
+      function yPos(idx) { return marginT + idx * barH; }
+
+      /* Grid lines */
+      var ticks = 5;
+      for (var t = 0; t <= ticks; t++) {
+        var tv = xMin + (xRange / ticks) * t;
+        var tx = xScale(tv);
+        var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', tx); line.setAttribute('y1', marginT);
+        line.setAttribute('x2', tx); line.setAttribute('y2', H - marginB);
+        line.setAttribute('stroke', '#e5e7eb'); line.setAttribute('stroke-width', '1');
+        svg.appendChild(line);
+        var tLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        tLabel.setAttribute('x', tx); tLabel.setAttribute('y', H - marginB + 14);
+        tLabel.setAttribute('text-anchor', 'middle'); tLabel.setAttribute('font-size', '10');
+        tLabel.setAttribute('fill', '#888');
+        tLabel.textContent = tv.toFixed(2);
+        svg.appendChild(tLabel);
+      }
+
+      /* Zero line */
+      if (xMin < 0 && xMax > 0) {
+        var zl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        zl.setAttribute('x1', xScale(0)); zl.setAttribute('y1', marginT);
+        zl.setAttribute('x2', xScale(0)); zl.setAttribute('y2', H - marginB);
+        zl.setAttribute('stroke', '#9ca3af'); zl.setAttribute('stroke-width', '1'); zl.setAttribute('stroke-dasharray', '4,3');
+        svg.appendChild(zl);
+      }
+
+      var COLORS = { base: '#9ca3af', pos: '#2563eb', neg: '#dc2626', pred: '#6b7280' };
+
+      segments.forEach(function (seg, idx) {
+        var y = yPos(idx);
+        var x1 = xScale(Math.min(seg.start, seg.end));
+        var x2 = xScale(Math.max(seg.start, seg.end));
+        var bw = Math.max(x2 - x1, 2);
+
+        /* Connector line from previous segment end to this bar start (for phi segments) */
+        if (idx > 0 && idx < segments.length - 1) {
+          var prev = segments[idx - 1];
+          var connX = xScale(prev.end);
+          var connLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          connLine.setAttribute('x1', connX); connLine.setAttribute('y1', y - barGap / 2);
+          connLine.setAttribute('x2', connX); connLine.setAttribute('y2', y + barThick);
+          connLine.setAttribute('stroke', '#cbd5e1'); connLine.setAttribute('stroke-width', '1'); connLine.setAttribute('stroke-dasharray', '3,2');
+          svg.appendChild(connLine);
+        }
+
+        /* Bar */
+        var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', x1); rect.setAttribute('y', y);
+        rect.setAttribute('width', bw); rect.setAttribute('height', barThick);
+        rect.setAttribute('fill', COLORS[seg.kind]); rect.setAttribute('rx', '3');
+        if (seg.kind === 'base' || seg.kind === 'pred') rect.setAttribute('opacity', '0.7');
+        svg.appendChild(rect);
+
+        /* Row label (left) */
+        var lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        lbl.setAttribute('x', marginL - 6); lbl.setAttribute('y', y + barThick / 2 + 4);
+        lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('font-size', '11'); lbl.setAttribute('fill', '#374151');
+        lbl.textContent = seg.label;
+        svg.appendChild(lbl);
+
+        /* Value label inside/beside bar */
+        var valStr = (seg.kind === 'base' || seg.kind === 'pred')
+          ? seg.value.toFixed(2)
+          : (seg.value >= 0 ? '+' : '') + seg.value.toFixed(2);
+        var valLbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        var valX = (x1 + x2) / 2;
+        if (bw < 30) valX = x2 + 4;
+        valLbl.setAttribute('x', valX); valLbl.setAttribute('y', y + barThick / 2 + 4);
+        valLbl.setAttribute('text-anchor', bw < 30 ? 'start' : 'middle');
+        valLbl.setAttribute('font-size', '10'); valLbl.setAttribute('fill', bw < 30 ? '#374151' : '#fff');
+        valLbl.setAttribute('font-weight', '600');
+        valLbl.textContent = valStr;
+        svg.appendChild(valLbl);
+      });
+    }
+
+    /* ---- Efficiency Check ---- */
+    function renderEfficiency(v) {
+      var sumPhi = v.phis.reduce(function (a, b) { return a + b; }, 0);
+      var result = v.base + sumPhi;
+      var ok = Math.abs(result - v.pred) < 0.001;
+
+      var phiStr = v.phis.map(function (p) { return (p >= 0 ? '+' : '') + p.toFixed(2); }).join(' ');
+      var eq = 'E[f] + \u03a3\u03c6\u1d62 = ' + v.base.toFixed(2) + ' + (' + phiStr + ') = ' + result.toFixed(4);
+
+      var container = document.getElementById('shap-efficiency-output');
+      container.innerHTML = '';
+
+      var eqP = document.createElement('p');
+      eqP.style.cssText = 'font-size:13px; margin-bottom:6px; font-family:monospace;';
+      eqP.textContent = eq;
+      container.appendChild(eqP);
+
+      var box = document.createElement('div');
+      if (ok) {
+        box.className = 'insight-box';
+        box.innerHTML = '<strong>\u2713 Efficiency satisfied</strong> &mdash; contributions sum to prediction: ' + result.toFixed(4) + ' \u2248 f(x) = ' + v.pred.toFixed(2);
+      } else {
+        box.className = 'warning-box';
+        box.innerHTML = '<strong>\u2717 BUG DETECTED</strong> &mdash; E[f] + \u03a3\u03c6\u1d62 = ' + result.toFixed(4) + ' \u2260 f(x) = ' + v.pred.toFixed(2) + '. The efficiency property is violated!';
+      }
+      container.appendChild(box);
+    }
+
+    /* ---- Event Wiring ---- */
+    function markCustom() {
+      document.getElementById('shap-preset').value = 'custom';
+    }
+
+    ['shap-base', 'shap-pred', 'shap-phi1', 'shap-phi2', 'shap-phi3', 'shap-phi4'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', function () { markCustom(); render(); });
+    });
+
+    document.getElementById('shap-preset').addEventListener('change', function () {
+      var val = this.value;
+      if (val === 'buggy' || val === 'fixed') { setValues(val); render(); }
+    });
+
+    document.getElementById('shap-fix-btn').addEventListener('click', function () {
+      setValues('fixed');
+      document.getElementById('shap-preset').value = 'fixed';
+      render();
+    });
+
+    /* Initial render (buggy state) */
+    render();
+  })();
+  </script>
+  <script>
+    renderSidebar('part6');
+
+    initFlashcards('flashcards-part6', [
+      {
+        q: 'What is the SHAP efficiency property check?',
+        a: 'E[f] + \u03a3\u03c6_i must equal f(x). If not, there is a bug in the implementation.'
+      },
+      {
+        q: 'What do SHAP and PDP have in common?',
+        a: 'Both suffer from the out-of-distribution problem (perturbation-based): they evaluate the model on synthetic feature combinations that may never appear in the training data.'
+      },
+      {
+        q: 'Why are counterfactual explanations human-friendly?',
+        a: 'Because they are contrastive \u2014 they explain why A rather than B, matching how humans naturally reason about causation and decisions.'
+      },
+      {
+        q: 'What does LIME\u2019s regularization ensure?',
+        a: 'Selectivity (sparse explanations with few features), NOT consistency across models or runs.'
+      },
+      {
+        q: 'What is the core intuition behind LIME?',
+        a: 'A complex black-box can be approximated locally with a simpler interpretable model. Even if the global model is non-linear, it may be approximately linear in a small neighbourhood around any given instance.'
+      }
+    ]);
+  </script>
+</body>
+</html>

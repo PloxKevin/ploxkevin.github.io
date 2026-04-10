@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3. Fairness-Aware ML Techniques — 2IX30</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
+</head>
+<body>
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">3. Fairness-Aware ML Techniques</h1>
+    <p class="page-subtitle">Relabeling, reweighing, adversarial learning, group-specific thresholds</p>
+
+    <!-- Table of Contents -->
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#unawareness">1. No Fairness Through Unawareness</a>
+      <a href="#interventions">2. Three Intervention Points</a>
+      <a href="#pre-processing">3. Pre-Processing</a>
+      <a href="#in-processing">4. In-Processing</a>
+      <a href="#post-processing">5. Post-Processing</a>
+      <a href="#comparison">6. Technique Comparison</a>
+      <a href="#flashcards" class="toc-interactive">&#9654; Flashcards</a>
+      <a href="#reweighing-calculator" class="toc-interactive">Interactive: Reweighing Calculator</a>
+      <a href="#relabeling-calculator" class="toc-interactive">Interactive: Relabeling Step-Through</a>
+      <a href="#reject-option-viz" class="toc-interactive">Interactive: Reject Option Classifier</a>
+    </div>
+
+    <!-- ==================== SECTION 1 ==================== -->
+    <h2 class="section-heading" id="unawareness">No Fairness Through Unawareness</h2>
+
+    <p style="font-size:14px; color:#444; margin-bottom:12px;">
+      A naive mitigation strategy is to simply remove the sensitive attribute $A$ (e.g., race, gender) from the feature set before training. This is called <strong>fairness through unawareness</strong>. Unfortunately, it does not work.
+    </p>
+
+    <div class="warning-box">
+      <div class="box-label">Warning</div>
+      Simply removing $A$ is <strong>INSUFFICIENT</strong>. Proxy variables carry group information (zip code &rarr; race, name &rarr; gender). A model trained without $A$ can still discriminate indirectly through these correlated features.
+    </div>
+
+    <p style="font-size:14px; color:#444; margin-top:12px;">
+      Proxy variables are features that are not $A$ themselves but are statistically correlated with $A$. Because of this correlation, a model can reconstruct group membership from the remaining features and produce biased predictions. True fairness interventions must actively account for — not merely ignore — the sensitive attribute.
+    </p>
+
+    <!-- ==================== SECTION 2 ==================== -->
+    <h2 class="section-heading" id="interventions">Three Intervention Points</h2>
+
+    <p style="font-size:14px; color:#444; margin-bottom:16px;">
+      Fairness interventions can be applied at three distinct stages of the ML pipeline:
+    </p>
+
+    <!-- Pipeline diagram -->
+    <div class="interactive-container" style="overflow-x:auto;">
+      <div class="interactive-label">ML Pipeline with Fairness Intervention Points</div>
+      <div style="display:flex; align-items:center; gap:0; flex-wrap:wrap; font-size:13px; line-height:1.4;">
+        <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:4px; padding:8px 12px; text-align:center;">Training<br>Data</div>
+        <div style="padding:0 6px; color:#1565c0; font-size:18px;">&rarr;</div>
+        <div style="background:#1565c0; color:#fff; border-radius:4px; padding:8px 12px; text-align:center; font-weight:600;">Pre-<br>processing</div>
+        <div style="padding:0 6px; color:#1565c0; font-size:18px;">&rarr;</div>
+        <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:4px; padding:8px 12px; text-align:center;">Modified<br>Data</div>
+        <div style="padding:0 6px; color:#1565c0; font-size:18px;">&rarr;</div>
+        <div style="background:#1565c0; color:#fff; border-radius:4px; padding:8px 12px; text-align:center; font-weight:600;">In-<br>processing</div>
+        <div style="padding:0 6px; color:#1565c0; font-size:18px;">&rarr;</div>
+        <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:4px; padding:8px 12px; text-align:center;">Model</div>
+        <div style="padding:0 6px; color:#1565c0; font-size:18px;">&rarr;</div>
+        <div style="background:#1565c0; color:#fff; border-radius:4px; padding:8px 12px; text-align:center; font-weight:600;">Post-<br>processing</div>
+        <div style="padding:0 6px; color:#1565c0; font-size:18px;">&rarr;</div>
+        <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:4px; padding:8px 12px; text-align:center;">Fair<br>Predictions</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Stage</th>
+          <th>Operates on</th>
+          <th>Techniques</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Pre-processing</strong></td>
+          <td>Training data</td>
+          <td>Relabeling, Reweighing, Representation Learning</td>
+        </tr>
+        <tr>
+          <td><strong>In-processing</strong></td>
+          <td>Learning algorithm</td>
+          <td>Regularization, Adversarial Learning, Decoupled Classification</td>
+        </tr>
+        <tr>
+          <td><strong>Post-processing</strong></td>
+          <td>Model predictions</td>
+          <td>Group-Specific Thresholds, Reject Option, Leaf Relabeling</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ==================== SECTION 3 ==================== -->
+    <h2 class="section-heading" id="pre-processing">Pre-Processing</h2>
+
+    <p style="font-size:14px; color:#444; margin-bottom:4px;">
+      Pre-processing methods modify the training data before any model is fitted. They are model-agnostic: once the data is transformed, any classifier can be used downstream.
+    </p>
+
+    <!-- Relabeling -->
+    <h3 class="subsection-heading">Relabeling</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Relabeling addresses disparate selection rates by flipping a carefully chosen set of labels in the training data. The goal is to equalize $P(\hat{Y}=1 \mid A=a)$ across groups without destroying too much information.
+    </p>
+
+    <div class="definition-box">
+      <div class="box-label">Formula &mdash; Number of labels to flip</div>
+      <p style="font-size:13px; color:#444; margin-bottom:8px;">
+        Let $D_{A=a}$ be the deprived group and $D_{A=a'}$ the favored group. The number of labels to flip is:
+      </p>
+      $$M = \frac{[P(Y=1|A=a') - P(Y=1|A=a)] \cdot |D_{A=a}| \cdot |D_{A=a'}|}{N}$$
+      <p style="font-size:13px; color:#666; margin-top:8px;">
+        where $N$ is the total dataset size.
+      </p>
+    </div>
+
+    <p style="font-size:14px; color:#444; margin-bottom:8px;">The flip strategy works in two directions:</p>
+    <ul style="font-size:14px; color:#444; margin-left:20px; margin-bottom:12px; line-height:1.8;">
+      <li><strong>Promote</strong> (deprived group): select $M$ instances from the <em>deprived group</em> with $Y=0$ and the <strong>highest</strong> classifier confidence scores. Flip their labels to $Y=1$. These are borderline negatives that the model nearly classified as positive.</li>
+      <li><strong>Demote</strong> (favored group): select $M$ instances from the <em>favored group</em> with $Y=1$ and the <strong>lowest</strong> classifier confidence scores. Flip their labels to $Y=0$. These are the least deserving positives in the favored group.</li>
+    </ul>
+    <p style="font-size:14px; color:#444;">
+      After relabeling, retrain the classifier on the modified dataset. The method is typically iterated until demographic parity is achieved.
+    </p>
+
+    <!-- Reweighing -->
+    <h3 class="subsection-heading">Reweighing</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Instead of changing labels, reweighing assigns a weight $W(x)$ to each training instance. Instances from underrepresented (deprived) subgroups receive higher weights; instances from overrepresented (favored) subgroups receive lower weights. The labels remain unchanged.
+    </p>
+
+    <div class="definition-box">
+      <div class="box-label">Formula &mdash; Instance weight</div>
+      <p style="font-size:13px; color:#444; margin-bottom:8px;">
+        For an instance $x$ with sensitive attribute value $A=a$ and label $Y=y$:
+      </p>
+      $$W(x) = \frac{P(A=a) \cdot P(Y=y)}{P(A=a \wedge Y=y)}$$
+      <p style="font-size:13px; color:#666; margin-top:8px;">
+        This is the ratio of <em>expected</em> frequency (independence assumption) to <em>observed</em> frequency. $W = P_{\text{exp}} / P_{\text{obs}}$.
+      </p>
+    </div>
+
+    <p style="font-size:14px; color:#444;">
+      If a subgroup $(A=a, Y=y)$ is <strong>overrepresented</strong> in the data ($P_{\text{obs}} > P_{\text{exp}}$), then $W < 1$ — its influence on the model is reduced. If a subgroup is <strong>underrepresented</strong> ($P_{\text{obs}} < P_{\text{exp}}$), then $W > 1$ — its influence is amplified. The result is that the weighted empirical distribution satisfies demographic parity by construction.
+    </p>
+
+    <!-- Representation Learning -->
+    <h3 class="subsection-heading">Representation Learning</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Representation learning seeks a mapping $X \mapsto Z$ such that the new feature space $Z$ is simultaneously fair <em>and</em> useful. Three competing objectives must be balanced:
+    </p>
+
+    <ol style="font-size:14px; color:#444; margin-left:20px; margin-bottom:12px; line-height:1.9;">
+      <li><strong>Group information is lost:</strong> $Z$ should not allow accurate reconstruction of $A$. Formally, $A \perp Z$ (or minimized mutual information $I(A; Z)$).</li>
+      <li><strong>Original information is preserved:</strong> $Z$ should allow reconstruction of $X$, so that useful features are retained (low reconstruction error $\|X - \hat{X}\|$).</li>
+      <li><strong>Prediction quality is maintained:</strong> $Z$ should allow accurate prediction of the target $Y$ (low classification loss $\mathcal{L}(Y, f(Z))$).</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Prototype assignment</div>
+      <p style="font-size:13px; color:#444; margin-bottom:6px;">
+        A common approach learns a set of $k$ prototypes $\{v_1, \ldots, v_k\}$ and represents each instance by its soft assignment vector. For instance $x_i$, the assignment to prototype $j$ is:
+      </p>
+      $$\alpha_{ij} = \frac{\exp(-d(x_i, v_j))}{\sum_{l=1}^{k} \exp(-d(x_i, v_l))}$$
+      <p style="font-size:13px; color:#666; margin-top:6px;">
+        where $d(\cdot, \cdot)$ is a distance function. The representation $z_i = \sum_j \alpha_{ij} v_j$ is the prototype-weighted embedding.
+      </p>
+    </div>
+
+    <!-- ==================== TOOL 1: REWEIGHING CALCULATOR ==================== -->
+    <div class="interactive-container" id="reweighing-calculator">
+      <div class="interactive-label">Interactive — Reweighing Calculator</div>
+
+      <div class="definition-box" style="margin-bottom:14px;">
+        <div class="box-label">Formula</div>
+        $$W(x) = \frac{P(A=a) \cdot P(Y=y)}{P(A=a \wedge Y=y)} = \frac{P_{\text{exp}}}{P_{\text{obs}}}$$
+        <p style="font-size:12px; color:#666; margin-top:4px;">Weight &lt; 1: overrepresented (reduced influence). Weight &gt; 1: underrepresented (amplified influence).</p>
+      </div>
+
+      <div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
+        <div class="slider-group">
+          <label class="interactive-label" style="font-size:13px;">|Group A| (total)</label>
+          <input type="number" id="rw-sizeA" class="slider-control" value="6" min="1" max="100" style="width:80px;">
+        </div>
+        <div class="slider-group">
+          <label class="interactive-label" style="font-size:13px;">|Group B| (total)</label>
+          <input type="number" id="rw-sizeB" class="slider-control" value="4" min="1" max="100" style="width:80px;">
+        </div>
+        <div class="slider-group">
+          <label class="interactive-label" style="font-size:13px;">|Y=+ in A|</label>
+          <input type="number" id="rw-posA" class="slider-control" value="5" min="0" max="100" style="width:80px;">
+        </div>
+        <div class="slider-group">
+          <label class="interactive-label" style="font-size:13px;">|Y=+ in B|</label>
+          <input type="number" id="rw-posB" class="slider-control" value="1" min="0" max="100" style="width:80px;">
+        </div>
+      </div>
+
+      <div id="rw-error" style="color:#c0392b; font-size:13px; margin-bottom:8px; display:none;"></div>
+
+      <div id="rw-output"></div>
+    </div>
+
+    <!-- ==================== TOOL 2: RELABELING STEP-THROUGH ==================== -->
+    <div class="interactive-container" id="relabeling-calculator">
+      <div class="interactive-label">Interactive — Relabeling Step-Through</div>
+      <p style="font-size:13px; color:#555; margin-bottom:12px;">Dataset: 10 exam instances (Dutch/Non-Dutch), walking through the relabeling algorithm step by step.</p>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;" id="rl-step-tabs">
+        <button class="rl-tab active" data-step="0" style="padding:6px 14px; border:1px solid #1565c0; border-radius:4px; background:#1565c0; color:#fff; cursor:pointer; font-size:13px;">Step 1: Compute M</button>
+        <button class="rl-tab" data-step="1" style="padding:6px 14px; border:1px solid #90caf9; border-radius:4px; background:#fff; color:#1565c0; cursor:pointer; font-size:13px;">Step 2: Promotion Candidates</button>
+        <button class="rl-tab" data-step="2" style="padding:6px 14px; border:1px solid #90caf9; border-radius:4px; background:#fff; color:#1565c0; cursor:pointer; font-size:13px;">Step 3: Demotion Candidates</button>
+        <button class="rl-tab" data-step="3" style="padding:6px 14px; border:1px solid #90caf9; border-radius:4px; background:#fff; color:#1565c0; cursor:pointer; font-size:13px;">Step 4: Result</button>
+      </div>
+
+      <div id="rl-content"></div>
+    </div>
+
+    <!-- ==================== SECTION 4 ==================== -->
+    <h2 class="section-heading" id="in-processing">In-Processing</h2>
+
+    <p style="font-size:14px; color:#444; margin-bottom:4px;">
+      In-processing methods modify the learning algorithm itself to incorporate fairness as an objective during training. They require access to the training procedure.
+    </p>
+
+    <!-- Regularization -->
+    <h3 class="subsection-heading">Regularization</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Fairness can be incorporated as an additional regularization term in the loss function. The objective to <em>maximize</em> is:
+    </p>
+
+    <div class="definition-box">
+      <div class="box-label">Formula &mdash; Fairness-regularized objective</div>
+      $$\mathcal{L} = -L(D,\Theta) + \frac{\lambda}{2}\|\Theta\|^2 + \eta \cdot R(D,\Theta)$$
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Term</th>
+          <th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>$-L(D,\Theta)$</td>
+          <td>Negative log-likelihood (maximizing fit to data). Negated because we maximize this objective.</td>
+        </tr>
+        <tr>
+          <td>$\frac{\lambda}{2}\|\Theta\|^2$</td>
+          <td>L2 regularization on model parameters. Controls model complexity and prevents overfitting.</td>
+        </tr>
+        <tr>
+          <td>$\eta \cdot R(D,\Theta)$</td>
+          <td>Fairness regularizer. $R$ measures the degree of unfairness (e.g., disparate impact, disparate misclassification). $\eta$ controls the fairness-performance trade-off.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key Insight</div>
+      $\lambda$ is the <strong>L2 regularization</strong> parameter — it prevents overfitting by penalizing large weights. It does <em>NOT</em> control fairness. The fairness-performance trade-off is governed entirely by $\eta$: a larger $\eta$ enforces stronger fairness at the cost of predictive accuracy.
+    </div>
+
+    <!-- Adversarial Learning -->
+    <h3 class="subsection-heading">Adversarial Learning</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Adversarial fairness uses a two-player game between a <strong>predictor</strong> and an <strong>adversary</strong>:
+    </p>
+
+    <ul style="font-size:14px; color:#444; margin-left:20px; margin-bottom:12px; line-height:1.8;">
+      <li><strong>Predictor:</strong> learns to predict $\hat{Y}$ from $X$ as accurately as possible, while simultaneously preventing the adversary from recovering $A$.</li>
+      <li><strong>Adversary:</strong> tries to predict the sensitive attribute $A$ from the predictor's output. Its success is a signal of residual discrimination.</li>
+    </ul>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      The inputs to the adversary differ depending on the fairness criterion being enforced:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Fairness Criterion</th>
+          <th>Adversary's Input</th>
+          <th>Intuition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Demographic Parity (DP)</strong></td>
+          <td>$\hat{Y}$ only</td>
+          <td>The adversary must not be able to infer $A$ from predictions alone. Predictions must be independent of $A$.</td>
+        </tr>
+        <tr>
+          <td><strong>Equalized Odds (EO)</strong></td>
+          <td>$\hat{Y}$ <em>and</em> $Y$</td>
+          <td>The adversary must not be able to infer $A$ from predictions even when the true label is known. Error rates must be equalized across groups.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p style="font-size:14px; color:#444;">
+      At convergence (Nash equilibrium), the predictor's output carries no information about $A$ beyond what is already captured by the criterion being enforced. The predictor and adversary are trained jointly with gradient reversal: gradients from the adversary loss are negated when updating the predictor.
+    </p>
+
+    <!-- Decoupled Classification -->
+    <h3 class="subsection-heading">Decoupled Classification</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Decoupled classification trains a <strong>separate classifier</strong> for each group defined by the sensitive attribute $A$. The classifier for group $a$ is fitted only on data with $A=a$, allowing different decision boundaries per group.
+    </p>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      <strong>Advantage:</strong> each sub-classifier can be optimally tuned for its group's data distribution — group-specific feature importance, thresholds, and model families are all possible.
+    </p>
+
+    <div class="warning-box">
+      <div class="box-label">Important Limitation</div>
+      Decoupled classification does <strong>NOT</strong> ensure that predictions are independent of $A$. If $A$ correlates with $Y$ in the data, the group-specific classifiers will reproduce this pattern. Using $A$ at prediction time also raises legal and ethical concerns in protected-attribute settings.
+    </div>
+
+    <!-- ==================== SECTION 5 ==================== -->
+    <h2 class="section-heading" id="post-processing">Post-Processing</h2>
+
+    <p style="font-size:14px; color:#444; margin-bottom:4px;">
+      Post-processing methods adjust the <em>predictions</em> of an already-trained model. They require access to the sensitive attribute $A$ at prediction time but are model-agnostic — any black-box classifier can be wrapped.
+    </p>
+
+    <!-- Group-Specific Thresholds -->
+    <h3 class="subsection-heading">Group-Specific Thresholds</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      A standard classifier applies a single threshold $\tau$ to convert scores into binary predictions: $\hat{Y} = \mathbf{1}[f(x) \geq \tau]$. Group-specific thresholding uses a <strong>different threshold $\tau_a$ per group</strong>:
+      $$\hat{Y} = \mathbf{1}[f(x) \geq \tau_a]$$
+      By choosing $\tau_a$ appropriately for each group $a$, we can equalize a chosen fairness criterion (e.g., equalized odds) across groups.
+    </p>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      When the required operating point does not correspond to a single observed threshold, <strong>randomized thresholds</strong> are used. A randomized classifier mixes two adjacent points on the group's ROC curve via linear interpolation: with probability $p$ use threshold $\tau_1$ and with probability $1-p$ use threshold $\tau_2$. This allows any point on the convex hull of the ROC curve to be achieved exactly.
+    </p>
+
+    <div class="definition-box">
+      <div class="box-label">Note</div>
+      Finding the optimal group-specific thresholds is a linear program: minimize overall error subject to the chosen fairness constraint (e.g., equal TPR and FPR across groups). The solution may require randomization.
+    </div>
+
+    <!-- Reject Option Classification -->
+    <h3 class="subsection-heading">Reject Option Classification</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Reject option classification identifies a <strong>critical region</strong> around the decision boundary — instances where the model is uncertain — and applies a fairness-aware rule within that region.
+    </p>
+
+    <div class="definition-box">
+      <div class="box-label">Critical Region</div>
+      <p style="font-size:13px; color:#444; margin-bottom:6px;">An instance $x$ with classifier score $f(x) \in [0,1]$ lies in the critical region if:</p>
+      $$|f(x) - 0.5| \leq \theta_c$$
+      <p style="font-size:13px; color:#666; margin-top:6px;">where $\theta_c \in [0, 0.5]$ is the critical region half-width. Instances outside this region keep their original predicted label.</p>
+    </div>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Within the critical region, predictions are reassigned based on group membership:
+    </p>
+
+    <ul style="font-size:14px; color:#444; margin-left:20px; margin-bottom:12px; line-height:1.8;">
+      <li>Instances from the <strong>deprived group</strong> are assigned $\hat{Y} = 1$ (favorable outcome).</li>
+      <li>Instances from the <strong>favored group</strong> are assigned $\hat{Y} = 0$ (unfavorable outcome).</li>
+    </ul>
+
+    <div class="insight-box">
+      <div class="box-label">Definition: Favored Group</div>
+      The <strong>favored group</strong> is the group with the <em>higher selection rate</em> according to the original (uncorrected) classifier — i.e., $\arg\max_a P(\hat{Y}=1 \mid A=a)$. The deprived group has the lower selection rate.
+    </div>
+
+    <!-- ==================== TOOL 3: REJECT OPTION VISUALIZER ==================== -->
+    <div class="interactive-container" id="reject-option-viz">
+      <div class="interactive-label">Interactive — Reject Option Classification</div>
+      <p style="font-size:13px; color:#555; margin-bottom:10px;">Adjust $\theta$ to change the critical region width. Instances with scores in $[1-\theta, \theta]$ enter the critical region. Blue = Group A, Orange = Group B. Filled = $\hat{Y}=1$, Hollow = $\hat{Y}=0$.</p>
+
+      <div class="slider-group" style="margin-bottom:14px;">
+        <label class="interactive-label" style="font-size:13px;">$\theta$ (critical region boundary): <span id="ro-theta-val">0.60</span></label>
+        <input type="range" id="ro-theta" class="slider-control" min="0.5" max="1.0" step="0.01" value="0.60" style="width:260px;">
+      </div>
+
+      <svg id="ro-svg" width="560" height="140" style="display:block; max-width:100%; overflow:visible;"></svg>
+
+      <div id="ro-summary" style="margin-top:12px; font-size:13px; color:#333;"></div>
+    </div>
+
+    <!-- Leaf Relabeling -->
+    <h3 class="subsection-heading">Leaf Relabeling</h3>
+
+    <p style="font-size:14px; color:#444; margin-bottom:10px;">
+      Leaf relabeling is a post-processing technique specific to <strong>decision tree</strong> classifiers. After training, the prediction at each leaf can be flipped independently without changing the tree structure. The algorithm greedily selects which leaves to relabel:
+    </p>
+
+    <ol style="font-size:14px; color:#444; margin-left:20px; margin-bottom:12px; line-height:1.9;">
+      <li>For each leaf, compute the change in demographic parity disparity ($\Delta\text{dpd}$) and the change in accuracy ($\Delta\text{acc}$) if that leaf's label were flipped.</li>
+      <li>Score each leaf by the ratio $\Delta\text{dpd} / \Delta\text{acc}$ — the fairness gain per unit accuracy loss.</li>
+      <li>Greedily flip the leaf with the highest score. Repeat until the desired fairness level is reached or accuracy degrades unacceptably.</li>
+    </ol>
+
+    <p style="font-size:14px; color:#444;">
+      This approach is computationally cheap and interpretable: the tree structure (and thus its explanations) remain unchanged; only the terminal predictions are adjusted.
+    </p>
+
+    <!-- ==================== SECTION 6 ==================== -->
+    <h2 class="section-heading" id="comparison">Technique Comparison</h2>
+
+    <p style="font-size:14px; color:#444; margin-bottom:12px;">
+      The table below summarizes the key properties of each technique to guide method selection in practice.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Technique</th>
+          <th>Optimizes for</th>
+          <th>Requires $A$ at&hellip;</th>
+          <th>Model-agnostic?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Relabeling</td>
+          <td>Demographic Parity</td>
+          <td>Training time</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>Reweighing</td>
+          <td>Demographic Parity</td>
+          <td>Training time</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>Representation Learning</td>
+          <td>Configurable (DP, EO)</td>
+          <td>Training time</td>
+          <td>Yes (downstream)</td>
+        </tr>
+        <tr>
+          <td>Regularization</td>
+          <td>Configurable via $R$</td>
+          <td>Training time</td>
+          <td>No (algorithm-specific)</td>
+        </tr>
+        <tr>
+          <td>Adversarial Learning</td>
+          <td>DP or Equalized Odds</td>
+          <td>Training time</td>
+          <td>No (neural networks)</td>
+        </tr>
+        <tr>
+          <td>Decoupled Classification</td>
+          <td>Group-level accuracy</td>
+          <td>Training &amp; prediction</td>
+          <td>Yes (per group)</td>
+        </tr>
+        <tr>
+          <td>Group-Specific Thresholds</td>
+          <td>Equalized Odds / DP</td>
+          <td>Prediction time</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>Reject Option Classification</td>
+          <td>Demographic Parity</td>
+          <td>Prediction time</td>
+          <td>Yes</td>
+        </tr>
+        <tr>
+          <td>Leaf Relabeling</td>
+          <td>Demographic Parity</td>
+          <td>Training time</td>
+          <td>No (decision trees only)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ==================== FLASHCARDS ==================== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+
+    <div class="flashcard-container" id="flashcards-part3"></div>
+
+    <!-- Page Navigation -->
+    <div class="page-nav">
+      <a href="part2.html">&larr; Part 2: Group Fairness Metrics</a>
+      <a href="part4.html">Part 4: Beyond Fairness-Aware ML &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('part3');
+
+    // ===== TOOL 1: REWEIGHING CALCULATOR =====
+    (function() {
+      function computeWeights() {
+        var sizeA = parseInt(document.getElementById('rw-sizeA').value) || 0;
+        var sizeB = parseInt(document.getElementById('rw-sizeB').value) || 0;
+        var posA  = parseInt(document.getElementById('rw-posA').value)  || 0;
+        var posB  = parseInt(document.getElementById('rw-posB').value)  || 0;
+        var errEl = document.getElementById('rw-error');
+        var outEl = document.getElementById('rw-output');
+
+        // Validation
+        var errors = [];
+        if (sizeA < 1) errors.push('|Group A| must be ≥ 1.');
+        if (sizeB < 1) errors.push('|Group B| must be ≥ 1.');
+        if (posA > sizeA) errors.push('|Y=+ in A| cannot exceed |Group A|.');
+        if (posB > sizeB) errors.push('|Y=+ in B| cannot exceed |Group B|.');
+        if (posA < 0 || posB < 0) errors.push('Counts cannot be negative.');
+
+        if (errors.length > 0) {
+          errEl.textContent = errors.join(' ');
+          errEl.style.display = 'block';
+          outEl.innerHTML = '';
+          return;
+        }
+        errEl.style.display = 'none';
+
+        var N = sizeA + sizeB;
+        var negA = sizeA - posA;
+        var negB = sizeB - posB;
+
+        var pA = sizeA / N;
+        var pB = sizeB / N;
+        var pPos = (posA + posB) / N;
+        var pNeg = (negA + negB) / N;
+
+        // Observed joint probabilities
+        var pA1 = posA / N;   // P(A=A, Y=+)
+        var pA0 = negA / N;   // P(A=A, Y=-)
+        var pB1 = posB / N;   // P(A=B, Y=+)
+        var pB0 = negB / N;   // P(A=B, Y=-)
+
+        // Expected (independence): P(A)*P(Y)
+        var eA1 = pA * pPos;
+        var eA0 = pA * pNeg;
+        var eB1 = pB * pPos;
+        var eB0 = pB * pNeg;
+
+        function wColor(w) {
+          if (w < 0.9999) return '#fdecea';   // reddish — overrepresented
+          if (w > 1.0001) return '#e8f5e9';   // greenish — underrepresented
+          return '#f5f5f5';
+        }
+
+        function fmt(v) { return v.toFixed(4); }
+        function fmtW(v, obs) {
+          if (obs === 0) return '<em style="color:#aaa;">N/A (0 obs)</em>';
+          return v.toFixed(4);
+        }
+
+        function wVal(exp, obs) {
+          if (obs === 0) return null;
+          return exp / obs;
+        }
+
+        var rows = [
+          { label: 'A=A, Y=+', pA: pA, pY: pPos, exp: eA1, obs: pA1, w: wVal(eA1, pA1), count: posA },
+          { label: 'A=A, Y=−', pA: pA, pY: pNeg, exp: eA0, obs: pA0, w: wVal(eA0, pA0), count: negA },
+          { label: 'A=B, Y=+', pA: pB, pY: pPos, exp: eB1, obs: pB1, w: wVal(eB1, pB1), count: posB },
+          { label: 'A=B, Y=−', pA: pB, pY: pNeg, exp: eB0, obs: pB0, w: wVal(eB0, pB0), count: negB },
+        ];
+
+        var html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+        html += '<thead><tr style="background:#e3f2fd;">';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">(A, Y)</th>';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">Count</th>';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">P(A=a)</th>';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">P(Y=y)</th>';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">P<sub>exp</sub> = P(A)·P(Y)</th>';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">P<sub>obs</sub> = P(A∧Y)</th>';
+        html += '<th style="padding:7px 10px; text-align:left; border:1px solid #90caf9;">Weight = P<sub>exp</sub>/P<sub>obs</sub></th>';
+        html += '</tr></thead><tbody>';
+
+        rows.forEach(function(r) {
+          var bg = r.w !== null ? wColor(r.w) : '#f5f5f5';
+          var wStr = r.w !== null ? r.w.toFixed(4) : '<em style="color:#aaa;">N/A</em>';
+          var note = '';
+          if (r.w !== null) {
+            if (r.w < 0.9999) note = ' <span style="color:#c0392b; font-size:11px;">(overrep.)</span>';
+            else if (r.w > 1.0001) note = ' <span style="color:#27ae60; font-size:11px;">(underrep.)</span>';
+          }
+          html += '<tr style="background:' + bg + ';">';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd; font-weight:600;">' + r.label + '</td>';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd;">' + r.count + '</td>';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd;">' + fmt(r.pA) + '</td>';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd;">' + fmt(r.pY) + '</td>';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd;">' + fmt(r.exp) + '</td>';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd;">' + fmt(r.obs) + '</td>';
+          html += '<td style="padding:6px 10px; border:1px solid #ddd; font-weight:600;">' + wStr + note + '</td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        html += '<p style="font-size:12px; color:#888; margin-top:8px;">N = ' + N + ' &nbsp;|&nbsp; P(A=A) = ' + fmt(pA) + ' &nbsp;|&nbsp; P(A=B) = ' + fmt(pB) + ' &nbsp;|&nbsp; P(Y=+) = ' + fmt(pPos) + ' &nbsp;|&nbsp; P(Y=−) = ' + fmt(pNeg) + '</p>';
+
+        outEl.innerHTML = html;
+      }
+
+      ['rw-sizeA','rw-sizeB','rw-posA','rw-posB'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', computeWeights);
+      });
+
+      computeWeights();
+    })();
+
+    // ===== TOOL 2: RELABELING STEP-THROUGH =====
+    (function() {
+      var data = [
+        { id:1,  group:'A', label:1, score:.99 },
+        { id:2,  group:'A', label:1, score:.90 },
+        { id:3,  group:'A', label:1, score:.92 },
+        { id:4,  group:'B', label:1, score:.76 },
+        { id:5,  group:'B', label:0, score:.44 },
+        { id:6,  group:'B', label:0, score:.09 },
+        { id:7,  group:'A', label:0, score:.46 },
+        { id:8,  group:'A', label:1, score:.66 },
+        { id:9,  group:'B', label:0, score:.02 },
+        { id:10, group:'A', label:1, score:.92 },
+      ];
+
+      // Calculations
+      var N = data.length;
+      var groupA = data.filter(function(d){ return d.group==='A'; });
+      var groupB = data.filter(function(d){ return d.group==='B'; });
+      var nA = groupA.length; // 6
+      var nB = groupB.length; // 4
+      var posA = groupA.filter(function(d){ return d.label===1; }).length; // 5
+      var posB = groupB.filter(function(d){ return d.label===1; }).length; // 1
+      var prA = posA / nA; // P(Y=1|A=Dutch)
+      var prB = posB / nB; // P(Y=1|A=Non-Dutch)
+      // Dutch is favored (higher positive rate), Non-Dutch is deprived
+      var M = Math.ceil((prA - prB) * nA * nB / N);
+
+      // Promotion candidates: Non-Dutch with Y=-, sorted by score desc
+      var promoCandidates = groupB.filter(function(d){ return d.label===0; })
+                                  .sort(function(a,b){ return b.score - a.score; });
+      // Demotion candidates: Dutch with Y=+, sorted by score asc
+      var demoCandidates  = groupA.filter(function(d){ return d.label===1; })
+                                  .sort(function(a,b){ return a.score - b.score; });
+
+      var promoIds = promoCandidates.slice(0, M).map(function(d){ return d.id; });
+      var demoIds  = demoCandidates.slice(0, M).map(function(d){ return d.id; });
+
+      function tableRow(d, highlightIds, highlightColor, newLabel) {
+        var hl = highlightIds && highlightIds.indexOf(d.id) >= 0;
+        var bg = hl ? highlightColor : '';
+        var labelStr = d.label === 1 ? '+' : '−';
+        if (newLabel !== undefined) {
+          var changed = (newLabel !== d.label);
+          if (changed) {
+            labelStr = '<span style="background:#fff176; padding:1px 5px; border-radius:3px; font-weight:700;">' + (newLabel===1?'+':'−') + ' <span style="font-size:10px; color:#e65100;">(flipped)</span></span>';
+          } else {
+            labelStr = d.label===1?'+':'−';
+          }
+        }
+        return '<tr style="background:' + bg + ';">'
+          + '<td style="padding:5px 8px; border:1px solid #ddd;">' + d.id + '</td>'
+          + '<td style="padding:5px 8px; border:1px solid #ddd;">' + (d.group==='A'?'Dutch':'Non-Dutch') + '</td>'
+          + '<td style="padding:5px 8px; border:1px solid #ddd;">' + labelStr + '</td>'
+          + '<td style="padding:5px 8px; border:1px solid #ddd;">' + d.score.toFixed(2) + '</td>'
+          + '</tr>';
+      }
+
+      function tableHead() {
+        return '<table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:10px;">'
+          + '<thead><tr style="background:#e3f2fd;">'
+          + '<th style="padding:6px 8px; border:1px solid #90caf9; text-align:left;">#</th>'
+          + '<th style="padding:6px 8px; border:1px solid #90caf9; text-align:left;">Group</th>'
+          + '<th style="padding:6px 8px; border:1px solid #90caf9; text-align:left;">Y</th>'
+          + '<th style="padding:6px 8px; border:1px solid #90caf9; text-align:left;">Score</th>'
+          + '</tr></thead><tbody>';
+      }
+
+      var stepContent = [
+        // Step 1: Compute M
+        function() {
+          return '<div class="definition-box" style="margin-bottom:10px;">'
+            + '<div class="box-label">Formula</div>'
+            + '$$M = \\frac{[P(Y=1|A=a\') - P(Y=1|A=a)] \\cdot |D_{a}| \\cdot |D_{a\'}|}{N}$$'
+            + '</div>'
+            + '<p style="font-size:13px; color:#333; margin-bottom:8px;">Let <strong>Dutch</strong> = favored group (a&prime;) and <strong>Non-Dutch</strong> = deprived group (a).</p>'
+            + '<table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:10px;">'
+            + '<thead><tr style="background:#e3f2fd;"><th style="padding:6px 10px; border:1px solid #90caf9; text-align:left;">Variable</th><th style="padding:6px 10px; border:1px solid #90caf9; text-align:left;">Value</th></tr></thead>'
+            + '<tbody>'
+            + '<tr><td style="padding:5px 10px; border:1px solid #ddd;">P(Y=1 | A=Dutch)</td><td style="padding:5px 10px; border:1px solid #ddd;">' + posA + ' / ' + nA + ' = ' + prA.toFixed(4) + '</td></tr>'
+            + '<tr><td style="padding:5px 10px; border:1px solid #ddd;">P(Y=1 | A=Non-Dutch)</td><td style="padding:5px 10px; border:1px solid #ddd;">' + posB + ' / ' + nB + ' = ' + prB.toFixed(4) + '</td></tr>'
+            + '<tr><td style="padding:5px 10px; border:1px solid #ddd;">|D<sub>Non-Dutch</sub>| (deprived)</td><td style="padding:5px 10px; border:1px solid #ddd;">' + nB + '</td></tr>'
+            + '<tr><td style="padding:5px 10px; border:1px solid #ddd;">|D<sub>Dutch</sub>| (favored)</td><td style="padding:5px 10px; border:1px solid #ddd;">' + nA + '</td></tr>'
+            + '<tr><td style="padding:5px 10px; border:1px solid #ddd;">N (total)</td><td style="padding:5px 10px; border:1px solid #ddd;">' + N + '</td></tr>'
+            + '</tbody></table>'
+            + '<div class="insight-box">'
+            + '<div class="box-label">Result</div>'
+            + 'M = (' + prA.toFixed(4) + ' − ' + prB.toFixed(4) + ') × ' + nB + ' × ' + nA + ' / ' + N
+            + ' = ' + ((prA - prB) * nA * nB / N).toFixed(4) + ' → ceil = <strong>' + M + '</strong>'
+            + '</div>';
+        },
+        // Step 2: Promotion candidates
+        function() {
+          var promoAll = groupB.filter(function(d){ return d.label===0; })
+                               .sort(function(a,b){ return b.score - a.score; });
+          var html = '<p style="font-size:13px; color:#333; margin-bottom:8px;">'
+            + 'Filter: Non-Dutch (deprived group) with Y=−. Sort by score <strong>descending</strong>. Take top <strong>M=' + M + '</strong> candidates to promote (flip Y=− → Y=+).</p>';
+          html += tableHead();
+          promoAll.forEach(function(d) {
+            html += tableRow(d, promoIds, '#c8e6c9');
+          });
+          html += '</tbody></table>';
+          html += '<p style="font-size:12px; color:#27ae60; margin-top:4px;">&#9632; Green rows = selected for promotion (highest scores among Y=− Non-Dutch).</p>';
+          return html;
+        },
+        // Step 3: Demotion candidates
+        function() {
+          var demoAll = groupA.filter(function(d){ return d.label===1; })
+                              .sort(function(a,b){ return a.score - b.score; });
+          var html = '<p style="font-size:13px; color:#333; margin-bottom:8px;">'
+            + 'Filter: Dutch (favored group) with Y=+. Sort by score <strong>ascending</strong>. Take top <strong>M=' + M + '</strong> candidates to demote (flip Y=+ → Y=−).</p>';
+          html += tableHead();
+          demoAll.forEach(function(d) {
+            html += tableRow(d, demoIds, '#ffcdd2');
+          });
+          html += '</tbody></table>';
+          html += '<p style="font-size:12px; color:#c0392b; margin-top:4px;">&#9632; Red rows = selected for demotion (lowest scores among Y=+ Dutch).</p>';
+          return html;
+        },
+        // Step 4: Result
+        function() {
+          var changedIds = promoIds.concat(demoIds);
+          var html = '<p style="font-size:13px; color:#333; margin-bottom:8px;">'
+            + 'Full relabeled dataset. Highlighted rows show flipped labels. Promoted: IDs [' + promoIds.join(', ') + ']. Demoted: IDs [' + demoIds.join(', ') + '].</p>';
+          html += tableHead();
+          data.forEach(function(d) {
+            var newLabel = d.label;
+            if (promoIds.indexOf(d.id) >= 0) newLabel = 1;
+            if (demoIds.indexOf(d.id)  >= 0) newLabel = 0;
+            html += tableRow(d, changedIds, '#fff9c4', newLabel);
+          });
+          html += '</tbody></table>';
+          // Recompute rates after relabeling
+          var newPrA = data.filter(function(d){ return d.group==='A' && (demoIds.indexOf(d.id)<0 ? d.label===1 : false) || (d.group==='A' && promoIds.indexOf(d.id)>=0); }).length;
+          var relabeledGroupA = data.map(function(d){
+            var lbl = d.label;
+            if (promoIds.indexOf(d.id)>=0) lbl=1;
+            if (demoIds.indexOf(d.id)>=0)  lbl=0;
+            return {group:d.group, label:lbl};
+          });
+          var newPosA = relabeledGroupA.filter(function(d){ return d.group==='A' && d.label===1; }).length;
+          var newPosB = relabeledGroupA.filter(function(d){ return d.group==='B' && d.label===1; }).length;
+          html += '<div class="insight-box" style="margin-top:10px;">'
+            + '<div class="box-label">After Relabeling</div>'
+            + 'P(Y=1 | Dutch) = ' + newPosA + '/' + nA + ' = ' + (newPosA/nA).toFixed(4)
+            + ' &nbsp;|&nbsp; P(Y=1 | Non-Dutch) = ' + newPosB + '/' + nB + ' = ' + (newPosB/nB).toFixed(4)
+            + '</div>';
+          return html;
+        }
+      ];
+
+      var currentStep = 0;
+
+      function renderStep(step) {
+        var contentEl = document.getElementById('rl-content');
+        contentEl.innerHTML = stepContent[step]();
+        if (window.renderMathInElement) {
+          renderMathInElement(contentEl, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});
+        }
+        document.querySelectorAll('.rl-tab').forEach(function(btn) {
+          var isActive = parseInt(btn.getAttribute('data-step')) === step;
+          btn.style.background = isActive ? '#1565c0' : '#fff';
+          btn.style.color      = isActive ? '#fff'    : '#1565c0';
+          btn.style.borderColor= isActive ? '#1565c0' : '#90caf9';
+        });
+      }
+
+      document.getElementById('rl-step-tabs').addEventListener('click', function(e) {
+        var btn = e.target.closest('.rl-tab');
+        if (!btn) return;
+        currentStep = parseInt(btn.getAttribute('data-step'));
+        renderStep(currentStep);
+      });
+
+      renderStep(0);
+    })();
+
+    // ===== TOOL 3: REJECT OPTION VISUALIZER =====
+    (function() {
+      var dataset = [
+        { id:1, group:'A', score:.99 },
+        { id:2, group:'A', score:.90 },
+        { id:3, group:'A', score:.56 },
+        { id:4, group:'A', score:.44 },
+        { id:5, group:'B', score:.66 },
+        { id:6, group:'B', score:.55 },
+        { id:7, group:'B', score:.38 },
+        { id:8, group:'B', score:.22 },
+      ];
+
+      var svg = document.getElementById('ro-svg');
+      var thetaInput = document.getElementById('ro-theta');
+      var thetaVal   = document.getElementById('ro-theta-val');
+      var summaryEl  = document.getElementById('ro-summary');
+
+      var svgW = 560, svgH = 140;
+      var axisY = 80;
+      var padL = 30, padR = 30;
+      var axisLen = svgW - padL - padR;
+
+      function xPos(score) { return padL + score * axisLen; }
+
+      function draw() {
+        var theta = parseFloat(thetaInput.value);
+        thetaVal.textContent = theta.toFixed(2);
+
+        var critLo = 1 - theta;
+        var critHi = theta;
+
+        // Determine favored group by selection rate
+        function selRate(g) {
+          var members = dataset.filter(function(d){ return d.group===g; });
+          var pos = members.filter(function(d){ return d.score >= 0.5; }).length;
+          return pos / members.length;
+        }
+        var srA = selRate('A'), srB = selRate('B');
+        var favoredGroup  = srA >= srB ? 'A' : 'B';
+        var deprivedGroup = favoredGroup === 'A' ? 'B' : 'A';
+
+        // Build SVG
+        var html = '';
+
+        // Critical region shading
+        html += '<rect x="' + xPos(critLo) + '" y="20" width="' + (xPos(critHi)-xPos(critLo)) + '" height="' + (axisY+20-20) + '" fill="#fff3e0" stroke="#ffb300" stroke-width="1" stroke-dasharray="4,2"/>';
+
+        // Axis line
+        html += '<line x1="' + padL + '" y1="' + axisY + '" x2="' + (svgW-padR) + '" y2="' + axisY + '" stroke="#555" stroke-width="2"/>';
+
+        // Tick marks & labels
+        [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0].forEach(function(t) {
+          var x = xPos(t);
+          html += '<line x1="' + x + '" y1="' + (axisY-4) + '" x2="' + x + '" y2="' + (axisY+4) + '" stroke="#555" stroke-width="1"/>';
+          html += '<text x="' + x + '" y="' + (axisY+16) + '" text-anchor="middle" font-size="11" fill="#555">' + t.toFixed(1) + '</text>';
+        });
+
+        // Decision boundary at 0.5
+        html += '<line x1="' + xPos(0.5) + '" y1="' + (axisY-18) + '" x2="' + xPos(0.5) + '" y2="' + (axisY+4) + '" stroke="#9c27b0" stroke-width="1.5" stroke-dasharray="3,2"/>';
+        html += '<text x="' + xPos(0.5) + '" y="' + (axisY-22) + '" text-anchor="middle" font-size="10" fill="#9c27b0">τ=0.5</text>';
+
+        // Critical region boundary labels
+        html += '<text x="' + xPos(critLo) + '" y="14" text-anchor="middle" font-size="10" fill="#e65100">1−θ=' + critLo.toFixed(2) + '</text>';
+        html += '<text x="' + xPos(critHi) + '" y="14" text-anchor="middle" font-size="10" fill="#e65100">θ=' + critHi.toFixed(2) + '</text>';
+
+        // Instances
+        var reclassified = [];
+
+        // Separate groups to offset dots vertically
+        var groupAData = dataset.filter(function(d){ return d.group==='A'; });
+        var groupBData = dataset.filter(function(d){ return d.group==='B'; });
+
+        function drawInstance(d, yOff) {
+          var x = xPos(d.score);
+          var yhat = d.score >= 0.5 ? 1 : 0;
+          var inCrit = d.score >= critLo && d.score <= critHi;
+          var color = d.group === 'A' ? '#1565c0' : '#e65100';
+          var fill  = yhat === 1 ? color : 'white';
+
+          var newYhat = yhat;
+          var reclassify = false;
+          if (inCrit) {
+            if (d.group === favoredGroup)  { newYhat = 0; reclassify = (yhat !== 0); }
+            if (d.group === deprivedGroup) { newYhat = 1; reclassify = (yhat !== 1); }
+          }
+
+          if (reclassify) reclassified.push(d);
+
+          var r = 8;
+          var y = axisY + yOff;
+
+          html += '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + fill + '" stroke="' + color + '" stroke-width="2"/>';
+          html += '<text x="' + x + '" y="' + (y+4) + '" text-anchor="middle" font-size="9" fill="' + (yhat===1?'white':color) + '">' + d.id + '</text>';
+
+          if (reclassify) {
+            // Arrow indicating direction of reclassification
+            var arrowDir = (newYhat === 1) ? -1 : 1; // up = positive (−y in SVG), down = negative
+            var arrowY1 = y - r - 2;
+            var arrowY2 = y - r - 12;
+            var aY1 = Math.min(arrowY1, arrowY2);
+            var aY2 = Math.max(arrowY1, arrowY2);
+            if (newYhat === 1) {
+              // Arrow pointing up (positive outcome)
+              html += '<line x1="' + x + '" y1="' + aY2 + '" x2="' + x + '" y2="' + aY1 + '" stroke="#27ae60" stroke-width="2" marker-end="url(#arrowUp)"/>';
+            } else {
+              // Arrow pointing down
+              html += '<line x1="' + x + '" y1="' + aY1 + '" x2="' + x + '" y2="' + aY2 + '" stroke="#c0392b" stroke-width="2" marker-end="url(#arrowDown)"/>';
+            }
+          }
+        }
+
+        // Define arrowhead markers
+        html = '<defs>'
+          + '<marker id="arrowUp" markerWidth="6" markerHeight="6" refX="3" refY="6" orient="auto">'
+          + '<path d="M0,6 L3,0 L6,6" fill="none" stroke="#27ae60" stroke-width="1.5"/></marker>'
+          + '<marker id="arrowDown" markerWidth="6" markerHeight="6" refX="3" refY="0" orient="auto">'
+          + '<path d="M0,0 L3,6 L6,0" fill="none" stroke="#c0392b" stroke-width="1.5"/></marker>'
+          + '</defs>' + html;
+
+        groupAData.forEach(function(d){ drawInstance(d, -20); });
+        groupBData.forEach(function(d){ drawInstance(d, +14); });
+
+        // Group labels
+        html += '<text x="' + (padL - 8) + '" y="' + (axisY - 20 + 4) + '" text-anchor="end" font-size="11" fill="#1565c0" font-weight="bold">A</text>';
+        html += '<text x="' + (padL - 8) + '" y="' + (axisY + 14 + 4) + '" text-anchor="end" font-size="11" fill="#e65100" font-weight="bold">B</text>';
+
+        svg.innerHTML = html;
+
+        // Summary
+        var favSR = favoredGroup === 'A' ? srA : srB;
+        var depSR = favoredGroup === 'A' ? srB : srA;
+        var rlStr = reclassified.length > 0
+          ? reclassified.map(function(d){ return '#' + d.id + ' (Group ' + d.group + ', score=' + d.score.toFixed(2) + ')'; }).join(', ')
+          : 'None';
+
+        summaryEl.innerHTML = '<strong>Favored:</strong> Group ' + favoredGroup + ' (sel. rate = ' + (favSR*100).toFixed(0) + '%) &nbsp;|&nbsp; '
+          + '<strong>Deprived:</strong> Group ' + deprivedGroup + ' (sel. rate = ' + (depSR*100).toFixed(0) + '%)<br>'
+          + '<strong>Critical region:</strong> scores in [' + critLo.toFixed(2) + ', ' + critHi.toFixed(2) + ']<br>'
+          + '<strong>Reclassified instances:</strong> ' + rlStr
+          + '<br><span style="font-size:12px; color:#888;">Filled dot = Ŷ=1 (original). Hollow dot = Ŷ=0 (original). Arrows show reclassification (green ↑ → Ŷ=1, red ↓ → Ŷ=0).</span>';
+      }
+
+      thetaInput.addEventListener('input', draw);
+      draw();
+    })();
+
+    initFlashcards('flashcards-part3', [
+      {
+        q: 'In relabeling, how are promotion candidates selected?',
+        a: 'Deprived group members with $Y=0$, ranked by confidence score descending.'
+      },
+      {
+        q: 'In reweighing, what happens to overrepresented subgroups?',
+        a: 'They get lower weights. $W = P_{\\text{exp}} / P_{\\text{obs}}$. If $P_{\\text{obs}} > P_{\\text{exp}}$, then $W < 1$.'
+      },
+      {
+        q: 'What does the adversary predict in adversarial learning for equalized odds?',
+        a: 'The sensitive attribute $A$, given both $\\hat{Y}$ AND $Y$.'
+      },
+      {
+        q: 'What is the $\\lambda$ parameter in fairness-aware regularization?',
+        a: 'Standard L2 regularization — prevents overfitting. It does NOT penalize disparate misclassification. The fairness regularizer is $\\eta \\cdot R$.'
+      },
+      {
+        q: 'Does decoupled classification ensure predictions are independent of $A$?',
+        a: 'No. If $A$ correlates with $Y$ in the data, group-specific classifiers still reproduce this pattern.'
+      }
+    ]);
+  </script>
+</body>
+</html>

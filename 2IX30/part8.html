@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>8. Privacy &amp; Differential Privacy — 2IX30</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]})"></script>
+  <script src="components.js"></script>
+</head>
+<body>
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">8. Privacy &amp; Differential Privacy</h1>
+    <p class="page-subtitle">k-anonymity, Laplace mechanism, composition, sensitivity</p>
+
+    <!-- In-page TOC -->
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#attacks">1. Privacy Attacks</a>
+      <a href="#k-anonymity">2. k-Anonymity</a>
+      <a href="#dp-definition">3. Differential Privacy</a>
+      <a href="#epsilon">4. Privacy Budget (&epsilon;)</a>
+      <a href="#sensitivity">5. Sensitivity</a>
+      <a href="#laplace">6. Laplace Mechanism</a>
+      <a href="#dp-properties">7. Key Properties</a>
+      <a href="#laplace-explorer" class="toc-interactive">Interactive: Laplace Mechanism Explorer</a>
+      <a href="#flashcards" class="toc-interactive">Flashcards</a>
+    </div>
+
+    <!-- ===================== PRIVACY ATTACKS ===================== -->
+    <h2 class="section-heading" id="attacks">Privacy Attacks</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Attack</th>
+          <th>Method</th>
+          <th>Example</th>
+          <th>Defeated by</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Linkage</strong></td>
+          <td>Combine datasets via quasi-identifiers</td>
+          <td>Sweeney (87% of Americans identified by ZIP + DOB + sex)</td>
+          <td>k-Anonymity</td>
+        </tr>
+        <tr>
+          <td><strong>Homogeneity</strong></td>
+          <td>All k records share the same sensitive value</td>
+          <td>k-anon group where all have HIV diagnosis</td>
+          <td>l-Diversity</td>
+        </tr>
+        <tr>
+          <td><strong>Background knowledge</strong></td>
+          <td>Extra information narrows down which record belongs to a target</td>
+          <td>Approximate age + neighborhood uniquely identifies individual</td>
+          <td>Differential Privacy</td>
+        </tr>
+        <tr>
+          <td><strong>Reconstruction</strong></td>
+          <td>Aggregate query answers used to reconstruct individual records</td>
+          <td>US Census Bureau (Dinur &amp; Nissim, 2003)</td>
+          <td>Differential Privacy</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ===================== K-ANONYMITY ===================== -->
+    <h2 class="section-heading" id="k-anonymity">k-Anonymity</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; k-Anonymity</div>
+      <p style="font-size:14px;margin-top:4px;">
+        Every quasi-identifier combination appears in <strong>at least k rows</strong> of the released dataset.
+        Achieved via <em>generalization</em> (replacing specific values with ranges, e.g. age 34 &rarr; 30&ndash;39)
+        and <em>suppression</em> (removing rare values entirely).
+      </p>
+    </div>
+
+    <p style="font-size:14px;color:#444;margin-bottom:14px;">
+      <strong>Limitations:</strong>
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Limitation</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Homogeneity attack</strong></td>
+          <td>If all k records in a group share the same sensitive attribute value, the attacker learns that value with certainty.</td>
+        </tr>
+        <tr>
+          <td><strong>Background knowledge attack</strong></td>
+          <td>Prior information about the target can eliminate candidates within the k-group, leading to re-identification.</td>
+        </tr>
+        <tr>
+          <td><strong>Utility loss</strong></td>
+          <td>Aggressive generalization and suppression degrade data quality, especially for small populations or rare attributes.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ===================== DIFFERENTIAL PRIVACY ===================== -->
+    <h2 class="section-heading" id="dp-definition">Differential Privacy</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; &epsilon;-Differential Privacy</div>
+      <p style="font-size:14px;margin-top:4px;">
+        A randomized mechanism $\mathcal{M}$ is $\epsilon$-differentially private if for all neighbouring datasets
+        $d, d'$ (differing in exactly one row) and all measurable output sets $S$:
+      </p>
+      <div class="math-block">
+        $$P(\mathcal{M}(d) \in S) \leq e^{\epsilon} \cdot P(\mathcal{M}(d') \in S)$$
+      </div>
+      <p style="font-size:14px;margin-top:8px;">
+        <strong>Intuition:</strong> an adversary observing the output cannot reliably determine whether any single
+        individual's data was included. This provides <em>plausible deniability</em> for every participant.
+      </p>
+    </div>
+
+    <!-- ===================== PRIVACY BUDGET ===================== -->
+    <h2 class="section-heading" id="epsilon">Privacy Budget (&epsilon;)</h2>
+
+    <p style="font-size:14px;color:#444;margin-bottom:14px;">
+      $\epsilon$ (epsilon) controls the trade-off between privacy and utility. Smaller $\epsilon$ means
+      stronger privacy but more noise. In practice, values in the range <strong>0.5&ndash;5</strong> are most common.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>&epsilon; value</th>
+          <th>Privacy level</th>
+          <th>Noise level</th>
+          <th>Utility level</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>0</strong></td>
+          <td>Perfect (infinite privacy)</td>
+          <td>Infinite</td>
+          <td>None (output is random)</td>
+        </tr>
+        <tr>
+          <td><strong>Small</strong> (e.g. 0.1&ndash;0.5)</td>
+          <td>Very strong</td>
+          <td>High</td>
+          <td>Low</td>
+        </tr>
+        <tr>
+          <td><strong>Medium</strong> (e.g. 1&ndash;5)</td>
+          <td>Moderate (practical range)</td>
+          <td>Moderate</td>
+          <td>Moderate to high</td>
+        </tr>
+        <tr>
+          <td><strong>Large</strong> (e.g. &gt;10)</td>
+          <td>Weak</td>
+          <td>Low</td>
+          <td>High</td>
+        </tr>
+        <tr>
+          <td><strong>&infin;</strong></td>
+          <td>No privacy</td>
+          <td>None</td>
+          <td>Perfect (exact output)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ===================== SENSITIVITY ===================== -->
+    <h2 class="section-heading" id="sensitivity">Sensitivity</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Global Sensitivity</div>
+      <p style="font-size:14px;margin-top:4px;">
+        The global (L1) sensitivity of a query $f$ measures the maximum change in output when one record is added or removed:
+      </p>
+      <div class="math-block">
+        $$\Delta f = \max_{d,d'} \|f(d) - f(d')\|_1$$
+      </div>
+      <p style="font-size:14px;margin-top:8px;">
+        Sensitivity determines how much noise must be added to achieve $\epsilon$-DP. Higher sensitivity requires more noise.
+      </p>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Query type</th>
+          <th>Sensitivity ($\Delta f$)</th>
+          <th>Explanation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Counting query</strong></td>
+          <td>1</td>
+          <td>Adding or removing one person changes the count by at most 1.</td>
+        </tr>
+        <tr>
+          <td><strong>Sum query</strong> (values in $[0, R]$)</td>
+          <td>$R$</td>
+          <td>One person's contribution is at most $R$.</td>
+        </tr>
+        <tr>
+          <td><strong>Mean query</strong> (values in $[0, R]$, $N$ people)</td>
+          <td>$R/N$</td>
+          <td>Adding one person with value $R$ shifts the mean by at most $R/N$.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ===================== LAPLACE MECHANISM ===================== -->
+    <h2 class="section-heading" id="laplace">Laplace Mechanism</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Laplace Mechanism</div>
+      <p style="font-size:14px;margin-top:4px;">
+        To release a query $f(d)$ with $\epsilon$-DP, add independent Laplace noise:
+      </p>
+      <div class="math-block">
+        $$\mathcal{M}(d) = f(d) + \mathrm{Lap}(0,\, b), \quad b = \frac{\Delta f}{\epsilon}$$
+      </div>
+      <p style="font-size:14px;margin-top:8px;">
+        The Laplace distribution $\mathrm{Lap}(0, b)$ has mean 0 and scale $b$. Larger $b$ means more noise.
+        The mechanism satisfies $\epsilon$-DP because the likelihood ratio of any output under neighbouring datasets
+        is bounded by $e^{\epsilon}$.
+      </p>
+    </div>
+
+    <!-- ===================== KEY PROPERTIES ===================== -->
+    <h2 class="section-heading" id="dp-properties">Key Properties</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th>Statement</th>
+          <th>Implication</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Post-processing</strong></td>
+          <td>If $\mathcal{M}(d)$ is $\epsilon$-DP, then $g(\mathcal{M}(d))$ is also $\epsilon$-DP for any function $g$.</td>
+          <td>Privacy cannot be weakened by downstream analysis. No need to protect outputs further.</td>
+        </tr>
+        <tr>
+          <td><strong>Group privacy</strong></td>
+          <td>If $\mathcal{M}$ is $\epsilon$-DP, it is $k\epsilon$-DP for groups of $k$ individuals.</td>
+          <td>Privacy guarantee weakens linearly with group size. Individuals in large groups have weaker protection.</td>
+        </tr>
+        <tr>
+          <td><strong>Composition</strong></td>
+          <td>Running $k$ independent $\epsilon$-DP mechanisms costs $k\epsilon$ total privacy budget.</td>
+          <td>Budget must be split across queries. Each of $k$ queries uses $\epsilon/k$, noise $b = k\cdot\Delta f/\epsilon$.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key Insight</div>
+      <p style="font-size:14px;margin-top:4px;">
+        Dwork &amp; Roth: <em>"Too many accurate answers will reduce privacy spectacularly."</em>
+        Composition means every query consumes budget &mdash; splitting $\epsilon$ over $k$ queries multiplies
+        noise by $k$. There is a fundamental tension between the number of queries answered and the accuracy of each answer.
+      </p>
+    </div>
+
+    <!-- ===================== LAPLACE EXPLORER ===================== -->
+    <div class="interactive-container" id="laplace-explorer">
+      <div class="interactive-title">Interactive — Laplace Mechanism &amp; Composition Explorer</div>
+      <p style="font-size:14px;color:#555;margin:0 0 18px;">
+        Adjust privacy budget, sensitivity, and number of queries to see how noise changes.
+      </p>
+
+      <!-- Panel 1: Single Query -->
+      <div style="margin-bottom:24px;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#2d5fa6;">Panel 1: Single Query</div>
+
+        <div class="slider-group">
+          <label class="interactive-label" for="lx-query-type">Query type</label>
+          <select id="lx-query-type" class="slider-control" style="width:100%;padding:5px 8px;border:1px solid #bbb;border-radius:5px;font-size:13px;background:#fff;">
+            <option value="counting">Counting (&Delta;f = 1)</option>
+            <option value="mean-age">Mean age (range [0,100], N=1000) &rarr; &Delta;f = 0.1</option>
+            <option value="mean-salary" selected>Mean salary (range [0,200000], N=500) &rarr; &Delta;f = 400</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+
+        <div id="lx-custom-df-group" class="slider-group" style="display:none;">
+          <label class="interactive-label" for="lx-custom-df">Custom &Delta;f (sensitivity)</label>
+          <input type="number" id="lx-custom-df" class="slider-control" value="1" min="0.001" step="any"
+            style="width:120px;padding:4px 8px;border:1px solid #bbb;border-radius:5px;font-size:13px;">
+        </div>
+
+        <div class="slider-group">
+          <label class="interactive-label">
+            &epsilon; (epsilon): <span id="lx-eps-val" style="font-weight:700;color:#2d5fa6;">2.0</span>
+          </label>
+          <input type="range" id="lx-eps" class="slider-control" min="0.1" max="10" step="0.1" value="2.0">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#888;margin-top:2px;">
+            <span>0.1 (strong privacy)</span><span>10 (weak privacy)</span>
+          </div>
+        </div>
+
+        <!-- Noise output summary -->
+        <div class="definition-box" style="margin-top:12px;padding:12px 16px;">
+          <div style="font-size:13px;color:#444;line-height:1.8;">
+            <div>Sensitivity: <strong id="lx-df-display">400</strong></div>
+            <div>Noise parameter: $b = \Delta f / \varepsilon =$ <strong id="lx-b-display">200</strong></div>
+            <div style="margin-top:6px;font-size:12px;color:#666;">
+              50% of noise within &plusmn;<span id="lx-50pct">138.6</span> &nbsp;|&nbsp;
+              95% of noise within &plusmn;<span id="lx-95pct">599.1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- SVG Chart -->
+        <div style="margin-top:14px;position:relative;">
+          <svg id="lx-svg" width="500" height="180" viewBox="0 0 500 180"
+            style="display:block;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fafafa;">
+          </svg>
+          <div style="text-align:center;font-size:11px;color:#888;margin-top:4px;">
+            Laplace PDF centred at true answer (0). Blue = single query, grey = k-query composition.
+          </div>
+        </div>
+
+        <!-- Sample noise -->
+        <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <button id="lx-sample-btn"
+            style="padding:7px 18px;background:#2d5fa6;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;">
+            Sample noise
+          </button>
+          <div id="lx-sample-output" style="font-size:13px;color:#333;"></div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Composition -->
+      <div style="border-top:1px solid #dde;padding-top:20px;margin-bottom:24px;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#2d5fa6;">Panel 2: Composition</div>
+
+        <div class="slider-group">
+          <label class="interactive-label">
+            Number of queries k: <span id="lx-k-val" style="font-weight:700;color:#2d5fa6;">1</span>
+          </label>
+          <input type="range" id="lx-k" class="slider-control" min="1" max="10" step="1" value="1">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#888;margin-top:2px;">
+            <span>1</span><span>10</span>
+          </div>
+        </div>
+
+        <div class="insight-box" style="padding:12px 16px;margin-top:10px;">
+          <div style="font-size:13px;color:#444;line-height:2.0;">
+            <div>Total budget spent: $k\varepsilon =$ <strong id="lx-total-budget">2.0</strong></div>
+            <div>Per-query budget: $\varepsilon/k =$ <strong id="lx-per-query-eps">2.0</strong></div>
+            <div>Per-query noise scale: $b = k\cdot\Delta f/\varepsilon =$ <strong id="lx-per-query-b">200</strong></div>
+          </div>
+        </div>
+
+        <!-- Composition noise bar -->
+        <div style="margin-top:12px;">
+          <div style="font-size:12px;color:#666;margin-bottom:4px;">Noise scale relative to single query:</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="flex:1;background:#e8eef7;border-radius:4px;height:20px;overflow:hidden;">
+              <div id="lx-noise-bar" style="height:100%;background:#6b9bd2;border-radius:4px;width:10%;transition:width 0.3s;"></div>
+            </div>
+            <span id="lx-noise-bar-label" style="font-size:12px;color:#555;white-space:nowrap;">1x</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Group Privacy -->
+      <div style="border-top:1px solid #dde;padding-top:20px;">
+        <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#2d5fa6;">Panel 3: Group Privacy</div>
+
+        <div class="slider-group">
+          <label class="interactive-label">
+            Records per person (k<sub>rows</sub>): <span id="lx-rows-val" style="font-weight:700;color:#2d5fa6;">1</span>
+          </label>
+          <input type="range" id="lx-rows" class="slider-control" min="1" max="5" step="1" value="1">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#888;margin-top:2px;">
+            <span>1</span><span>5</span>
+          </div>
+        </div>
+
+        <div class="warning-box" id="lx-group-box" style="padding:12px 16px;margin-top:10px;">
+          <div style="font-size:13px;color:#444;line-height:2.0;">
+            <div>Effective privacy factor: $e^{k_{\text{rows}} \cdot \varepsilon} =$ <strong id="lx-group-factor">7.39</strong></div>
+            <div style="font-size:12px;color:#666;">An adversary can distinguish membership with ratio up to this factor.</div>
+          </div>
+          <!-- Privacy degradation bar -->
+          <div style="margin-top:10px;">
+            <div style="font-size:12px;color:#666;margin-bottom:4px;">Privacy strength (lower is better):</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="flex:1;background:#fbe9e7;border-radius:4px;height:20px;overflow:hidden;">
+                <div id="lx-group-bar" style="height:100%;background:#e57373;border-radius:4px;width:10%;transition:width 0.3s;"></div>
+              </div>
+              <span id="lx-group-bar-label" style="font-size:12px;color:#555;white-space:nowrap;">e^2.0 = 7.39</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== FLASHCARDS ===================== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+
+    <div class="flashcard-container" id="flashcards-part8"></div>
+
+    <!-- Page Navigation -->
+    <div class="page-nav">
+      <a href="part7.html">&larr; Part 7</a>
+      <a href="part9.html">Part 9 &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('part8');
+
+    const cards = [
+      {
+        q: "What is a linkage attack?",
+        a: "Combining a de-identified dataset with an external dataset using quasi-identifiers to re-identify individuals."
+      },
+      {
+        q: "What does the post-processing property of DP mean?",
+        a: "Any function applied to \u03b5-DP output remains \u03b5-DP. Privacy cannot be weakened by post-processing."
+      },
+      {
+        q: "What is the sensitivity of a counting query?",
+        a: "\u0394f = 1 (adding/removing one person changes the count by at most 1)."
+      },
+      {
+        q: "What does the composition property mean practically?",
+        a: "Running k queries each \u03b5-DP costs k\u03b5 total. Split budget: each query uses \u03b5/k, noise b = k\u00b7\u0394f/\u03b5."
+      },
+      {
+        q: "What are k-anonymity's vulnerabilities?",
+        a: "Homogeneity attack (all k records same sensitive value) and background knowledge attack."
+      }
+    ];
+
+    initFlashcards('flashcards-part8', cards);
+
+    // ── Laplace Mechanism & Composition Explorer ──────────────────────────────
+    (function () {
+      'use strict';
+
+      // --- DOM refs ---
+      const queryTypeEl   = document.getElementById('lx-query-type');
+      const customDfGroup = document.getElementById('lx-custom-df-group');
+      const customDfEl    = document.getElementById('lx-custom-df');
+      const epsSlider     = document.getElementById('lx-eps');
+      const epsVal        = document.getElementById('lx-eps-val');
+      const kSlider       = document.getElementById('lx-k');
+      const kVal          = document.getElementById('lx-k-val');
+      const rowsSlider    = document.getElementById('lx-rows');
+      const rowsVal       = document.getElementById('lx-rows-val');
+      const sampleBtn     = document.getElementById('lx-sample-btn');
+      const sampleOutput  = document.getElementById('lx-sample-output');
+      const svg           = document.getElementById('lx-svg');
+
+      // Output elements
+      const dfDisplay       = document.getElementById('lx-df-display');
+      const bDisplay        = document.getElementById('lx-b-display');
+      const pct50El         = document.getElementById('lx-50pct');
+      const pct95El         = document.getElementById('lx-95pct');
+      const totalBudgetEl   = document.getElementById('lx-total-budget');
+      const perQueryEpsEl   = document.getElementById('lx-per-query-eps');
+      const perQueryBEl     = document.getElementById('lx-per-query-b');
+      const noiseBarEl      = document.getElementById('lx-noise-bar');
+      const noiseBarLabel   = document.getElementById('lx-noise-bar-label');
+      const groupFactorEl   = document.getElementById('lx-group-factor');
+      const groupBarEl      = document.getElementById('lx-group-bar');
+      const groupBarLabel   = document.getElementById('lx-group-bar-label');
+
+      // Sensitivity presets
+      const DF_PRESETS = {
+        'counting':    1,
+        'mean-age':    0.1,
+        'mean-salary': 400
+      };
+
+      function getSensitivity() {
+        const t = queryTypeEl.value;
+        if (t === 'custom') return parseFloat(customDfEl.value) || 1;
+        return DF_PRESETS[t];
+      }
+
+      function fmt(n) {
+        // Show up to 4 significant figures, trim trailing zeros
+        if (Math.abs(n) >= 1000) return n.toFixed(0);
+        if (Math.abs(n) >= 100)  return n.toFixed(1);
+        if (Math.abs(n) >= 1)    return n.toFixed(2);
+        return n.toPrecision(3);
+      }
+
+      // Laplace PDF
+      function laplacePDF(x, b) {
+        return (1 / (2 * b)) * Math.exp(-Math.abs(x) / b);
+      }
+
+      // Draw the SVG chart
+      function drawChart(b, bK) {
+        const W = 500, H = 180;
+        const PAD_L = 48, PAD_R = 16, PAD_T = 14, PAD_B = 36;
+        const plotW = W - PAD_L - PAD_R;
+        const plotH = H - PAD_T - PAD_B;
+
+        // X range: ±4·max(b, bK) but at least ±1
+        const bMax = Math.max(b, bK, 0.001);
+        const xRange = 4 * bMax;
+        const xMin = -xRange, xMax = xRange;
+
+        // Y max: at peak of narrower (larger b=0→steeper? no: smaller b → taller peak)
+        const bMin = Math.min(b, bK);
+        const yMax = 1 / (2 * bMin) * 1.15;
+
+        function toSvgX(x) { return PAD_L + (x - xMin) / (xMax - xMin) * plotW; }
+        function toSvgY(y) { return PAD_T + plotH - y / yMax * plotH; }
+
+        const steps = 300;
+        function buildPath(bVal) {
+          let d = '';
+          for (let i = 0; i <= steps; i++) {
+            const x = xMin + (xMax - xMin) * i / steps;
+            const y = laplacePDF(x, bVal);
+            const sx = toSvgX(x), sy = toSvgY(y);
+            d += (i === 0 ? 'M' : 'L') + sx.toFixed(1) + ' ' + sy.toFixed(1) + ' ';
+          }
+          return d;
+        }
+
+        // Shading helpers
+        function buildShade(bVal, xL, xR) {
+          const pts = [];
+          const n = 200;
+          for (let i = 0; i <= n; i++) {
+            const x = xL + (xR - xL) * i / n;
+            pts.push([toSvgX(x), toSvgY(laplacePDF(x, bVal))]);
+          }
+          const baseline = toSvgY(0);
+          let d = 'M ' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1) + ' ';
+          for (let i = 1; i <= n; i++) d += 'L ' + pts[i][0].toFixed(1) + ' ' + pts[i][1].toFixed(1) + ' ';
+          d += 'L ' + pts[n][0].toFixed(1) + ' ' + baseline.toFixed(1) + ' ';
+          d += 'L ' + pts[0][0].toFixed(1) + ' ' + baseline.toFixed(1) + ' Z';
+          return d;
+        }
+
+        // Build SVG markup
+        const x0 = toSvgX(0);
+        const yBase = toSvgY(0);
+
+        // 50% region: ±b·ln2; 95%: ±b·ln20
+        const r50  = b * Math.LN2;
+        const r95  = b * Math.log(20);
+        const r50K = bK * Math.LN2;
+        const r95K = bK * Math.log(20);
+
+        // Clamp to plot range
+        const c50L  = Math.max(xMin, -r50);
+        const c50R  = Math.min(xMax,  r50);
+        const c95L  = Math.max(xMin, -r95);
+        const c95R  = Math.min(xMax,  r95);
+
+        let markup = '';
+
+        // 95% shade (single query, lightest)
+        if (c95L < c95R) {
+          markup += `<path d="${buildShade(b, c95L, c95R)}" fill="rgba(45,95,166,0.10)" stroke="none"/>`;
+        }
+        // 50% shade (single query)
+        if (c50L < c50R) {
+          markup += `<path d="${buildShade(b, c50L, c50R)}" fill="rgba(45,95,166,0.22)" stroke="none"/>`;
+        }
+
+        // k-query curve (only if k > 1)
+        const showK = bK > b * 1.001;
+        if (showK) {
+          const ck95L = Math.max(xMin, -r95K), ck95R = Math.min(xMax, r95K);
+          const ck50L = Math.max(xMin, -r50K), ck50R = Math.min(xMax, r50K);
+          if (ck95L < ck95R) {
+            markup += `<path d="${buildShade(bK, ck95L, ck95R)}" fill="rgba(150,150,150,0.09)" stroke="none"/>`;
+          }
+          if (ck50L < ck50R) {
+            markup += `<path d="${buildShade(bK, ck50L, ck50R)}" fill="rgba(150,150,150,0.18)" stroke="none"/>`;
+          }
+          markup += `<path d="${buildPath(bK)}" fill="none" stroke="#aaa" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        }
+
+        // Main single-query curve
+        markup += `<path d="${buildPath(b)}" fill="none" stroke="#2d5fa6" stroke-width="2"/>`;
+
+        // Zero axis
+        markup += `<line x1="${x0.toFixed(1)}" y1="${PAD_T}" x2="${x0.toFixed(1)}" y2="${yBase.toFixed(1)}" stroke="#999" stroke-width="1" stroke-dasharray="3,3"/>`;
+
+        // X axis
+        markup += `<line x1="${PAD_L}" y1="${yBase.toFixed(1)}" x2="${(W - PAD_R).toFixed(1)}" y2="${yBase.toFixed(1)}" stroke="#888" stroke-width="1"/>`;
+
+        // Y axis
+        markup += `<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${yBase.toFixed(1)}" stroke="#888" stroke-width="1"/>`;
+
+        // X axis tick labels: -4b, -2b, 0, +2b, +4b (using single-query b)
+        const ticks = [-4, -2, 0, 2, 4];
+        ticks.forEach(function(t) {
+          const x = toSvgX(t * b);
+          if (x < PAD_L || x > W - PAD_R) return;
+          const label = t === 0 ? '0' : (t > 0 ? '+' : '') + t + 'b';
+          markup += `<line x1="${x.toFixed(1)}" y1="${yBase.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(yBase + 4).toFixed(1)}" stroke="#888" stroke-width="1"/>`;
+          markup += `<text x="${x.toFixed(1)}" y="${(yBase + 16).toFixed(1)}" text-anchor="middle" font-size="10" fill="#666">${label}</text>`;
+        });
+
+        // Y label
+        markup += `<text x="10" y="${(PAD_T + plotH / 2).toFixed(1)}" text-anchor="middle" font-size="10" fill="#888" transform="rotate(-90,10,${(PAD_T + plotH / 2).toFixed(1)})">p(x)</text>`;
+
+        // Legend
+        markup += `<rect x="${PAD_L + 6}" y="${PAD_T + 4}" width="12" height="3" fill="#2d5fa6" rx="1"/>`;
+        markup += `<text x="${PAD_L + 22}" y="${PAD_T + 11}" font-size="10" fill="#444">single query (b=${fmt(b)})</text>`;
+        if (showK) {
+          markup += `<line x1="${PAD_L + 6}" y1="${PAD_T + 19}" x2="${PAD_L + 18}" y2="${PAD_T + 19}" stroke="#aaa" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+          markup += `<text x="${PAD_L + 22}" y="${PAD_T + 24}" font-size="10" fill="#888">k-query (b=${fmt(bK)})</text>`;
+        }
+
+        // 50% / 95% region annotation (clipped to view)
+        const annX = toSvgX(Math.min(r50 * 0.5, xMax * 0.55));
+        const annY = toSvgY(laplacePDF(r50 * 0.3, b)) - 6;
+        if (annY > PAD_T && annY < yBase) {
+          markup += `<text x="${annX.toFixed(1)}" y="${annY.toFixed(1)}" text-anchor="middle" font-size="9" fill="#2d5fa6" opacity="0.8">50%</text>`;
+        }
+
+        svg.innerHTML = markup;
+      }
+
+      // Inverse CDF for Laplace: X = -b·sign(U-0.5)·ln(1-2|U-0.5|)
+      function sampleLaplace(b) {
+        const u = Math.random();
+        const s = u >= 0.5 ? 1 : -1;
+        return -b * s * Math.log(1 - 2 * Math.abs(u - 0.5));
+      }
+
+      // --- TRUE ANSWER depends on query type (illustrative) ---
+      const TRUE_ANSWERS = {
+        'counting':    42,
+        'mean-age':    35.7,
+        'mean-salary': 58000,
+        'custom':      100
+      };
+
+      function update() {
+        const eps   = parseFloat(epsSlider.value);
+        const k     = parseInt(kSlider.value, 10);
+        const rows  = parseInt(rowsSlider.value, 10);
+        const df    = getSensitivity();
+
+        // Single-query noise
+        const b  = df / eps;
+        // Composition: each of k queries uses eps/k budget → noise b_k = df/(eps/k) = k·df/eps
+        const bK = k * df / eps;
+
+        const r50 = b * Math.LN2;
+        const r95 = b * Math.log(20);
+
+        // Update labels
+        epsVal.textContent = eps.toFixed(1);
+        kVal.textContent   = k;
+        rowsVal.textContent = rows;
+
+        dfDisplay.textContent = fmt(df);
+        bDisplay.textContent  = fmt(b);
+        pct50El.textContent   = fmt(r50);
+        pct95El.textContent   = fmt(r95);
+
+        // Composition panel
+        totalBudgetEl.textContent  = fmt(k * eps);
+        perQueryEpsEl.textContent  = fmt(eps / k);
+        perQueryBEl.textContent    = fmt(bK);
+
+        // Noise bar: k goes 1→10, width scales with k (linear)
+        const noiseBarPct = Math.min(100, (k / 10) * 100);
+        noiseBarEl.style.width = noiseBarPct + '%';
+        noiseBarLabel.textContent = k + 'x noise scale';
+
+        // Group privacy
+        const exponent  = rows * eps;
+        const groupFact = Math.exp(exponent);
+        groupFactorEl.textContent  = groupFact.toFixed(2);
+        // Bar: exponent from 0→25 → width 0→100%
+        const groupBarPct = Math.min(100, (exponent / 25) * 100);
+        groupBarEl.style.width = groupBarPct + '%';
+        groupBarLabel.textContent = 'e^' + exponent.toFixed(1) + ' = ' + groupFact.toFixed(2);
+
+        // Re-render chart
+        drawChart(b, bK);
+      }
+
+      // Sample button
+      sampleBtn.addEventListener('click', function () {
+        const eps  = parseFloat(epsSlider.value);
+        const df   = getSensitivity();
+        const b    = df / eps;
+        const noise = sampleLaplace(b);
+        const qt    = queryTypeEl.value;
+        const trueAns = TRUE_ANSWERS[qt] || 100;
+        const noisyAns = trueAns + noise;
+        sampleOutput.innerHTML =
+          'True answer: <strong>' + fmt(trueAns) + '</strong> &nbsp;|&nbsp; ' +
+          'Noisy answer: <strong>' + fmt(noisyAns) + '</strong> &nbsp;|&nbsp; ' +
+          'Error: <strong>' + (noise >= 0 ? '+' : '') + fmt(noise) + '</strong>';
+      });
+
+      // Query type change
+      queryTypeEl.addEventListener('change', function () {
+        const isCustom = queryTypeEl.value === 'custom';
+        customDfGroup.style.display = isCustom ? '' : 'none';
+        update();
+      });
+
+      // All sliders
+      [epsSlider, kSlider, rowsSlider].forEach(function (el) {
+        el.addEventListener('input', update);
+      });
+      customDfEl.addEventListener('input', update);
+
+      // Initial render
+      update();
+    })();
+  </script>
+</body>
+</html>
