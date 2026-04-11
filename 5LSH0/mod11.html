@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>11. 3D Data Fusion — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">11. 3D Data Fusion</h1>
+    <p class="page-subtitle">Multi-modal fusion, ICP registration, TSDF, rolling buffer, SVD pose estimation</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#motivation">1. Overview and Motivation</a>
+      <a href="#data-types">2. 3D Data Types and Representations</a>
+      <a href="#sensor-comparison">3. LiDAR vs. RGB-D</a>
+      <a href="#fusion-pipeline">4. Three-Stage Fusion Pipeline</a>
+      <a href="#stage1">5. Stage 1: Unifying Data Format</a>
+      <a href="#stage2">6. Stage 2: Unifying Coordinate Space</a>
+      <a href="#stage3">7. Stage 3: Fusing into a Unified Model</a>
+      <a href="#kinectfusion-limits">8. KinectFusion Limitations</a>
+      <a href="#rolling-buffer">9. Solution: Rolling Buffer</a>
+      <a href="#drift">10. Drift and Geometry Melting</a>
+      <a href="#chained-tsdf">11. Solution A: Chained TSDF Boxes</a>
+      <a href="#plane-correction">12. Solution B: Plane-Based Drift Correction</a>
+      <a href="#svd">13. SVD-Based Pose Estimation</a>
+      <a class="toc-interactive" href="#svd-walkthrough">Interactive: SVD Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: MOTIVATION ===== -->
+    <h2 class="section-heading" id="motivation">1. Overview and Motivation</h2>
+
+    <p>This module addresses two major topics in 3D computer vision. First, <strong>fusing data from different modalities</strong> — combining point clouds (LiDAR), depth maps, and RGB images into a single coherent 3D model. Second, <strong>overcoming KinectFusion limitations</strong> — solving the practical constraints of real-time TSDF-based 3D reconstruction: limited volume size, drift, and geometry melting.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why multi-modal fusion matters</div>
+      <div>No single 3D sensor captures a perfect scene. LiDAR provides accurate, large-scale point clouds but with many holes from occlusions. RGB-D cameras give dense, colorful local reconstructions but are noisy with limited range. Combining them yields a model that is both <strong>globally accurate</strong> (from LiDAR) and <strong>locally dense</strong> (from Kinect).</div>
+    </div>
+
+    <!-- ===== SECTION 2: DATA TYPES ===== -->
+    <h2 class="section-heading" id="data-types">2. 3D Data Types and Representations</h2>
+
+    <h3 class="subsection-heading">Sensor Modalities</h3>
+
+    <table>
+      <tr><th>Sensor Type</th><th>Output Data</th><th>Dimensionality</th><th>Scale</th></tr>
+      <tr><td><strong>LiDAR</strong></td><td>Point clouds $(x, y, z)$ with optional color/intensity</td><td>3D</td><td>Global, large-scale</td></tr>
+      <tr><td><strong>RGB camera</strong></td><td>2D color image</td><td>2D</td><td>Depends on lens</td></tr>
+      <tr><td><strong>ToF camera</strong></td><td>Depth maps</td><td>2.5D</td><td>Local, limited range</td></tr>
+      <tr><td><strong>Structured light (Kinect)</strong></td><td>Depth + RGB maps</td><td>2.5D</td><td>Local, ~0.5&ndash;4.5 m</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">3D Representation Formats</h3>
+
+    <table>
+      <tr><th>Representation</th><th>Pros</th><th>Cons</th></tr>
+      <tr><td><strong>Voxel grid</strong></td><td>Regular structure; easy to process with 3D CNNs</td><td>Memory-intensive $O(n^3)$; fixed resolution</td></tr>
+      <tr><td><strong>Octree grid</strong></td><td>Memory-efficient; only subdivides where detail exists</td><td>More complex data structure</td></tr>
+      <tr><td><strong>Mesh</strong></td><td>Compact surface; good for rendering</td><td>Hard to update incrementally</td></tr>
+      <tr><td><strong>Point cloud</strong></td><td>Raw, lossless; no discretization</td><td>Unstructured; noisy; redundancy</td></tr>
+      <tr><td><strong>Depth maps + poses</strong></td><td>Compact storage; easy to capture</td><td>Only 2.5D; requires pose information</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Why fusion is non-trivial</div>
+      <div class="collapsible-body">
+        <p>The core challenges when fusing data from different sensors:</p>
+        <ol>
+          <li><strong>Different data formats:</strong> LiDAR produces 3D point clouds; Kinect produces 2.5D depth + RGB images.</li>
+          <li><strong>Different data densities:</strong> LiDAR is sparse; Kinect is dense.</li>
+          <li><strong>Different noise characteristics:</strong> LiDAR has sparse gaps; Kinect has quantization artifacts.</li>
+          <li><strong>Unrelated coordinate systems:</strong> Each sensor has its own reference frame.</li>
+          <li><strong>Incompatible intrinsic parameters:</strong> LiDAR has no focal length in the traditional sense.</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 3: SENSOR COMPARISON ===== -->
+    <h2 class="section-heading" id="sensor-comparison">3. LiDAR vs. RGB-D Sensors</h2>
+
+    <div class="figure-container">
+      <img src="figures/mod11/lidar_scan_with_occlusion_holes.png" alt="LiDAR scan showing occlusion holes">
+      <div class="figure-caption">LiDAR scan of an indoor scene: accurate global structure, but sparse with many holes from occlusions.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod11/rgbd_sensor_dense_frames.png" alt="RGB-D sensor dense frames">
+      <div class="figure-caption">RGB-D sensor frames: very dense and colorful local reconstructions, limited to about 4.5 m range.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>LiDAR</th><th>Kinect</th></tr>
+      <tr><td>Accuracy</td><td>High (mm-level)</td><td>Low&ndash;Medium</td></tr>
+      <tr><td>Density</td><td>Low (sparse)</td><td>High (dense)</td></tr>
+      <tr><td>Scale</td><td>Global</td><td>Local</td></tr>
+      <tr><td>Holes</td><td>Many (occlusions)</td><td>Few (within range)</td></tr>
+      <tr><td>Color</td><td>Limited</td><td>Full RGB</td></tr>
+      <tr><td>Cost</td><td>Expensive</td><td>Inexpensive</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod11/lidar_kinect_fused_result.png" alt="LiDAR and Kinect fused result">
+      <div class="figure-caption">Result of fusing LiDAR and Kinect data: holes in the LiDAR scan are filled with dense Kinect geometry.</div>
+    </div>
+
+    <!-- ===== SECTION 4: FUSION PIPELINE ===== -->
+    <h2 class="section-heading" id="fusion-pipeline">4. Three-Stage Multi-Modal Fusion Pipeline</h2>
+
+    <p>Fusing LiDAR and Kinect data follows three sequential stages:</p>
+
+    <table>
+      <tr><th>Stage</th><th>Goal</th><th>Key Technique</th></tr>
+      <tr><td><strong>Stage 1</strong></td><td>Unify data format representation</td><td>3D pyramid decomposition + raycasting</td></tr>
+      <tr><td><strong>Stage 2</strong></td><td>Unify coordinate space</td><td>SIFT feature matching, transformation chain</td></tr>
+      <tr><td><strong>Stage 3</strong></td><td>Fuse into unified 3D model</td><td>TSDF integration or point cloud merge</td></tr>
+    </table>
+
+    <!-- ===== SECTION 5: STAGE 1 ===== -->
+    <h2 class="section-heading" id="stage1">5. Stage 1: Unifying Data Format</h2>
+
+    <h3 class="subsection-heading">Goal</h3>
+    <p>Bring both LiDAR and Kinect data to a <strong>unified format</strong> — preferably RGB-D — so that 2D image-based matching can be applied. Full 3D formats (point cloud, voxel grid) are computationally expensive for matching.</p>
+
+    <h3 class="subsection-heading">3D Pyramid Decomposition</h3>
+    <p>This is the key technique for converting a LiDAR point cloud into a set of virtual RGB-D frames:</p>
+
+    <ol>
+      <li><strong>Decompose the point cloud into 3D pyramids</strong> — frustum-shaped volumes representing virtual camera viewpoints. Each pyramid's shape is designed to match the Kinect's intrinsic parameters (FOV, focal length, aspect ratio).</li>
+      <li><strong>Generate synthetic RGB-D images via raycasting</strong> — a virtual camera is placed at the pyramid apex. Rays cast through an image plane into the point cloud produce a synthetic depth image and synthetic RGB image per pyramid.</li>
+      <li><strong>Compute SIFT features</strong> on each synthetic RGB image for later matching against real Kinect frames.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod11/pyramid_viewpoints_on_pointcloud.png" alt="Pyramid viewpoints on point cloud">
+      <div class="figure-caption">3D pyramid decomposition: frustum-shaped virtual camera viewpoints placed over the LiDAR point cloud. Each pyramid generates a virtual RGB-D view.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod11/raycasting_pointcloud_to_virtual_camera.png" alt="Raycasting geometry">
+      <div class="figure-caption">Raycasting geometry: rays cast from the input point cloud through a normalized image plane $[-1, +1]$ to a virtual camera, generating synthetic depth and RGB images.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod11/feature_detection_matching.png" alt="SIFT features on synthetic image">
+      <div class="figure-caption">SIFT keypoints detected on a synthetic RGB image generated from the LiDAR point cloud, ready for matching against Kinect frames.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why convert LiDAR to RGB-D format?</div>
+      <div>By converting LiDAR data to synthetic RGB-D views that use the same camera model as the Kinect, we can use standard 2D feature matching (SIFT) to establish correspondences. This is computationally far cheaper than direct 3D point cloud registration.</div>
+    </div>
+
+    <!-- ===== SECTION 6: STAGE 2 ===== -->
+    <h2 class="section-heading" id="stage2">6. Stage 2: Unifying the Coordinate Space</h2>
+
+    <h3 class="subsection-heading">Master Coordinate System</h3>
+    <p>The <strong>LiDAR coordinate system</strong> is adopted as the master coordinate system. All virtual pyramids were defined on the LiDAR point cloud, so their poses in the LiDAR frame are already known.</p>
+
+    <h3 class="subsection-heading">Registration via SIFT Feature Matching</h3>
+    <p>For each real Kinect RGB-D frame:</p>
+    <ol>
+      <li>Compute SIFT features on the Kinect's RGB image.</li>
+      <li>For each pyramid's synthetic image, find SIFT feature correspondences with the Kinect image (ratio test + RANSAC).</li>
+      <li>If correspondences are found below an error threshold, compute the transformation matrix $[R | \mathbf{t}]$ from Kinect frame to pyramid coordinate system.</li>
+      <li>Since the pyramid's pose in the master system is known, compute the Kinect frame's pose in the master system.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod11/feature_matching_coordinate_unification.png" alt="SIFT matching between Kinect and pyramid views">
+      <div class="figure-caption">SIFT feature correspondences between a real Kinect RGB image and a synthetic pyramid image. Colored lines connect matched keypoints.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Transformation Chain</div>
+      <div>$$T_{\text{Kinect} \to \text{master}} = T_{\text{pyramid} \to \text{master}} \cdot T_{\text{Kinect} \to \text{pyramid}}$$
+      The first term is known (pyramid defined on LiDAR cloud); the second is computed from SIFT correspondences.</div>
+    </div>
+
+    <!-- ===== SECTION 7: STAGE 3 ===== -->
+    <h2 class="section-heading" id="stage3">7. Stage 3: Fusing into a Unified 3D Model</h2>
+
+    <h3 class="subsection-heading">Option A: TSDF Volume Fusion</h3>
+    <p>Project both RGB-D pyramids (from LiDAR raycasting) and Kinect samples (from their known master poses) onto a global TSDF voxel grid. The TSDF update rule naturally fuses both data sources via weighted averaging:</p>
+
+    <div class="definition-box">
+      <div class="box-label">TSDF Update Rule</div>
+      <div>$$\text{TSDF}_{\text{new}}(\mathbf{x}) = \frac{\text{TSDF}_{\text{old}}(\mathbf{x}) \cdot w_{\text{old}}(\mathbf{x}) + d_{\text{meas}} \cdot w_{\text{new}}}{w_{\text{old}}(\mathbf{x}) + w_{\text{new}}}$$
+      Positive TSDF: free space in front of surface. Negative: inside object. Zero crossing: the surface.</div>
+    </div>
+
+    <h3 class="subsection-heading">Option B: Point Cloud Fusion</h3>
+    <p>Extract a point cloud from each Kinect RGB-D frame using the back-projection formula:</p>
+    <div class="math-block">$$\mathbf{P}_{3D} = \begin{bmatrix} (u - c_x) \cdot d / f_x \\ (v - c_y) \cdot d / f_y \\ d \end{bmatrix}$$</div>
+    <p>Transform into the master coordinate system, merge with the LiDAR point cloud, then filter for outliers and duplicates using octree-based deduplication.</p>
+
+    <table>
+      <tr><th>Criterion</th><th>TSDF Fusion</th><th>Point Cloud Fusion</th></tr>
+      <tr><td>Noise handling</td><td>Natural averaging</td><td>Requires post-processing</td></tr>
+      <tr><td>Memory</td><td>Fixed $O(N^3)$ grid</td><td>Scales with point count</td></tr>
+      <tr><td>Lossy/Lossless</td><td><strong>Lossy</strong></td><td><strong>Lossless</strong></td></tr>
+      <tr><td>Error recovery</td><td>Difficult (baked in)</td><td>Easier (remove bad sets)</td></tr>
+      <tr><td>Best for</td><td>Dense room-scale reconstruction</td><td>Large-scale sparse environments</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod11/3d_reconstruction_demo_cathedral.png" alt="Cathedral reconstruction demo">
+      <div class="figure-caption">Result of multi-modal fusion: a cathedral interior reconstruction combining LiDAR global accuracy with dense Kinect geometry.</div>
+    </div>
+
+    <!-- ===== SECTION 8: KINECTFUSION LIMITS ===== -->
+    <h2 class="section-heading" id="kinectfusion-limits">8. KinectFusion Limitations</h2>
+
+    <p>KinectFusion is a real-time 3D reconstruction system using ICP-based pose tracking integrated into a TSDF voxel grid. It has three major practical limitations:</p>
+
+    <table>
+      <tr><th>Limitation</th><th>Root Cause</th><th>Consequence</th></tr>
+      <tr><td><strong>Limited TSDF volume size</strong></td><td>GPU memory constraints</td><td>Cannot reconstruct environments larger than ~3&times;3&times;3 m</td></tr>
+      <tr><td><strong>ICP requires slow motion</strong></td><td>Point correspondences fail on large displacements</td><td>Camera must move slowly and smoothly</td></tr>
+      <tr><td><strong>Drift causes geometry melting</strong></td><td>No loop closure; ICP error accumulates</td><td>Surfaces blur and distort permanently</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — TSDF is lossy</div>
+      <div>Once depth data is integrated at a wrong position due to drift, the error is permanent. The weighted average bakes the error into the voxel values and individual frames cannot be recovered from the volume.</div>
+    </div>
+
+    <!-- ===== SECTION 9: ROLLING BUFFER ===== -->
+    <h2 class="section-heading" id="rolling-buffer">9. Limitation 1: TSDF Volume Size &mdash; Rolling Buffer</h2>
+
+    <h3 class="subsection-heading">The Problem</h3>
+    <p>A $512^3$ TSDF grid covers only ~3&times;3&times;3 meters and requires ~2 GB GPU memory. A $1024^3$ grid requires ~8.6 GB — often too large for real-time processing:</p>
+    <div class="math-block">$$\text{Memory} = N^3 \times B \text{ bytes}$$</div>
+    <p>where $N$ is the grid resolution per dimension and $B$ is bytes per voxel (typically 8&ndash;16 bytes).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod11/tsdf_volume_cube.png" alt="TSDF volume cube">
+      <div class="figure-caption">A TSDF volume is a fixed-size 3D cube (e.g., 512&times;512&times;512 voxels covering 3&times;3&times;3 m). GPU memory limits the cube size.</div>
+    </div>
+
+    <h3 class="subsection-heading">Rolling Buffer (Kintinuous)</h3>
+    <p>Kintinuous introduces a <strong>rolling buffer</strong> to allow unbounded spatial extent while keeping GPU memory constant:</p>
+    <ol>
+      <li>Maintain the TSDF volume at its original GPU size (e.g., $512^3$).</li>
+      <li>As the camera moves forward, <strong>offload</strong> the spatial region the camera has already passed (~30 cm offset) to CPU/system memory.</li>
+      <li><strong>Clear</strong> those voxels in the GPU volume.</li>
+      <li><strong>Create</strong> new empty TSDF space (~30 cm) in the camera's direction of movement.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod11/kintinuous_realtime_reconstruction.png" alt="Kintinuous real-time demo">
+      <div class="figure-caption">Kintinuous: real-time 3D reconstruction using a rolling buffer. GPU memory stays constant while the accumulated model can grow unboundedly.</div>
+    </div>
+
+    <!-- ===== SECTION 10: DRIFT ===== -->
+    <h2 class="section-heading" id="drift">10. Limitation 2: Drift and Geometry Melting</h2>
+
+    <h3 class="subsection-heading">What is Drift?</h3>
+    <p>Drift = <strong>accumulated erroneous pose estimation</strong> over time. In KinectFusion, each ICP iteration introduces a small pose error $\epsilon_i$. These accumulate:</p>
+    <div class="math-block">$$\text{Total drift after } N \text{ frames} \approx \sum_{i=1}^{N} \epsilon_i$$</div>
+
+    <h3 class="subsection-heading">Why Drift Causes Melting</h3>
+    <p>When the camera pose estimate is wrong:</p>
+    <ol>
+      <li>The new depth image is projected onto the TSDF volume at a slightly incorrect position.</li>
+      <li>The TSDF integration <strong>averages</strong> the new (misaligned) measurements with existing (correct) ones.</li>
+      <li>The signed distance field contains contradictory measurements at the zero-crossing.</li>
+      <li>The surface becomes <strong>blurred, doubled, or distorted</strong> — this is called "melting."</li>
+    </ol>
+    <p>Recovery is nearly impossible: TSDF is lossy — the weighted average permanently corrupts voxel values. As more frames are integrated with accumulating drift, the corrupted model also degrades future ICP tracking — a vicious cycle.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod11/kinectfusion_drift_visualization.png" alt="KinectFusion drift visualization">
+      <div class="figure-caption">Drift in KinectFusion: reconstruction becomes distorted as ICP pose errors accumulate. Visible doubling and blurring of surfaces ("melting") appear after short camera movements.</div>
+    </div>
+
+    <!-- ===== SECTION 11: CHAINED TSDF ===== -->
+    <h2 class="section-heading" id="chained-tsdf">11. Solution A: Chained TSDF Boxes</h2>
+
+    <p>Instead of one continuous TSDF volume for the entire session, create a <strong>chain of separate TSDF boxes</strong>, each covering a short time window (~10 seconds). Within each box, drift is minimal. After capture, all boxes are combined into one global model.</p>
+
+    <table>
+      <tr><th>Aspect</th><th>Detail</th></tr>
+      <tr><td>Local drift</td><td>Minimal — each box has short accumulation time</td></tr>
+      <tr><td>Global drift</td><td><strong>Not corrected</strong> — boxes themselves may be misaligned</td></tr>
+      <tr><td>Loop closure</td><td>Not possible — boxes are independent during capture</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod11/chained_tsdf_pipeline_cpu_gpu.png" alt="Chained TSDF CPU/GPU pipeline">
+      <div class="figure-caption">Chained TSDF pipeline: CPU manages RGB-D data provider and box threads; GPU handles bilateral filtering, vertex/normal computation, ICP, TSDF generation, raycasting, and free registration between boxes.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod11/chained_boxes_global_model.png" alt="Chained boxes merged into global model">
+      <div class="figure-caption">Chained TSDF boxes merged into a global model: each box is a clean local reconstruction combined into a room-scale result.</div>
+    </div>
+
+    <!-- ===== SECTION 12: PLANE CORRECTION ===== -->
+    <h2 class="section-heading" id="plane-correction">12. Solution B: Plane-Based Drift Correction</h2>
+
+    <h3 class="subsection-heading">Method</h3>
+    <ol>
+      <li>From every depth <strong>keyframe</strong> (~every 30 frames), detect large planar surfaces: walls, floor, ceiling, large furniture.</li>
+      <li><strong>Match</strong> these planes keyframe-to-keyframe using plane parameters (normal direction $\mathbf{n}$, distance $d$).</li>
+      <li>With <strong>3 matched non-parallel plane pairs</strong>, correct all 6 DoF of pose error: translation $(T_x, T_y, T_z)$ and rotation $(R_x, R_y, R_z)$.</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Plane Equation</div>
+      <div>$$\mathbf{n} \cdot \mathbf{p} + d = 0, \qquad \mathbf{n} = (n_x, n_y, n_z), \quad \|\mathbf{n}\| = 1$$</div>
+    </div>
+
+    <h3 class="subsection-heading">Why It Resembles Loop Closure &mdash; but Better</h3>
+    <p>Loop closure requires the camera to physically revisit a location. Plane-based correction uses <strong>persistent structural features</strong> (walls, floors) visible from many viewpoints — drift can be corrected at every keyframe, far more frequently than loop closure opportunities arise.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod11/plane_detection_loop_closure.png" alt="Plane-based drift correction">
+      <div class="figure-caption">Plane-based drift correction: reconstructed apartment colored by surface orientation (yellow = horizontal, blue = vertical). Camera trajectory overlaid in cyan.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod11/full_architectural_pipeline.png" alt="Full architectural pipeline">
+      <div class="figure-caption">Complete 3D sensing and reconstruction pipeline: multi-modal data flows from raw sensor capture through format unification, coordinate alignment, and into a final fused 3D model.</div>
+    </div>
+
+    <!-- ===== SECTION 13: SVD ===== -->
+    <h2 class="section-heading" id="svd">13. SVD-Based Pose Estimation</h2>
+
+    <p>Given $N$ pairs of corresponding 3D points $\{(\mathbf{p}_i, \mathbf{q}_i)\}$, find the rigid transformation (rotation $R$ and translation $\mathbf{t}$) that aligns source points to target points:</p>
+    <div class="math-block">$$E(R, \mathbf{t}) = \sum_{i=1}^{N} \| \mathbf{q}_i - (R \cdot \mathbf{p}_i + \mathbf{t}) \|^2$$</div>
+
+    <div id="svd-walkthrough" class="interactive-container" data-title="Walkthrough — SVD Pose Estimation"></div>
+
+    <div class="definition-box">
+      <div class="box-label">SVD Registration Summary</div>
+      <div>
+        <p>Centroids: $\bar{\mathbf{p}} = \frac{1}{N}\sum \mathbf{p}_i$, $\quad \bar{\mathbf{q}} = \frac{1}{N}\sum \mathbf{q}_i$</p>
+        <p>Cross-covariance: $H = \sum_{i=1}^{N} (\mathbf{p}_i - \bar{\mathbf{p}})(\mathbf{q}_i - \bar{\mathbf{q}})^T$</p>
+        <p>SVD: $H = U \Sigma V^T$</p>
+        <p>Optimal rotation: $R = V U^T$ &nbsp; (if $\det(VU^T) = -1$, negate the column of $V$ for smallest singular value)</p>
+        <p>Translation: $\mathbf{t} = \bar{\mathbf{q}} - R \bar{\mathbf{p}}$</p>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod11/svd_decomposition_visualization.png" alt="SVD decomposition">
+      <div class="figure-caption">Geometric interpretation of SVD: matrix $M$ decomposed into rotation $V^*$ (aligns data to principal axes), scaling $\Sigma$, and rotation $U$ (maps to target space). $M = U \Sigma V^*$.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>Detail</th></tr>
+      <tr><td>Optimal</td><td>Minimizes sum of squared distances (least-squares optimal)</td></tr>
+      <tr><td>Closed-form</td><td>No iterative optimization needed</td></tr>
+      <tr><td>Requires</td><td>Known point correspondences; minimum 3 non-collinear pairs</td></tr>
+      <tr><td>Use in ICP</td><td>ICP iterates: find correspondences &rarr; compute SVD &rarr; apply transform &rarr; repeat</td></tr>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod11-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod10-ae.html">&larr; 10. Autoencoders</a>
+      <a href="mod12.html">12. Data Analysis &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod11');</script>
+<script>
+  initWalkthrough('svd-walkthrough', [
+    {
+      tab: '1. Centroids',
+      title: 'Step 1: Compute Centroids and Center the Points',
+      text: 'Given $N$ corresponding point pairs $\\{(p_i, q_i)\\}$, compute the centroid of each set: $\\bar{p} = (1/N) \\sum p_i$, $\\bar{q} = (1/N) \\sum q_i$. Then subtract centroids to center both sets: $p_i\' = p_i - \\bar{p}$, $q_i\' = q_i - \\bar{q}$.',
+      visual: '',
+      insight: 'Centering decouples rotation from translation. By working with centered points, we can first solve for $R$ (rotation), then recover $t$ (translation) afterward. This is a key algebraic trick.'
+    },
+    {
+      tab: '2. Matrix H',
+      title: 'Step 2: Compute the Cross-Covariance Matrix H',
+      text: 'Compute the $3 \\times 3$ cross-covariance matrix $H = \\sum_{i=1}^{N} p_i\' (q_i\')^T$. Each term is the outer product of a centered source point with a centered target point. $H$ encodes the correlation structure between the two point sets.',
+      visual: '',
+      insight: '$H$ captures how the source and target point sets co-vary. Its structure encodes the rotation needed to align them. Think of it as the "covariance" between the rotated and original coordinates.'
+    },
+    {
+      tab: '3. SVD',
+      title: 'Step 3: Singular Value Decomposition of H',
+      text: 'Decompose $H = U \\Sigma V^T$, where $U$ and $V$ are $3 \\times 3$ orthogonal matrices and $\\Sigma$ is diagonal with singular values $\\sigma_1 \\geq \\sigma_2 \\geq \\sigma_3 \\geq 0$. Geometrically: $V^*$ aligns data to principal axes, $\\Sigma$ scales each axis, $U$ maps to the target space.',
+      visual: '<div class="figure-container"><img src="figures/mod11/svd_decomposition_visualization.png" alt="SVD decomposition"><div class="figure-caption">SVD decomposition: M = U * Sigma * V*, visualized as three geometric operations on a point cloud.</div></div>',
+      insight: 'SVD is the key mathematical tool here. It finds the "best" factorization of $H$ into rotations and scaling. The product $V U^T$ extracts the pure rotation component, discarding the scaling.'
+    },
+    {
+      tab: '4. Rotation',
+      title: 'Step 4: Compute Optimal Rotation R',
+      text: 'The optimal rotation is $R = V U^T$. Special case: if $\\det(V U^T) = -1$, the result is a reflection rather than a rotation. Fix by negating the column of $V$ corresponding to the smallest singular value, then recompute $R = V\' U^T$.',
+      visual: '',
+      insight: 'The $\\det = -1$ case arises when the point sets are mirror images of each other or when the problem is degenerate. Detecting and fixing this is essential for a valid rotation matrix in $SO(3)$.'
+    },
+    {
+      tab: '5. Translation',
+      title: 'Step 5: Compute Translation Vector t',
+      text: 'The translation is $t = \\bar{q} - R \\bar{p}$. This ensures the centroids align after applying the rotation: $\\bar{q} = R \\bar{p} + t$. The full $4 \\times 4$ homogeneous transformation matrix is $T = \\begin{bmatrix} R & t \\\\ 0 & 1 \\end{bmatrix}$.',
+      visual: '',
+      insight: 'Since we centered the points first, the rotation $R$ was found without worrying about translation. Now we simply compute what translation places the rotated source centroid at the target centroid. Elegant and closed-form.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod11-flashcards', [
+    {
+      q: 'Describe the three-stage pipeline for fusing LiDAR and Kinect data.',
+      a: '<strong>Stage 1 (Format):</strong> Convert LiDAR point cloud to synthetic RGB-D views via 3D pyramid decomposition and raycasting; compute SIFT features on synthetic images.<br><strong>Stage 2 (Coordinates):</strong> Match SIFT features between Kinect frames and pyramid synthetic images; compute Kinect frame poses in the LiDAR master coordinate system.<br><strong>Stage 3 (Fusion):</strong> Merge both data sources into TSDF volume (weighted averaging) or into a filtered point cloud.'
+    },
+    {
+      q: 'What is the 3D pyramid decomposition method and why is it used?',
+      a: 'The LiDAR point cloud is decomposed into frustum-shaped <strong>3D pyramids</strong> that mimic the Kinect intrinsic parameters (FOV, focal length). Virtual cameras placed at pyramid apices perform raycasting to generate synthetic depth and RGB images. <strong>Purpose:</strong> converts 3D LiDAR data to 2.5D RGB-D format, enabling efficient 2D SIFT matching rather than expensive 3D registration.'
+    },
+    {
+      q: 'Derive the SVD-based method for finding optimal R and t from corresponding point pairs.',
+      a: '<strong>Step 1:</strong> Compute centroids $\\bar{\\mathbf{p}}, \\bar{\\mathbf{q}}$; center the points: $\\mathbf{p}\'_i = \\mathbf{p}_i - \\bar{\\mathbf{p}}$.<br><strong>Step 2:</strong> Build cross-covariance matrix $H = \\sum \\mathbf{p}\'_i (\\mathbf{q}\'_i)^T$.<br><strong>Step 3:</strong> SVD: $H = U \\Sigma V^T$.<br><strong>Step 4:</strong> $R = VU^T$ (fix det = -1 case).<br><strong>Step 5:</strong> $\\mathbf{t} = \\bar{\\mathbf{q}} - R\\bar{\\mathbf{p}}$.'
+    },
+    {
+      q: 'Why does drift cause "melting" in TSDF-based reconstruction? Why is recovery difficult?',
+      a: 'Drift means the estimated camera pose has accumulated error. New frames are projected at wrong voxel positions. The TSDF update rule <strong>averages</strong> the misaligned measurements with existing ones, causing the zero-crossing (surface) to shift, blur, or double. Recovery is difficult because TSDF is <strong>lossy</strong>: individual frames cannot be extracted, and the weighted average permanently corrupts voxels. Worse, a melted model also produces inaccurate ICP predictions, creating a vicious cycle.'
+    },
+    {
+      q: 'Explain the rolling buffer (Kintinuous) solution for TSDF volume size limits.',
+      a: 'The TSDF volume is kept at its original GPU size (e.g., $512^3$). As the camera moves forward, TSDF data of already-passed regions is <strong>offloaded</strong> to CPU memory and those voxels are cleared on GPU. New empty space is created in the camera\'s direction. The result: GPU memory stays constant while unboundedly large environments can be reconstructed.'
+    },
+    {
+      q: 'Compare chained TSDF boxes vs. plane-based drift correction.',
+      a: '<strong>Chained TSDF boxes:</strong> Re-initialize a new box every ~10 seconds; limits local drift within each box; does NOT correct global drift between boxes; no loop closure possible.<br><strong>Plane-based correction:</strong> Detects walls/floors in every keyframe; matches planes frame-to-frame; 3 matched planes correct all 6 DoF; acts like loop closure without needing to revisit a location; corrects drift much more frequently.'
+    },
+    {
+      q: 'How many matched plane pairs are needed for plane-based drift correction, and why?',
+      a: 'Three non-parallel matched plane pairs are sufficient. Each plane provides one constraint on translation (distance to plane) and contributes to rotation alignment (normals must match). Three non-parallel planes fully define a unique corner point and three orthogonal directions, providing the <strong>6 independent constraints</strong> needed to correct all 6 DoF (3 translation + 3 rotation).'
+    },
+    {
+      q: 'Calculate the GPU memory for a $1024^3$ TSDF grid storing float32 TSDF value and float32 weight per voxel.',
+      a: 'Each voxel: 4 bytes (TSDF) + 4 bytes (weight) = 8 bytes.<br>Total: $1024^3 \\times 8 = 1{,}073{,}741{,}824 \\times 8 \\approx 8.6$ GB.<br>This is the fundamental constraint forcing Kintinuous to use a rolling buffer — a $1024 \\times 1024 \\times 1024$ grid is too large for typical GPU memory.'
+    },
+    {
+      q: 'Compare TSDF fusion and point cloud fusion as the final unified 3D representation.',
+      a: '<table><tr><th>Criterion</th><th>TSDF</th><th>Point Cloud</th></tr><tr><td>Noise</td><td>Natural averaging</td><td>Requires filtering</td></tr><tr><td>Memory</td><td>Fixed $O(N^3)$</td><td>Scales with point count</td></tr><tr><td>Data recovery</td><td>Lossy</td><td>Lossless</td></tr><tr><td>Error recovery</td><td>Difficult</td><td>Easier</td></tr><tr><td>Best for</td><td>Dense room-scale</td><td>Large-scale sparse</td></tr></table>'
+    },
+    {
+      q: 'What are the three KinectFusion limitations and a solution for each?',
+      a: '<strong>1. Volume size:</strong> GPU memory limits TSDF to ~$3 \\times 3 \\times 3$ m. Solution: rolling buffer (Kintinuous).<br><strong>2. Slow motion requirement:</strong> ICP fails on large frame displacements. Solution: feature-based coarse alignment before ICP.<br><strong>3. Drift/melting:</strong> Accumulated ICP errors permanently corrupt TSDF. Solutions: chained TSDF boxes (limits local drift) or plane-based correction (corrects 6 DoF per keyframe).'
+    },
+    {
+      q: 'What is the TSDF sign convention and how is the surface extracted?',
+      a: '<strong>Positive</strong> TSDF value: voxel is in front of the surface (free space).<br><strong>Negative</strong> value: voxel is behind the surface (inside the object).<br><strong>Zero crossing</strong>: the actual surface location.<br>Surface is extracted as the zero-level set of the scalar field, typically via the <strong>Marching Cubes</strong> algorithm applied to the TSDF volume.'
+    },
+    {
+      q: 'What is the back-projection formula for converting a depth pixel to a 3D point?',
+      a: '$$\\mathbf{P}_{3D} = \\begin{bmatrix} (u - c_x) \\cdot d / f_x \\\\ (v - c_y) \\cdot d / f_y \\\\ d \\end{bmatrix}$$ where $(u,v)$ is pixel coordinate, $d$ is depth value, $(c_x, c_y)$ is the principal point, $(f_x, f_y)$ are focal lengths. This is the inverse of perspective projection.'
+    }
+  ]);
+</script>
+</body>
+</html>

@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>6. Object Detection — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">6. Object Detection</h1>
+    <p class="page-subtitle">R-CNN family, YOLO, SSD, anchor boxes, FPN, RetinaNet, focal loss, NMS, IoU, mAP</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#problem">1. Problem Definition</a>
+      <a href="#applications">2. Applications</a>
+      <a href="#challenges">3. Challenges</a>
+      <a href="#bbox-regression">4. Bounding Box Regression</a>
+      <a href="#two-stage">5. Two-Stage Detectors</a>
+      <a href="#single-stage">6. Single-Stage Detectors</a>
+      <a href="#anchors">7. Anchor Boxes</a>
+      <a href="#fpn">8. Feature Pyramid Network (FPN)</a>
+      <a href="#retinanet">9. RetinaNet and Focal Loss</a>
+      <a href="#nms">10. Non-Maximum Suppression</a>
+      <a href="#evaluation">11. Performance Evaluation</a>
+      <a href="#comparison">12. Detector Comparison</a>
+      <a class="toc-interactive" href="#rcnn-walkthrough">Interactive: R-CNN Family Evolution</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: PROBLEM DEFINITION ===== -->
+    <h2 class="section-heading" id="problem">1. Problem Definition</h2>
+
+    <p>Object detection is one of the core problems in computer vision. Given an input image, the aim is to <strong>detect and localize all objects of interest</strong> within that image, outputting a list of detections where each detection consists of:</p>
+    <ul>
+      <li>A <strong>class label</strong> (e.g., "dog", "car")</li>
+      <li>A <strong>bounding box</strong> defined by coordinates $(x, y, w, h)$ or $(x_1, y_1, x_2, y_2)$</li>
+      <li>A <strong>confidence score</strong> $P$ indicating certainty</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod6/classification_vs_detection.png" alt="Classification vs. object detection">
+      <div class="figure-caption">Image classification (left) assigns a single label to the whole image. Object detection (right) localizes multiple objects with bounding boxes, class labels, and confidence scores.</div>
+    </div>
+
+    <h3 class="subsection-heading">Two Families of Deep Learning Detectors</h3>
+    <table>
+      <tr><th>Family</th><th>Examples</th><th>Characteristics</th></tr>
+      <tr><td><strong>Two-stage</strong></td><td>R-CNN, Fast R-CNN, Faster R-CNN</td><td>First generate region proposals, then classify each. Higher accuracy, slower.</td></tr>
+      <tr><td><strong>Single-stage</strong></td><td>SSD, YOLO</td><td>Predict boxes and class scores in a single pass. Faster, sometimes slightly less accurate.</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Detection is always performed for a <strong>fixed set of target classes</strong> (e.g., 20 for PASCAL VOC, 80 for MS COCO). Everything outside these classes is treated as background. Like classifiers, detectors output a confidence score for each detection.</div>
+    </div>
+
+    <!-- ===== SECTION 2: APPLICATIONS ===== -->
+    <h2 class="section-heading" id="applications">2. Applications of Object Detection</h2>
+
+    <p>Object detectors can be used alone or combined with other techniques:</p>
+    <ul>
+      <li><strong>Self-driving cars:</strong> detecting pedestrians, vehicles, traffic signs, obstacles</li>
+      <li><strong>Object tracking:</strong> detecting objects in each frame, linking detections over time</li>
+      <li><strong>Face detection:</strong> for recognition pipelines, camera autofocus</li>
+      <li><strong>Medical imaging:</strong> detecting tumors, lesions, anomalies</li>
+      <li><strong>Activity recognition:</strong> detect person first, then classify action</li>
+      <li><strong>Manufacturing:</strong> quality inspection, defect detection on production lines</li>
+      <li><strong>OCR:</strong> detecting text regions before reading</li>
+      <li><strong>Counting:</strong> crowd analysis, retail analytics</li>
+    </ul>
+
+    <!-- ===== SECTION 3: CHALLENGES ===== -->
+    <h2 class="section-heading" id="challenges">3. Challenges in Object Detection</h2>
+
+    <table>
+      <tr><th>Challenge</th><th>Description</th></tr>
+      <tr><td><strong>Viewpoint variations</strong></td><td>The same object looks different when viewed from different angles</td></tr>
+      <tr><td><strong>Object deformation</strong></td><td>Non-rigid objects change shape (person sitting vs. standing)</td></tr>
+      <tr><td><strong>Occlusions</strong></td><td>Objects may be partially hidden; detector must still recognize them</td></tr>
+      <tr><td><strong>Varying illumination</strong></td><td>Changes in lighting alter object appearance</td></tr>
+      <tr><td><strong>Background clutter</strong></td><td>Complex backgrounds can confuse the detector</td></tr>
+      <tr><td><strong>Scale variations</strong></td><td>Objects appear at vastly different sizes (person far vs. near)</td></tr>
+      <tr><td><strong>Intra-class variation</strong></td><td>Objects within the same class look very different (dog breeds)</td></tr>
+      <tr><td><strong>Inter-class similarity</strong></td><td>Different classes can look similar (wolf vs. husky)</td></tr>
+    </table>
+
+    <!-- ===== SECTION 4: BBOX REGRESSION ===== -->
+    <h2 class="section-heading" id="bbox-regression">4. Object Localization and Bounding Box Regression</h2>
+
+    <h3 class="subsection-heading">Bounding Box Formats</h3>
+    <ul>
+      <li><strong>Corner coordinates:</strong> $(x_1, y_1, x_2, y_2)$ &mdash; top-left and bottom-right corners</li>
+      <li><strong>Center + size:</strong> $(x_c, y_c, w, h)$ &mdash; center point plus width and height</li>
+    </ul>
+
+    <h3 class="subsection-heading">Adding a Regression Head</h3>
+    <p>To predict bounding box coordinates, a CNN classifier is extended with <strong>4 regression outputs</strong> in addition to the class scores:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/classifier_and_bbox_regressor_combined.png" alt="Combined classifier and bounding box regressor">
+      <div class="figure-caption">Multi-task network: CNN backbone feeds into both a classification head (softmax, $C$ class scores) and a bounding box regression head (4 coordinate values).</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Bounding Box Regression Loss</div>
+      <div>The network predicts all four bounding box coordinates and minimizes the sum of squared errors against ground-truth coordinates:
+      $$L_{\text{bbox}} = \sum_{i \in \{x_1, y_1, x_2, y_2\}} (i_{\text{pred}} - i_{\text{GT}})^2$$
+      The overall multi-task loss combines classification and regression:
+      $$L = L_{\text{cls}} + \lambda \cdot L_{\text{reg}}$$</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/bbox_regression_training.png" alt="Bounding box regression training">
+      <div class="figure-caption">Bounding box regression training: the network predicts 4 coordinate values; L2 loss measures the difference from ground truth coordinates.</div>
+    </div>
+
+    <!-- ===== SECTION 5: TWO-STAGE ===== -->
+    <h2 class="section-heading" id="two-stage">5. Two-Stage Object Detectors</h2>
+
+    <p>Two-stage detectors split detection into two phases: (1) <strong>Region Proposal</strong> &mdash; generate candidate regions that might contain objects, then (2) <strong>Classification and Refinement</strong> &mdash; for each proposed region, classify the object and refine the bounding box.</p>
+
+    <div id="rcnn-walkthrough" class="interactive-container" data-title="Walkthrough — R-CNN Family Evolution"></div>
+
+    <h3 class="subsection-heading">5.1 R-CNN (2014)</h3>
+    <p>R-CNN (Girshick et al.) was the first successful deep learning object detector.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/rcnn_pipeline.png" alt="R-CNN pipeline">
+      <div class="figure-caption">R-CNN pipeline: (1) input image, (2) ~2000 region proposals via Selective Search, (3) CNN feature extraction per proposal, (4) SVM classification + bbox regression + NMS.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/rcnn_architecture.png" alt="R-CNN architecture">
+      <div class="figure-caption">R-CNN architecture: each proposal is independently warped to fixed size and passed through an ImageNet-pretrained CNN.</div>
+    </div>
+
+    <h3 class="subsection-heading">Selective Search</h3>
+    <p>Selective Search generates ~2000 region proposals per image:</p>
+    <ol>
+      <li>Over-segment the image based on pixel intensities (watershed).</li>
+      <li>Iteratively group adjacent segments by similarity (color, texture, size, shape).</li>
+      <li>At each iteration, add bounding boxes of merged segments to the proposal list.</li>
+      <li>This creates proposals from small to large in a bottom-up hierarchical approach.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod6/selective_search_region_merging.png" alt="Selective search region merging">
+      <div class="figure-caption">Selective search: initial over-segmentation is iteratively merged into larger regions, generating proposals at multiple scales.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">R-CNN training details</div>
+      <div class="collapsible-body">
+        <p>Training has three separate stages: (1) Fine-tune the CNN backbone (AlexNet/VGG) using proposals with IoU &ge; 0.5 as positives. (2) Train a linear SVM per class on the CNN features. (3) Train bounding box regressors. This multi-stage training is cumbersome. Speed: ~0.05 fps (20 seconds per image).</p>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">R-CNN bottleneck</div>
+      <div>Each of the ~2000 proposals must be independently forward-passed through the CNN. That is ~2000 CNN runs per image, making R-CNN extremely slow (~20 seconds/image, ~0.05 fps).</div>
+    </div>
+
+    <h3 class="subsection-heading">5.2 Fast R-CNN (2015)</h3>
+    <p>Fast R-CNN (Girshick) addresses the R-CNN speed bottleneck with one key insight: <strong>pass the whole image through the CNN once, then extract features per proposal from the shared feature map</strong>.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/fast_rcnn_architecture.png" alt="Fast R-CNN architecture">
+      <div class="figure-caption">Fast R-CNN: the full image passes through CNN once to produce a shared feature map. RoI Pooling extracts fixed-size features for each proposal from the shared map.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">RoI Pooling</div>
+      <div>For each proposal, map it onto the shared feature map, divide it into a fixed grid (e.g., $7 \times 7$), and max-pool within each grid cell. This produces a fixed-size feature vector regardless of the proposal's original size, which is required by the subsequent FC layers.</div>
+    </div>
+
+    <table>
+      <tr><th>Aspect</th><th>R-CNN</th><th>Fast R-CNN</th></tr>
+      <tr><td>CNN runs per image</td><td>~2000</td><td><strong>1</strong></td></tr>
+      <tr><td>Training</td><td>3-stage</td><td><strong>End-to-end (single stage)</strong></td></tr>
+      <tr><td>Classifier</td><td>Linear SVM</td><td><strong>Softmax (joint)</strong></td></tr>
+      <tr><td>Speed</td><td>~0.05 fps</td><td><strong>~0.5 fps (10x faster)</strong></td></tr>
+    </table>
+
+    <p><strong>Remaining bottleneck:</strong> Selective Search still runs on CPU and takes ~2 seconds per image, dominating total runtime.</p>
+
+    <h3 class="subsection-heading">5.3 Faster R-CNN (2015)</h3>
+    <p>Faster R-CNN (Ren et al.) eliminates the Selective Search bottleneck by introducing a learned <strong>Region Proposal Network (RPN)</strong> that shares the backbone feature maps with the detection head.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/faster_rcnn_overview.png" alt="Faster R-CNN overview">
+      <div class="figure-caption">Faster R-CNN: RPN generates proposals from shared feature maps, eliminating the CPU-bound Selective Search. RPN and detection head share the same backbone.</div>
+    </div>
+
+    <h3 class="subsection-heading">Region Proposal Network (RPN)</h3>
+    <ul>
+      <li>A fully convolutional network sliding a $3 \times 3$ window over the feature map.</li>
+      <li>At each position, it predicts $k$ anchors of different shapes/sizes (typically $k=9$: 3 scales &times; 3 aspect ratios).</li>
+      <li>For each anchor: <strong>2 objectness scores</strong> (object vs. background) and <strong>4 bounding box offsets</strong>.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod6/rpn_anchor_boxes.png" alt="RPN anchor boxes">
+      <div class="figure-caption">RPN sliding window: at each position on the feature map, the RPN outputs $2k$ objectness scores and $4k$ bounding box coordinates for $k$ anchors of different shapes.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Faster R-CNN RPN Multi-Task Loss</div>
+      <div>$$L(\{p_i\}, \{t_i\}) = \frac{1}{N_{\text{cls}}} \sum_i L_{\text{cls}}(p_i, p_i^*) + \lambda \frac{1}{N_{\text{reg}}} \sum_i p_i^* \cdot L_{\text{reg}}(t_i, t_i^*)$$
+      $p_i$ = predicted objectness probability, $p_i^*$ = ground truth label (1 if positive anchor, 0 if negative),
+      $t_i$ = predicted box offsets, $t_i^*$ = ground truth box targets,
+      $L_{\text{cls}}$ = log loss (classification), $L_{\text{reg}}$ = smooth L1 loss (only for positive anchors via $p_i^*$ multiplier),
+      $\lambda = 10$ balances the two losses.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/faster_rcnn_full_pipeline.png" alt="Faster R-CNN full pipeline">
+      <div class="figure-caption">Full Faster R-CNN pipeline: CNN backbone &rarr; RPN (proposals) &rarr; RoI Pooling on shared feature map &rarr; FC layers &rarr; classification + bbox regression heads.</div>
+    </div>
+
+    <p>Speed: <strong>~7 fps</strong> (140 ms/image) &mdash; near real-time and ~140x faster than the original R-CNN.</p>
+
+    <h3 class="subsection-heading">5.4 Mask R-CNN (2017)</h3>
+    <p>Mask R-CNN (He et al.) extends Faster R-CNN to simultaneously perform <strong>instance segmentation</strong> in addition to object detection.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/mask_rcnn_architecture.png" alt="Mask R-CNN architecture">
+      <div class="figure-caption">Mask R-CNN: extends Faster R-CNN with RoI Align (replaces RoI Pooling) and an additional mask prediction branch that outputs per-class binary masks.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">RoI Pooling vs. RoI Align</div>
+      <div><strong>RoI Pooling</strong> quantizes (rounds) floating-point proposal coordinates to integer feature map positions, causing spatial misalignment.<br>
+      <strong>RoI Align</strong> uses bilinear interpolation to compute exact values at fractional positions, preserving precise spatial alignment. Improves detection mAP by ~3 points even without segmentation.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/roi_pooling_quantization.png" alt="RoI Pooling quantization problem">
+      <div class="figure-caption">RoI Pooling: snapping floating-point coordinates to integer grid positions causes spatial misalignment, which is tolerable for classification but harmful for pixel-level segmentation.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/roi_align_bilinear_interpolation.png" alt="RoI Align with bilinear interpolation">
+      <div class="figure-caption">RoI Align: bilinear interpolation computes exact feature values at fractional positions, preserving precise spatial alignment needed for the mask branch.</div>
+    </div>
+
+    <p>Mask R-CNN outputs three predictions per RoI: class label, refined bounding box, and a binary segmentation mask ($14 \times 14 \times C$ for $C$ classes).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/mask_rcnn_head_detail.png" alt="Mask R-CNN head detail">
+      <div class="figure-caption">Mask R-CNN head: RoI features branch into (1) classification + box regression head via average pooling, and (2) mask head via upsampling with a 1&times;1 conv producing one mask per class.</div>
+    </div>
+
+    <h3 class="subsection-heading">5.5 R-FCN (2016)</h3>
+    <p>R-FCN addresses the per-RoI FC layer computation bottleneck of Faster R-CNN using <strong>position-sensitive RoI Pooling</strong>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Position-Sensitive Score Maps</div>
+      <div>The last conv layer produces $k^2 \times (C+1)$ channels: for $k=3$, $C=10$, that is $9 \times 11 = 99$ channels. Each group of 9 channels per class learns to detect a specific <strong>spatial position</strong> (top-left, top-center, ..., bottom-right) of that object class.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/rfcn_position_sensitive_roi_pooling.png" alt="R-FCN position-sensitive RoI pooling">
+      <div class="figure-caption">R-FCN: 90 position-sensitive score maps (10 classes &times; 9 spatial positions) encode where object parts appear. For each RoI, each grid cell pools from its corresponding position-specific map.</div>
+    </div>
+
+    <p>Advantage: all heavy computation is shared in conv layers. Per-RoI computation is just lightweight pooling and voting — making R-FCN faster than Faster R-CNN for large numbers of proposals.</p>
+
+    <!-- ===== SECTION 6: SINGLE-STAGE ===== -->
+    <h2 class="section-heading" id="single-stage">6. Single-Stage Object Detectors</h2>
+
+    <p>Single-stage detectors skip the separate region proposal step entirely. They predict bounding boxes and class scores <strong>directly from feature maps in a single forward pass</strong>, enabling real-time detection.</p>
+
+    <h3 class="subsection-heading">6.1 SSD (Single Shot MultiBox Detector, 2016)</h3>
+    <p>SSD (Liu et al.) uses <strong>multi-scale feature maps</strong> and predefined <strong>anchor boxes</strong> to detect objects at different sizes in a single forward pass.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/ssd_multiscale_concept.png" alt="SSD multi-scale concept">
+      <div class="figure-caption">SSD multi-scale concept: smaller feature maps (deeper layers, larger receptive field) detect larger objects; larger feature maps (earlier layers, smaller receptive field) detect smaller objects.</div>
+    </div>
+
+    <p><strong>Architecture:</strong></p>
+    <ol>
+      <li><strong>Base network:</strong> VGG-16 (up to conv5_3), FC layers replaced by extra conv layers.</li>
+      <li><strong>6 prediction layers</strong> at different spatial resolutions (multi-scale).</li>
+      <li>At each scale, for every spatial position, two $3 \times 3$ conv layers predict class scores and box offsets for each anchor.</li>
+      <li>All predictions across scales go through NMS to produce final detections.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod6/ssd_architecture.png" alt="SSD architecture">
+      <div class="figure-caption">SSD architecture: VGG-16 base network followed by extra feature layers, with predictions made at 6 different spatial scales.</div>
+    </div>
+
+    <p>Performance: <strong>74.3 mAP on VOC2007</strong> at <strong>59 FPS</strong> (17 ms/image).</p>
+
+    <h3 class="subsection-heading">6.2 YOLO (You Only Look Once, 2016)</h3>
+    <p>YOLO (Redmon et al.) frames object detection as a <strong>single regression problem</strong>: directly predict bounding boxes and class probabilities from the full image in one evaluation.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/yolo_grid_diagram.png" alt="YOLO grid diagram">
+      <div class="figure-caption">YOLO divides the image into an $S \times S$ grid. Each cell predicts $B$ bounding boxes with confidence scores and $C$ class probabilities.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">YOLO Output Structure</div>
+      <div>
+        Grid: $S = 7$, boxes: $B = 2$, classes: $C = 20$ (PASCAL VOC).<br>
+        Per cell: $B \times 4$ box coordinates + $B$ confidence scores + $C$ class probabilities = $2 \times 4 + 2 + 20 = \mathbf{30}$ values.<br>
+        Total output: $7 \times 7 \times 30 = \mathbf{1470}$ values.<br>
+        Confidence = $P(\text{Object}) \times \text{IoU}(\text{pred}, \text{GT})$.
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/yolo_architecture.png" alt="YOLO full architecture">
+      <div class="figure-caption">YOLO architecture: 24 conv layers (GoogLeNet-inspired, alternating 1&times;1 and 3&times;3) progressively reduce spatial resolution, followed by 2 FC layers producing the $7 \times 7 \times 30$ output tensor.</div>
+    </div>
+
+    <table>
+      <tr><th>Aspect</th><th>SSD</th><th>YOLO v1</th></tr>
+      <tr><td>Feature maps used</td><td>6 scales</td><td>Single final map</td></tr>
+      <tr><td>Output head</td><td>Conv layers at each scale</td><td>FC layers on single map</td></tr>
+      <tr><td>Multi-scale handling</td><td>Excellent (natural)</td><td>Limited (coarse 7&times;7 grid)</td></tr>
+      <tr><td>mAP (VOC2007)</td><td>74.3</td><td>63.4&ndash;69.0</td></tr>
+      <tr><td>Speed</td><td>59 fps</td><td>45 fps</td></tr>
+    </table>
+
+    <!-- ===== SECTION 7: ANCHORS ===== -->
+    <h2 class="section-heading" id="anchors">7. Anchor Boxes</h2>
+
+    <p>Anchor boxes (also called "priors" or "default boxes") are a fundamental concept used in both two-stage (Faster R-CNN) and single-stage (SSD, RetinaNet) detectors.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Anchor Boxes</div>
+      <div>Predefined bounding boxes of <strong>fixed shapes and sizes</strong> placed at every spatial position on a feature map. The network predicts <strong>offsets</strong> relative to each anchor — not absolute coordinates from scratch.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/anchor_boxes_illustration.png" alt="Anchor boxes illustration">
+      <div class="figure-caption">Anchor boxes: predefined boxes of various aspect ratios and scales are tiled across the image at each spatial position. The detector predicts offsets to transform these templates into accurate bounding boxes.</div>
+    </div>
+
+    <p><strong>Offset parameterization:</strong></p>
+    <ul>
+      <li>$x_{\text{pred}} = x_{\text{anchor}} + \Delta x$</li>
+      <li>$y_{\text{pred}} = y_{\text{anchor}} + \Delta y$</li>
+      <li>$w_{\text{pred}} = w_{\text{anchor}} \cdot e^{\Delta w}$</li>
+      <li>$h_{\text{pred}} = h_{\text{anchor}} \cdot e^{\Delta h}$</li>
+    </ul>
+
+    <p><strong>Typical configurations:</strong></p>
+    <ul>
+      <li><strong>Faster R-CNN RPN:</strong> 3 scales &times; 3 aspect ratios = <strong>9 anchors</strong> per position.</li>
+      <li><strong>SSD:</strong> 4 or 6 anchors per position across 6 feature map scales.</li>
+    </ul>
+
+    <!-- ===== SECTION 8: FPN ===== -->
+    <h2 class="section-heading" id="fpn">8. Feature Pyramid Network (FPN)</h2>
+
+    <p>CNNs naturally produce feature maps at multiple scales. Deeper layers have <strong>smaller spatial resolution</strong> but <strong>richer semantics</strong>; earlier layers have <strong>higher spatial resolution</strong> but <strong>weaker semantics</strong>. FPN combines the best of both.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod6/fpn_approach_comparison.png" alt="FPN approach comparison">
+      <div class="figure-caption">Comparison of feature pyramid approaches: (a) image pyramid — accurate but extremely slow; (b) single feature map — fast but misses small objects; (c) pyramidal hierarchy — inconsistent semantic strength; (d) FPN — best of both worlds.</div>
+    </div>
+
+    <h3 class="subsection-heading">FPN Architecture</h3>
+    <ol>
+      <li><strong>Bottom-up pathway:</strong> Standard CNN forward pass. Feature maps at each stage: $C_2, C_3, C_4, C_5$ (high to low resolution).</li>
+      <li><strong>Top-down pathway:</strong> Starting from deepest $C_5$: 2&times; upsample &rarr; element-wise add with lateral $1 \times 1$ conv of corresponding $C_k$ &rarr; produces $P_2, P_3, P_4, P_5$.</li>
+      <li><strong>Predictions</strong> are made independently at each pyramid level $P_k$.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod6/fpn_architecture_detail.png" alt="FPN architecture detail">
+      <div class="figure-caption">FPN detail: bottom-up encoder (left) with top-down decoder using 2&times; upsampling and 1&times;1 lateral connections. Element-wise addition merges semantic richness (from deep) with spatial precision (from shallow).</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">FPN Pyramid Level Selection</div>
+      <div>For a given RoI of width $w$ and height $h$:
+      $$k = \lfloor k_0 + \log_2(\sqrt{wh} / 224) \rfloor$$
+      where $k_0 = 4$ (reference level for a $224 \times 224$ RoI). Small objects use high-resolution levels ($P_2, P_3$); large objects use low-resolution levels ($P_4, P_5$).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/fpn_with_rpn.png" alt="FPN with RPN">
+      <div class="figure-caption">FPN with Faster R-CNN: RPN is run on all pyramid levels $P_2, \ldots, P_5$. Only one anchor scale is needed per level since different levels naturally handle different object sizes.</div>
+    </div>
+
+    <!-- ===== SECTION 9: RETINANET ===== -->
+    <h2 class="section-heading" id="retinanet">9. RetinaNet and Focal Loss</h2>
+
+    <p>RetinaNet (Lin et al., 2017) is a single-stage detector that matches or exceeds two-stage detector accuracy through two innovations: an FPN-based architecture and <strong>focal loss</strong>.</p>
+
+    <h3 class="subsection-heading">The Class Imbalance Problem</h3>
+    <p>Single-stage detectors evaluate <strong>10,000&ndash;100,000 candidate locations</strong> per image. The vast majority are background (easy negatives), creating severe <strong>class imbalance</strong> that causes easy examples to dominate training gradients, preventing the network from learning to detect hard examples.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Focal Loss</div>
+      <div>Standard cross-entropy:
+      $$CE(p_t) = -\log(p_t)$$
+      Focal loss adds a modulating factor $(1-p_t)^\gamma$:
+      $$FL(p_t) = -(1-p_t)^\gamma \cdot \log(p_t)$$
+      where $\gamma = 2$ in the RetinaNet paper. For well-classified examples ($p_t$ near 1), the factor is near 0, drastically reducing their loss contribution. For hard examples ($p_t$ near 0), the factor is near 1, keeping the loss unchanged.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/focal_loss_curves.png" alt="Focal loss curves">
+      <div class="figure-caption">Focal loss curves for different values of $\gamma$. As $\gamma$ increases, the contribution of well-classified easy examples is progressively down-weighted, allowing the network to focus on hard, misclassified examples.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Focal loss intuition</div>
+      <div>When $\gamma = 0$: focal loss = standard cross-entropy. As $\gamma$ increases, easy examples matter less. At $\gamma = 2$, a well-classified example with $p_t = 0.9$ has its loss reduced by $(1-0.9)^2 = 0.01$ compared to CE &mdash; 100&times; less contribution. Hard examples with $p_t = 0.1$ are unaffected.</div>
+    </div>
+
+    <h3 class="subsection-heading">RetinaNet Architecture</h3>
+    <p>FPN backbone + two shared subnets applied at every pyramid level:</p>
+    <ul>
+      <li><strong>Classification subnet:</strong> 4&times; $3 \times 3$ conv with ReLU &rarr; final $3 \times 3$ conv with depth $K \times A$ (classes &times; anchors). Parameters shared across pyramid levels.</li>
+      <li><strong>Box regression subnet:</strong> 4&times; $3 \times 3$ conv with ReLU &rarr; final $3 \times 3$ conv with depth $4A$. Class-agnostic. Parameters shared across pyramid levels.</li>
+    </ul>
+
+    <!-- ===== SECTION 10: NMS ===== -->
+    <h2 class="section-heading" id="nms">10. Non-Maximum Suppression (NMS)</h2>
+
+    <p>NMS is a post-processing algorithm used by virtually all object detectors to remove redundant overlapping detections of the same object.</p>
+
+    <div class="definition-box">
+      <div class="box-label">NMS Algorithm</div>
+      <div>
+        <ol>
+          <li>Sort all detections by confidence score (highest first).</li>
+          <li>Select the highest-confidence detection; add to the output list.</li>
+          <li>Compute IoU of this detection with all remaining detections.</li>
+          <li>Delete all detections whose IoU with the selected detection exceeds a threshold (e.g., 0.5).</li>
+          <li>Repeat from step 2 with the remaining detections.</li>
+        </ol>
+        NMS is applied independently for each class.
+      </div>
+    </div>
+
+    <p><strong>Key parameters:</strong></p>
+    <ul>
+      <li><strong>IoU threshold:</strong> Typical values 0.45&ndash;0.5. Lower = more aggressive suppression.</li>
+      <li><strong>Confidence threshold:</strong> Detections below minimum confidence are discarded before NMS.</li>
+    </ul>
+
+    <!-- ===== SECTION 11: EVALUATION ===== -->
+    <h2 class="section-heading" id="evaluation">11. Performance Evaluation</h2>
+
+    <h3 class="subsection-heading">11.1 Intersection over Union (IoU)</h3>
+
+    <div class="definition-box">
+      <div class="box-label">IoU (Jaccard Index)</div>
+      <div>$$\text{IoU} = \frac{\text{Area of Intersection}}{\text{Area of Union}} = \frac{|B_{\text{pred}} \cap B_{\text{GT}}|}{|B_{\text{pred}} \cup B_{\text{GT}}|}$$
+      Range: $[0, 1]$. IoU = 1 means perfect overlap. IoU &ge; 0.5 is commonly used as the threshold for a True Positive.</div>
+    </div>
+
+    <p><strong>Example:</strong> Predicted box area = 100, GT box area = 150, intersection = 80. Union = 100 + 150 &minus; 80 = 170. IoU = 80/170 &asymp; 0.47. Since 0.47 &lt; 0.5, this would be a False Positive at IoU threshold 0.5.</p>
+
+    <p>IoU is used in three contexts:</p>
+    <ul>
+      <li><strong>Training:</strong> Assign ground truth labels to anchors/proposals (anchors with IoU &ge; 0.5 are positives).</li>
+      <li><strong>NMS:</strong> Decide which overlapping detections to suppress.</li>
+      <li><strong>Evaluation:</strong> Decide whether a predicted box matches a GT box for computing precision/recall.</li>
+    </ul>
+
+    <h3 class="subsection-heading">11.2 Mean Average Precision (mAP)</h3>
+
+    <p>mAP is the most widely used metric for evaluating object detectors, based on the <strong>Area Under the Precision-Recall Curve</strong>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">mAP Computation</div>
+      <div>For each class independently:
+        <ol>
+          <li>Sort all detections by confidence (highest first).</li>
+          <li>For each detection: check if it matches any remaining GT box with IoU &gt; threshold. If yes: True Positive (TP), mark that GT used. If no: False Positive (FP).</li>
+          <li>After each detection: Precision = TP/(TP+FP), Recall = TP/total GT.</li>
+          <li>Average Precision (AP) = area under the Precision-Recall curve.</li>
+        </ol>
+        $\text{mAP} = \frac{1}{C} \sum_{c=1}^{C} \text{AP}_c$
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Worked Example</h3>
+    <p>5 detections for class "cat" (sorted by confidence: 0.98, 0.96, 0.90, 0.30, 0.10), 4 ground truths:</p>
+    <table>
+      <tr><th>Detection (conf.)</th><th>Match?</th><th>Cumul. TP</th><th>Cumul. FP</th><th>Precision</th><th>Recall</th></tr>
+      <tr><td>0.98</td><td>Yes</td><td>1</td><td>0</td><td>1/1 = 1.00</td><td>1/4 = 0.25</td></tr>
+      <tr><td>0.96</td><td>No</td><td>1</td><td>1</td><td>1/2 = 0.50</td><td>1/4 = 0.25</td></tr>
+      <tr><td>0.90</td><td>Yes</td><td>2</td><td>1</td><td>2/3 = 0.67</td><td>2/4 = 0.50</td></tr>
+      <tr><td>0.30</td><td>Yes</td><td>3</td><td>1</td><td>3/4 = 0.75</td><td>3/4 = 0.75</td></tr>
+      <tr><td>0.10</td><td>Yes</td><td>4</td><td>1</td><td>4/5 = 0.80</td><td>4/4 = 1.00</td></tr>
+    </table>
+
+    <p>AP for "cat" = area under the curve formed by these (Recall, Precision) points.</p>
+
+    <table>
+      <tr><th>Metric</th><th>IoU Threshold</th><th>Used In</th><th>Difficulty</th></tr>
+      <tr><td>mAP@0.5</td><td>0.5</td><td>PASCAL VOC</td><td>Standard</td></tr>
+      <tr><td>mAP@0.75</td><td>0.75</td><td>COCO</td><td>Stricter</td></tr>
+      <tr><td>mAP@[0.5:0.95]</td><td>0.5 to 0.95 step 0.05</td><td>MS COCO</td><td>Most challenging</td></tr>
+    </table>
+
+    <!-- ===== SECTION 12: COMPARISON ===== -->
+    <h2 class="section-heading" id="comparison">12. Detector Comparison</h2>
+
+    <table>
+      <tr><th>Method</th><th>Type</th><th>VOC2007 mAP</th><th>Speed (FPS)</th><th>Speed (ms/img)</th></tr>
+      <tr><td>DPM v5</td><td>Traditional</td><td>33.7</td><td>0.07</td><td>14,000</td></tr>
+      <tr><td><strong>R-CNN</strong></td><td>Two-stage</td><td>66.0</td><td>0.05</td><td>20,000</td></tr>
+      <tr><td><strong>Fast R-CNN</strong></td><td>Two-stage</td><td>70.0</td><td>0.5</td><td>2,000</td></tr>
+      <tr><td><strong>Faster R-CNN</strong></td><td>Two-stage</td><td>73.2</td><td>7</td><td>140</td></tr>
+      <tr><td><strong>YOLO</strong></td><td>Single-stage</td><td>63.4&ndash;69.0</td><td>45</td><td>22</td></tr>
+      <tr><td><strong>SSD</strong></td><td>Single-stage</td><td>74.3</td><td>59</td><td>17</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod6/detector_comparison_scatter.png" alt="Detector performance comparison scatter">
+      <div class="figure-caption">mAP vs. GPU time scatter plot for various detectors and backbones. The accuracy-speed trade-off is clear: two-stage detectors (upper-left) are slower but accurate; single-stage (lower-right) are faster.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod6/detector_performance_timeline.png" alt="Detector performance timeline">
+      <div class="figure-caption">COCO test-dev mAP progression 2015&ndash;2024. Continuous improvement from Fast R-CNN (~20 mAP) to modern transformer-based models (~63&ndash;65 mAP).</div>
+    </div>
+
+    <h3 class="subsection-heading">Two-Stage vs. Single-Stage Trade-offs</h3>
+    <table>
+      <tr><th>Aspect</th><th>Two-Stage</th><th>Single-Stage</th></tr>
+      <tr><td>Speed</td><td>Slower (140+ ms)</td><td>Faster (17&ndash;22 ms, real-time)</td></tr>
+      <tr><td>Accuracy</td><td>Generally higher</td><td>Historically lower, now competitive</td></tr>
+      <tr><td>Pipeline complexity</td><td>Multi-component</td><td>Simpler, single pass</td></tr>
+      <tr><td>Class imbalance</td><td>Handled by RPN filtering</td><td>Major issue (addressed by focal loss)</td></tr>
+      <tr><td>Use case</td><td>When accuracy is paramount</td><td>When speed is critical (real-time)</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Supplementary: Sliding Window Approach (pre-deep-learning)</div>
+      <div class="collapsible-body">
+        <p>Before deep learning detectors, a common approach was to slide a fixed-size window across the image and classify each patch. Problems: (1) fixed window size forces use of image pyramids for scale variation; (2) localization ambiguity requires NMS; (3) enormous number of windows makes it computationally prohibitive. These problems motivated Selective Search (for R-CNN) and eventually end-to-end learned detectors.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Supplementary: Watershed Over-Segmentation (used in Selective Search)</div>
+      <div class="collapsible-body">
+        <p>Watershed produces the initial over-segmentation used by Selective Search in R-CNN/Fast R-CNN: (1) compute gradient image; (2) find local minima as region seeds; (3) simulate "flooding" from each minimum; (4) pixels at watershed boundaries (touching two+ regions) become boundaries. Camera noise produces many local minima, causing over-segmentation — which is desired, as Selective Search then merges these small segments bottom-up.</p>
+      </div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod6-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod5-1.html">&larr; 5.1 CNN Architectures</a>
+      <a href="mod7.html">7. Camera Model &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod6');</script>
+<script>
+  initWalkthrough('rcnn-walkthrough', [
+    {
+      tab: 'R-CNN',
+      title: 'R-CNN (2014) — First Deep Learning Detector',
+      text: 'Pipeline: (1) Generate ~2000 region proposals with Selective Search. (2) Warp each proposal to fixed size ($227 \\times 227$). (3) Pass each through AlexNet independently &rarr; 4096-D feature vector. (4) Classify with per-class linear SVMs + bounding box regression + NMS.\n\nBottleneck: CNN runs ~2000 times per image. Speed: ~0.05 fps (20 seconds/image). Training is 3-stage (CNN fine-tuning, SVM training, bbox regression training) — cumbersome.',
+      visual: '<div class="figure-container"><img src="figures/mod6/rcnn_pipeline.png" alt="R-CNN pipeline"><div class="figure-caption">R-CNN pipeline: each of the ~2000 proposals is independently warped and forward-passed through the CNN, making it extremely slow.</div></div>',
+      insight: 'The key insight that unlocked detection with deep learning: use CNN features extracted from proposed regions. The limitation was running the CNN 2000 times per image — this was the bottleneck that the next iteration (Fast R-CNN) targeted.'
+    },
+    {
+      tab: 'Fast R-CNN',
+      title: 'Fast R-CNN (2015) — One CNN per Image',
+      text: 'Key change: pass the FULL IMAGE through the CNN once to get a shared feature map. Then, for each proposal (still from Selective Search), use RoI Pooling to extract a fixed $7 \\times 7$ feature vector from the shared map.\n\nRoI Pooling: divide the proposal\\'s feature map region into a $7 \\times 7$ grid, max-pool in each cell. Produces fixed-size output regardless of proposal size.\n\nAlso: End-to-end training (classification + bbox regression jointly), softmax replaces SVM. Speed: ~0.5 fps ($10 \\times$ faster than R-CNN).\n\nRemaining bottleneck: Selective Search on CPU takes ~2 seconds, dominating total runtime.',
+      visual: '<div class="figure-container"><img src="figures/mod6/fast_rcnn_architecture.png" alt="Fast R-CNN"><div class="figure-caption">Fast R-CNN: one CNN forward pass produces a shared feature map. RoI Pooling extracts per-proposal features without re-running the CNN.</div></div>',
+      insight: 'The $10 \\times$ speedup came entirely from sharing the CNN computation across proposals. The CNN was no longer the bottleneck — but Selective Search on CPU became the new bottleneck, taking as long as the entire rest of the pipeline.'
+    },
+    {
+      tab: 'Faster R-CNN',
+      title: 'Faster R-CNN (2015) — Learned Region Proposals',
+      text: 'Key change: replace Selective Search with a learned Region Proposal Network (RPN). The RPN shares the same convolutional backbone as the detection head.\n\nRPN: slides a $3 \\times 3$ conv over the feature map. At each position, predicts 9 anchors ($3 \\text{ scales} \\times 3 \\text{ aspect ratios}$). For each anchor: 2 objectness scores (object/background) + 4 box offsets. Top proposals go through NMS, then RoI Pooling.\n\nBoth RPN and detection head share feature maps — this is the efficiency gain.\n\nSpeed: ~7 fps (140 ms/image) — ~$140 \\times$ faster than R-CNN.',
+      visual: '<div class="figure-container"><img src="figures/mod6/faster_rcnn_full_pipeline.png" alt="Faster R-CNN pipeline"><div class="figure-caption">Faster R-CNN: backbone \u2192 RPN (learned proposals) \u2192 RoI Pooling \u2192 classification + bbox regression heads. All computation is shared.</div></div>',
+      insight: 'Faster R-CNN = Fast R-CNN + RPN. The RPN is the key innovation: by sharing the backbone, proposals are computed almost for free. The $140 \\times$ speedup from R-CNN (20 sec) to Faster R-CNN (140 ms) came from (1) sharing CNN computation and (2) replacing Selective Search with the learned RPN.'
+    },
+    {
+      tab: 'Mask R-CNN',
+      title: 'Mask R-CNN (2017) — Adding Instance Segmentation',
+      text: 'Extends Faster R-CNN with: (1) RoI Align instead of RoI Pooling — uses bilinear interpolation instead of quantization to preserve precise spatial alignment. (2) Additional mask head: produces a $14 \\times 14 \\times C$ binary mask per RoI (one mask per class for $C$ classes).\n\nThe three output heads are decoupled: classification head predicts the class, box head refines coordinates, mask head predicts the segmentation mask.\n\nRoI Align improves detection mAP by ~3 points even without the mask branch.',
+      visual: '<div class="figure-container"><img src="figures/mod6/mask_rcnn_architecture.png" alt="Mask R-CNN"><div class="figure-caption">Mask R-CNN: extends Faster R-CNN with RoI Align and a parallel mask prediction branch for instance-level segmentation.</div></div>',
+      insight: 'RoI Pooling\\'s quantization (rounding coordinates to integers) causes spatial misalignment that is tolerable for classification but fatal for pixel-level masks. RoI Align\\'s bilinear interpolation computes exact feature values at fractional positions, preserving the spatial precision needed for segmentation.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod6-flashcards', [
+    {
+      q: 'What is the difference between image classification and object detection? What does a detector output that a classifier does not?',
+      a: 'Image classification assigns a <strong>single label</strong> to the entire image. Object detection identifies multiple objects, outputting for each: (1) a <strong>class label</strong>, (2) a <strong>bounding box</strong> (4 coordinates), and (3) a <strong>confidence score</strong>. The key additions are bounding box localization and the ability to detect multiple objects of different classes simultaneously.'
+    },
+    {
+      q: 'Trace the bottleneck removed at each step: R-CNN &rarr; Fast R-CNN &rarr; Faster R-CNN',
+      a: '<strong>R-CNN bottleneck:</strong> CNN runs ~$2000 \\times$ per image (once per proposal). <strong>Fast R-CNN removes it</strong> by running CNN once on the full image and using RoI Pooling on a shared feature map. New bottleneck: Selective Search (~2 sec on CPU). <strong>Faster R-CNN removes it</strong> by replacing Selective Search with a learned RPN sharing the backbone. Result: ~20 sec/img &rarr; 2 sec/img &rarr; 140 ms/img.'
+    },
+    {
+      q: 'What is RoI Pooling and why is it needed in Fast R-CNN?',
+      a: 'RoI Pooling extracts a fixed-size feature vector from the shared feature map for each region proposal. It divides the proposal\\'s feature map region into a fixed grid (e.g., $7 \\times 7$) and max-pools within each grid cell, producing a fixed-size output regardless of the proposal\\'s original size. This is needed because the FC layers after feature extraction require a <strong>fixed-size input</strong>.'
+    },
+    {
+      q: 'Write the Faster R-CNN RPN multi-task loss and explain each term',
+      a: '$$L = \\frac{1}{N_{\\text{cls}}} \\sum_i L_{\\text{cls}}(p_i, p_i^*) + \\lambda \\frac{1}{N_{\\text{reg}}} \\sum_i p_i^* L_{\\text{reg}}(t_i, t_i^*)$$<br>$p_i$ = predicted objectness prob., $p_i^*$ = ground truth label (0/1), $t_i$ = predicted box offsets, $t_i^*$ = GT box targets, $L_{\\text{cls}}$ = log loss, $L_{\\text{reg}}$ = smooth L1 (only for positive anchors via $p_i^*$ multiplier), $\\lambda=10$.'
+    },
+    {
+      q: 'What is the difference between RoI Pooling and RoI Align? Why does it matter for Mask R-CNN?',
+      a: '<strong>RoI Pooling</strong> quantizes (rounds) floating-point RoI coordinates to integer feature map positions, causing spatial misalignment. <strong>RoI Align</strong> uses bilinear interpolation to compute exact feature values at fractional positions, preserving precise spatial alignment. This matters for Mask R-CNN because the mask branch requires pixel-level precision; misalignment causes significant segmentation errors. RoI Align also improves detection mAP by ~3 points.'
+    },
+    {
+      q: 'How does YOLO v1 structure its output? For $S=7$, $B=2$, $C=20$, what is the total output size?',
+      a: 'YOLO divides the image into an $S \\times S$ grid. Each cell predicts: $B \\times 4$ box coordinates, $B$ confidence scores ($= P(\\text{Object}) \\times \\text{IoU}$), and $C$ class probabilities (shared across all boxes in the cell). Per cell: $2 \\times 4 + 2 + 20 = \\mathbf{30}$ values. Total output: $7 \\times 7 \\times 30 = \\mathbf{1470}$ values.'
+    },
+    {
+      q: 'How does SSD handle multi-scale detection? How does it compare to YOLO v1?',
+      a: 'SSD makes predictions at <strong>6 feature map scales</strong> from the VGG-16 base network plus extra layers. Larger/earlier maps (high spatial resolution) detect small objects; smaller/deeper maps (large receptive field) detect large objects. YOLO v1 uses only a <strong>single final feature map</strong> via FC layers, limiting spatial resolution to a coarse $7 \\times 7$ grid. SSD achieves 74.3 mAP @ 59 fps vs. YOLO\\'s 63&ndash;69 mAP @ 45 fps.'
+    },
+    {
+      q: 'What are anchor boxes and why are they needed?',
+      a: 'Anchor boxes are predefined bounding boxes of <strong>fixed shapes and sizes</strong> placed at every spatial position on a feature map. The network predicts <strong>offsets</strong> relative to each anchor instead of absolute coordinates. They are needed because objects come in many different aspect ratios and scales; anchors provide reference templates that the network refines. Faster R-CNN uses $3 \\text{ scales} \\times 3 \\text{ aspect ratios} = $ <strong>9 anchors</strong> per position.'
+    },
+    {
+      q: 'Explain FPN architecture and the pyramid level selection formula',
+      a: '<strong>Bottom-up pathway:</strong> standard CNN forward pass &rarr; $C_2, C_3, C_4, C_5$. <strong>Top-down pathway:</strong> from $C_5$, $2 \\times$ upsample + element-wise add with $1 \\times 1$ lateral conv of $C_k$ &rarr; $P_2, P_3, P_4, P_5$. Level selection: $k = \\lfloor k_0 + \\log_2(\\sqrt{wh}/224) \\rfloor$ where $k_0=4$. Small objects &rarr; high-res $P_2/P_3$; large objects &rarr; low-res $P_4/P_5$.'
+    },
+    {
+      q: 'What is focal loss and why was it introduced? What happens when $\\gamma = 0$?',
+      a: '<strong>Focal loss:</strong> $FL(p_t) = -(1-p_t)^\\gamma \\cdot \\log(p_t)$. Introduced to solve the <strong>class imbalance problem</strong> in single-stage detectors: 10K&ndash;100K candidates, mostly easy background. The modulating factor $(1-p_t)^\\gamma$ down-weights easy examples (large $p_t$, factor near 0) and leaves hard examples unchanged (small $p_t$, factor near 1). When $\\gamma=0$: factor = 1, so focal loss = standard cross-entropy. RetinaNet uses $\\gamma=2$.'
+    },
+    {
+      q: 'Define IoU. A predicted box has area 100, GT box has area 150, intersection is 80. Compute IoU. Is this a TP at threshold 0.5?',
+      a: '$\\text{IoU} = \\frac{\\text{Intersection}}{\\text{Union}} = \\frac{80}{100 + 150 - 80} = \\frac{80}{170} \\approx 0.47$. Since $0.47 < 0.5$, this is a <strong>False Positive</strong> at IoU threshold 0.5. IoU is also used: during training to assign positive/negative labels to anchors, and during NMS to suppress redundant detections.'
+    },
+    {
+      q: 'Describe the NMS algorithm and its parameters',
+      a: '<strong>Algorithm:</strong> (1) Sort detections by confidence. (2) Take highest-confidence detection, add to output. (3) Compute IoU with all remaining. (4) Delete those with IoU &gt; threshold (e.g., 0.5). (5) Repeat. Applied independently per class. <strong>Parameters:</strong> IoU threshold (lower = more aggressive, removes more boxes); confidence threshold (minimum confidence, applied before NMS). NMS is necessary because detectors produce many overlapping boxes for the same object.'
+    }
+  ]);
+</script>
+</body>
+</html>

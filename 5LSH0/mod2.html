@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2. Classification: Clustering — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">2. Classification: Clustering</h1>
+    <p class="page-subtitle">K-Means, Gaussian Mixture Models, EM algorithm, unsupervised learning, dimensionality reduction</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#classification-vs-detection">1. Classification vs Object Detection</a>
+      <a href="#ml-types">2. Supervised vs Unsupervised Learning</a>
+      <a href="#kmeans-intuition">3. K-Means Clustering</a>
+      <a href="#kmeans-math">4. K-Means Mathematics</a>
+      <a href="#kmeans-digits">5. K-Means Applied to Digits</a>
+      <a href="#kmeans-properties">6. K-Means Properties</a>
+      <a href="#gmm-motivation">7. Gaussian Mixture Models</a>
+      <a href="#gaussian-basics">8. Gaussian Distributions</a>
+      <a href="#em-algorithm">9. EM Algorithm</a>
+      <a href="#gmm-summary">10. GMM Summary</a>
+      <a href="#pca">11. Dimensionality Reduction (PCA)</a>
+      <a class="toc-interactive" href="#kmeans-walkthrough">Interactive: K-Means Walkthrough</a>
+      <a class="toc-interactive" href="#kmeans-interactive">Interactive: K-Means Visualizer</a>
+      <a class="toc-interactive" href="#em-walkthrough">Interactive: EM Walkthrough</a>
+      <a class="toc-interactive" href="#em-interactive">Interactive: EM/GMM Visualizer</a>
+      <a class="toc-interactive" href="#gaussian-interactive">Interactive: Gaussian Explorer</a>
+      <a class="toc-interactive" href="#pca-interactive">Interactive: PCA Explorer</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: CLASSIFICATION vs DETECTION ===== -->
+    <h2 class="section-heading" id="classification-vs-detection">1. Classification vs Object Detection</h2>
+
+    <p>These are two fundamentally different computer vision tasks that are frequently confused.</p>
+
+    <table>
+      <tr><th>Task</th><th>Goal</th><th>Output</th></tr>
+      <tr><td><strong>Image Classification</strong></td><td>Label the <em>entire image</em> with a single category</td><td>One class label (e.g., "CAT")</td></tr>
+      <tr><td><strong>Object Detection</strong></td><td>Find, localize, and count specific objects in an image</td><td>Bounding boxes + labels + counts</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod2/classification_vs_detection.png" alt="Classification (single label) versus Object Detection (bounding boxes)">
+      <div class="figure-caption">Left: classification assigns a single label ("CAT") to the whole image. Right: detection draws bounding boxes around every object and labels each one.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Classification asks "what is this image?" Detection asks "what is here and where?" This module focuses on classification. Object detection builds on classification in later modules.</div>
+    </div>
+
+    <!-- ===== SECTION 2: ML TYPES ===== -->
+    <h2 class="section-heading" id="ml-types">2. Supervised vs Unsupervised Learning</h2>
+
+    <div class="figure-container">
+      <img src="figures/mod2/supervised_vs_unsupervised.png" alt="Supervised learning vs unsupervised learning diagram">
+      <div class="figure-caption">Supervised learning uses labeled input/target pairs; unsupervised learning discovers hidden structure in unlabeled data.</div>
+    </div>
+
+    <table>
+      <tr><th>Aspect</th><th>Supervised</th><th>Unsupervised (Clustering)</th></tr>
+      <tr><td>Training data</td><td>Input vectors <strong>and</strong> labels</td><td>Input vectors only — no labels</td></tr>
+      <tr><td>Feedback</td><td>Direct (knows correct answer)</td><td>None</td></tr>
+      <tr><td>Goal</td><td>Predict outputs for new inputs</td><td>Find hidden structure</td></tr>
+      <tr><td>Example</td><td>Digit recognizer with known labels</td><td>Group digits without knowing labels</td></tr>
+    </table>
+
+    <p>This module covers <strong>unsupervised clustering</strong>. The running example is handwritten digit classification using the MNIST dataset (28x28 pixel images of digits 0–9), where the goal is to group similar-looking images together without using labels.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod2/mnist_handwritten_digits.png" alt="MNIST handwritten digits 0-9">
+      <div class="figure-caption">MNIST digits 0–9. Wide variability in writing style motivates machine learning rather than hand-crafted rules.</div>
+    </div>
+
+    <!-- ===== SECTION 3: K-MEANS INTUITION ===== -->
+    <h2 class="section-heading" id="kmeans-intuition">3. K-Means Clustering</h2>
+
+    <p>K-Means is the most fundamental clustering algorithm. The intuition: given a scatter plot of $N$ data points, partition them into $K$ groups such that each group's points are as close as possible to their group's center.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod2/kmeans_initial_points.png" alt="Initial scatter plot showing 5 natural clusters">
+      <div class="figure-caption">Initial data: 5 natural clusters visible in 2D space. Goal is to recover these groups automatically.</div>
+    </div>
+
+    <h3 class="subsection-heading">Algorithm — Intuitive Steps</h3>
+    <ol>
+      <li><strong>Initialize:</strong> Randomly place $K$ cluster centers (centroids) in the data space.</li>
+      <li><strong>Assign:</strong> Assign each data point to its nearest cluster center.</li>
+      <li><strong>Update:</strong> Recompute each cluster center as the centroid (mean) of all points assigned to it.</li>
+      <li><strong>Repeat</strong> steps 2–3 until assignments stop changing (convergence).</li>
+    </ol>
+
+    <div id="kmeans-walkthrough" class="interactive-container" data-title="Walkthrough — K-Means Clustering"></div>
+
+    <div id="kmeans-interactive" class="interactive-container" data-title="Interactive — K-Means Step-Through">
+      <div class="interactive-label">K-Means Visualizer</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="km-generate" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Generate Data</button>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;">K:
+          <select id="km-k" style="font-size:12px;padding:2px 6px;">
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <button id="km-init" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>Initialize</button>
+        <button id="km-step" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>Step</button>
+        <button id="km-run" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>Run to Convergence</button>
+        <button id="km-reset" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+      </div>
+      <canvas id="km-canvas" width="500" height="400" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="km-status" style="font-size:12px;color:#555;margin-top:6px;">Press "Generate Data" to begin.</div>
+    </div>
+
+    <h3 class="subsection-heading">Voronoi Regions and Classification</h3>
+    <p>After convergence, the cluster centers define <strong>Voronoi regions</strong>: every point in space is assigned to the nearest center. New test points can be classified by finding the nearest cluster center.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod2/kmeans_converged.png" alt="K-Means at convergence with stable cluster boundaries">
+      <div class="figure-caption">At convergence, the 5 cluster regions are stable and well-aligned with the natural groups.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/kmeans_labeled_clusters.png" alt="Labeled cluster regions after K-Means convergence">
+      <div class="figure-caption">Final labeled cluster regions. New points are classified by nearest-center assignment.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Local optima problem</div>
+      <div>K-Means can converge to a non-optimal solution depending on random initialization. <strong>Solution:</strong> run multiple times with different random seeds and select the result with the lowest cost function $J$.</div>
+    </div>
+
+    <!-- ===== SECTION 4: K-MEANS MATH ===== -->
+    <h2 class="section-heading" id="kmeans-math">4. K-Means Mathematics</h2>
+
+    <h3 class="subsection-heading">Euclidean Distance</h3>
+    <p>Distance between two points in $D$ dimensions:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Euclidean Distance</div>
+      <div>$d(x, x') = \|x - x'\| = \sqrt{\sum_{i=1}^{D}(x_i - x_i')^2}$</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/euclidean_distance_2d.png" alt="Euclidean distance as hypotenuse of a right triangle">
+      <div class="figure-caption">In 2D, Euclidean distance is the hypotenuse of the right triangle formed by horizontal and vertical differences.</div>
+    </div>
+
+    <h3 class="subsection-heading">Cost Function (Distortion)</h3>
+
+    <div class="definition-box">
+      <div class="box-label">K-Means Cost Function</div>
+      <div>$$J = \sum_{n=1}^{N} \sum_{k=1}^{K} r_{nk} \|x_n - \mu_k\|^2$$
+      <p>where $r_{nk} = 1$ if point $x_n$ is assigned to cluster $k$, else $r_{nk} = 0$; $\mu_k$ is the center of cluster $k$.</p>
+      <p>$J$ is the <strong>sum of squared Euclidean distances</strong> from each data point to its assigned cluster center.</p></div>
+    </div>
+
+    <h3 class="subsection-heading">Alternating Optimization</h3>
+    <p>K-Means minimizes $J$ by alternating two steps:</p>
+    <table>
+      <tr><th>Phase</th><th>What is minimized</th><th>What is fixed</th><th>Operation</th></tr>
+      <tr><td><strong>Assignment (E-step)</strong></td><td>$J$ over $r_{nk}$</td><td>$\mu_k$</td><td>Assign each $x_n$ to nearest center: $k^* = \arg\min_k \|x_n - \mu_k\|^2$</td></tr>
+      <tr><td><strong>Update (M-step)</strong></td><td>$J$ over $\mu_k$</td><td>$r_{nk}$</td><td>Recompute $\mu_k = \frac{\sum_n r_{nk}\,x_n}{\sum_n r_{nk}}$</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Centroid Update Formula</div>
+      <div>$\mu_k = \dfrac{\displaystyle\sum_{n=1}^{N} r_{nk}\, x_n}{\displaystyle\sum_{n=1}^{N} r_{nk}}$</div>
+    </div>
+
+    <h3 class="subsection-heading">Convergence and Choosing K</h3>
+    <p>K-Means is guaranteed to converge because $J$ cannot increase at any step. For choosing $K$:</p>
+    <ul>
+      <li>Compute optimal clustering for all candidate $K$ values.</li>
+      <li>Plot $J$ vs $K$: use the <strong>elbow method</strong> — pick the $K$ where $J$ drops steeply then levels off.</li>
+      <li>$J$ always decreases as $K$ increases, so the elbow is the best tradeoff.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod2/clustering_3d_visualization.png" alt="3D scatter plot of clustered data">
+      <div class="figure-caption">K-Means generalizes naturally to any number of dimensions — the math is identical.</div>
+    </div>
+
+    <!-- ===== SECTION 5: K-MEANS DIGITS ===== -->
+    <h2 class="section-heading" id="kmeans-digits">5. K-Means Applied to Digit Classification</h2>
+
+    <h3 class="subsection-heading">Images as Vectors</h3>
+    <p>Each 28&times;28 pixel MNIST image is <strong>flattened</strong> into a 784-dimensional vector by reading pixels row by row:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod2/digit_pixel_grid.png" alt="28x28 pixel grid with grayscale intensity values">
+      <div class="figure-caption">A 28x28 pixel grid — each cell is a grayscale intensity value. Most pixels are 0 (background).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/digit_image_to_matrix.png" alt="Digit image alongside its intensity matrix">
+      <div class="figure-caption">The digit "1" and its 28x28 intensity matrix. Flattening gives a 784-dimensional vector.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Digit as Data Point</div>
+      <div>Each 28x28 image $\Rightarrow$ a <strong>784-dimensional vector</strong> $x \in \mathbb{R}^{784}$. K-Means with $K = 10$ groups these vectors by visual similarity.</div>
+    </div>
+
+    <h3 class="subsection-heading">Cluster Centroids as "Average Digits"</h3>
+    <p>Each centroid $\mu_k \in \mathbb{R}^{784}$ can be reshaped back into a 28&times;28 image, revealing the "average" appearance of its cluster.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod2/kmeans_digit_cluster_centroids.png" alt="All 10 K-Means cluster centroids as blurry digit images">
+      <div class="figure-caption">The 10 cluster centroids visualized as images. Each looks like a blurry averaged version of its digit.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/kmeans_centroid_digit0.png" alt="K-Means centroid for digit 0">
+      <div class="figure-caption">Single centroid for the "0" cluster — a soft, averaged zero shape.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Which digit clusters overlap?</div>
+      <div class="collapsible-body">
+        <p>Digits with similar visual structure will have cluster centers that are close in 784-dimensional space. Expected overlaps:</p>
+        <ul>
+          <li><strong>3 and 8:</strong> similar curve structure</li>
+          <li><strong>4 and 9:</strong> similar vertical strokes with a top loop</li>
+          <li><strong>5 and 6:</strong> similar curved lower portion</li>
+          <li><strong>7 and 1:</strong> both mostly vertical with small extras</li>
+        </ul>
+        <p>Overlapping clusters lead to more classification errors because new digits in the overlap region may be assigned to the wrong cluster.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: K-MEANS PROPERTIES ===== -->
+    <h2 class="section-heading" id="kmeans-properties">6. K-Means Properties</h2>
+
+    <table>
+      <tr><th>Property</th><th>Details</th></tr>
+      <tr><td><strong>Hard assignment</strong></td><td>Every point belongs to exactly one cluster (binary $r_{nk}$)</td></tr>
+      <tr><td><strong>Convergence guaranteed</strong></td><td>$J$ decreases (or stays the same) at every step</td></tr>
+      <tr><td><strong>Local minima only</strong></td><td>Result depends on random initialization; multi-start is essential</td></tr>
+      <tr><td><strong>$K$ must be specified</strong></td><td>Cannot automatically determine the number of clusters</td></tr>
+      <tr><td><strong>Assumes spherical clusters</strong></td><td>Does not handle elongated or irregular shapes well</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">K-Means Pseudocode</h3>
+    <div class="collapsible">
+      <div class="collapsible-header">Full K-Means algorithm</div>
+      <div class="collapsible-body">
+        <pre style="background:#f8f9fa;border-radius:6px;padding:1em;font-size:0.87em;line-height:1.5;overflow-x:auto;">For each seed trial:
+  1. INITIALIZE: Randomly place K centers mu_1, ..., mu_K
+
+  2. REPEAT:
+     a. ASSIGNMENT: For each point x_n:
+          assign to k* = argmin_k ||x_n - mu_k||^2
+          set r_{n,k*} = 1, r_{n,j} = 0 for j != k*
+
+     b. UPDATE: For each cluster k:
+          mu_k = (sum of x_n where r_{nk}=1) / (count in cluster k)
+
+     c. COMPUTE J = sum of r_{nk} * ||x_n - mu_k||^2
+
+  UNTIL J does not improve
+
+Select trial with lowest J as final result.</pre>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key limitation motivating GMM</div>
+      <div>Points near cluster boundaries are forced into one cluster — even if they are almost equidistant from two centers. This <strong>hard assignment</strong> loses information. Gaussian Mixture Models replace hard 0/1 assignments with <strong>soft probabilities</strong>.</div>
+    </div>
+
+    <!-- ===== SECTION 7: GMM MOTIVATION ===== -->
+    <h2 class="section-heading" id="gmm-motivation">7. Gaussian Mixture Models</h2>
+
+    <h3 class="subsection-heading">Why Move Beyond K-Means?</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod2/gmm_overlapping_clusters.png" alt="Two overlapping clusters with no clear boundary">
+      <div class="figure-caption">Two overlapping groups. There is no clear boundary — many points could plausibly belong to either cluster.</div>
+    </div>
+
+    <p>GMM replaces hard cluster centers with $K$ <strong>Gaussian distributions</strong>. Each cluster is described by a full probability distribution, and each data point has a <strong>probability of belonging to each cluster</strong>.</p>
+
+    <table>
+      <tr><th>Aspect</th><th>K-Means</th><th>GMM</th></tr>
+      <tr><td>Assignment</td><td>Hard (0 or 1)</td><td>Soft (probability 0–1)</td></tr>
+      <tr><td>Cluster shape</td><td>Implicitly spherical (Voronoi)</td><td>Elliptical (covariance matrix)</td></tr>
+      <tr><td>Output per point</td><td>Cluster label $k$</td><td>Probability $P(k \mid x)$ for all $k$</td></tr>
+      <tr><td>Parameters</td><td>Centroids $\mu_k$</td><td>Means $\mu_k$, variances $\sigma_k^2$, mixing coefficients $\pi_k$</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod2/gmm_two_clusters_colored.png" alt="Two overlapping Gaussian clusters in 2D">
+      <div class="figure-caption">Two Gaussian clusters in 2D. Points in the overlap region have high posterior probability for both clusters.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/gmm_real_data_example.png" alt="Multiple overlapping elliptical Gaussian clusters">
+      <div class="figure-caption">Real-data example: multiple overlapping elliptical Gaussian clusters. K-Means would struggle with these non-spherical shapes.</div>
+    </div>
+
+    <!-- ===== SECTION 8: GAUSSIAN BASICS ===== -->
+    <h2 class="section-heading" id="gaussian-basics">8. Gaussian Distributions</h2>
+
+    <h3 class="subsection-heading">1D Gaussian</h3>
+
+    <div class="definition-box">
+      <div class="box-label">1D Gaussian PDF</div>
+      <div>$$f(x) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp\!\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)$$
+      <p>$\mu$ = mean (center), $\sigma$ = standard deviation (width), $\sigma^2$ = variance.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/gaussian_1d_varying_sigma.png" alt="1D Gaussians with varying sigma">
+      <div class="figure-caption">Same mean $\mu = 0$, varying $\sigma$: small $\sigma$ = tall narrow peak; large $\sigma$ = short wide peak.</div>
+    </div>
+
+    <h3 class="subsection-heading">2D and Multivariate Gaussian</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Multivariate Gaussian PDF</div>
+      <div>$$f(\mathbf{x}) = \frac{1}{(2\pi)^{D/2}|\Sigma|^{1/2}} \exp\!\left(-\frac{1}{2}(\mathbf{x}-\boldsymbol{\mu})^T\Sigma^{-1}(\mathbf{x}-\boldsymbol{\mu})\right)$$
+      <p>$\boldsymbol{\mu}$ = mean vector, $\Sigma$ = covariance matrix (controls shape and orientation).</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/gaussian_2d_surface.png" alt="2D Gaussian as a 3D bell-shaped surface">
+      <div class="figure-caption">2D Gaussian: bell-shaped surface over $(x, y)$ with contour plot below. Peak is at the mean; contours are ellipses.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Likelihood vs Posterior</div>
+      <div>
+        <strong>Do not confuse:</strong><br>
+        $P(x_i \mid k)$ = <strong>likelihood</strong>: probability density of observing $x_i$ under Gaussian $k$ (computed from the PDF).<br>
+        $P(k \mid x_i)$ = <strong>posterior</strong>: probability that point $x_i$ belongs to cluster $k$ (what we want — computed via Bayes' theorem).
+      </div>
+    </div>
+
+    <div id="gaussian-interactive" class="interactive-container" data-title="Interactive — Gaussian Distribution Explorer">
+      <div class="interactive-label">Gaussian Distribution Explorer</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;">
+        <!-- Left panel: 1D Gaussian -->
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">1D Gaussian</div>
+          <canvas id="gauss1d-canvas" width="300" height="250" style="border:1px solid #e0e0e0;background:#fff;display:block;"></canvas>
+          <div style="margin-top:8px;" class="slider-control">
+            <label><span>$\mu$</span><span id="gauss1d-mu-val">0.00</span></label>
+            <input type="range" id="gauss1d-mu" min="-3" max="3" step="0.1" value="0">
+          </div>
+          <div class="slider-control">
+            <label><span>$\sigma$</span><span id="gauss1d-sigma-val">1.00</span></label>
+            <input type="range" id="gauss1d-sigma" min="0.3" max="3" step="0.1" value="1">
+          </div>
+          <div style="font-size:12px;color:#555;margin-top:4px;">$f(x) = \frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{(x-\mu)^2}{2\sigma^2}}$</div>
+        </div>
+        <!-- Right panel: 2D Gaussian -->
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">2D Gaussian (contour view)</div>
+          <canvas id="gauss2d-canvas" width="300" height="250" style="border:1px solid #e0e0e0;background:#fff;display:block;"></canvas>
+          <div style="margin-top:8px;" class="slider-control">
+            <label><span>$\sigma_x$</span><span id="gauss2d-sx-val">1.00</span></label>
+            <input type="range" id="gauss2d-sx" min="0.5" max="3" step="0.1" value="1">
+          </div>
+          <div class="slider-control">
+            <label><span>$\sigma_y$</span><span id="gauss2d-sy-val">1.00</span></label>
+            <input type="range" id="gauss2d-sy" min="0.5" max="3" step="0.1" value="1">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 9: EM ALGORITHM ===== -->
+    <h2 class="section-heading" id="em-algorithm">9. EM Algorithm</h2>
+
+    <p>The Expectation-Maximization (EM) algorithm fits a GMM to data. It is the soft-assignment analog of K-Means alternating optimization.</p>
+
+    <div id="em-walkthrough" class="interactive-container" data-title="Walkthrough — EM Algorithm for GMM"></div>
+
+    <div id="em-interactive" class="interactive-container" data-title="Interactive — EM/GMM Step-Through">
+      <div class="interactive-label">EM / Gaussian Mixture Model Visualizer</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="em-generate" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Generate Data</button>
+        <button id="em-init" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>Initialize</button>
+        <button id="em-estep" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>E-Step</button>
+        <button id="em-mstep" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>M-Step</button>
+        <button id="em-run" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>Run EM</button>
+        <button id="em-reset" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+      </div>
+      <canvas id="em-canvas" width="500" height="400" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="em-status" style="font-size:12px;color:#555;margin-top:6px;">Press "Generate Data" to begin.</div>
+      <div id="em-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <h3 class="subsection-heading">E-Step: Compute Soft Assignments</h3>
+    <p>For each data point $x_i$ and each Gaussian $k$, compute the <strong>posterior probability</strong> using Bayes' theorem:</p>
+
+    <div class="definition-box">
+      <div class="box-label">E-Step — Bayesian Posterior</div>
+      <div>$$b_i = P(b \mid x_i) = \frac{P(x_i \mid b)\,P(b)}{P(x_i \mid b)\,P(b) + P(x_i \mid a)\,P(a)}$$
+      <p>$P(x_i \mid b)$ = likelihood under Gaussian $b$; $P(b)$ = prior (mixing coefficient); $a_i = 1 - b_i$.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/em_bayesian_posterior_formula.png" alt="Bayesian posterior formula for soft cluster assignments">
+      <div class="figure-caption">The posterior formula: probability that point $x_i$ was generated by each Gaussian.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/em_1d_colored_points.png" alt="E-step result: points colored by soft assignment">
+      <div class="figure-caption">After E-step: points colored fractionally (dot size indicates strength of membership in each Gaussian).</div>
+    </div>
+
+    <h3 class="subsection-heading">M-Step: Recompute Gaussian Parameters</h3>
+    <p>Using the soft assignments as weights, update each Gaussian's parameters:</p>
+
+    <div class="definition-box">
+      <div class="box-label">M-Step — Weighted Mean and Variance</div>
+      <div>$$\mu_b = \frac{\sum_{i=1}^{n} b_i\, x_i}{\sum_{i=1}^{n} b_i}, \qquad \sigma_b^2 = \frac{\sum_{i=1}^{n} b_i(x_i - \mu_b)^2}{\sum_{i=1}^{n} b_i}$$</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/em_maximization_update_formulas.png" alt="M-step update formulas for weighted mean and variance">
+      <div class="figure-caption">M-step: every point contributes to every Gaussian's update, weighted by its posterior probability.</div>
+    </div>
+
+    <p>Unlike K-Means (where only assigned points update a centroid), in EM <strong>every point contributes to every Gaussian</strong>, weighted by how likely it is to belong to that Gaussian.</p>
+
+    <h3 class="subsection-heading">Visual Convergence</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod2/em_1d_initial_gaussians.png" alt="Initial Gaussians before EM">
+      <div class="figure-caption">Initial state: two overlapping Gaussians placed randomly.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/em_1d_intermediate.png" alt="EM intermediate iteration">
+      <div class="figure-caption">Mid-convergence: Gaussians shifting toward the true cluster centers.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod2/em_1d_converged.png" alt="EM converged: well-separated Gaussians">
+      <div class="figure-caption">After convergence: two well-separated Gaussians accurately modeling the two clusters.</div>
+    </div>
+
+    <h3 class="subsection-heading">EM in 2D</h3>
+    <div class="figure-container">
+      <img src="figures/mod2/gmm_em_2d_iteration0.png" alt="GMM-EM iteration 0 for 2D data">
+      <div class="figure-caption">Initial Gaussian components in 2D shown as contour ellipses.</div>
+    </div>
+    <div class="figure-container">
+      <img src="figures/mod2/gmm_em_2d_3d_surface.png" alt="GMM-EM 2D/3D probability surface">
+      <div class="figure-caption">Converged 2D GMM: probability surface with contour projections showing Gaussian mixture.</div>
+    </div>
+
+    <!-- ===== SECTION 10: GMM SUMMARY ===== -->
+    <h2 class="section-heading" id="gmm-summary">10. GMM and EM Summary</h2>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Full EM pseudocode</div>
+      <div class="collapsible-body">
+        <pre style="background:#f8f9fa;border-radius:6px;padding:1em;font-size:0.87em;line-height:1.5;overflow-x:auto;">Input: Data {x_1, ..., x_N}, number of Gaussians K
+
+1. INITIALIZE: Randomly set mu_k, sigma_k, pi_k for each k
+
+2. REPEAT:
+
+   E-STEP: For each point x_i, each Gaussian k:
+     Compute likelihood: P(x_i | k) using Gaussian PDF
+     Compute posterior:  gamma(i,k) = P(k | x_i) via Bayes' theorem
+
+   M-STEP: For each Gaussian k:
+     mu_k    = weighted mean (weights = gamma(i,k))
+     sigma_k = weighted variance (weights = gamma(i,k))
+     pi_k    = average of gamma(i,k) over all points
+
+UNTIL Gaussian updates are small (convergence)</pre>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">K-Means vs GMM Side-by-Side</h3>
+    <table>
+      <tr><th></th><th>K-Means</th><th>GMM + EM</th></tr>
+      <tr><td>Initialization</td><td>Random centroids</td><td>Random Gaussian parameters</td></tr>
+      <tr><td>E-step</td><td>Assign each point to nearest centroid (hard)</td><td>Compute posterior probability for each Gaussian (soft)</td></tr>
+      <tr><td>M-step</td><td>Recompute centroid as mean of assigned points</td><td>Recompute mean/variance using weighted points</td></tr>
+      <tr><td>Assignment type</td><td>Binary $r_{nk} \in \{0,1\}$</td><td>Probabilistic $\gamma_{ik} \in [0,1]$</td></tr>
+      <tr><td>Cost function</td><td>Distortion $J$ (sum of squared distances)</td><td>Log-likelihood</td></tr>
+      <tr><td>Convergence</td><td>$J$ stops decreasing</td><td>Parameter updates become small</td></tr>
+      <tr><td>Cluster shape</td><td>Spherical (Voronoi)</td><td>Elliptical (covariance matrix)</td></tr>
+    </table>
+
+    <table>
+      <tr><th>Property</th><th>K-Means</th><th>GMM</th></tr>
+      <tr><td>Convergence guaranteed</td><td>Yes</td><td>Yes (to local min)</td></tr>
+      <tr><td>Global optimum guaranteed</td><td>No</td><td>No</td></tr>
+      <tr><td>$K$ must be specified</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Handles overlapping clusters</td><td>Poorly</td><td>Well</td></tr>
+      <tr><td>Computationally expensive</td><td>Less</td><td>More</td></tr>
+    </table>
+
+    <!-- ===== SECTION 11: PCA ===== -->
+    <h2 class="section-heading" id="pca">11. Dimensionality Reduction (PCA)</h2>
+
+    <p>MNIST digit images are 784-dimensional, making clustering computationally expensive (especially for GMM, which requires 784&times;784 covariance matrices).</p>
+
+    <div class="definition-box">
+      <div class="box-label">Principal Component Analysis (PCA)</div>
+      <div>Find the directions (principal components) along which data varies most. Project data onto a smaller number of these directions, reducing dimensionality while retaining most meaningful variation.</div>
+    </div>
+
+    <table>
+      <tr><th>Benefit</th><th>Explanation</th></tr>
+      <tr><td>Faster computation</td><td>Distance calculations in ~50D are much cheaper than 784D</td></tr>
+      <tr><td>Less memory</td><td>Covariance matrices shrink from 784&times;784 to ~50&times;50</td></tr>
+      <tr><td>Noise reduction</td><td>Low-variance dimensions often correspond to noise</td></tr>
+      <tr><td>Visualization</td><td>Reduce to 2D or 3D to plot and inspect clusters</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>PCA does not discard random dimensions — it finds the <em>most informative</em> directions in the data. Reducing from 784D to 50D typically retains the majority of the visual information needed for digit discrimination while dramatically speeding up subsequent clustering.</div>
+    </div>
+
+    <div id="pca-interactive" class="interactive-container" data-title="Interactive — PCA Explorer">
+      <div class="interactive-label">PCA Explorer</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="pca-generate" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Generate Data</button>
+        <button id="pca-reset" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Components retained</span><span id="pca-comp-val">2</span></label>
+          <input type="range" id="pca-comp" min="1" max="2" step="1" value="2">
+        </div>
+      </div>
+      <canvas id="pca-canvas" width="500" height="400" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="pca-status" style="font-size:12px;color:#555;margin-top:6px;">Press "Generate Data" to create a point cloud with a clear principal axis.</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod2-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod1.html">&larr; 1. Feature Extraction</a>
+      <a href="mod3.html">3. Supervised &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod2');</script>
+<script>
+  initWalkthrough('kmeans-walkthrough', [
+    {
+      tab: '1. Initialize',
+      title: 'Step 1: Initialize Cluster Centers',
+      text: 'Randomly place K cluster centers (centroids) in the data space. These are the initial "seed" points. The quality of the final clustering can depend heavily on this initialization, which is why K-Means is run multiple times with different seeds.',
+      visual: '<div class="figure-container"><img src="figures/mod2/kmeans_initial_points.png" alt="Initial scatter plot"><div class="figure-caption">Data points before any clustering. K random centers will be placed in this space.</div></div>',
+      insight: 'Different initial placements can lead to different local optima. Running multiple times and choosing the lowest-cost result is essential for good performance.'
+    },
+    {
+      tab: '2. Assign',
+      title: 'Step 2: Assign Each Point to Nearest Center',
+      text: 'For each data point, compute the Euclidean distance to all K centers. Assign each point to its nearest center. This partitions the data space into Voronoi regions — one region per center.',
+      visual: '<div class="figure-container"><img src="figures/mod2/kmeans_iteration_step.png" alt="K-Means iteration step"><div class="figure-caption">Points are colored by their assigned cluster. Bounding boxes show the extent of each cluster.</div></div>',
+      insight: 'The assignment step minimizes $J$ with respect to the binary indicators $r_{nk}$ while keeping the centers fixed. The optimal assignment is simply the nearest center.'
+    },
+    {
+      tab: '3. Update',
+      title: 'Step 3: Recompute Cluster Centers',
+      text: 'For each cluster, recompute the centroid as the mean of all assigned points: $\\mu_k = (\\sum x_n \\text{ in cluster } k) / (\\text{number of points in cluster } k)$. Each center moves toward the "center of mass" of its assigned points.',
+      visual: '',
+      insight: 'The update step minimizes $J$ with respect to $\\mu_k$ while keeping assignments fixed. The optimal centroid is mathematically the mean of the assigned points — taking the derivative of $J$ and setting it to zero proves this.'
+    },
+    {
+      tab: '4. Convergence',
+      title: 'Step 4: Repeat Until Convergence',
+      text: 'Alternate the assignment and update steps. The cost function $J$ can only decrease (or stay the same) at each step, guaranteeing convergence. The algorithm stops when $J$ no longer improves — meaning cluster assignments stop changing.',
+      visual: '<div class="figure-container"><img src="figures/mod2/kmeans_converged.png" alt="K-Means converged"><div class="figure-caption">At convergence: centers have stabilized and assignments no longer change.</div></div>',
+      insight: '$J$ is non-increasing at every step, so convergence is guaranteed. However, it only finds a local minimum. The global minimum requires trying multiple random initializations.'
+    },
+    {
+      tab: '5. Classify',
+      title: 'Step 5: Classify New Points',
+      text: 'After convergence, new test points are classified by computing their distance to each cluster center and assigning them to the nearest one. This is the Voronoi nearest-neighbor classification rule.',
+      visual: '<div class="figure-container"><img src="figures/mod2/kmeans_labeled_clusters.png" alt="Labeled cluster regions"><div class="figure-caption">Final labeled cluster regions. Any new point maps to the nearest center\'s cluster.</div></div>',
+      insight: 'For digit classification with K=10, a new 784-dimensional digit vector is classified by computing distances to all 10 cluster centroids and picking the nearest one.'
+    }
+  ]);
+</script>
+<script>
+  initWalkthrough('em-walkthrough', [
+    {
+      tab: '1. Initialize',
+      title: 'Step 1: Initialize Gaussian Parameters',
+      text: 'Randomly initialize $K$ Gaussians, each with a mean $\\mu_k$, variance $\\sigma_k^2$, and mixing coefficient $\\pi_k$ (prior probability). The mixing coefficients represent how likely it is that a random point came from each Gaussian.',
+      visual: '<div class="figure-container"><img src="figures/mod2/em_1d_initial_gaussians.png" alt="Initial Gaussians"><div class="figure-caption">Two initial Gaussians (yellow and blue) placed over the 1D data. The dotted line shows the combined mixture density.</div></div>',
+      insight: 'Unlike K-Means which initializes single points, GMM initializes full probability distributions. The initial Gaussians are typically poorly placed but will converge to the true clusters.'
+    },
+    {
+      tab: '2. E-Step',
+      title: 'E-Step: Compute Soft Assignments (Posterior Probabilities)',
+      text: 'For each data point $x_i$, compute the posterior probability of belonging to each Gaussian using Bayes\' theorem: $P(b | x_i) = P(x_i | b) \\cdot P(b) / [P(x_i | b) \\cdot P(b) + P(x_i | a) \\cdot P(a)]$. This gives each point a fractional membership between 0 and 1 in each cluster.',
+      visual: '<div class="figure-container"><img src="figures/mod2/em_1d_colored_points.png" alt="E-step soft assignments"><div class="figure-caption">Points colored fractionally. Dot size indicates strength of membership. Points in the overlap region have mixed coloring.</div></div>',
+      insight: 'This is the key difference from K-Means: instead of forcing every point into exactly one cluster, we assign probabilities. A point equidistant from both Gaussians gets 50% each.'
+    },
+    {
+      tab: '3. M-Step',
+      title: 'M-Step: Recompute Gaussian Parameters',
+      text: 'Update each Gaussian\'s parameters using weighted statistics. The mean and variance are computed as weighted averages, where the weights are the posterior probabilities from the E-step. Every point contributes to every Gaussian, but more strongly if it has higher posterior probability.',
+      visual: '<div class="figure-container"><img src="figures/mod2/em_maximization_update_formulas.png" alt="M-step formulas"><div class="figure-caption">Weighted mean and variance formulas for each Gaussian. Compare to K-Means unweighted mean.</div></div>',
+      insight: 'In K-Means, only assigned points update a centroid. In EM, ALL points update ALL Gaussians, proportionally to their posterior probabilities. This is what makes EM "soft".'
+    },
+    {
+      tab: '4. Converge',
+      title: 'Iterate Until Convergence',
+      text: 'Alternate E-step and M-step until parameter changes become small. The log-likelihood of the data under the model is guaranteed to increase at each iteration. Convergence is reached when updates to means and variances fall below a threshold.',
+      visual: '<div class="figure-container"><img src="figures/mod2/em_1d_intermediate.png" alt="EM intermediate"><div class="figure-caption">Mid-convergence: Gaussians moving toward the true cluster centers.</div></div><div class="figure-container"><img src="figures/mod2/em_1d_converged.png" alt="EM converged"><div class="figure-caption">Final state: two well-separated Gaussians fitting the data accurately.</div></div>',
+      insight: 'Like K-Means, EM converges to a local maximum of the log-likelihood, not necessarily the global maximum. Multiple restarts are needed.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod2-flashcards', [
+    {
+      q: 'What is the key difference between image classification and object detection?',
+      a: '<strong>Classification</strong> assigns a single label to the entire image (e.g., "CAT"). <strong>Detection</strong> identifies specific objects, draws bounding boxes around each one, labels them, and counts instances.'
+    },
+    {
+      q: 'Write the K-Means cost function J and explain each term.',
+      a: '$$J = \\sum_{n=1}^{N}\\sum_{k=1}^{K} r_{nk}\\|x_n - \\mu_k\\|^2$$<br>$r_{nk} = 1$ if point $x_n$ is assigned to cluster $k$ (0 otherwise); $\\mu_k$ is the centroid of cluster $k$. J is the sum of squared Euclidean distances from each point to its assigned center.'
+    },
+    {
+      q: 'Describe the two alternating steps of K-Means and what each minimizes.',
+      a: '<strong>Assignment step:</strong> minimize J over $r_{nk}$ (with $\\mu_k$ fixed) &mdash; assign each point to its nearest center.<br><strong>Update step:</strong> minimize J over $\\mu_k$ (with $r_{nk}$ fixed) &mdash; recompute each centroid as the mean of its assigned points.'
+    },
+    {
+      q: 'Name three limitations of K-Means and which one GMM addresses.',
+      a: '1. <strong>Hard assignments</strong> &mdash; every point must belong to exactly one cluster.<br>2. <strong>Local minima</strong> &mdash; result depends on random initialization.<br>3. <strong>K must be specified</strong> in advance.<br><br>GMM addresses <strong>hard assignments</strong> by using soft (probabilistic) cluster membership via Bayes\' theorem.'
+    },
+    {
+      q: 'Write the Bayesian posterior formula for the E-step of EM with 2 Gaussians.',
+      a: '$$P(b \\mid x_i) = \\frac{P(x_i \\mid b)\\,P(b)}{P(x_i \\mid b)\\,P(b) + P(x_i \\mid a)\\,P(a)}$$<br>$P(x_i \\mid b)$ = likelihood (Gaussian PDF evaluated at $x_i$); $P(b)$ = prior (mixing coefficient); $P(b \\mid x_i)$ = posterior (what we want). $P(a \\mid x_i) = 1 - P(b \\mid x_i)$.'
+    },
+    {
+      q: 'How does the M-step of EM differ from the update step of K-Means?',
+      a: '<strong>K-Means:</strong> centroid = unweighted mean of <em>assigned</em> points (only points with $r_{nk}=1$ contribute).<br><strong>EM:</strong> mean = weighted mean of <em>all</em> points, using posterior probabilities as weights:<br>$\\mu_b = \\frac{\\sum_i b_i x_i}{\\sum_i b_i}$<br>Every point contributes to every Gaussian, proportionally to how likely it belongs there.'
+    },
+    {
+      q: 'Why does K-Means always converge? Does it find the global optimum?',
+      a: 'K-Means is guaranteed to converge because $J$ can only decrease (or stay the same) at each step &mdash; neither the assignment nor update step can increase $J$. <strong>However, it only finds a local minimum, not the global minimum.</strong> The solution depends on initialization; multi-start is essential.'
+    },
+    {
+      q: 'How is a 28x28 digit image used as a K-Means data point?',
+      a: 'The 2D pixel grid is <strong>flattened</strong> row by row into a 1D vector of $28 \\times 28 = 784$ intensity values. Each digit becomes a <strong>784-dimensional vector</strong> $x \\in \\mathbb{R}^{784}$. Euclidean distance in 784D measures visual similarity between digits.'
+    },
+    {
+      q: 'What do the K-Means centroids look like when applied to MNIST digits?',
+      a: 'Each centroid $\\mu_k \\in \\mathbb{R}^{784}$ can be reshaped into a $28 \\times 28$ image. It looks like a <strong>blurry, averaged version</strong> of the digit class &mdash; the mean pixel intensity across all images assigned to that cluster.'
+    },
+    {
+      q: 'What is PCA and why is it useful before clustering high-dimensional image data?',
+      a: 'PCA finds the directions of maximum variance in the data and projects it onto a smaller number of these directions. Benefits for clustering:<br>1. <strong>Faster computation</strong> (e.g., 50D instead of 784D)<br>2. <strong>Less memory</strong> (covariance matrices from $784 \\times 784$ to $50 \\times 50$)<br>3. <strong>Noise reduction</strong> (low-variance dimensions often = noise)<br>4. <strong>Visualization</strong> (reduce to 2D or 3D)'
+    },
+    {
+      q: 'Compare K-Means and GMM: initialization, assignment, convergence criterion.',
+      a: '<table><tr><th></th><th>K-Means</th><th>GMM</th></tr><tr><td>Init</td><td>Random centroids</td><td>Random Gaussians</td></tr><tr><td>Assignment</td><td>Hard (binary)</td><td>Soft (probability)</td></tr><tr><td>Convergence</td><td>J stops decreasing</td><td>Parameter updates small</td></tr></table>'
+    },
+    {
+      q: 'When would you choose GMM over K-Means?',
+      a: 'GMM is preferred when: (1) <strong>clusters overlap</strong> significantly, (2) clusters have <strong>non-spherical shapes</strong> (GMM uses full covariance matrices), (3) you need <strong>uncertainty estimates</strong> (probability of cluster membership). K-Means is preferred when speed and simplicity are more important.'
+    }
+  ]);
+</script>
+
+<!-- ===== VISUALIZATION 1: K-MEANS INTERACTIVE ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('km-canvas');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var PAD = 40;
+  var COLORS = ['#e74c3c','#3498db','#27ae60','#f39c12','#9b59b6'];
+  var COLORS_DARK = ['#c0392b','#2980b9','#1e8449','#d68910','#7d3c98'];
+
+  var points = [];
+  var centroids = [];
+  var oldCentroids = [];
+  var assignments = [];
+  var K = 3;
+  var iteration = 0;
+  var phase = ''; // 'assign' or 'update'
+  var running = false;
+  var converged = false;
+
+  var btnGen = document.getElementById('km-generate');
+  var btnInit = document.getElementById('km-init');
+  var btnStep = document.getElementById('km-step');
+  var btnRun = document.getElementById('km-run');
+  var btnReset = document.getElementById('km-reset');
+  var selK = document.getElementById('km-k');
+  var statusEl = document.getElementById('km-status');
+
+  function randn() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function dist2(a, b) {
+    return (a[0]-b[0])*(a[0]-b[0]) + (a[1]-b[1])*(a[1]-b[1]);
+  }
+
+  function toCanvas(x, y) {
+    return [PAD + x * (W - 2*PAD), H - PAD - y * (H - 2*PAD)];
+  }
+
+  function generateData() {
+    points = [];
+    var nClusters = 3;
+    for (var c = 0; c < nClusters; c++) {
+      var cx = 0.15 + Math.random() * 0.7;
+      var cy = 0.15 + Math.random() * 0.7;
+      var n = 15 + Math.floor(Math.random() * 6);
+      for (var i = 0; i < n; i++) {
+        var px = cx + randn() * 0.06;
+        var py = cy + randn() * 0.06;
+        px = Math.max(0.02, Math.min(0.98, px));
+        py = Math.max(0.02, Math.min(0.98, py));
+        points.push([px, py]);
+      }
+    }
+    centroids = [];
+    oldCentroids = [];
+    assignments = [];
+    iteration = 0;
+    phase = '';
+    converged = false;
+    btnInit.disabled = false;
+    btnStep.disabled = true;
+    btnRun.disabled = true;
+    draw();
+    statusEl.textContent = points.length + ' data points generated. Choose K and press "Initialize".';
+  }
+
+  function initCentroids() {
+    K = parseInt(selK.value);
+    centroids = [];
+    oldCentroids = [];
+    assignments = new Array(points.length).fill(-1);
+    var indices = [];
+    while (indices.length < K) {
+      var idx = Math.floor(Math.random() * points.length);
+      if (indices.indexOf(idx) === -1) indices.push(idx);
+    }
+    for (var i = 0; i < K; i++) {
+      centroids.push([points[indices[i]][0], points[indices[i]][1]]);
+    }
+    iteration = 0;
+    phase = 'assign';
+    converged = false;
+    btnStep.disabled = false;
+    btnRun.disabled = false;
+    draw();
+    statusEl.textContent = K + ' centroids initialized. Press "Step" to assign points.';
+  }
+
+  function assignStep() {
+    for (var i = 0; i < points.length; i++) {
+      var best = 0, bestD = Infinity;
+      for (var k = 0; k < K; k++) {
+        var d = dist2(points[i], centroids[k]);
+        if (d < bestD) { bestD = d; best = k; }
+      }
+      assignments[i] = best;
+    }
+    phase = 'update';
+    draw();
+    var J = computeDistortion();
+    statusEl.textContent = 'Iteration ' + iteration + ' - Assign step done. Distortion J = ' + J.toFixed(4) + '. Press "Step" to update centroids.';
+  }
+
+  function updateStep() {
+    oldCentroids = centroids.map(function(c) { return [c[0], c[1]]; });
+    var moved = false;
+    for (var k = 0; k < K; k++) {
+      var sx = 0, sy = 0, cnt = 0;
+      for (var i = 0; i < points.length; i++) {
+        if (assignments[i] === k) {
+          sx += points[i][0];
+          sy += points[i][1];
+          cnt++;
+        }
+      }
+      if (cnt > 0) {
+        var nx = sx / cnt, ny = sy / cnt;
+        if (Math.abs(nx - centroids[k][0]) > 1e-6 || Math.abs(ny - centroids[k][1]) > 1e-6) moved = true;
+        centroids[k] = [nx, ny];
+      }
+    }
+    iteration++;
+    phase = 'assign';
+    if (!moved) {
+      converged = true;
+      phase = 'converged';
+      btnStep.disabled = true;
+      btnRun.disabled = true;
+    }
+    draw();
+    var J = computeDistortion();
+    if (converged) {
+      statusEl.textContent = 'Converged at iteration ' + iteration + '! Final distortion J = ' + J.toFixed(4) + '.';
+    } else {
+      statusEl.textContent = 'Iteration ' + iteration + ' - Update step done. Distortion J = ' + J.toFixed(4) + '. Press "Step" to assign.';
+    }
+  }
+
+  function doStep() {
+    if (converged) return;
+    if (phase === 'assign') assignStep();
+    else if (phase === 'update') updateStep();
+  }
+
+  function runToConvergence() {
+    if (running || converged) return;
+    running = true;
+    btnStep.disabled = true;
+    btnRun.disabled = true;
+    function tick() {
+      if (converged) { running = false; return; }
+      doStep();
+      if (!converged) setTimeout(tick, 300);
+      else running = false;
+    }
+    tick();
+  }
+
+  function resetAll() {
+    running = false;
+    points = [];
+    centroids = [];
+    oldCentroids = [];
+    assignments = [];
+    iteration = 0;
+    phase = '';
+    converged = false;
+    btnInit.disabled = true;
+    btnStep.disabled = true;
+    btnRun.disabled = true;
+    ctx.clearRect(0, 0, W, H);
+    drawAxes();
+    statusEl.textContent = 'Press "Generate Data" to begin.';
+  }
+
+  function computeDistortion() {
+    var J = 0;
+    for (var i = 0; i < points.length; i++) {
+      if (assignments[i] >= 0) J += dist2(points[i], centroids[assignments[i]]);
+    }
+    return J;
+  }
+
+  function drawAxes() {
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD, PAD); ctx.lineTo(PAD, H - PAD);
+    ctx.lineTo(W - PAD, H - PAD);
+    ctx.stroke();
+    ctx.fillStyle = '#999';
+    ctx.font = '10px sans-serif';
+    for (var t = 0; t <= 1; t += 0.25) {
+      var p = toCanvas(t, 0);
+      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0], p[1] + 4); ctx.stroke();
+      ctx.fillText(t.toFixed(1), p[0] - 8, p[1] + 14);
+      var q = toCanvas(0, t);
+      ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(q[0] - 4, q[1]); ctx.stroke();
+      ctx.fillText(t.toFixed(1), q[0] - 28, q[1] + 4);
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawAxes();
+    // Draw lines from points to centroids (assign phase)
+    if (phase !== '' && centroids.length > 0 && assignments.length > 0) {
+      ctx.globalAlpha = 0.15;
+      for (var i = 0; i < points.length; i++) {
+        var k = assignments[i];
+        if (k < 0) continue;
+        var pp = toCanvas(points[i][0], points[i][1]);
+        var cp = toCanvas(centroids[k][0], centroids[k][1]);
+        ctx.strokeStyle = COLORS[k % COLORS.length];
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pp[0], pp[1]);
+        ctx.lineTo(cp[0], cp[1]);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1.0;
+    }
+    // Draw points
+    for (var i = 0; i < points.length; i++) {
+      var p = toCanvas(points[i][0], points[i][1]);
+      var k = assignments[i];
+      ctx.fillStyle = k >= 0 ? COLORS[k % COLORS.length] : '#999';
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    // Draw old centroids faintly
+    if (oldCentroids.length > 0) {
+      ctx.globalAlpha = 0.25;
+      for (var k = 0; k < oldCentroids.length; k++) {
+        var oc = toCanvas(oldCentroids[k][0], oldCentroids[k][1]);
+        ctx.fillStyle = COLORS_DARK[k % COLORS_DARK.length];
+        ctx.fillRect(oc[0] - 5, oc[1] - 5, 10, 10);
+      }
+      ctx.globalAlpha = 1.0;
+    }
+    // Draw centroids
+    for (var k = 0; k < centroids.length; k++) {
+      var c = toCanvas(centroids[k][0], centroids[k][1]);
+      ctx.fillStyle = COLORS_DARK[k % COLORS_DARK.length];
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(c[0] - 6, c[1] - 6, 12, 12);
+      ctx.strokeRect(c[0] - 6, c[1] - 6, 12, 12);
+    }
+  }
+
+  btnGen.addEventListener('click', generateData);
+  btnInit.addEventListener('click', initCentroids);
+  btnStep.addEventListener('click', doStep);
+  btnRun.addEventListener('click', runToConvergence);
+  btnReset.addEventListener('click', resetAll);
+
+  drawAxes();
+})();
+</script>
+
+<!-- ===== VISUALIZATION 4: GAUSSIAN DISTRIBUTION EXPLORER ===== -->
+<script>
+(function() {
+  // --- 1D Gaussian ---
+  var c1d = document.getElementById('gauss1d-canvas');
+  var ctx1 = c1d.getContext('2d');
+  var W1 = c1d.width, H1 = c1d.height;
+  var muSlider = document.getElementById('gauss1d-mu');
+  var sigmaSlider = document.getElementById('gauss1d-sigma');
+  var muVal = document.getElementById('gauss1d-mu-val');
+  var sigmaVal = document.getElementById('gauss1d-sigma-val');
+
+  function gaussPDF(x, mu, sigma) {
+    return Math.exp(-0.5 * Math.pow((x - mu) / sigma, 2)) / (sigma * Math.sqrt(2 * Math.PI));
+  }
+
+  function draw1D() {
+    var mu = parseFloat(muSlider.value);
+    var sigma = parseFloat(sigmaSlider.value);
+    muVal.textContent = mu.toFixed(2);
+    sigmaVal.textContent = sigma.toFixed(2);
+
+    ctx1.clearRect(0, 0, W1, H1);
+    var pad = 30;
+    var plotW = W1 - 2 * pad;
+    var plotH = H1 - 2 * pad;
+    var xMin = -5, xMax = 5;
+    var yMax = 1.5;
+
+    // Axes
+    ctx1.strokeStyle = '#ccc';
+    ctx1.lineWidth = 1;
+    ctx1.beginPath();
+    ctx1.moveTo(pad, pad); ctx1.lineTo(pad, H1 - pad);
+    ctx1.lineTo(W1 - pad, H1 - pad);
+    ctx1.stroke();
+    // Ticks
+    ctx1.fillStyle = '#999';
+    ctx1.font = '9px sans-serif';
+    for (var t = -4; t <= 4; t += 2) {
+      var tx = pad + (t - xMin) / (xMax - xMin) * plotW;
+      ctx1.beginPath(); ctx1.moveTo(tx, H1 - pad); ctx1.lineTo(tx, H1 - pad + 3); ctx1.stroke();
+      ctx1.fillText(t, tx - 4, H1 - pad + 13);
+    }
+
+    // Compute curve
+    var nPts = 200;
+    var curveX = [], curveY = [];
+    for (var i = 0; i <= nPts; i++) {
+      var x = xMin + (xMax - xMin) * i / nPts;
+      var y = gaussPDF(x, mu, sigma);
+      curveX.push(pad + (x - xMin) / (xMax - xMin) * plotW);
+      curveY.push(H1 - pad - (y / yMax) * plotH);
+    }
+
+    // Shade area under curve
+    ctx1.beginPath();
+    ctx1.moveTo(curveX[0], H1 - pad);
+    for (var i = 0; i <= nPts; i++) {
+      ctx1.lineTo(curveX[i], curveY[i]);
+    }
+    ctx1.lineTo(curveX[nPts], H1 - pad);
+    ctx1.closePath();
+    ctx1.fillStyle = 'rgba(52, 152, 219, 0.2)';
+    ctx1.fill();
+
+    // Draw curve
+    ctx1.strokeStyle = '#3498db';
+    ctx1.lineWidth = 2;
+    ctx1.beginPath();
+    ctx1.moveTo(curveX[0], curveY[0]);
+    for (var i = 1; i <= nPts; i++) {
+      ctx1.lineTo(curveX[i], curveY[i]);
+    }
+    ctx1.stroke();
+
+    // Mark mu
+    var muX = pad + (mu - xMin) / (xMax - xMin) * plotW;
+    ctx1.strokeStyle = '#e74c3c';
+    ctx1.lineWidth = 1;
+    ctx1.setLineDash([4, 3]);
+    ctx1.beginPath();
+    ctx1.moveTo(muX, H1 - pad);
+    ctx1.lineTo(muX, pad);
+    ctx1.stroke();
+    ctx1.setLineDash([]);
+  }
+
+  muSlider.addEventListener('input', draw1D);
+  sigmaSlider.addEventListener('input', draw1D);
+  draw1D();
+
+  // --- 2D Gaussian ---
+  var c2d = document.getElementById('gauss2d-canvas');
+  var ctx2 = c2d.getContext('2d');
+  var W2 = c2d.width, H2 = c2d.height;
+  var sxSlider = document.getElementById('gauss2d-sx');
+  var sySlider = document.getElementById('gauss2d-sy');
+  var sxVal = document.getElementById('gauss2d-sx-val');
+  var syVal = document.getElementById('gauss2d-sy-val');
+
+  function draw2D() {
+    var sx = parseFloat(sxSlider.value);
+    var sy = parseFloat(sySlider.value);
+    sxVal.textContent = sx.toFixed(2);
+    syVal.textContent = sy.toFixed(2);
+
+    ctx2.clearRect(0, 0, W2, H2);
+    var pad = 30;
+    var plotW = W2 - 2 * pad;
+    var plotH = H2 - 2 * pad;
+    var cx = pad + plotW / 2;
+    var cy = pad + plotH / 2;
+
+    // Axes
+    ctx2.strokeStyle = '#ccc';
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.moveTo(pad, cy); ctx2.lineTo(W2 - pad, cy);
+    ctx2.moveTo(cx, pad); ctx2.lineTo(cx, H2 - pad);
+    ctx2.stroke();
+
+    // Draw contours at 0.5, 1, 1.5, 2, 2.5 sigma
+    var levels = [0.5, 1.0, 1.5, 2.0, 2.5];
+    var scale = plotW / 8; // pixels per sigma unit
+    for (var li = levels.length - 1; li >= 0; li--) {
+      var s = levels[li];
+      var rx = s * sx * scale;
+      var ry = s * sy * scale;
+      // Density at this sigma level
+      var density = Math.exp(-0.5 * s * s);
+      var alpha = 0.12 + 0.18 * density;
+      ctx2.fillStyle = 'rgba(52, 152, 219, ' + alpha.toFixed(2) + ')';
+      ctx2.strokeStyle = 'rgba(52, 152, 219, ' + (0.3 + 0.4 * density).toFixed(2) + ')';
+      ctx2.lineWidth = 1;
+      ctx2.beginPath();
+      ctx2.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+      ctx2.fill();
+      ctx2.stroke();
+    }
+
+    // Labels
+    ctx2.fillStyle = '#999';
+    ctx2.font = '9px sans-serif';
+    ctx2.fillText('x', W2 - pad + 4, cy + 4);
+    ctx2.fillText('y', cx + 4, pad - 6);
+  }
+
+  sxSlider.addEventListener('input', draw2D);
+  sySlider.addEventListener('input', draw2D);
+  draw2D();
+
+  // Render math in the container
+  var container = document.getElementById('gaussian-interactive');
+  if (typeof renderMathInElement === 'function') {
+    renderMathInElement(container, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof renderMathInElement === 'function') {
+        renderMathInElement(container, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});
+      }
+    });
+  }
+})();
+</script>
+
+<!-- ===== VISUALIZATION 2: EM/GMM INTERACTIVE ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('em-canvas');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var PAD = 40;
+  var COLORS = ['#e74c3c','#3498db','#27ae60'];
+  var COLORS_RGBA = [
+    [231, 76, 60],
+    [52, 152, 219],
+    [39, 174, 96]
+  ];
+
+  var points = [];
+  var gaussians = []; // {mu:[x,y], cov:[[a,b],[c,d]], weight:number}
+  var gammas = []; // gammas[i][k] = posterior P(k|x_i)
+  var K = 3;
+  var iteration = 0;
+  var phase = ''; // 'estep' or 'mstep'
+  var running = false;
+  var converged = false;
+
+  var btnGen = document.getElementById('em-generate');
+  var btnInit = document.getElementById('em-init');
+  var btnE = document.getElementById('em-estep');
+  var btnM = document.getElementById('em-mstep');
+  var btnRun = document.getElementById('em-run');
+  var btnReset = document.getElementById('em-reset');
+  var statusEl = document.getElementById('em-status');
+  var eqEl = document.getElementById('em-equations');
+
+  function fmt(v) { return v.toFixed(4); }
+  function fmt2(v) { return v.toFixed(2); }
+  function fmtSci(v) { return v < 0.0001 && v > 0 ? v.toExponential(2) : v.toFixed(4); }
+
+  function showEquations(html) {
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  function buildGaussianParamsTable() {
+    if (gaussians.length === 0) return '';
+    var colorNames = ['Red', 'Blue', 'Green'];
+    var html = '<div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Current Gaussian Parameters</div>';
+    html += '<table style="font-size:12px;"><tr><th>Gaussian</th><th>$\\pi_k$ (weight)</th><th>$\\mu_k$ (mean)</th><th>$\\Sigma_k$ (covariance)</th></tr>';
+    for (var k = 0; k < K; k++) {
+      var g = gaussians[k];
+      html += '<tr><td><span style="color:' + COLORS[k] + ';font-weight:700;">' + colorNames[k] + ' (k=' + (k+1) + ')</span></td>';
+      html += '<td>' + fmt(g.weight) + '</td>';
+      html += '<td>(' + fmt2(g.mu[0]) + ', ' + fmt2(g.mu[1]) + ')</td>';
+      html += '<td>$\\begin{bmatrix}' + fmtSci(g.cov[0][0]) + ' & ' + fmtSci(g.cov[0][1]) + ' \\\\ ' + fmtSci(g.cov[1][0]) + ' & ' + fmtSci(g.cov[1][1]) + '\\end{bmatrix}$</td></tr>';
+    }
+    html += '</table>';
+    return html;
+  }
+
+  function buildEStepEquations() {
+    if (gammas.length === 0) return '';
+    var html = '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">E-Step: Posterior Probabilities</div>';
+    html += '<div style="margin-bottom:8px;">For each point $x_i$ and Gaussian $k$:</div>';
+    html += '<div style="margin-bottom:8px;">$$\\gamma_{ik} = P(k \\mid x_i) = \\frac{\\pi_k \\cdot \\mathcal{N}(x_i \\mid \\mu_k, \\Sigma_k)}{\\sum_{j=1}^{K} \\pi_j \\cdot \\mathcal{N}(x_i \\mid \\mu_j, \\Sigma_j)}$$</div>';
+    html += '</div>';
+    // Show sample posteriors for first 5 points
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Sample posteriors (first 5 points)</div>';
+    html += '<table style="font-size:11px;"><tr><th>Point</th><th>$(x, y)$</th>';
+    var colorNames = ['Red', 'Blue', 'Green'];
+    for (var k = 0; k < K; k++) html += '<th style="color:' + COLORS[k] + ';">$\\gamma_{i,' + (k+1) + '}$</th>';
+    html += '<th>Assignment</th></tr>';
+    var nShow = Math.min(5, points.length);
+    for (var i = 0; i < nShow; i++) {
+      html += '<tr><td>$x_{' + (i+1) + '}$</td><td>(' + fmt2(points[i][0]) + ', ' + fmt2(points[i][1]) + ')</td>';
+      var maxK = 0, maxG = 0;
+      for (var k = 0; k < K; k++) {
+        html += '<td>' + fmt(gammas[i][k]) + '</td>';
+        if (gammas[i][k] > maxG) { maxG = gammas[i][k]; maxK = k; }
+      }
+      html += '<td style="color:' + COLORS[maxK] + ';font-weight:600;">' + colorNames[maxK] + ' (' + fmt2(maxG * 100) + '%)</td></tr>';
+    }
+    if (points.length > 5) html += '<tr><td colspan="' + (K+3) + '" style="color:#999;">... and ' + (points.length - 5) + ' more points</td></tr>';
+    html += '</table>';
+    // Effective counts
+    html += '<div style="font-size:12px;margin-top:10px;"><strong>Effective cluster sizes:</strong> ';
+    for (var k = 0; k < K; k++) {
+      var Nk = 0;
+      for (var i = 0; i < points.length; i++) Nk += gammas[i][k];
+      html += '<span style="color:' + COLORS[k] + ';font-weight:600;">$N_{' + (k+1) + '}$ = ' + fmt2(Nk) + '</span>';
+      if (k < K-1) html += ', ';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function buildMStepEquations() {
+    var html = '<div style="border-left:3px solid #e67e22;background:#fff8f0;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#e67e22;text-transform:uppercase;margin-bottom:6px;">M-Step: Update Parameters</div>';
+    html += '<div style="margin-bottom:6px;">$$\\mu_k^{\\text{new}} = \\frac{1}{N_k}\\sum_{i=1}^{N}\\gamma_{ik}\\, x_i$$</div>';
+    html += '<div style="margin-bottom:6px;">$$\\Sigma_k^{\\text{new}} = \\frac{1}{N_k}\\sum_{i=1}^{N}\\gamma_{ik}\\,(x_i - \\mu_k^{\\text{new}})(x_i - \\mu_k^{\\text{new}})^T$$</div>';
+    html += '<div style="margin-bottom:6px;">$$\\pi_k^{\\text{new}} = \\frac{N_k}{N}$$</div>';
+    html += '<div style="font-size:12px;color:#555;margin-top:4px;">where $N_k = \\sum_{i=1}^{N} \\gamma_{ik}$ is the effective number of points assigned to Gaussian $k$</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function randn() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function toCanvas(x, y) {
+    return [PAD + x * (W - 2*PAD), H - PAD - y * (H - 2*PAD)];
+  }
+
+  function toData(cx, cy) {
+    return [(cx - PAD) / (W - 2*PAD), (H - PAD - cy) / (H - 2*PAD)];
+  }
+
+  function generateData() {
+    points = [];
+    var centers = [
+      [0.25 + Math.random()*0.1, 0.3 + Math.random()*0.1],
+      [0.65 + Math.random()*0.1, 0.6 + Math.random()*0.1],
+      [0.35 + Math.random()*0.1, 0.7 + Math.random()*0.1]
+    ];
+    var spreads = [0.055, 0.06, 0.05];
+    for (var c = 0; c < 3; c++) {
+      var n = 15 + Math.floor(Math.random() * 6);
+      for (var i = 0; i < n; i++) {
+        var px = centers[c][0] + randn() * spreads[c];
+        var py = centers[c][1] + randn() * spreads[c] * 0.8;
+        px = Math.max(0.02, Math.min(0.98, px));
+        py = Math.max(0.02, Math.min(0.98, py));
+        points.push([px, py]);
+      }
+    }
+    gaussians = [];
+    gammas = [];
+    iteration = 0;
+    phase = '';
+    converged = false;
+    btnInit.disabled = false;
+    btnE.disabled = true;
+    btnM.disabled = true;
+    btnRun.disabled = true;
+    draw();
+    statusEl.textContent = points.length + ' data points generated. Press "Initialize" to place Gaussians.';
+    eqEl.innerHTML = '';
+  }
+
+  function initGaussians() {
+    gaussians = [];
+    gammas = [];
+    var indices = [];
+    while (indices.length < K) {
+      var idx = Math.floor(Math.random() * points.length);
+      if (indices.indexOf(idx) === -1) indices.push(idx);
+    }
+    for (var k = 0; k < K; k++) {
+      gaussians.push({
+        mu: [points[indices[k]][0], points[indices[k]][1]],
+        cov: [[0.005, 0], [0, 0.005]],
+        weight: 1.0 / K
+      });
+    }
+    iteration = 0;
+    phase = 'estep';
+    converged = false;
+    btnE.disabled = false;
+    btnM.disabled = true;
+    btnRun.disabled = false;
+    draw();
+    statusEl.textContent = K + ' Gaussians initialized. Press "E-Step" to compute posteriors.';
+    showEquations(buildGaussianParamsTable());
+  }
+
+  function gaussPDF2D(x, mu, cov) {
+    var dx = x[0] - mu[0], dy = x[1] - mu[1];
+    var det = cov[0][0]*cov[1][1] - cov[0][1]*cov[1][0];
+    if (det < 1e-15) det = 1e-15;
+    var invDet = 1.0 / det;
+    var inv00 = cov[1][1] * invDet;
+    var inv01 = -cov[0][1] * invDet;
+    var inv11 = cov[0][0] * invDet;
+    var exponent = -0.5 * (dx*dx*inv00 + 2*dx*dy*inv01 + dy*dy*inv11);
+    return Math.exp(exponent) / (2 * Math.PI * Math.sqrt(Math.abs(det)));
+  }
+
+  function eStep() {
+    gammas = [];
+    for (var i = 0; i < points.length; i++) {
+      var row = [];
+      var total = 0;
+      for (var k = 0; k < K; k++) {
+        var lik = gaussians[k].weight * gaussPDF2D(points[i], gaussians[k].mu, gaussians[k].cov);
+        row.push(lik);
+        total += lik;
+      }
+      if (total < 1e-30) total = 1e-30;
+      for (var k = 0; k < K; k++) row[k] /= total;
+      gammas.push(row);
+    }
+    phase = 'mstep';
+    btnE.disabled = true;
+    btnM.disabled = false;
+    draw();
+    var ll = computeLogLikelihood();
+    statusEl.textContent = 'Iteration ' + iteration + ' - E-Step done. Log-likelihood = ' + ll.toFixed(2) + '. Press "M-Step".';
+    showEquations(buildEStepEquations() + buildGaussianParamsTable());
+  }
+
+  function mStep() {
+    var oldMus = gaussians.map(function(g) { return [g.mu[0], g.mu[1]]; });
+    for (var k = 0; k < K; k++) {
+      var Nk = 0;
+      for (var i = 0; i < points.length; i++) Nk += gammas[i][k];
+      if (Nk < 1e-10) Nk = 1e-10;
+      // Update mean
+      var mx = 0, my = 0;
+      for (var i = 0; i < points.length; i++) {
+        mx += gammas[i][k] * points[i][0];
+        my += gammas[i][k] * points[i][1];
+      }
+      gaussians[k].mu = [mx / Nk, my / Nk];
+      // Update covariance
+      var c00 = 0, c01 = 0, c11 = 0;
+      for (var i = 0; i < points.length; i++) {
+        var dx = points[i][0] - gaussians[k].mu[0];
+        var dy = points[i][1] - gaussians[k].mu[1];
+        c00 += gammas[i][k] * dx * dx;
+        c01 += gammas[i][k] * dx * dy;
+        c11 += gammas[i][k] * dy * dy;
+      }
+      gaussians[k].cov = [[c00/Nk + 1e-5, c01/Nk], [c01/Nk, c11/Nk + 1e-5]];
+      // Update weight
+      gaussians[k].weight = Nk / points.length;
+    }
+    iteration++;
+    // Check convergence
+    var maxShift = 0;
+    for (var k = 0; k < K; k++) {
+      var d = Math.sqrt(Math.pow(gaussians[k].mu[0]-oldMus[k][0],2) + Math.pow(gaussians[k].mu[1]-oldMus[k][1],2));
+      if (d > maxShift) maxShift = d;
+    }
+    if (maxShift < 1e-5) {
+      converged = true;
+      btnE.disabled = true;
+      btnM.disabled = true;
+      btnRun.disabled = true;
+    } else {
+      phase = 'estep';
+      btnE.disabled = false;
+      btnM.disabled = true;
+    }
+    draw();
+    var ll = computeLogLikelihood();
+    if (converged) {
+      statusEl.textContent = 'Converged at iteration ' + iteration + '! Log-likelihood = ' + ll.toFixed(2) + '.';
+      showEquations(buildMStepEquations() + buildGaussianParamsTable() + '<div class="insight-box" style="margin-top:12px;"><div class="box-label">Converged</div><div>The algorithm has converged — means shifted less than $10^{-5}$ between iterations. Final log-likelihood: ' + ll.toFixed(2) + '</div></div>');
+    } else {
+      statusEl.textContent = 'Iteration ' + iteration + ' - M-Step done. Log-likelihood = ' + ll.toFixed(2) + '. Press "E-Step".';
+      showEquations(buildMStepEquations() + buildGaussianParamsTable());
+    }
+  }
+
+  function computeLogLikelihood() {
+    var ll = 0;
+    for (var i = 0; i < points.length; i++) {
+      var s = 0;
+      for (var k = 0; k < K; k++) {
+        s += gaussians[k].weight * gaussPDF2D(points[i], gaussians[k].mu, gaussians[k].cov);
+      }
+      if (s > 0) ll += Math.log(s);
+    }
+    return ll;
+  }
+
+  function runEM() {
+    if (running || converged) return;
+    running = true;
+    btnE.disabled = true;
+    btnM.disabled = true;
+    btnRun.disabled = true;
+    function tick() {
+      if (converged) { running = false; return; }
+      if (phase === 'estep') eStep();
+      else if (phase === 'mstep') mStep();
+      if (!converged) setTimeout(tick, 300);
+      else running = false;
+    }
+    tick();
+  }
+
+  function resetAll() {
+    running = false;
+    points = [];
+    gaussians = [];
+    gammas = [];
+    iteration = 0;
+    phase = '';
+    converged = false;
+    btnInit.disabled = true;
+    btnE.disabled = true;
+    btnM.disabled = true;
+    btnRun.disabled = true;
+    ctx.clearRect(0, 0, W, H);
+    drawAxes();
+    statusEl.textContent = 'Press "Generate Data" to begin.';
+    eqEl.innerHTML = '';
+  }
+
+  function drawAxes() {
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD, PAD); ctx.lineTo(PAD, H - PAD);
+    ctx.lineTo(W - PAD, H - PAD);
+    ctx.stroke();
+    ctx.fillStyle = '#999';
+    ctx.font = '10px sans-serif';
+    for (var t = 0; t <= 1; t += 0.25) {
+      var p = toCanvas(t, 0);
+      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0], p[1] + 4); ctx.stroke();
+      ctx.fillText(t.toFixed(1), p[0] - 8, p[1] + 14);
+      var q = toCanvas(0, t);
+      ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.lineTo(q[0] - 4, q[1]); ctx.stroke();
+      ctx.fillText(t.toFixed(1), q[0] - 28, q[1] + 4);
+    }
+  }
+
+  function eigenDecomp2x2(m) {
+    var a = m[0][0], b = m[0][1], c = m[1][0], d = m[1][1];
+    var trace = a + d;
+    var det = a*d - b*c;
+    var disc = trace*trace/4 - det;
+    if (disc < 0) disc = 0;
+    var sqrtDisc = Math.sqrt(disc);
+    var l1 = trace/2 + sqrtDisc;
+    var l2 = trace/2 - sqrtDisc;
+    if (l1 < 1e-8) l1 = 1e-8;
+    if (l2 < 1e-8) l2 = 1e-8;
+    var angle = 0;
+    if (Math.abs(b) > 1e-10) {
+      angle = Math.atan2(l1 - a, b);
+    } else if (Math.abs(c) > 1e-10) {
+      angle = Math.atan2(c, l1 - d);
+    } else {
+      angle = 0;
+    }
+    return {l1: l1, l2: l2, angle: angle};
+  }
+
+  function drawEllipse(mu, cov, color, alphaVal, scale) {
+    var e = eigenDecomp2x2(cov);
+    var cp = toCanvas(mu[0], mu[1]);
+    var pixPerUnit = (W - 2*PAD);
+    var rx = Math.sqrt(e.l1) * scale * pixPerUnit;
+    var ry = Math.sqrt(e.l2) * scale * pixPerUnit;
+    ctx.save();
+    ctx.translate(cp[0], cp[1]);
+    ctx.rotate(-e.angle);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, 2 * Math.PI);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alphaVal;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    drawAxes();
+
+    // Draw Gaussian ellipses
+    for (var k = 0; k < gaussians.length; k++) {
+      drawEllipse(gaussians[k].mu, gaussians[k].cov, COLORS[k], 0.7, 1);
+      drawEllipse(gaussians[k].mu, gaussians[k].cov, COLORS[k], 0.35, 2);
+    }
+
+    // Draw points
+    for (var i = 0; i < points.length; i++) {
+      var p = toCanvas(points[i][0], points[i][1]);
+      if (gammas.length > 0) {
+        // Blend colors by posterior
+        var r = 0, g = 0, b = 0;
+        for (var k = 0; k < K; k++) {
+          r += gammas[i][k] * COLORS_RGBA[k][0];
+          g += gammas[i][k] * COLORS_RGBA[k][1];
+          b += gammas[i][k] * COLORS_RGBA[k][2];
+        }
+        ctx.fillStyle = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+      } else {
+        ctx.fillStyle = '#999';
+      }
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    // Draw Gaussian centers
+    for (var k = 0; k < gaussians.length; k++) {
+      var c = toCanvas(gaussians[k].mu[0], gaussians[k].mu[1]);
+      ctx.fillStyle = COLORS[k];
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(c[0] - 6, c[1] - 6, 12, 12);
+      ctx.strokeRect(c[0] - 6, c[1] - 6, 12, 12);
+    }
+  }
+
+  btnGen.addEventListener('click', generateData);
+  btnInit.addEventListener('click', initGaussians);
+  btnE.addEventListener('click', eStep);
+  btnM.addEventListener('click', mStep);
+  btnRun.addEventListener('click', runEM);
+  btnReset.addEventListener('click', resetAll);
+
+  drawAxes();
+})();
+</script>
+
+<!-- ===== VISUALIZATION 3: PCA EXPLORER ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('pca-canvas');
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  var PAD = 50;
+
+  var points = []; // raw 2D points in pixel-ish coords
+  var meanX = 0, meanY = 0;
+  var eigVecs = []; // [[v1x,v1y],[v2x,v2y]]
+  var eigVals = []; // [l1, l2] sorted descending
+  var projected = []; // projected points (when components=1)
+
+  var btnGen = document.getElementById('pca-generate');
+  var btnReset = document.getElementById('pca-reset');
+  var compSlider = document.getElementById('pca-comp');
+  var compVal = document.getElementById('pca-comp-val');
+  var statusEl = document.getElementById('pca-status');
+
+  function randn() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function generateData() {
+    points = [];
+    var cx = W / 2, cy = H / 2;
+    var angle = 25 + Math.random() * 20; // degrees
+    var rad = angle * Math.PI / 180;
+    var s1 = 80, s2 = 20;
+    var n = 40 + Math.floor(Math.random() * 11);
+    for (var i = 0; i < n; i++) {
+      var gx = randn() * s1;
+      var gy = randn() * s2;
+      // Rotate
+      var rx = gx * Math.cos(rad) - gy * Math.sin(rad);
+      var ry = gx * Math.sin(rad) + gy * Math.cos(rad);
+      points.push([cx + rx, cy + ry]);
+    }
+    computePCA();
+    draw();
+    var totalVar = eigVals[0] + eigVals[1];
+    var pct1 = (eigVals[0] / totalVar * 100).toFixed(1);
+    var pct2 = (eigVals[1] / totalVar * 100).toFixed(1);
+    statusEl.textContent = n + ' points generated. PC1 explains ' + pct1 + '%, PC2 explains ' + pct2 + '%.';
+  }
+
+  function computePCA() {
+    // Compute mean
+    meanX = 0; meanY = 0;
+    for (var i = 0; i < points.length; i++) {
+      meanX += points[i][0];
+      meanY += points[i][1];
+    }
+    meanX /= points.length;
+    meanY /= points.length;
+
+    // Compute covariance matrix
+    var cxx = 0, cxy = 0, cyy = 0;
+    for (var i = 0; i < points.length; i++) {
+      var dx = points[i][0] - meanX;
+      var dy = points[i][1] - meanY;
+      cxx += dx * dx;
+      cxy += dx * dy;
+      cyy += dy * dy;
+    }
+    cxx /= points.length;
+    cxy /= points.length;
+    cyy /= points.length;
+
+    // Eigen decomposition of 2x2 symmetric matrix
+    var trace = cxx + cyy;
+    var det = cxx * cyy - cxy * cxy;
+    var disc = trace * trace / 4 - det;
+    if (disc < 0) disc = 0;
+    var sqrtDisc = Math.sqrt(disc);
+    var l1 = trace / 2 + sqrtDisc;
+    var l2 = trace / 2 - sqrtDisc;
+
+    // Eigenvectors
+    var v1, v2;
+    if (Math.abs(cxy) > 1e-10) {
+      v1 = [l1 - cyy, cxy];
+      v2 = [l2 - cyy, cxy];
+    } else {
+      v1 = cxx >= cyy ? [1, 0] : [0, 1];
+      v2 = cxx >= cyy ? [0, 1] : [1, 0];
+    }
+    // Normalize
+    var len1 = Math.sqrt(v1[0]*v1[0] + v1[1]*v1[1]);
+    var len2 = Math.sqrt(v2[0]*v2[0] + v2[1]*v2[1]);
+    v1 = [v1[0]/len1, v1[1]/len1];
+    v2 = [v2[0]/len2, v2[1]/len2];
+
+    eigVecs = [v1, v2];
+    eigVals = [l1, l2];
+
+    // Compute projections onto PC1
+    projected = [];
+    for (var i = 0; i < points.length; i++) {
+      var dx = points[i][0] - meanX;
+      var dy = points[i][1] - meanY;
+      var proj = dx * v1[0] + dy * v1[1];
+      projected.push([meanX + proj * v1[0], meanY + proj * v1[1]]);
+    }
+  }
+
+  function draw() {
+    var nComp = parseInt(compSlider.value);
+    compVal.textContent = nComp;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw simple border region
+    ctx.strokeStyle = '#eee';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(PAD, PAD, W - 2*PAD, H - 2*PAD);
+
+    var totalVar = eigVals[0] + eigVals[1];
+    var pct1 = eigVals.length > 0 ? (eigVals[0] / totalVar * 100).toFixed(1) : '0';
+    var pct2 = eigVals.length > 0 ? (eigVals[1] / totalVar * 100).toFixed(1) : '0';
+
+    if (nComp === 1 && projected.length > 0) {
+      // Draw lines from original to projected (reconstruction error)
+      ctx.strokeStyle = 'rgba(150,150,150,0.3)';
+      ctx.lineWidth = 1;
+      for (var i = 0; i < points.length; i++) {
+        ctx.beginPath();
+        ctx.moveTo(points[i][0], points[i][1]);
+        ctx.lineTo(projected[i][0], projected[i][1]);
+        ctx.stroke();
+      }
+      // Draw original points faintly
+      for (var i = 0; i < points.length; i++) {
+        ctx.fillStyle = 'rgba(180,180,180,0.4)';
+        ctx.beginPath();
+        ctx.arc(points[i][0], points[i][1], 3, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      // Draw projected points
+      for (var i = 0; i < projected.length; i++) {
+        ctx.fillStyle = '#3498db';
+        ctx.beginPath();
+        ctx.arc(projected[i][0], projected[i][1], 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      statusEl.textContent = 'Showing PC1 projection (' + pct1 + '% variance). Lines show reconstruction error.';
+    } else {
+      // Draw original points
+      for (var i = 0; i < points.length; i++) {
+        ctx.fillStyle = '#999';
+        ctx.beginPath();
+        ctx.arc(points[i][0], points[i][1], 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      if (points.length > 0) {
+        statusEl.textContent = points.length + ' points. PC1: ' + pct1 + '%, PC2: ' + pct2 + '%.';
+      }
+    }
+
+    // Draw PC axes if we have data
+    if (eigVecs.length > 0 && points.length > 0) {
+      // PC1
+      var arrowLen1 = Math.sqrt(eigVals[0]) * 2.5;
+      drawArrow(meanX, meanY, meanX + eigVecs[0][0]*arrowLen1, meanY + eigVecs[0][1]*arrowLen1, '#3498db', 2.5);
+      drawArrow(meanX, meanY, meanX - eigVecs[0][0]*arrowLen1, meanY - eigVecs[0][1]*arrowLen1, '#3498db', 2.5);
+      ctx.fillStyle = '#3498db';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('PC1 (' + pct1 + '%)', meanX + eigVecs[0][0]*arrowLen1 + 5, meanY + eigVecs[0][1]*arrowLen1 - 5);
+
+      // PC2
+      var arrowLen2 = Math.sqrt(eigVals[1]) * 2.5;
+      drawArrow(meanX, meanY, meanX + eigVecs[1][0]*arrowLen2, meanY + eigVecs[1][1]*arrowLen2, '#f39c12', 2);
+      drawArrow(meanX, meanY, meanX - eigVecs[1][0]*arrowLen2, meanY - eigVecs[1][1]*arrowLen2, '#f39c12', 2);
+      ctx.fillStyle = '#f39c12';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('PC2 (' + pct2 + '%)', meanX + eigVecs[1][0]*arrowLen2 + 5, meanY + eigVecs[1][1]*arrowLen2 - 5);
+
+      // Draw mean point
+      ctx.fillStyle = '#333';
+      ctx.beginPath();
+      ctx.arc(meanX, meanY, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  function drawArrow(x1, y1, x2, y2, color, lineW) {
+    var headLen = 8;
+    var angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineW;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    // Arrowhead
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI/7), y2 - headLen * Math.sin(angle - Math.PI/7));
+    ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI/7), y2 - headLen * Math.sin(angle + Math.PI/7));
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function resetAll() {
+    points = [];
+    projected = [];
+    eigVecs = [];
+    eigVals = [];
+    compSlider.value = 2;
+    compVal.textContent = '2';
+    ctx.clearRect(0, 0, W, H);
+    statusEl.textContent = 'Press "Generate Data" to create a point cloud with a clear principal axis.';
+  }
+
+  btnGen.addEventListener('click', generateData);
+  btnReset.addEventListener('click', resetAll);
+  compSlider.addEventListener('input', function() {
+    if (points.length > 0) draw();
+  });
+})();
+</script>
+</body>
+</html>

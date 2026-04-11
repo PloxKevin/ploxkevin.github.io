@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9A. Neural Radiance Fields (NeRF) &mdash; 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">9A. Neural Radiance Fields (NeRF)</h1>
+    <p class="page-subtitle">Inverse rendering, volume rendering equation, ray marching, positional encoding, hierarchical sampling</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#3d-formats">1. 3D Representation Formats</a>
+      <a href="#rendering-vs-inverse">2. Rendering vs Inverse Rendering</a>
+      <a href="#camera-poses">3. Getting Camera Poses</a>
+      <a href="#volume-rendering-continuous">4. Volume Rendering &mdash; Continuous Form</a>
+      <a href="#volume-rendering-discrete">5. Volume Rendering &mdash; Discrete Approximation</a>
+      <a href="#nerf-architecture">6. NeRF Architecture</a>
+      <a href="#positional-encoding">7. Positional Encoding</a>
+      <a href="#hierarchical-sampling">8. Hierarchical Sampling</a>
+      <a href="#training-loss">9. Training and Loss</a>
+      <a href="#limitations-variants">10. Limitations and Variants</a>
+      <a class="toc-interactive" href="#nerf-walkthrough">Interactive: NeRF Pipeline Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: 3D FORMATS ===== -->
+    <h2 class="section-heading" id="3d-formats">1. 3D Representation Formats</h2>
+
+    <p>NeRF is best understood in the context of the 3D representations it replaces. Four main explicit formats exist, each with different trade-offs.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/3d_formats_overview.png" alt="Overview of 3D representation formats: voxels, meshes, point clouds, octrees">
+      <div class="figure-caption">Overview of 3D representation formats: voxels, meshes, point clouds, octrees, and other representations.</div>
+    </div>
+
+    <h3 class="subsection-heading">Voxels</h3>
+    <p>A voxel is a volumetric pixel &mdash; a small cube in a regular 3D grid storing a value (occupancy, color, density). Intuitive and easy to work with, but memory-hungry: a 512&times;512&times;512 grid with a single float per voxel requires &sim;512 MB.</p>
+
+    <h3 class="subsection-heading">Meshes (Polygonal Models)</h3>
+    <p>A mesh is a collection of vertices, edges, and faces (usually triangles) defining a surface. GPUs are designed for mesh rendering, making it the fastest option. However, creating meshes from sensor data is time-consuming.</p>
+
+    <h3 class="subsection-heading">Point Clouds</h3>
+    <p>A set of 3D points $(x, y, z)$ with optional color and normals. Easy to acquire from depth sensors and Structure-from-Motion, but do not define surfaces explicitly and are difficult to convert to meshes.</p>
+
+    <h3 class="subsection-heading">Octrees</h3>
+    <p>A tree structure that recursively subdivides 3D space into eight octants, only allocating memory where detail exists. Low memory footprint but requires additional processing when updating the model.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why NeRF?</div>
+      <div>All four formats above are <strong>explicit</strong> representations that store geometry directly. NeRF introduces an <strong>implicit</strong> representation: the entire scene is encoded in the weights of a neural network. This gives extremely compact storage (&lt;10 MB), a continuous representation queryable at any resolution, and natural differentiability for gradient-based optimization.</div>
+    </div>
+
+    <table>
+      <tr><th>Format</th><th>Pros</th><th>Cons</th></tr>
+      <tr><td>Voxels</td><td>Easy to aggregate sensor data, volumetric</td><td>Very high memory, no GPU render hardware</td></tr>
+      <tr><td>Meshes</td><td>GPU hardware rendering, compact</td><td>Hard to create from sensor data</td></tr>
+      <tr><td>Point Clouds</td><td>Easy from depth sensors, many tools</td><td>No surface information, high memory</td></tr>
+      <tr><td>Octrees</td><td>Low memory, volumetric</td><td>Complex to update, no GPU hardware</td></tr>
+      <tr><td><strong>NeRF (implicit)</strong></td><td>Compact (&lt;10 MB), continuous, differentiable</td><td>Slow to query, hard to edit</td></tr>
+    </table>
+
+    <!-- ===== SECTION 2: RENDERING VS INVERSE ===== -->
+    <h2 class="section-heading" id="rendering-vs-inverse">2. Rendering vs Inverse Rendering</h2>
+
+    <h3 class="subsection-heading">Forward Rendering</h3>
+    <p>Takes a 3D model and produces a 2D image. Direction: <strong>3D model &rarr; 2D image</strong>. This is the classical computer graphics problem (video games, CGI movies). It is well-defined: given scene parameters, produce an image.</p>
+
+    <h3 class="subsection-heading">Inverse Rendering</h3>
+    <p>Takes 2D images and recovers the 3D scene that produced them. Direction: <strong>2D images &rarr; 3D model</strong>. This is fundamentally <strong>ill-posed</strong>: many possible 3D scenes can produce the same 2D images. NeRF makes this tractable by:</p>
+    <ol>
+      <li>Choosing a flexible implicit 3D representation (an MLP)</li>
+      <li>Making the forward rendering process <strong>differentiable</strong></li>
+      <li>Optimizing the MLP weights to minimize the difference between rendered and real images</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Differentiable Rendering Pipeline</div>
+      <div>Every step from scene representation to rendered image is differentiable. This lets us compute $\nabla_\Theta \mathcal{L}$ (gradients of the loss with respect to the scene parameters $\Theta$) and update the scene via stochastic gradient descent.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/deepvoxels_differentiable_rendering_pipeline.png" alt="DeepVoxels differentiable rendering pipeline">
+      <div class="figure-caption">A differentiable rendering pipeline: training images and poses train a persistent 3D representation; the learned representation enables novel view synthesis at test time.</div>
+    </div>
+
+    <!-- ===== SECTION 3: CAMERA POSES ===== -->
+    <h2 class="section-heading" id="camera-poses">3. Getting Camera Poses</h2>
+
+    <p>Inverse rendering requires knowing where each training image was taken from &mdash; the camera position and orientation in 3D space. Two approaches are used in practice.</p>
+
+    <h3 class="subsection-heading">ArUco Markers</h3>
+    <p>Square, high-contrast fiducial tags with unique binary patterns placed in the scene. Computer vision algorithms detect them and compute camera calibration automatically.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/camera_poses_aruco_markers.png" alt="Camera poses recovered via ArUco markers">
+      <div class="figure-caption">34 camera positions and orientations recovered from ArUco markers placed in the scene.</div>
+    </div>
+
+    <table>
+      <tr><th></th><th>ArUco Markers</th><th>Structure-from-Motion (COLMAP)</th></tr>
+      <tr><td>Pros</td><td>Fast, reliable, unique IDs</td><td>Works in the wild, no markers needed</td></tr>
+      <tr><td>Cons</td><td>Must populate scene with markers, inefficient for large scenes</td><td>Computationally intensive, requires multiple images</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Structure-from-Motion (SfM) &mdash; COLMAP</h3>
+    <p>Uses SfM to automatically recover camera poses from images by matching features across views and triangulating them into 3D. COLMAP is the standard tool in the NeRF pipeline for in-the-wild photo collections.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/colmap_sfm_camera_poses.png" alt="COLMAP SfM reconstruction with camera poses">
+      <div class="figure-caption">COLMAP output: sparse point cloud of a building with recovered camera poses (red frustums) arranged around the scene.</div>
+    </div>
+
+    <!-- ===== SECTION 4: VOLUME RENDERING CONTINUOUS ===== -->
+    <h2 class="section-heading" id="volume-rendering-continuous">4. Volume Rendering &mdash; Continuous Form</h2>
+
+    <p>NeRF uses <strong>volume rendering</strong>, not surface ray tracing. In volume rendering, the ray does not hit a surface and stop &mdash; it passes through a continuous medium with varying density and color. There is no explicit surface, only continuously varying density $\sigma$ and color $c$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key distinction</div>
+      <div>Surface ray tracing: ray hits a surface, bounces/terminates. Binary hit-or-miss. Volume rendering: ray passes through a continuous medium. No explicit surfaces. Varying density and color everywhere. NeRF uses volume rendering, which allows it to represent complex geometry without explicit surface definitions.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Volume Rendering Equation</h3>
+    <p>The color of a pixel (ray $\mathbf{r}$) is computed by integrating along the ray from the near plane $t_n$ to the far plane $t_f$:</p>
+
+    <div class="math-block">$$C(\mathbf{r}) = \int_{t_n}^{t_f} T(t) \cdot \sigma(\mathbf{r}(t)) \cdot c(\mathbf{r}(t), \mathbf{d}) \, dt$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">The Three Components</div>
+      <div>
+        <p><strong>$c(\mathbf{r}(t), \mathbf{d})$</strong> &mdash; Radiance (color) at position $\mathbf{r}(t)$ viewed from direction $\mathbf{d}$. Depends on both position and viewing direction (models specular highlights, reflections).</p>
+        <p><strong>$\sigma(\mathbf{r}(t))$</strong> &mdash; Volume density at position $\mathbf{r}(t)$. A non-negative scalar: how "opaque" the medium is. Does NOT depend on viewing direction &mdash; geometry is view-independent. $\sigma = 0$ means empty space; $\sigma \to \infty$ means solid surface.</p>
+        <p><strong>$T(t) = \exp\!\left(-\int_{t_n}^{t} \sigma(\mathbf{r}(s)) \, ds\right)$</strong> &mdash; Transmittance. The probability the ray travels from $t_n$ to depth $t$ without being absorbed. Starts at 1, decreases monotonically toward 0 as density accumulates.</p>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Physical intuition</div>
+      <div>Think of looking through fog at colored lights. $T(t)$ is how much of your view survives to reach depth $t$. $\sigma(\mathbf{r}(t))$ is how thick the fog is at depth $t$. $c(\mathbf{r}(t), \mathbf{d})$ is the color of the light at depth $t$. The product $T(t) \cdot \sigma(\mathbf{r}(t))$ gives the probability that the ray terminates exactly at depth $t$ &mdash; it reached there (transmittance) and got stopped (density). Occluded regions contribute little (low $T$), empty space contributes nothing (low $\sigma$), surfaces contribute most (first region of high $\sigma$ after high $T$).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/ray_tracing_diagram.png" alt="Ray tracing diagram">
+      <div class="figure-caption">A camera casts a view ray through the image plane. In volume rendering, the ray integrates color and density all along its path rather than stopping at the first surface hit.</div>
+    </div>
+
+    <!-- ===== SECTION 5: VOLUME RENDERING DISCRETE ===== -->
+    <h2 class="section-heading" id="volume-rendering-discrete">5. Volume Rendering &mdash; Discrete Approximation</h2>
+
+    <p>The continuous integral cannot be computed analytically for an arbitrary neural network. We approximate it by sampling $N$ points along the ray and summing their contributions.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Discrete Volume Rendering (Alpha Compositing)</div>
+      <div>
+        <p>$$\hat{C}(\mathbf{r}) \approx \sum_{i=1}^{N} T_i \cdot \alpha_i \cdot \mathbf{c}_i$$</p>
+        <p><strong>Discrete opacity:</strong> $\alpha_i = 1 - e^{-\sigma_i \cdot \delta_i}$ where $\delta_i = t_{i+1} - t_i$ is the step size.</p>
+        <p><strong>Discrete transmittance:</strong> $T_i = \prod_{j=1}^{i-1} (1 - \alpha_j)$</p>
+      </div>
+    </div>
+
+    <table>
+      <tr><th>Continuous</th><th>Discrete</th></tr>
+      <tr><td>$\int_{t_n}^{t_f} \ldots \, dt$</td><td>$\sum_{i=1}^{N} \ldots$</td></tr>
+      <tr><td>$\sigma(\mathbf{r}(t)) \, dt$</td><td>$\alpha_i = 1 - e^{-\sigma_i \delta_i}$</td></tr>
+      <tr><td>$T(t) = \exp\!\left(-\int_{t_n}^{t} \sigma \, ds\right)$</td><td>$T_i = \prod_{j=1}^{i-1}(1-\alpha_j)$</td></tr>
+      <tr><td>$c(\mathbf{r}(t), \mathbf{d})$</td><td>$\mathbf{c}_i$</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Understanding the discrete alpha formula</div>
+      <div class="collapsible-body">
+        <p>$\alpha_i = 1 - e^{-\sigma_i \delta_i}$ is derived from the Beer-Lambert law of light absorption.</p>
+        <ul>
+          <li>When $\sigma_i = 0$ (empty space): $\alpha_i = 1 - e^0 = 0$ (fully transparent)</li>
+          <li>When $\sigma_i \to \infty$ (solid surface): $\alpha_i \to 1$ (fully opaque)</li>
+          <li>Larger step size $\delta_i$ accumulates more opacity, even at low density</li>
+        </ul>
+        <p>The weight of sample $i$ in the final color is $w_i = T_i \cdot \alpha_i$, representing the probability that sample $i$ is the one that "stops" the ray. The weights satisfy $\sum_i w_i \leq 1$, peaking near surfaces.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: NERF ARCHITECTURE ===== -->
+    <h2 class="section-heading" id="nerf-architecture">6. NeRF Architecture</h2>
+
+    <p>Instead of storing an explicit 3D representation, NeRF encodes the scene in the weights of a Multi-Layer Perceptron (MLP). Any continuous 3D coordinate and viewing direction can be queried to get color and density at that point.</p>
+
+    <div class="definition-box">
+      <div class="box-label">NeRF Network Function</div>
+      <div>$$F_\Theta(\mathbf{x}, \mathbf{d}) \rightarrow (\mathbf{c}, \sigma)$$
+      <p>Input $\mathbf{x} = (x, y, z)$: 3D spatial location. Input $\mathbf{d} = (\phi, \theta)$: viewing direction. Output $\mathbf{c} = (R, G, B)$: color. Output $\sigma$: volume density. $\Theta$: learnable weights.</p></div>
+    </div>
+
+    <h3 class="subsection-heading">Critical Architectural Design Choice</h3>
+    <p><strong>Density $\sigma$ depends ONLY on spatial location $(x, y, z)$.</strong> Geometry must be view-consistent: an object should exist at the same location regardless of which direction you look from. If density depended on viewing direction, objects would appear or disappear with viewpoint, causing multi-view inconsistency.</p>
+    <p><strong>Color $\mathbf{c}$ depends on BOTH location AND viewing direction.</strong> Appearance can be view-dependent: specular highlights, reflections, and Fresnel effects cause the same surface point to look different from different angles.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/nerf_architecture_positional_encoding.png" alt="NeRF architecture with positional encoding">
+      <div class="figure-caption">NeRF architecture: spatial location passes through positional embedding then 8-layer MLP to output density; viewing direction is concatenated later to produce RGB color.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Full architecture detail</div>
+      <div class="collapsible-body">
+        <ol>
+          <li>Spatial location $(x, y, z)$ &rarr; Positional encoding $\gamma(x, y, z)$</li>
+          <li>Encoded position &rarr; 8 fully-connected layers (256 channels each, ReLU activations)</li>
+          <li>After 8 layers: branch outputs <strong>volume density $\sigma$</strong> directly (not view-dependent)</li>
+          <li>Feature vector from MLP is concatenated with encoded viewing direction $(\phi, \theta)$</li>
+          <li>Additional fully-connected layer(s) &rarr; <strong>RGB color $\mathbf{c}$</strong></li>
+        </ol>
+        <p>This late injection of the viewing direction ensures the density branch never sees the direction, enforcing geometric view-consistency.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Rendering a Single Pixel</h3>
+    <ol>
+      <li>Cast a ray $\mathbf{r}(t) = \mathbf{o} + t\mathbf{d}$ from the camera through the pixel</li>
+      <li>Sample $N$ points $(x_1, \ldots, x_N)$ along the ray between near and far bounds</li>
+      <li>Apply positional encoding to each sample and the viewing direction</li>
+      <li>Query the MLP at each sample: get $(\mathbf{c}_i, \sigma_i)$</li>
+      <li>Compute $\alpha_i = 1 - e^{-\sigma_i \delta_i}$ and $T_i = \prod_{j < i}(1 - \alpha_j)$</li>
+      <li>Composite: $\hat{C}(\mathbf{r}) = \sum_i T_i \alpha_i \mathbf{c}_i$</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod9a/nerf_vs_3d_gaussian_splatting.png" alt="NeRF vs 3D Gaussian Splatting comparison">
+      <div class="figure-caption">(a) NeRF: sample points along a ray, query MLP at each, composite via volume rendering. (b) 3D Gaussian Splatting: project colored ellipsoids onto the image plane directly.</div>
+    </div>
+
+    <!-- ===== SECTION 7: POSITIONAL ENCODING ===== -->
+    <h2 class="section-heading" id="positional-encoding">7. Positional Encoding</h2>
+
+    <h3 class="subsection-heading">The Problem: Spectral Bias</h3>
+    <p>Standard MLPs have a <strong>spectral bias</strong>: they naturally learn low-frequency (smooth) functions first and struggle to represent high-frequency variations. Even when trained with 10&times; more parameters than there are pixels, a naive MLP produces blurry results lacking fine details.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why blurriness occurs</div>
+      <div>Nearby coordinates like (1.99, 1.99) and (2.00, 2.00) differ by only 0.01 &mdash; too small for an MLP to learn a sharp boundary between them. The network averages them into a smooth transition. We need a way to make nearby values look <em>very different</em> in the input space.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Solution: Fourier Feature Mapping</h3>
+    <p>For each input coordinate $p$ (any of $x$, $y$, $z$), apply the positional encoding:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Positional Encoding Formula</div>
+      <div>$$\gamma(p) = \Big( \sin(2^0 \pi p),\; \cos(2^0 \pi p),\; \sin(2^1 \pi p),\; \cos(2^1 \pi p),\; \ldots,\; \sin(2^{N-1} \pi p),\; \cos(2^{N-1} \pi p) \Big)$$
+      <p>Each coordinate maps from <strong>1 dimension</strong> to $2N$ dimensions. NeRF uses $N=10$ for spatial coordinates (giving 60 dimensions per coordinate, 180 total for position) and $N=4$ for viewing direction.</p></div>
+    </div>
+
+    <table>
+      <tr><th>Frequency range</th><th>Role</th></tr>
+      <tr><td>Low ($2^0, 2^1$)</td><td>Vary slowly in space; capture large-scale structure and overall shape</td></tr>
+      <tr><td>High ($2^{N-2}, 2^{N-1}$)</td><td>Vary rapidly; capture fine details, sharp edges, and textures</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Mathematical intuition for why it works</div>
+      <div class="collapsible-body">
+        <p>In the original space, two nearby points $p$ and $p + \epsilon$ differ by $\epsilon$ (tiny). After encoding at frequency $2^k$: $\sin(2^k \pi p)$ vs $\sin(2^k \pi (p + \epsilon))$. For high $k$, even tiny $\epsilon$ produces large differences in the encoded values. The MLP can then easily learn to distinguish nearby points. This is closely related to <strong>random Fourier features</strong> and Fourier feature mappings from the machine learning literature.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 8: HIERARCHICAL SAMPLING ===== -->
+    <h2 class="section-heading" id="hierarchical-sampling">8. Hierarchical Sampling</h2>
+
+    <p>Uniform sampling along a ray is wasteful: most of the ray passes through empty space where $\sigma = 0$ and the MLP contribution is zero. A thin surface might be missed if no sample lands on it. Hierarchical sampling fixes this.</p>
+
+    <h3 class="subsection-heading">Stage 1: Coarse Sampling</h3>
+    <ol>
+      <li>Sample $N_\text{coarse}$ points <strong>uniformly</strong> along the ray</li>
+      <li>Evaluate the coarse network to get weights $w_i = T_i \cdot \alpha_i$</li>
+      <li>Normalize weights to create a probability density function (PDF): $\hat{w}_i = w_i / \sum_j w_j$</li>
+      <li>This PDF identifies where density (and thus surfaces) is concentrated</li>
+    </ol>
+
+    <h3 class="subsection-heading">Stage 2: Fine Sampling</h3>
+    <ol>
+      <li>Sample $N_\text{fine}$ <strong>additional</strong> points from the PDF using inverse transform sampling</li>
+      <li>New samples concentrate near regions of high predicted density (surfaces)</li>
+      <li>The fine network evaluates ALL $N_\text{coarse} + N_\text{fine}$ points for the final color estimate</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Why two networks?</div>
+      <div>The coarse network provides a rough density estimate to guide where fine samples should go. The fine network uses this better distribution for accurate rendering. Both are trained simultaneously &mdash; the loss is computed for both coarse and fine outputs.</div>
+    </div>
+
+    <!-- ===== SECTION 9: TRAINING AND LOSS ===== -->
+    <h2 class="section-heading" id="training-loss">9. Training and Loss</h2>
+
+    <h3 class="subsection-heading">Training Procedure</h3>
+    <ol>
+      <li>Select a random batch of pixels from training images (with known camera poses)</li>
+      <li>For each pixel: construct the ray, sample points, query MLP, volume render &rarr; predicted color $\hat{C}(\mathbf{r})$</li>
+      <li>Compare predicted vs ground-truth pixel color with the loss</li>
+      <li>Backpropagate gradients through the entire differentiable pipeline</li>
+      <li>Update MLP weights $\Theta$ via gradient descent (Adam optimizer)</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">NeRF Training Loss (L2 / MSE)</div>
+      <div>$$\mathcal{L} = \sum_{\mathbf{r} \in R} \left\| \hat{C}(\mathbf{r}) - C(\mathbf{r}) \right\|^2$$
+      <p>$R$ = set of rays (pixels) in the batch; $\hat{C}(\mathbf{r})$ = predicted color; $C(\mathbf{r})$ = ground-truth color. Simple but effective: every pixel provides a training signal, and the rendering equation imposes strong physical priors.</p></div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Why is a simple L2 loss sufficient?</div>
+      <div class="collapsible-body">
+        <p>The L2 loss is sufficient because (1) every pixel provides direct supervision through the volume rendering equation; (2) the differentiable pipeline ensures gradients flow from pixel colors back to 3D predictions; (3) with many images from different viewpoints, the system is heavily over-constrained &mdash; the only 3D structure consistent across all views is the correct one; (4) the rendering equation itself imposes physical priors (occlusion, view-consistency).</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 10: LIMITATIONS AND VARIANTS ===== -->
+    <h2 class="section-heading" id="limitations-variants">10. Limitations and Variants</h2>
+
+    <h3 class="subsection-heading">Vanilla NeRF Limitations</h3>
+
+    <table>
+      <tr><th>Limitation</th><th>Description</th></tr>
+      <tr><td>Transient objects</td><td>Cannot handle moving objects in training images (people, cars)</td></tr>
+      <tr><td>Appearance changes</td><td>Cannot handle lighting/color changes across training images</td></tr>
+      <tr><td>Unbounded scenes</td><td>Cannot represent scenes extending to infinity (outdoor environments)</td></tr>
+      <tr><td>Extremely slow</td><td>$1080 \times 1920 \times 100 \times 100 = 20.7$ billion MLP evaluations per iteration</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Key NeRF Variants</h3>
+
+    <div class="collapsible">
+      <div class="collapsible-header">NeRF-W: NeRF in the Wild (Martin-Brualla et al., CVPR 2021)</div>
+      <div class="collapsible-body">
+        <p>Handles internet photos with varying lighting and transient objects. Adds per-image appearance embeddings (for lighting/color changes) and transient embeddings (for temporary occluders like tourists). Produces photorealistic landmark views from unstructured photo collections.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Mip-NeRF 360 (Barron et al., CVPR 2022)</div>
+      <div class="collapsible-body">
+        <p>Addresses aliasing and unbounded scenes. Renders <strong>conical frustums</strong> instead of infinitesimally thin rays, reducing blurring and aliasing. Uses a <strong>scene contraction function</strong> to map unbounded 3D space into a bounded region, enabling 360-degree outdoor scenes.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Plenoxels (Fridovich-Keil et al., CVPR 2022)</div>
+      <div class="collapsible-body">
+        <p>Replaces the MLP entirely with a <strong>sparse 3D voxel grid storing spherical harmonics coefficients</strong>. No neural network needed at all. The pipeline: Sparse Voxel Grid &rarr; Trilinear Interpolation &rarr; Spherical Harmonics &rarr; Volume Rendering &rarr; Optimization. Much faster than NeRF because there is no MLP forward pass.</p>
+        <div class="figure-container">
+          <img src="figures/mod9a/plenoxels_architecture.png" alt="Plenoxels pipeline">
+          <div class="figure-caption">Plenoxels: sparse voxel grid with spherical harmonics coefficients, trilinear interpolation, and volumetric rendering &mdash; no MLP required.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">TensoRF (Chen et al., ECCV 2022)</div>
+      <div class="collapsible-body">
+        <p>Models the radiance field as <strong>factorized tensors</strong>: low-rank decomposition of the 3D volume. More memory-efficient than full voxel grids while being faster than MLPs.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Instant-NGP (Muller et al., ACM TOG 2022)</div>
+      <div class="collapsible-body">
+        <p>Introduces a <strong>multiresolution hash encoding</strong>: replaces the slow sinusoidal positional encoding with a learned hash table at multiple resolutions. Voxel vertices at each resolution are hashed to feature vectors; features are concatenated and fed into a small MLP. Achieves <strong>near-real-time training</strong> (seconds to minutes vs hours for vanilla NeRF).</p>
+        <div class="figure-container">
+          <img src="figures/mod9a/instant_ngp_hash_encoding.png" alt="Instant-NGP multiresolution hash encoding">
+          <div class="figure-caption">Instant-NGP: hashing at multiple voxel resolutions, lookup in hash tables, concatenation, and a small neural network to produce the output.</div>
+        </div>
+      </div>
+    </div>
+
+    <table>
+      <tr><th>Method</th><th>Addresses</th><th>Key Technique</th></tr>
+      <tr><td>NeRF-W</td><td>Transient objects, appearance changes</td><td>Per-image appearance/transient embeddings</td></tr>
+      <tr><td>Mip-NeRF 360</td><td>Aliasing, unbounded scenes</td><td>Cone tracing + scene contraction</td></tr>
+      <tr><td>Plenoxels</td><td>Speed</td><td>Sparse voxel grid + spherical harmonics (no MLP)</td></tr>
+      <tr><td>TensoRF</td><td>Speed + memory</td><td>Factorized tensor decomposition</td></tr>
+      <tr><td>Instant-NGP</td><td>Speed</td><td>Multiresolution hash encoding</td></tr>
+    </table>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="nerf-walkthrough" class="interactive-container" data-title="Walkthrough &mdash; NeRF Training Pipeline"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod9a-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod8.html">&larr; 8. 3D Sensors</a>
+      <a href="mod9b.html">9B. Gaussian Splatting &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod9a');</script>
+<script>
+  initWalkthrough('nerf-walkthrough', [
+    {
+      tab: '1. Poses',
+      title: 'Step 1: Obtain Camera Poses',
+      text: 'Before training can begin, we need to know where each photo was taken from. Structure-from-Motion (COLMAP) matches features across overlapping images and triangulates them to recover sparse 3D points and camera extrinsics (position + orientation) for each image. These poses tell NeRF how to construct the correct rays through the scene.',
+      visual: '<div class="figure-container"><img src="figures/mod9a/colmap_sfm_camera_poses.png" alt="COLMAP camera poses"><div class="figure-caption">COLMAP output: sparse point cloud and recovered camera frustums (red) around a building.</div></div>',
+      insight: 'Without accurate camera poses, rays would not correspond to the correct 3D locations and reconstruction fails. COLMAP is the standard preprocessing step for NeRF pipelines in-the-wild.'
+    },
+    {
+      tab: '2. Ray Casting',
+      title: 'Step 2: Cast Rays Through Pixels',
+      text: 'For each pixel in a training image, construct a ray $\\mathbf{r}(t) = \\mathbf{o} + t \\mathbf{d}$, where $\\mathbf{o}$ is the camera origin and $\\mathbf{d}$ is the normalized direction through the pixel. The ray is parameterized by distance $t$, from a near plane $t_n$ to a far plane $t_f$. This converts a 2D pixel into a 1D path through the 3D scene.',
+      visual: '<div class="figure-container"><img src="figures/mod9a/ray_tracing_diagram.png" alt="Ray casting diagram"><div class="figure-caption">View rays are cast from the camera origin through each pixel into the 3D scene volume.</div></div>',
+      insight: 'Each pixel corresponds to exactly one ray. The camera model (intrinsics + extrinsics from Step 1) fully determines the ray direction for any given pixel.'
+    },
+    {
+      tab: '3. Sampling',
+      title: 'Step 3: Hierarchical Sampling Along the Ray',
+      text: 'Uniform sampling wastes computation on empty space. NeRF uses two stages: (1) Coarse: sample $N_{\\text{coarse}}$ points uniformly, evaluate coarse MLP, compute density-based weights, normalize to a PDF. (2) Fine: sample $N_{\\text{fine}}$ additional points from the PDF (inverse transform sampling), concentrating them near surfaces. The fine MLP evaluates all $N_{\\text{coarse}} + N_{\\text{fine}}$ points.',
+      visual: '',
+      insight: 'The coarse network acts as a "scout" that tells the fine network where surfaces are likely to be. This dramatically improves quality per MLP evaluation, especially for thin surfaces and complex geometry.'
+    },
+    {
+      tab: '4. MLP Query',
+      title: 'Step 4: Positional Encoding + MLP Query',
+      text: 'Each 3D sample point is first passed through positional encoding: $\\gamma(p) = (\\sin(2^0 \\pi p), \\cos(2^0 \\pi p), \\ldots, \\sin(2^{N-1} \\pi p), \\cos(2^{N-1} \\pi p))$. This expands each coordinate from 1D to $2N$ dimensions. The encoded position enters the 8-layer MLP (256 channels) to produce density $\\sigma$. Then the encoded viewing direction is concatenated and a final layer produces RGB color $c$.',
+      visual: '<div class="figure-container"><img src="figures/mod9a/nerf_architecture_positional_encoding.png" alt="NeRF MLP architecture"><div class="figure-caption">NeRF MLP: positional encoding feeds into 8 layers producing density; viewing direction enters late to produce view-dependent color.</div></div>',
+      insight: 'Density $\\sigma$ is computed from position only (view-independent geometry). Color $c$ depends on both position and direction (view-dependent appearance). This architectural separation is critical for multi-view consistency.'
+    },
+    {
+      tab: '5. Compositing',
+      title: 'Step 5: Volume Rendering (Alpha Compositing)',
+      text: 'Apply the discrete volume rendering equation: $\\hat{C}(\\mathbf{r}) = \\sum_i T_i \\alpha_i c_i$. For each sample: $\\alpha_i = 1 - \\exp(-\\sigma_i \\delta_i)$ is the opacity. $T_i = \\prod_{j<i}(1 - \\alpha_j)$ is the transmittance (how much light reaches sample $i$ from the camera). The weighted sum of colors gives the final pixel prediction.',
+      visual: '',
+      insight: 'This is mathematically identical to front-to-back alpha compositing in classical computer graphics. Surfaces naturally emerge: the first region of high density after high transmittance contributes most to the pixel color.'
+    },
+    {
+      tab: '6. Optimize',
+      title: 'Step 6: Loss Computation and Backpropagation',
+      text: 'Compute the L2 loss between the predicted pixel color $\\hat{C}(\\mathbf{r})$ and the ground-truth color $C(\\mathbf{r})$ from the training image: $L = \\sum_{\\mathbf{r}} \\|\\hat{C}(\\mathbf{r}) - C(\\mathbf{r})\\|^2$. Backpropagate gradients through the entire differentiable pipeline: volume rendering &rarr; MLP &rarr; positional encoding &rarr; MLP weights. Update weights via Adam optimizer. Repeat for all pixels across all training images.',
+      visual: '',
+      insight: 'After training converges (hours for vanilla NeRF, seconds for Instant-NGP), the MLP weights encode the complete 3D scene. Novel views are synthesized by running the same pipeline with a new camera pose never seen during training.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod9a-flashcards', [
+    {
+      q: 'Write and explain the continuous volume rendering equation used in NeRF.',
+      a: '$$C(\\mathbf{r}) = \\int_{t_n}^{t_f} T(t) \\cdot \\sigma(\\mathbf{r}(t)) \\cdot c(\\mathbf{r}(t), \\mathbf{d}) \\, dt$$<ul><li><strong>$c(\\mathbf{r}(t), \\mathbf{d})$</strong>: radiance (color) at position and direction &mdash; view-dependent emission</li><li><strong>$\\sigma(\\mathbf{r}(t))$</strong>: volume density &mdash; absorption probability, view-independent</li><li><strong>$T(t) = \\exp(-\\int_{t_n}^t \\sigma \\, ds)$</strong>: transmittance &mdash; probability ray reaches depth $t$ without absorption</li></ul>'
+    },
+    {
+      q: 'How is the continuous volume rendering integral discretized for practical computation? Write the key equations.',
+      a: 'Sample $N$ points; sum contributions:<br>$$\\hat{C}(\\mathbf{r}) \\approx \\sum_{i=1}^{N} T_i \\cdot \\alpha_i \\cdot \\mathbf{c}_i$$<br><strong>Opacity:</strong> $\\alpha_i = 1 - e^{-\\sigma_i \\delta_i}$ ($\\delta_i$ = step size)<br><strong>Transmittance:</strong> $T_i = \\prod_{j=1}^{i-1}(1 - \\alpha_j)$<br>This is equivalent to front-to-back alpha compositing.'
+    },
+    {
+      q: 'Why does density sigma NOT depend on viewing direction, but color does?',
+      a: '<strong>Density represents geometry</strong>: objects must exist at the same location regardless of viewpoint. View-dependent density would cause objects to appear/disappear depending on viewing angle (multi-view inconsistency). <strong>Color can be view-dependent</strong>: specular highlights, reflections, and Fresnel effects make the same point look different from different angles. This separation is enforced architecturally by injecting viewing direction <em>late</em> in the network.'
+    },
+    {
+      q: 'Why is positional encoding needed in NeRF? Write the formula.',
+      a: 'Standard MLPs have <strong>spectral bias</strong>: they learn low-frequency (smooth) functions first, producing blurry outputs. Positional encoding maps coordinates to a high-dimensional Fourier space:<br>$$\\gamma(p) = (\\sin(2^0 \\pi p), \\cos(2^0 \\pi p), \\ldots, \\sin(2^{N-1} \\pi p), \\cos(2^{N-1} \\pi p))$$<br>Nearby coordinates become very different in the encoded space at high frequencies, enabling the MLP to learn sharp features. NeRF uses $N=10$ for position (180-D) and $N=4$ for direction.'
+    },
+    {
+      q: 'Why is uniform (linear) sampling along a ray a bad idea? How does hierarchical sampling solve this?',
+      a: '<strong>Problem:</strong> Uniform sampling wastes MLP evaluations on empty space (density $\\approx 0$ contributes nothing). Thin surfaces may be missed entirely.<br><strong>Solution:</strong> Two stages: (1) <em>Coarse</em>: uniform samples, normalize weights to PDF showing where density is. (2) <em>Fine</em>: additional samples drawn from the PDF (inverse transform sampling), concentrating near surfaces. Fine network evaluates all $N_{coarse} + N_{fine}$ points for high-quality output.'
+    },
+    {
+      q: 'What is the difference between rendering and inverse rendering? Why is inverse rendering ill-posed?',
+      a: '<strong>Forward rendering:</strong> 3D model &rarr; 2D image (well-defined function). <strong>Inverse rendering:</strong> 2D images &rarr; 3D model (NeRF solves this). <strong>Ill-posed</strong> because many different 3D scenes can produce the same 2D images from the same viewpoints. NeRF constrains this by using multiple views, a physical rendering model, and gradient-based optimization to find the most consistent 3D explanation.'
+    },
+    {
+      q: 'What are the main limitations of vanilla NeRF, and what extension addresses each?',
+      a: '<table><tr><th>Limitation</th><th>Extension</th></tr><tr><td>Transient objects</td><td>NeRF-W (per-image transient embeddings)</td></tr><tr><td>Appearance changes</td><td>NeRF-W (per-image appearance embeddings)</td></tr><tr><td>Unbounded scenes</td><td>Mip-NeRF 360 (scene contraction function)</td></tr><tr><td>Extremely slow</td><td>Instant-NGP (hash encoding), Plenoxels (no MLP), TensoRF (tensor decomposition)</td></tr></table>'
+    },
+    {
+      q: 'Describe the physical meaning of transmittance $T(t)$ in NeRF volume rendering.',
+      a: '$T(t) = \\exp(-\\int_{t_n}^{t} \\sigma(\\mathbf{r}(s)) \\, ds)$ is the <strong>probability that the ray travels from the near plane to depth $t$ without being absorbed</strong>. Properties: $T(t_n) = 1$ (nothing absorbed yet); decreases monotonically toward 0 as density accumulates; high accumulated density = low transmittance = ray mostly absorbed before reaching depth $t$. The product $T(t) \\cdot \\sigma(t)$ gives the probability the ray terminates at exactly depth $t$.'
+    },
+    {
+      q: 'Describe Instant-NGP and how it achieves fast NeRF training.',
+      a: 'Instant-NGP replaces the slow sinusoidal positional encoding with a <strong>multiresolution hash encoding</strong>: 3D coordinates at each resolution level are hashed to positions in a learned feature table; feature vectors are looked up and interpolated; features from all levels are concatenated and fed into a <em>small</em> MLP. Hash lookup is $O(1)$, far faster than the original 8-layer MLP with sinusoidal encoding. Achieves training in <strong>seconds to minutes</strong> vs hours for vanilla NeRF.'
+    },
+    {
+      q: 'What does $\\alpha_i = 1 - e^{-\\sigma_i \\delta_i}$ represent and what happens at the extremes?',
+      a: '$\\alpha_i$ is the <strong>opacity</strong> of sample $i$: how much of the ray is absorbed at that sample (derived from Beer-Lambert law).<br>When $\\sigma_i = 0$ (empty space): $\\alpha_i = 0$ (fully transparent).<br>When $\\sigma_i \\to \\infty$ (solid surface): $\\alpha_i \\to 1$ (fully opaque).<br>Larger step size $\\delta_i$ accumulates more opacity even at moderate density.'
+    },
+    {
+      q: 'How are camera poses obtained for NeRF training, and why are they needed?',
+      a: 'Camera poses tell NeRF <strong>where each training image was taken from</strong>, which is required to construct correct rays through the scene. Without accurate poses, rays point in wrong directions and reconstruction fails. Two methods: (1) <strong>ArUco markers</strong>: fiducial tags detected by CV algorithms (fast, reliable, but requires manual placement). (2) <strong>COLMAP / SfM</strong>: automatically recovers poses from unstructured photos by matching features and triangulating (works in-the-wild, complex).'
+    },
+    {
+      q: 'Compare NeRF\'s implicit representation with explicit 3D representations. What are the trade-offs?',
+      a: '<strong>NeRF (implicit):</strong> Extremely compact (&lt;10 MB), continuous (infinite resolution), naturally differentiable. But slow to query (MLP forward pass per point), difficult to edit directly.<br><strong>Explicit (voxels/meshes/point clouds):</strong> Fast to render (especially meshes), easy to edit and manipulate. But consume more memory, have fixed resolution, harder to optimize differentiably.<br>NeRF trades rendering speed for representational compactness and quality.'
+    }
+  ]);
+</script>
+</body>
+</html>

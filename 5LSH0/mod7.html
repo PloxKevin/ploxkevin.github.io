@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>7. Camera Model — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">7. Camera Model</h1>
+    <p class="page-subtitle">Pinhole camera, homogeneous coordinates, intrinsic &amp; extrinsic matrices, projection pipeline, camera calibration</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#pinhole">1. Pinhole Camera Model</a>
+      <a href="#projective-geometry">2. Projective Geometry</a>
+      <a href="#vanishing-points">3. Vanishing Points &amp; Lines</a>
+      <a href="#homogeneous">4. Homogeneous Coordinates</a>
+      <a href="#projection-matrix">5. Projection Matrix Derivation</a>
+      <a href="#intrinsic">6. Intrinsic Parameters</a>
+      <a href="#extrinsic">7. Extrinsic Parameters</a>
+      <a href="#full-matrix">8. Full Camera Matrix</a>
+      <a href="#calibration">9. Camera Calibration</a>
+      <a href="#homography">10. Homography</a>
+      <a class="toc-interactive" href="#intrinsic-builder">Interactive: Intrinsic Matrix Builder</a>
+      <a class="toc-interactive" href="#rotation-explorer">Interactive: Rotation Explorer</a>
+      <a class="toc-interactive" href="#projection-interactive">Interactive: Full Projection Pipeline</a>
+      <a class="toc-interactive" href="#homography-interactive">Interactive: Homography Visualizer</a>
+      <a class="toc-interactive" href="#projection-walkthrough">Interactive: Projection Pipeline</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: PINHOLE CAMERA MODEL ===== -->
+    <h2 class="section-heading" id="pinhole">1. Pinhole Camera Model</h2>
+
+    <p>A camera maps the 3D world onto a 2D image. Understanding this mapping mathematically is fundamental to computer vision: it lets us reconstruct 3D structure from images, predict where a 3D point will appear in an image, and calibrate sensors for autonomous systems.</p>
+
+    <p>The central question of this module:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given a point $P = (X, Y, Z)$ in 3D world coordinates, on which pixel $(u, v)$ will it appear in the image?</div>
+    </div>
+
+    <h3 class="subsection-heading">Why a Pinhole?</h3>
+    <p>If you place a bare sensor in front of a scene, every point sends light in all directions — every sensor cell receives light from many scene points simultaneously, producing a completely blurred image. A <strong>barrier with a tiny aperture</strong> (the pinhole) forces each sensor cell to receive light from only one direction, producing a sharp (but inverted) image.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/pinhole_camera_model.png" alt="Pinhole camera model showing image plane, pinhole, and virtual image plane">
+      <div class="figure-caption">Pinhole camera model: every scene point, the optical center, and its image point are collinear.</div>
+    </div>
+
+    <table>
+      <tr><th>Component</th><th>Description</th></tr>
+      <tr><td><strong>Optical center $C$</strong></td><td>The pinhole — all light rays pass through this point</td></tr>
+      <tr><td><strong>Image plane</strong></td><td>Sensor behind the pinhole — receives the inverted image</td></tr>
+      <tr><td><strong>Virtual image plane</strong></td><td>Conceptual plane in front of $C$ at distance $f$; gives an upright image and is used for mathematics</td></tr>
+      <tr><td><strong>Focal length $f$</strong></td><td>Distance from optical center to image plane</td></tr>
+      <tr><td><strong>Principal point</strong></td><td>Intersection of the principal axis with the image plane</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod7/lens_camera_focus.png" alt="Lens camera diagram">
+      <div class="figure-caption">Real cameras use lens systems instead of a true pinhole: more light, but optical aberrations. The pinhole model remains the foundational mathematical abstraction.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Historical context: camera obscura</div>
+      <div class="collapsible-body">
+        <p>The pinhole principle dates back to antiquity. Mo-Ti (China, 470&ndash;390 BC) described the phenomenon. The <strong>camera obscura</strong> (Latin: dark room) was a room-sized device used by Renaissance artists for tracing scenes. Lens-based versions appeared by 1568.</p>
+        <div class="figure-container">
+          <img src="figures/mod7/camera_obscura_illustration.png" alt="Historical camera obscura illustration">
+          <div class="figure-caption">A historical camera obscura: a darkened room with a small opening that projects an inverted scene onto the opposite wall.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 2: PROJECTIVE GEOMETRY ===== -->
+    <h2 class="section-heading" id="projective-geometry">2. Projective Geometry</h2>
+
+    <p>When we project the 3D world onto a 2D image, information is lost. Knowing <em>what</em> is lost versus <em>what</em> is preserved is crucial for reasoning about camera systems.</p>
+
+    <h3 class="subsection-heading">What is Lost in Projection</h3>
+    <table>
+      <tr><th>Property</th><th>Why it is Lost</th></tr>
+      <tr><td><strong>Depth / Distance</strong></td><td>A small nearby object and a large distant object can produce identical 2D projections</td></tr>
+      <tr><td><strong>Absolute size</strong></td><td>Image size depends on distance — a person close appears larger than a person far away</td></tr>
+      <tr><td><strong>Angles</strong></td><td>Right angles in 3D do not generally project to right angles in 2D</td></tr>
+      <tr><td><strong>Parallelism</strong></td><td>Parallel lines (unless parallel to image plane) converge to a vanishing point</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">What is Preserved in Projection</h3>
+    <table>
+      <tr><th>Property</th><th>Explanation</th></tr>
+      <tr><td><strong>Straightness of lines</strong></td><td>A straight 3D line projects to a straight 2D line — fundamental to perspective projection</td></tr>
+      <tr><td><strong>Incidence</strong></td><td>If a 3D point lies on a 3D line, its projection lies on the projected line</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The preservation of straight lines is why perspective-projected images of buildings still look "correct" — all the walls and edges remain straight. Only angles, distances, and parallels are distorted.</div>
+    </div>
+
+    <!-- ===== SECTION 3: VANISHING POINTS ===== -->
+    <h2 class="section-heading" id="vanishing-points">3. Vanishing Points and Vanishing Lines</h2>
+
+    <p>A <strong>vanishing point</strong> is where a set of parallel 3D lines appears to converge in the image. Mathematically, it is the projection of the "point at infinity" along that direction.</p>
+
+    <ul>
+      <li>Each set of parallel lines has its own vanishing point.</li>
+      <li>Lines <em>parallel to the image plane</em> do not converge — their vanishing point is at infinity in the image.</li>
+    </ul>
+
+    <p>A <strong>vanishing line</strong> (horizon line) connects the vanishing points of all parallel lines that lie on the same 3D plane. For the ground plane, the vanishing line is the horizon.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Vanishing points arise because projection is nonlinear: points at the same depth map to the same image location, so a set of parallel lines "converges" at the depth where they would meet at infinity.</div>
+    </div>
+
+    <!-- ===== SECTION 4: HOMOGENEOUS COORDINATES ===== -->
+    <h2 class="section-heading" id="homogeneous">4. Homogeneous Coordinates</h2>
+
+    <p>Perspective projection is inherently <em>nonlinear</em> (it involves division by depth $Z$). Homogeneous coordinates allow us to express this nonlinear projection as a <strong>linear matrix multiplication</strong>, which is computationally elegant and forms the basis for all camera matrix operations.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — 2D Homogeneous Coordinates</div>
+      <div>
+        A 2D Cartesian point $(x, y)$ is represented as a 3-vector:
+        $$\begin{pmatrix} x \\ y \\ 1 \end{pmatrix} \sim \begin{pmatrix} kx \\ ky \\ k \end{pmatrix} \quad \text{for any } k \neq 0$$
+        To convert back: divide all components by the last one.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — 3D Homogeneous Coordinates</div>
+      <div>
+        A 3D Cartesian point $(X, Y, Z)$ is represented as a 4-vector:
+        $$\begin{pmatrix} X \\ Y \\ Z \\ 1 \end{pmatrix} \sim \begin{pmatrix} \lambda X \\ \lambda Y \\ \lambda Z \\ \lambda \end{pmatrix} \quad \text{for any } \lambda \neq 0$$
+        To convert back:
+        $$\begin{pmatrix} X \\ Y \\ Z \\ W \end{pmatrix} \longrightarrow \left(\frac{X}{W},\; \frac{Y}{W},\; \frac{Z}{W}\right)$$
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/homogeneous_coordinates_ray.png" alt="Homogeneous coordinates: a 2D image point corresponds to a ray in 3D projective space">
+      <div class="figure-caption">A 2D image point $(x, y)$ corresponds to an entire ray through the origin in homogeneous (projective) space. All points on the ray represent the same image point — this models the camera ray that generates that pixel.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Scale invariance directly models pinhole geometry: all 3D points along the same ray through the optical center $C$ produce the same image point. The actual distance (depth) does not matter — only the direction of the ray matters.</div>
+    </div>
+
+    <!-- ===== SECTION 5: PROJECTION MATRIX DERIVATION ===== -->
+    <h2 class="section-heading" id="projection-matrix">5. Camera Projection Matrix Derivation</h2>
+
+    <h3 class="subsection-heading">Setup and Similar Triangles</h3>
+    <p>Place the camera coordinate system with origin at the optical center $C$, the $z$-axis along the principal axis, and $x$/$y$-axes spanning the image plane. A 3D point in camera coordinates $P = (x_v, y_v, z_v)$ projects onto the virtual image plane at distance $f$ (focal length) by similar triangles:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Perspective Projection Equations (Similar Triangles)</div>
+      <div>
+        $$x_s = \frac{f \cdot x_v}{z_v}, \qquad y_s = \frac{f \cdot y_v}{z_v}$$
+        As $z_v$ increases (farther away), $x_s$ and $y_s$ decrease — objects appear smaller. The mapping is nonlinear (division by $z_v$).
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/projection_geometry_3d_to_2d.png" alt="3D-to-2D projection geometry">
+      <div class="figure-caption">Projection geometry: a 3D point $P(x_v, y_v, z_v)$ projects to image point $P_s(x_s, y_s)$ on the virtual image plane at distance $d = f$, via similar triangles.</div>
+    </div>
+
+    <h3 class="subsection-heading">Matrix Form (Simple Projection)</h3>
+    <p>Absorbing the division by $z_v$ into homogeneous-to-Cartesian conversion:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Simple Perspective Projection Matrix (3&times;4)</div>
+      <div>
+        $$\begin{pmatrix} x_s \\ y_s \\ 1 \end{pmatrix}
+        \sim
+        \underbrace{\begin{pmatrix} f & 0 & 0 & 0 \\ 0 & f & 0 & 0 \\ 0 & 0 & 1 & 0 \end{pmatrix}}_{\text{Simple Projection Matrix}}
+        \begin{pmatrix} x_v \\ y_v \\ z_v \\ 1 \end{pmatrix}$$
+        Dividing the result by the third component recovers $x_s = f x_v / z_v$ and $y_s = f y_v / z_v$. Note: result is in <strong>millimeters</strong> (physical sensor units), not pixels.
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: INTRINSIC PARAMETERS ===== -->
+    <h2 class="section-heading" id="intrinsic">6. Intrinsic Camera Parameters</h2>
+
+    <p>Intrinsic parameters describe the <em>internal characteristics</em> of the camera — how 3D points in camera coordinates map to 2D pixel coordinates. They are properties of the hardware (sensor, lens) and do not depend on the camera's position in the world.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/intrinsic_parameters_diagram.png" alt="Intrinsic parameters: optical center, principal point, principal axis, image plane">
+      <div class="figure-caption">Intrinsic parameters: the optical center $C$, principal point $(u_0, v_0)$, focal length $f$, and pixel size determine the intrinsic matrix $K$.</div>
+    </div>
+
+    <table>
+      <tr><th>Parameter</th><th>Symbol</th><th>Description</th></tr>
+      <tr><td>Focal length (horiz.)</td><td>$\alpha = f / p_w = f_x$</td><td>Focal length in horizontal pixel units</td></tr>
+      <tr><td>Focal length (vert.)</td><td>$\beta = f / p_h = f_y$</td><td>Focal length in vertical pixel units (may differ if pixels are non-square)</td></tr>
+      <tr><td>Principal point</td><td>$(u_0, v_0)$</td><td>Where the principal axis hits the image plane (ideally center, often slightly off)</td></tr>
+      <tr><td>Skew</td><td>$s$</td><td>Shear between pixel rows and columns; $s \approx 0$ for modern cameras</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Intrinsic Matrix $K$ (3&times;3, 5 DOF)</div>
+      <div>
+        $$K = \begin{pmatrix} \alpha & s & u_0 \\ 0 & \beta & v_0 \\ 0 & 0 & 1 \end{pmatrix}$$
+        Five degrees of freedom: $f_x, f_y, s, u_0, v_0$.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Building the Intrinsic Matrix Step by Step</h3>
+    <p><strong>Step 1:</strong> Simplest case — square pixels, no skew, principal point at center: $K = \text{diag}(f, f, 1)$</p>
+    <p><strong>Step 2:</strong> Add principal point offset $(u_0, v_0)$ — optical axis not through sensor center.</p>
+    <p><strong>Step 3:</strong> Non-square pixels — separate $\alpha = f/p_w$ and $\beta = f/p_h$.</p>
+    <p><strong>Step 4:</strong> Add skew $s$ — pixel grid not perfectly rectangular.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/skewed_pixel_3d.png" alt="3D visualization of a non-rectangular (skewed) pixel">
+      <div class="figure-caption">Non-rectangular (skewed) pixel: the skew parameter $s$ captures the shear between pixel rows and columns.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/focal_length_comparison.png" alt="Effect of varying focal length: 24mm, 70mm, 135mm, 300mm">
+      <div class="figure-caption">Effect of focal length on field of view: 24mm (wide angle) to 300mm (telephoto). Longer focal length = more zoom = smaller FOV.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/ccd_sensor_pixel_size.png" alt="CCD sensor pixel size comparison">
+      <div class="figure-caption">Pixel size on a CCD sensor. Larger pixels capture cleaner images; the same pixel count on a larger sensor yields lower noise.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/intrinsic_matrix_equation.png" alt="Intrinsic matrix equation: projection from camera coordinates">
+      <div class="figure-caption">The intrinsic matrix $K$ applied to camera-frame coordinates. With no rotation or translation, the projection reduces to $s\,\mathbf{p}_{ip} = K [I | \mathbf{0}] \mathbf{P}_c$.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Why recalibration is needed</div>
+      <div class="collapsible-body">
+        <p>Intrinsic parameters are specific to each camera but can change over time. Recalibration is needed when:</p>
+        <ul>
+          <li><strong>Physical shock</strong> (camera dropped) — can shift the lens relative to the sensor</li>
+          <li><strong>Temperature changes</strong> (outdoor winter recording) — thermal expansion/contraction shifts camera components</li>
+          <li><strong>Lens change</strong> — a new focal length changes $f_x$, $f_y$ entirely</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== INTERACTIVE: INTRINSIC MATRIX BUILDER ===== -->
+    <div class="interactive-container" id="intrinsic-builder">
+      <div class="interactive-label">Interactive Tool -- Intrinsic Matrix Builder</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Step through 4 levels of complexity in the intrinsic matrix $K$. At each level, adjust the active parameters and see how they affect pixel coordinates and the sensor grid.</p>
+      <div id="intrinsic-level-buttons" style="display:flex;gap:0;margin-bottom:14px;">
+        <button class="intrinsic-level-btn" data-level="1" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#1565c0;color:#fff;cursor:pointer;border:1px solid #1565c0;border-right:none;border-radius:4px 0 0 4px;font-weight:600;">1. Simple</button>
+        <button class="intrinsic-level-btn" data-level="2" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-right:none;">2. + Principal Pt</button>
+        <button class="intrinsic-level-btn" data-level="3" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-right:none;">3. + Non-Square</button>
+        <button class="intrinsic-level-btn" data-level="4" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-radius:0 4px 4px 0;">4. + Skew</button>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:280px;">
+          <div id="intrinsic-sliders"></div>
+          <canvas id="intrinsic-canvas" width="300" height="280" style="border:1px solid #ddd;background:#fff;margin-top:10px;width:100%;max-width:300px;"></canvas>
+        </div>
+        <div id="intrinsic-equations" style="flex:1.5;min-width:320px;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 7: EXTRINSIC PARAMETERS ===== -->
+    <h2 class="section-heading" id="extrinsic">7. Extrinsic Camera Parameters</h2>
+
+    <p>Extrinsic parameters describe the <em>position and orientation</em> of the camera in the world. They transform points from world coordinates to camera coordinates.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/coordinate_frames_overview.png" alt="Overview of all coordinate frames: world, camera, image plane, and pixel coordinates">
+      <div class="figure-caption">The four coordinate frames: world coordinates $(X_w, Y_w, Z_w)$ are transformed by $[R | \mathbf{t}]$ to camera coordinates, then projected by $K$ onto the image plane.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/extrinsic_parameters_diagram.png" alt="Extrinsic parameters diagram: world frame to camera centre to image plane">
+      <div class="figure-caption">Extrinsic parameters $[R | \mathbf{t}]$: rotation aligns world axes to camera axes; translation shifts origin from world to camera center.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Extrinsic Matrix $[R | \mathbf{t}]$ (3&times;4, 6 DOF)</div>
+      <div>
+        $$[R \;|\; \mathbf{t}] = \begin{pmatrix} r_{11} & r_{12} & r_{13} & t_x \\ r_{21} & r_{22} & r_{23} & t_y \\ r_{31} & r_{32} & r_{33} & t_z \end{pmatrix}$$
+        Transforms world point to camera coordinates:
+        $$\begin{pmatrix} X_c \\ Y_c \\ Z_c \\ 1 \end{pmatrix} = \begin{pmatrix} R & \mathbf{t} \\ \mathbf{0}^T & 1 \end{pmatrix} \begin{pmatrix} X_w \\ Y_w \\ Z_w \\ 1 \end{pmatrix}$$
+        Six degrees of freedom: 3 rotation angles + 3 translation components.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">3D Rotation Matrices</h3>
+    <p>The rotation $R$ decomposes into three elementary rotations about coordinate axes (counter-clockwise convention):</p>
+
+    <div class="definition-box">
+      <div class="box-label">Elementary Rotation Matrices</div>
+      <div>
+        $$R_x(A) = \begin{pmatrix} 1 & 0 & 0 \\ 0 & \cos A & -\sin A \\ 0 & \sin A & \cos A \end{pmatrix}$$
+        $$R_y(B) = \begin{pmatrix} \cos B & 0 & \sin B \\ 0 & 1 & 0 \\ -\sin B & 0 & \cos B \end{pmatrix}$$
+        $$R_z(C) = \begin{pmatrix} \cos C & -\sin C & 0 \\ \sin C & \cos C & 0 \\ 0 & 0 & 1 \end{pmatrix}$$
+        Combined (apply $R_x$ first, then $R_y$, then $R_z$): $\quad R = R_z \cdot R_y \cdot R_x$
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/rotation_matrices_individual.png" alt="Individual rotation matrices Rx, Ry, Rz">
+      <div class="figure-caption">Elementary rotation matrices $R_x$, $R_y$, $R_z$ about each coordinate axis.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/camera_rotation_axes.png" alt="Camera rotation axes: pan, tilt, roll">
+      <div class="figure-caption">Camera rotation axes: pan (yaw — rotate about vertical axis), tilt (pitch — rotate about horizontal axis), roll (rotate about optical axis).</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Properties of rotation matrices</div>
+      <div class="collapsible-body">
+        <ul>
+          <li>$R$ is <strong>orthogonal</strong>: $R^T R = I$, so $R^{-1} = R^T$</li>
+          <li>$\det(R) = 1$ (proper rotation, no reflection)</li>
+          <li>Although $R$ has 9 entries, only <strong>3 degrees of freedom</strong>: the 6 orthogonality constraints from $R^T R = I$ remove 6 free parameters</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== INTERACTIVE: EXTRINSIC ROTATION EXPLORER ===== -->
+    <div class="interactive-container" id="rotation-explorer">
+      <div class="interactive-label">Interactive Tool -- Extrinsic Rotation Explorer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Rotate a 3D wireframe cube by adjusting pan (yaw), tilt (pitch), and roll angles. Observe the individual and combined rotation matrices update with exact trigonometric values, and verify the orthogonality properties of $R$.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;">
+        <div style="flex:0 0 auto;">
+          <div id="rotation-sliders" style="margin-bottom:10px;">
+            <div class="slider-control"><label><span>Pan (Yaw, $R_y$)</span> <span id="rot-pan-val">0</span>&deg;</label><input type="range" id="rot-pan" min="-180" max="180" value="0" step="1"></div>
+            <div class="slider-control"><label><span>Tilt (Pitch, $R_x$)</span> <span id="rot-tilt-val">0</span>&deg;</label><input type="range" id="rot-tilt" min="-180" max="180" value="0" step="1"></div>
+            <div class="slider-control"><label><span>Roll ($R_z$)</span> <span id="rot-roll-val">0</span>&deg;</label><input type="range" id="rot-roll" min="-180" max="180" value="0" step="1"></div>
+            <div class="slider-control"><label><span>$t_x$</span> <span id="rot-tx-val">0.0</span></label><input type="range" id="rot-tx" min="-5" max="5" value="0" step="0.1"></div>
+            <div class="slider-control"><label><span>$t_y$</span> <span id="rot-ty-val">0.0</span></label><input type="range" id="rot-ty" min="-5" max="5" value="0" step="0.1"></div>
+            <div class="slider-control"><label><span>$t_z$</span> <span id="rot-tz-val">0.0</span></label><input type="range" id="rot-tz" min="-5" max="5" value="0" step="0.1"></div>
+          </div>
+          <button id="rot-reset-btn" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+          <canvas id="rotation-canvas" width="400" height="350" style="border:1px solid #ddd;background:#fff;margin-top:10px;display:block;"></canvas>
+        </div>
+        <div id="rotation-equations" style="flex:1;min-width:340px;font-size:13px;overflow-x:auto;"></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 8: FULL CAMERA MATRIX ===== -->
+    <h2 class="section-heading" id="full-matrix">8. The Full Camera Matrix</h2>
+
+    <p>The complete projection from world coordinates to pixel coordinates chains the extrinsic and intrinsic transformations.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Full Camera Projection (KEY EQUATION)</div>
+      <div>
+        $$s \begin{pmatrix} u \\ v \\ 1 \end{pmatrix}
+        = \underbrace{K}_{3 \times 3} \; \underbrace{[R \;|\; \mathbf{t}]}_{3 \times 4} \; \begin{pmatrix} X_w \\ Y_w \\ Z_w \\ 1 \end{pmatrix}
+        = \underbrace{C}_{3 \times 4} \begin{pmatrix} X_w \\ Y_w \\ Z_w \\ 1 \end{pmatrix}$$
+        where $C = K [R | \mathbf{t}]$ is the <strong>camera calibration (projection) matrix</strong>, and $s = Z_c$ is the scale factor.
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/projection_summary_equation.png" alt="Summary equation: p_ip = K * E * p_w = C * p_w">
+      <div class="figure-caption">Summary: $\mathbf{p}_{ip} = K \cdot E \cdot \mathbf{p}_w = C \cdot \mathbf{p}_w$ — a world point maps to a pixel via the combined camera matrix $C$.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/intrinsic_extrinsic_decomposition.png" alt="Intrinsic and extrinsic matrix decomposition of full projection">
+      <div class="figure-caption">Explicit matrix decomposition: the camera intrinsic (left) multiplied by camera extrinsic (right) gives the full projection.</div>
+    </div>
+
+    <table>
+      <tr><th>Matrix</th><th>Size</th><th>Degrees of Freedom</th></tr>
+      <tr><td>Intrinsic $K$</td><td>$3 \times 3$</td><td>5 ($f_x, f_y, s, u_0, v_0$)</td></tr>
+      <tr><td>Extrinsic $[R | \mathbf{t}]$</td><td>$3 \times 4$</td><td>6 (3 rotation + 3 translation)</td></tr>
+      <tr><td><strong>Total $C = K[R | \mathbf{t}]$</strong></td><td>$3 \times 4$</td><td><strong>11</strong> (12 entries minus 1 for scale)</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — Why 11 and not 12?</div>
+      <div>The camera matrix $C$ is defined only up to scale: multiplying all entries of $C$ by any nonzero constant does not change the projected pixel coordinates (since we divide by the third component). This scale ambiguity removes one degree of freedom, leaving 11.</div>
+    </div>
+
+    <!-- ===== INTERACTIVE: FULL PROJECTION PIPELINE ===== -->
+    <div class="interactive-container" id="projection-interactive">
+      <div class="interactive-label">Interactive Tool -- Full Projection Pipeline Visualizer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Adjust a 3D world point, camera intrinsics, and extrinsics. Watch every step of the projection pipeline with fully computed matrices and intermediate values.</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;">
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:6px;">World Point</div>
+          <div class="slider-control"><label><span>$X_w$</span> <span id="pp-xw-val">2.0</span></label><input type="range" id="pp-xw" min="-5" max="5" value="2" step="0.1"></div>
+          <div class="slider-control"><label><span>$Y_w$</span> <span id="pp-yw-val">1.0</span></label><input type="range" id="pp-yw" min="-5" max="5" value="1" step="0.1"></div>
+          <div class="slider-control"><label><span>$Z_w$</span> <span id="pp-zw-val">5.0</span></label><input type="range" id="pp-zw" min="-5" max="5" value="5" step="0.1"></div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:6px;">Intrinsic</div>
+          <div class="slider-control"><label><span>$f$ (px)</span> <span id="pp-f-val">500</span></label><input type="range" id="pp-f" min="100" max="1000" value="500" step="1"></div>
+          <div class="slider-control"><label><span>$u_0$</span> <span id="pp-u0-val">320</span></label><input type="range" id="pp-u0" min="0" max="640" value="320" step="1"></div>
+          <div class="slider-control"><label><span>$v_0$</span> <span id="pp-v0-val">240</span></label><input type="range" id="pp-v0" min="0" max="480" value="240" step="1"></div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:6px;">Extrinsic -- Rotation</div>
+          <div class="slider-control"><label><span>Pan (Yaw)</span> <span id="pp-pan-val">0</span>&deg;</label><input type="range" id="pp-pan" min="-180" max="180" value="0" step="1"></div>
+          <div class="slider-control"><label><span>Tilt (Pitch)</span> <span id="pp-tilt-val">0</span>&deg;</label><input type="range" id="pp-tilt" min="-180" max="180" value="0" step="1"></div>
+          <div class="slider-control"><label><span>Roll</span> <span id="pp-roll-val">0</span>&deg;</label><input type="range" id="pp-roll" min="-180" max="180" value="0" step="1"></div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:6px;">Extrinsic -- Translation</div>
+          <div class="slider-control"><label><span>$t_x$</span> <span id="pp-tx-val">0.0</span></label><input type="range" id="pp-tx" min="-5" max="5" value="0" step="0.1"></div>
+          <div class="slider-control"><label><span>$t_y$</span> <span id="pp-ty-val">0.0</span></label><input type="range" id="pp-ty" min="-5" max="5" value="0" step="0.1"></div>
+          <div class="slider-control"><label><span>$t_z$</span> <span id="pp-tz-val">0.0</span></label><input type="range" id="pp-tz" min="-5" max="5" value="0" step="0.1"></div>
+          <div style="margin-top:6px;"><button id="pp-reset-btn" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button></div>
+        </div>
+      </div>
+      <canvas id="projection-canvas" width="500" height="350" style="border:1px solid #ddd;background:#fff;width:100%;max-width:700px;display:block;margin:0 auto 14px;"></canvas>
+      <div id="projection-equations" style="font-size:13px;overflow-x:auto;"></div>
+    </div>
+
+    <!-- ===== SECTION 9: CAMERA CALIBRATION ===== -->
+    <h2 class="section-heading" id="calibration">9. Camera Calibration</h2>
+
+    <p>Camera calibration is the process of estimating the 11 independent parameters of $C$ (and by decomposition, the intrinsic $K$ and extrinsic $[R | \mathbf{t}]$).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/calibration_target_setup.png" alt="Calibration target (checkerboard) projected through camera to image plane">
+      <div class="figure-caption">Calibration setup: a checkerboard with known 3D corner positions is imaged, and the 2D pixel positions of each corner are measured.</div>
+    </div>
+
+    <h3 class="subsection-heading">Step 1 — Compute $C$ from Point Correspondences</h3>
+    <p>Each known 3D point $(x_w, y_w, z_w)$ with measured pixel position $(x_{ip}, y_{ip})$ gives two equations:</p>
+
+    <div class="math-block">$$x_{ip} = \frac{x_w p_{11} + y_w p_{12} + z_w p_{13} + p_{14}}{x_w p_{31} + y_w p_{32} + z_w p_{33} + p_{34}}, \qquad y_{ip} = \frac{x_w p_{21} + y_w p_{22} + z_w p_{23} + p_{24}}{x_w p_{31} + y_w p_{32} + z_w p_{33} + p_{34}}$$</div>
+
+    <p>Rearranging to linear form, these become two rows in the system $A\mathbf{p} = \mathbf{0}$, where $\mathbf{p}$ contains the 12 entries of $C$ (effectively 11 unknowns after scale).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/calibration_equation_system.png" alt="Calibration equation system in matrix form: Ap = 0">
+      <div class="figure-caption">The linear system $A\mathbf{p} = \mathbf{0}$: each 3D-2D correspondence contributes two rows. At least 6 non-coplanar points (12 equations) are needed to solve for 11 unknowns.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Minimum Points for Calibration</div>
+      <div>
+        At least <strong>6 non-coplanar</strong> 3D-2D correspondences are required:
+        <ul>
+          <li>Each point provides 2 equations</li>
+          <li>6 points give 12 equations for 11 unknowns</li>
+          <li>In practice, more points are used to form an <strong>overdetermined system</strong>, solved via least-squares / SVD for robustness</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Step 2 — Decompose $C$ into $K$ and $[R | \mathbf{t}]$</h3>
+    <p>Once $C$ is estimated, <strong>RQ decomposition</strong> recovers $K$ (upper triangular) and $R$ (orthogonal). The translation is then $\mathbf{t} = K^{-1} \mathbf{c}_4$ where $\mathbf{c}_4$ is the fourth column of $C$.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod7/camera_calibration_model.png" alt="Camera calibration model with optical center, principal point, and image plane">
+      <div class="figure-caption">Camera calibration model: the principal point $pp$, optical center, and image plane are all determined from the calibration process.</div>
+    </div>
+
+    <!-- ===== SECTION 10: HOMOGRAPHY ===== -->
+    <h2 class="section-heading" id="homography">10. Homography</h2>
+
+    <p>When all scene points lie on a plane (e.g., the ground plane with $Z = 0$), the projection matrix simplifies to a <strong>homography</strong> — a $3 \times 3$ projective transformation.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Homography from Projection (Planar Case $Z = 0$)</div>
+      <div>
+        When $Z = 0$, the third column of $C$ drops out:
+        $$\begin{pmatrix} u \\ v \\ w \end{pmatrix} = \underbrace{\begin{pmatrix} C_{11} & C_{12} & C_{14} \\ C_{21} & C_{22} & C_{24} \\ C_{31} & C_{32} & C_{34} \end{pmatrix}}_{H \;(3 \times 3)} \begin{pmatrix} X \\ Y \\ 1 \end{pmatrix}$$
+        The homography $H$ has <strong>8 degrees of freedom</strong> (9 entries minus 1 for scale).
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod7/homography_from_projection.png" alt="Derivation of homography matrix H from projection matrix C when Z=0">
+      <div class="figure-caption">Homography derivation: when all points have $Z = 0$, the $3 \times 4$ projection matrix reduces to a $3 \times 3$ homography matrix.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Automated calibration via homography and synthetic templates</div>
+      <div class="collapsible-body">
+        <p>Standard calibration requires a physical checkerboard target. Automated methods use synthetic templates instead:</p>
+        <ol>
+          <li><strong>Generate synthetic templates</strong> by randomly sampling pan, tilt, and roll angles, then applying a homography to create bird's-eye-view templates of an expected scene (e.g., a road intersection).</li>
+          <li><strong>Build a dictionary</strong> of thousands of templates (&gt;5000 per intersection) covering different viewpoints.</li>
+          <li><strong>Match real images</strong> to the closest template using a Siamese network combined with a Spatial Transformer Network.</li>
+          <li><strong>Recover camera parameters</strong> from the best-matching template's homography.</li>
+        </ol>
+        <p>Semantically segmented images (rather than raw RGB) are preferred because they capture scene topology (road layout, lane markings) and are more robust to lighting and weather changes.</p>
+      </div>
+    </div>
+
+    <!-- ===== INTERACTIVE: HOMOGRAPHY VISUALIZER ===== -->
+    <div class="interactive-container" id="homography-interactive">
+      <div class="interactive-label">Interactive Tool -- Homography Visualizer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">See how a flat ground plane ($Z = 0$) is mapped to camera pixels through the homography $H$. Adjust the camera position and observe the 3x3 homography matrix update with the projected quadrilateral.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div class="slider-control"><label><span>Camera Height</span> <span id="hg-height-val">5</span></label><input type="range" id="hg-height" min="1" max="10" value="5" step="0.1"></div>
+        <div class="slider-control"><label><span>Camera Tilt</span> <span id="hg-tilt-val">45</span>&deg;</label><input type="range" id="hg-tilt" min="10" max="80" value="45" step="1"></div>
+        <div class="slider-control"><label><span>Camera Pan</span> <span id="hg-pan-val">0</span>&deg;</label><input type="range" id="hg-pan" min="-45" max="45" value="0" step="1"></div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div style="flex:0 0 auto;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">3D Scene View</div>
+          <canvas id="homography-canvas-3d" width="350" height="350" style="border:1px solid #ddd;background:#f8f8f8;display:block;"></canvas>
+        </div>
+        <div style="flex:0 0 auto;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Camera Image View</div>
+          <canvas id="homography-canvas-2d" width="350" height="350" style="border:1px solid #ddd;background:#fff;display:block;"></canvas>
+        </div>
+      </div>
+      <div id="homography-equations" style="font-size:13px;margin-top:14px;overflow-x:auto;"></div>
+    </div>
+
+    <!-- ===== INTERACTIVE WALKTHROUGH ===== -->
+    <div id="projection-walkthrough" class="interactive-container" data-title="Walkthrough — The Camera Projection Pipeline"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod7-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod6.html">&larr; 6. Object Detection</a>
+      <a href="mod8.html">8. 3D Sensors &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod7');</script>
+
+<!-- ===== SCRIPT: INTRINSIC MATRIX BUILDER ===== -->
+<script>
+(function() {
+  var level = 1;
+  var params = { f: 400, u0: 320, v0: 240, alpha: 400, beta: 400, s: 0 };
+  var testPt = { x: 1.5, y: 1.0 };
+
+  var eqEl = document.getElementById('intrinsic-equations');
+  var slidersEl = document.getElementById('intrinsic-sliders');
+  var canvas = document.getElementById('intrinsic-canvas');
+  var ctx = canvas.getContext('2d');
+
+  var btns = document.querySelectorAll('.intrinsic-level-btn');
+  btns.forEach(function(b) {
+    b.addEventListener('click', function() {
+      level = parseInt(b.getAttribute('data-level'));
+      btns.forEach(function(bb) {
+        bb.style.background = '#e8ecf0'; bb.style.color = '#888'; bb.style.borderColor = '#ddd'; bb.style.fontWeight = 'normal';
+      });
+      b.style.background = '#1565c0'; b.style.color = '#fff'; b.style.borderColor = '#1565c0'; b.style.fontWeight = '600';
+      buildSliders();
+      update();
+    });
+  });
+
+  function buildSliders() {
+    var html = '';
+    html += '<div class="slider-control"><label><span>$f$</span> <span id="ib-f-val">' + params.f + '</span></label><input type="range" id="ib-f" min="100" max="800" value="' + params.f + '" step="1"></div>';
+    if (level >= 2) {
+      html += '<div class="slider-control"><label><span>$u_0$</span> <span id="ib-u0-val">' + params.u0 + '</span></label><input type="range" id="ib-u0" min="0" max="640" value="' + params.u0 + '" step="1"></div>';
+      html += '<div class="slider-control"><label><span>$v_0$</span> <span id="ib-v0-val">' + params.v0 + '</span></label><input type="range" id="ib-v0" min="0" max="480" value="' + params.v0 + '" step="1"></div>';
+    }
+    if (level >= 3) {
+      html += '<div class="slider-control"><label><span>$\\alpha$ (horiz.)</span> <span id="ib-alpha-val">' + params.alpha + '</span></label><input type="range" id="ib-alpha" min="100" max="800" value="' + params.alpha + '" step="1"></div>';
+      html += '<div class="slider-control"><label><span>$\\beta$ (vert.)</span> <span id="ib-beta-val">' + params.beta + '</span></label><input type="range" id="ib-beta" min="100" max="800" value="' + params.beta + '" step="1"></div>';
+    }
+    if (level >= 4) {
+      html += '<div class="slider-control"><label><span>Skew $s$</span> <span id="ib-s-val">' + params.s + '</span></label><input type="range" id="ib-s" min="-200" max="200" value="' + params.s + '" step="1"></div>';
+    }
+    html += '<div class="slider-control" style="margin-top:8px;"><label><span>Test $x_s$</span> <span id="ib-tx-val">' + testPt.x.toFixed(1) + '</span></label><input type="range" id="ib-tx" min="-3" max="3" value="' + testPt.x + '" step="0.1"></div>';
+    html += '<div class="slider-control"><label><span>Test $y_s$</span> <span id="ib-ty-val">' + testPt.y.toFixed(1) + '</span></label><input type="range" id="ib-ty" min="-3" max="3" value="' + testPt.y + '" step="0.1"></div>';
+    slidersEl.innerHTML = html;
+    renderMath(slidersEl);
+    // attach listeners
+    var ids = ['ib-f','ib-u0','ib-v0','ib-alpha','ib-beta','ib-s','ib-tx','ib-ty'];
+    ids.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', function() { readSliders(); update(); });
+    });
+  }
+
+  function readSliders() {
+    var v = function(id, def) { var e = document.getElementById(id); return e ? parseFloat(e.value) : def; };
+    params.f = v('ib-f', 400);
+    params.u0 = level >= 2 ? v('ib-u0', 320) : 0;
+    params.v0 = level >= 2 ? v('ib-v0', 240) : 0;
+    params.alpha = level >= 3 ? v('ib-alpha', 400) : params.f;
+    params.beta = level >= 3 ? v('ib-beta', 400) : params.f;
+    params.s = level >= 4 ? v('ib-s', 0) : 0;
+    testPt.x = v('ib-tx', 1.5);
+    testPt.y = v('ib-ty', 1.0);
+    // update displayed values
+    var sv = function(id, val) { var e = document.getElementById(id); if(e) e.textContent = typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(1)) : val; };
+    sv('ib-f-val', params.f); sv('ib-u0-val', params.u0); sv('ib-v0-val', params.v0);
+    sv('ib-alpha-val', params.alpha); sv('ib-beta-val', params.beta); sv('ib-s-val', params.s);
+    sv('ib-tx-val', testPt.x.toFixed(1)); sv('ib-ty-val', testPt.y.toFixed(1));
+  }
+
+  function getK() {
+    var a = level >= 3 ? params.alpha : params.f;
+    var b = level >= 3 ? params.beta : params.f;
+    var u0 = level >= 2 ? params.u0 : 0;
+    var v0 = level >= 2 ? params.v0 : 0;
+    var s = level >= 4 ? params.s : 0;
+    return [[a, s, u0],[0, b, v0],[0, 0, 1]];
+  }
+
+  function drawCanvas() {
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    var K = getK();
+    var a = K[0][0], s = K[0][2] !== undefined ? K[0][1] : 0, u0 = K[0][2];
+    var b = K[1][1], v0 = K[1][2];
+    var sk = K[0][1];
+
+    // Draw sensor grid
+    var scale = 0.3;
+    var cx = w / 2, cy = h / 2;
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 0.5;
+    // draw a grid of "pixels" centered on canvas
+    var gridN = 8;
+    var pw = a / 400 * 20 * scale;
+    var ph = b / 400 * 20 * scale;
+    var skF = sk / 400 * 20 * scale;
+    var offX = (u0 - 320) * scale * 0.3;
+    var offY = (v0 - 240) * scale * 0.3;
+
+    ctx.save();
+    ctx.translate(cx + offX, cy + offY);
+    // draw grid cells
+    for (var r = -gridN; r <= gridN; r++) {
+      for (var c = -gridN; c <= gridN; c++) {
+        var x0 = c * pw + r * skF * 0.05;
+        var y0 = r * ph;
+        var x1 = (c + 1) * pw + r * skF * 0.05;
+        var y1 = r * ph;
+        var x2 = (c + 1) * pw + (r + 1) * skF * 0.05;
+        var y2 = (r + 1) * ph;
+        var x3 = c * pw + (r + 1) * skF * 0.05;
+        var y3 = (r + 1) * ph;
+        ctx.strokeStyle = '#bbb';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3); ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    // Draw principal point
+    ctx.strokeStyle = '#e53935';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(0, 6); ctx.stroke();
+    ctx.fillStyle = '#e53935';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('(' + (level >= 2 ? params.u0 : 0) + ',' + (level >= 2 ? params.v0 : 0) + ')', 8, -4);
+    ctx.restore();
+
+    // Project test point
+    var xs = testPt.x, ys = testPt.y;
+    var u = K[0][0] * xs + K[0][1] * ys + K[0][2];
+    var v = K[1][0] * xs + K[1][1] * ys + K[1][2];
+    // map to canvas coords
+    var pu = cx + (u - 320) * scale * 0.3;
+    var pv = cy + (v - 240) * scale * 0.3;
+    ctx.fillStyle = '#1565c0';
+    ctx.beginPath(); ctx.arc(pu, pv, 5, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = '#1565c0';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('(' + u.toFixed(1) + ', ' + v.toFixed(1) + ')', pu + 8, pv - 4);
+
+    // Labels
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('Sensor grid', 4, 14);
+    if (level >= 3 && params.alpha !== params.beta) ctx.fillText('Non-square pixels', 4, 26);
+    if (level >= 4 && params.s !== 0) ctx.fillText('Skew applied', 4, level >= 3 && params.alpha !== params.beta ? 38 : 26);
+  }
+
+  function update() {
+    var K = getK();
+    var a = K[0][0], sk = K[0][1], u0 = K[0][2], b = K[1][1], v0 = K[1][2];
+    var xs = testPt.x, ys = testPt.y;
+    var u = a * xs + sk * ys + u0;
+    var v = b * ys + v0;
+    var dof = [1, 3, 4, 5][level - 1];
+
+    var html = '';
+    // level descriptions
+    var levelNames = ['Simplest: square pixels, centered principal point, no skew',
+      'Add principal point offset $(u_0, v_0)$',
+      'Non-square pixels: separate $\\alpha, \\beta$',
+      'Full model: add skew $s$'];
+    html += '<p style="color:#1565c0;font-weight:600;">' + levelNames[level - 1] + ' (' + dof + ' DOF)</p>';
+
+    // Matrix display with highlighting
+    var fStr = level >= 3 ? '\\alpha' : 'f';
+    var bStr = level >= 3 ? '\\beta' : 'f';
+    var sStr = level >= 4 ? 's' : '0';
+    var u0Str = level >= 2 ? 'u_0' : '0';
+    var v0Str = level >= 2 ? 'v_0' : '0';
+    // highlight new params in color
+    var hl = function(s, isNew) { return isNew ? '{\\color{#1565c0}{' + s + '}}' : s; };
+    var hf = hl(fStr, level === 1);
+    var hb = hl(bStr, level === 3);
+    var hs = hl(sStr, level === 4);
+    var hu = hl(u0Str, level === 2);
+    var hv = hl(v0Str, level === 2);
+
+    html += '$$K = \\begin{pmatrix} ' + hf + ' & ' + hs + ' & ' + hu + ' \\\\ 0 & ' + (level === 3 ? hl(bStr, true) : (level === 1 ? hl(fStr, true) : fStr)) + ' & ' + hv + ' \\\\ 0 & 0 & 1 \\end{pmatrix}';
+    html += ' = \\begin{pmatrix} ' + a.toFixed(0) + ' & ' + sk.toFixed(0) + ' & ' + u0.toFixed(0) + ' \\\\ 0 & ' + b.toFixed(0) + ' & ' + v0.toFixed(0) + ' \\\\ 0 & 0 & 1 \\end{pmatrix}$$';
+
+    // Test point projection
+    html += '<p style="margin-top:12px;font-weight:600;">Test point projection through $K$:</p>';
+    html += '$$\\begin{pmatrix} u \\\\ v \\\\ 1 \\end{pmatrix} = K \\begin{pmatrix} x_s \\\\ y_s \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} ' + a.toFixed(0) + ' & ' + sk.toFixed(0) + ' & ' + u0.toFixed(0) + ' \\\\ 0 & ' + b.toFixed(0) + ' & ' + v0.toFixed(0) + ' \\\\ 0 & 0 & 1 \\end{pmatrix} \\begin{pmatrix} ' + xs.toFixed(1) + ' \\\\ ' + ys.toFixed(1) + ' \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} ' + u.toFixed(1) + ' \\\\ ' + v.toFixed(1) + ' \\\\ 1 \\end{pmatrix}$$';
+
+    // Show each computation step
+    html += '<p style="font-size:12px;color:#555;">$u = ';
+    if (level >= 3) html += '\\alpha'; else html += 'f';
+    html += ' \\cdot x_s';
+    if (level >= 4) html += ' + s \\cdot y_s';
+    if (level >= 2) html += ' + u_0';
+    html += ' = ' + a.toFixed(0) + ' \\times ' + xs.toFixed(1);
+    if (level >= 4) html += ' + ' + sk.toFixed(0) + ' \\times ' + ys.toFixed(1);
+    if (level >= 2) html += ' + ' + u0.toFixed(0);
+    html += ' = ' + u.toFixed(1) + '$</p>';
+
+    html += '<p style="font-size:12px;color:#555;">$v = ';
+    if (level >= 3) html += '\\beta'; else html += 'f';
+    html += ' \\cdot y_s';
+    if (level >= 2) html += ' + v_0';
+    html += ' = ' + b.toFixed(0) + ' \\times ' + ys.toFixed(1);
+    if (level >= 2) html += ' + ' + v0.toFixed(0);
+    html += ' = ' + v.toFixed(1) + '$</p>';
+
+    // Level-specific notes
+    if (level === 1) {
+      html += '<div class="insight-box" style="margin-top:10px;"><div class="box-label">Level 1 simplifications</div><div>Principal point at origin, square pixels ($\\alpha = \\beta = f$), no skew. Only 1 free parameter: $f$.</div></div>';
+    } else if (level === 2) {
+      html += '<div class="insight-box" style="margin-top:10px;"><div class="box-label">Principal point offset</div><div>The principal point $(u_0, v_0)$ shifts the image center. In practice it is close to but not exactly the image center due to manufacturing tolerances. Adds 2 DOF.</div></div>';
+    } else if (level === 3) {
+      html += '<div class="insight-box" style="margin-top:10px;"><div class="box-label">Non-square pixels</div><div>$\\alpha = f / p_w$ and $\\beta = f / p_h$ differ when pixel width $p_w \\neq$ pixel height $p_h$. Most modern sensors have nearly square pixels. Adds 1 DOF (now $\\alpha$ and $\\beta$ independent).</div></div>';
+    } else {
+      html += '<div class="insight-box" style="margin-top:10px;"><div class="box-label">Skew parameter</div><div>Skew $s$ accounts for non-rectangular pixel grids (sensor axes not perpendicular). For modern cameras $s \\approx 0$. The full 5-DOF model is the general form. Adds 1 DOF.</div></div>';
+    }
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+    drawCanvas();
+  }
+
+  buildSliders();
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: ORBIT CONTROLS UTILITY ===== -->
+<script>
+function addOrbitControls(canvas, drawCallback, defaultAzimuth, defaultElevation) {
+  var state = {
+    azimuth: defaultAzimuth || 0.5,
+    elevation: defaultElevation || 0.35,
+    dragging: false,
+    lastX: 0,
+    lastY: 0
+  };
+  canvas.addEventListener('mousedown', function(e) {
+    state.dragging = true;
+    state.lastX = e.clientX;
+    state.lastY = e.clientY;
+    e.preventDefault();
+  });
+  canvas.addEventListener('mousemove', function(e) {
+    if (!state.dragging) return;
+    var dx = e.clientX - state.lastX;
+    var dy = e.clientY - state.lastY;
+    state.azimuth += dx * 0.008;
+    state.elevation += dy * 0.008;
+    state.elevation = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, state.elevation));
+    state.lastX = e.clientX;
+    state.lastY = e.clientY;
+    drawCallback(state.azimuth, state.elevation);
+  });
+  canvas.addEventListener('mouseup', function() { state.dragging = false; });
+  canvas.addEventListener('mouseleave', function() { state.dragging = false; });
+  // Touch support
+  canvas.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+      state.dragging = true;
+      state.lastX = e.touches[0].clientX;
+      state.lastY = e.touches[0].clientY;
+      e.preventDefault();
+    }
+  }, {passive: false});
+  canvas.addEventListener('touchmove', function(e) {
+    if (!state.dragging || e.touches.length !== 1) return;
+    var dx = e.touches[0].clientX - state.lastX;
+    var dy = e.touches[0].clientY - state.lastY;
+    state.azimuth += dx * 0.008;
+    state.elevation += dy * 0.008;
+    state.elevation = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, state.elevation));
+    state.lastX = e.touches[0].clientX;
+    state.lastY = e.touches[0].clientY;
+    drawCallback(state.azimuth, state.elevation);
+    e.preventDefault();
+  }, {passive: false});
+  canvas.addEventListener('touchend', function() { state.dragging = false; });
+  return {
+    getAzimuth: function() { return state.azimuth; },
+    getElevation: function() { return state.elevation; },
+    setAzimuth: function(a) { state.azimuth = a; },
+    setElevation: function(e) { state.elevation = e; }
+  };
+}
+function orbitProject3D(x, y, z, azimuth, elevation, distance) {
+  var cosA = Math.cos(azimuth), sinA = Math.sin(azimuth);
+  var x1 = x * cosA + z * sinA;
+  var z1 = -x * sinA + z * cosA;
+  var cosE = Math.cos(elevation), sinE = Math.sin(elevation);
+  var y1 = y * cosE - z1 * sinE;
+  var z2 = y * sinE + z1 * cosE;
+  var scale = distance / (distance + z2);
+  return { x: x1 * scale, y: -y1 * scale, scale: scale };
+}
+</script>
+
+<!-- ===== SCRIPT: EXTRINSIC ROTATION EXPLORER ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('rotation-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('rotation-equations');
+
+  function gv(id) { return parseFloat(document.getElementById(id).value); }
+  function sv(id, v) { document.getElementById(id).textContent = v; }
+  function deg2rad(d) { return d * Math.PI / 180; }
+  function fmt(v) { return v.toFixed(3); }
+  function fmts(v) { return (v >= 0 ? '\\phantom{-}' : '') + v.toFixed(3); }
+
+  function makeRx(a) {
+    var c = Math.cos(a), s = Math.sin(a);
+    return [[1,0,0],[0,c,-s],[0,s,c]];
+  }
+  function makeRy(a) {
+    var c = Math.cos(a), s = Math.sin(a);
+    return [[c,0,s],[0,1,0],[-s,0,c]];
+  }
+  function makeRz(a) {
+    var c = Math.cos(a), s = Math.sin(a);
+    return [[c,-s,0],[s,c,0],[0,0,1]];
+  }
+  function matMul(A, B) {
+    var R = [[0,0,0],[0,0,0],[0,0,0]];
+    for (var i = 0; i < 3; i++)
+      for (var j = 0; j < 3; j++)
+        for (var k = 0; k < 3; k++)
+          R[i][j] += A[i][k] * B[k][j];
+    return R;
+  }
+  function matVec(M, v) {
+    return [M[0][0]*v[0]+M[0][1]*v[1]+M[0][2]*v[2],
+            M[1][0]*v[0]+M[1][1]*v[1]+M[1][2]*v[2],
+            M[2][0]*v[0]+M[2][1]*v[1]+M[2][2]*v[2]];
+  }
+  function transpose(M) {
+    return [[M[0][0],M[1][0],M[2][0]],[M[0][1],M[1][1],M[2][1]],[M[0][2],M[1][2],M[2][2]]];
+  }
+  function det3(M) {
+    return M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])
+          -M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])
+          +M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+  }
+
+  var viewDist = 8;
+  var orbit = addOrbitControls(canvas, function(az, el) { update(); }, 0.5, 0.35);
+
+  function proj(x, y, z) {
+    var p = orbitProject3D(x, y, z, orbit.getAzimuth(), orbit.getElevation(), viewDist);
+    var w = canvas.width, h = canvas.height;
+    var sc = 30;
+    return [w / 2 + p.x * sc, h / 2 + p.y * sc, p.scale];
+  }
+
+  // cube vertices
+  var cubeVerts = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  var cubeEdges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+
+  function update() {
+    var panDeg = gv('rot-pan'), tiltDeg = gv('rot-tilt'), rollDeg = gv('rot-roll');
+    var tx = gv('rot-tx'), ty = gv('rot-ty'), tz = gv('rot-tz');
+    sv('rot-pan-val', panDeg); sv('rot-tilt-val', tiltDeg); sv('rot-roll-val', rollDeg);
+    sv('rot-tx-val', tx.toFixed(1)); sv('rot-ty-val', ty.toFixed(1)); sv('rot-tz-val', tz.toFixed(1));
+
+    var pan = deg2rad(panDeg), tilt = deg2rad(tiltDeg), roll = deg2rad(rollDeg);
+    var Rx = makeRx(tilt), Ry = makeRy(pan), Rz = makeRz(roll);
+    var R = matMul(Rz, matMul(Ry, Rx));
+    var RtR = matMul(transpose(R), R);
+    var detR = det3(R);
+
+    // Draw canvas
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Transform and draw cube
+    var transformed = cubeVerts.map(function(v) {
+      var rv = matVec(R, v);
+      return [rv[0] + tx, rv[1] + ty, rv[2] + tz];
+    });
+    // Draw edges
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#555';
+    cubeEdges.forEach(function(e) {
+      var p0 = proj(transformed[e[0]][0], transformed[e[0]][1], transformed[e[0]][2]);
+      var p1 = proj(transformed[e[1]][0], transformed[e[1]][1], transformed[e[1]][2]);
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+    });
+
+    // Draw camera axes (rotated)
+    var axisLen = 1.8;
+    var axes = [[axisLen,0,0],[0,axisLen,0],[0,0,axisLen]];
+    var colors = ['#e53935','#43a047','#1e88e5']; // R=X, G=Y, B=Z
+    var labels = ['X','Y','Z'];
+    axes.forEach(function(a, i) {
+      var ra = matVec(R, a);
+      var p0 = proj(tx, ty, tz);
+      var p1 = proj(ra[0]+tx, ra[1]+ty, ra[2]+tz);
+      ctx.strokeStyle = colors[i];
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+      ctx.fillStyle = colors[i];
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillText(labels[i], p1[0] + 4, p1[1] - 4);
+    });
+
+    // Draw world axes (fixed, lighter)
+    var worldAxes = [[2,0,0],[0,2,0],[0,0,2]];
+    var wLabels = ['Xw','Yw','Zw'];
+    var o = proj(0, 0, 0);
+    worldAxes.forEach(function(a, i) {
+      var p1 = proj(a[0], a[1], a[2]);
+      ctx.strokeStyle = colors[i];
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(o[0], o[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = colors[i];
+      ctx.font = '10px sans-serif';
+      ctx.fillText(wLabels[i], p1[0] + 3, p1[1] - 3);
+    });
+
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('Dashed = world axes, Solid = camera axes', 6, h - 6);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('Drag to orbit', w - 72, 14);
+
+    // Equations
+    var html = '';
+    html += '<p style="font-weight:600;">Individual Rotation Matrices:</p>';
+    html += '$$R_x(\\text{tilt}=' + tiltDeg + '^\\circ) = \\begin{pmatrix} 1 & 0 & 0 \\\\ 0 & ' + fmt(Math.cos(tilt)) + ' & ' + fmt(-Math.sin(tilt)) + ' \\\\ 0 & ' + fmt(Math.sin(tilt)) + ' & ' + fmt(Math.cos(tilt)) + ' \\end{pmatrix}$$';
+    html += '$$R_y(\\text{pan}=' + panDeg + '^\\circ) = \\begin{pmatrix} ' + fmt(Math.cos(pan)) + ' & 0 & ' + fmt(Math.sin(pan)) + ' \\\\ 0 & 1 & 0 \\\\ ' + fmt(-Math.sin(pan)) + ' & 0 & ' + fmt(Math.cos(pan)) + ' \\end{pmatrix}$$';
+    html += '$$R_z(\\text{roll}=' + rollDeg + '^\\circ) = \\begin{pmatrix} ' + fmt(Math.cos(roll)) + ' & ' + fmt(-Math.sin(roll)) + ' & 0 \\\\ ' + fmt(Math.sin(roll)) + ' & ' + fmt(Math.cos(roll)) + ' & 0 \\\\ 0 & 0 & 1 \\end{pmatrix}$$';
+
+    html += '<p style="font-weight:600;">Combined: $R = R_z \\cdot R_y \\cdot R_x$</p>';
+    html += '$$R = \\begin{pmatrix} ' + fmt(R[0][0]) + ' & ' + fmt(R[0][1]) + ' & ' + fmt(R[0][2]) + ' \\\\ ' + fmt(R[1][0]) + ' & ' + fmt(R[1][1]) + ' & ' + fmt(R[1][2]) + ' \\\\ ' + fmt(R[2][0]) + ' & ' + fmt(R[2][1]) + ' & ' + fmt(R[2][2]) + ' \\end{pmatrix}$$';
+
+    html += '<p style="font-weight:600;">Properties of $R$:</p>';
+    html += '<p style="font-size:12px;">$\\det(R) = ' + fmt(detR) + '$ (should be 1.000)</p>';
+    html += '$$R^T R = \\begin{pmatrix} ' + fmt(RtR[0][0]) + ' & ' + fmt(RtR[0][1]) + ' & ' + fmt(RtR[0][2]) + ' \\\\ ' + fmt(RtR[1][0]) + ' & ' + fmt(RtR[1][1]) + ' & ' + fmt(RtR[1][2]) + ' \\\\ ' + fmt(RtR[2][0]) + ' & ' + fmt(RtR[2][1]) + ' & ' + fmt(RtR[2][2]) + ' \\end{pmatrix} \\approx I$$';
+
+    html += '<p style="font-weight:600;margin-top:10px;">Translation vector:</p>';
+    html += '$$\\mathbf{t} = \\begin{pmatrix} ' + fmt(tx) + ' \\\\ ' + fmt(ty) + ' \\\\ ' + fmt(tz) + ' \\end{pmatrix}$$';
+
+    html += '<p style="font-weight:600;">Full Extrinsic Matrix $[R | \\mathbf{t}]$ (3x4):</p>';
+    html += '$$[R|\\mathbf{t}] = \\begin{pmatrix} ' + fmt(R[0][0]) + ' & ' + fmt(R[0][1]) + ' & ' + fmt(R[0][2]) + ' & ' + fmt(tx) + ' \\\\ ' + fmt(R[1][0]) + ' & ' + fmt(R[1][1]) + ' & ' + fmt(R[1][2]) + ' & ' + fmt(ty) + ' \\\\ ' + fmt(R[2][0]) + ' & ' + fmt(R[2][1]) + ' & ' + fmt(R[2][2]) + ' & ' + fmt(tz) + ' \\end{pmatrix}$$';
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  ['rot-pan','rot-tilt','rot-roll','rot-tx','rot-ty','rot-tz'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', update);
+  });
+  document.getElementById('rot-reset-btn').addEventListener('click', function() {
+    ['rot-pan','rot-tilt','rot-roll'].forEach(function(id) { document.getElementById(id).value = 0; });
+    ['rot-tx','rot-ty','rot-tz'].forEach(function(id) { document.getElementById(id).value = 0; });
+    update();
+  });
+
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: FULL PROJECTION PIPELINE ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('projection-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('projection-equations');
+
+  function gv(id) { return parseFloat(document.getElementById(id).value); }
+  function sv(id, v) { document.getElementById(id).textContent = v; }
+  function deg2rad(d) { return d * Math.PI / 180; }
+  function fmt(v) { return v.toFixed(3); }
+  function fmt1(v) { return v.toFixed(1); }
+  function fmt2(v) { return v.toFixed(2); }
+
+  function makeRx(a) { var c=Math.cos(a),s=Math.sin(a); return [[1,0,0],[0,c,-s],[0,s,c]]; }
+  function makeRy(a) { var c=Math.cos(a),s=Math.sin(a); return [[c,0,s],[0,1,0],[-s,0,c]]; }
+  function makeRz(a) { var c=Math.cos(a),s=Math.sin(a); return [[c,-s,0],[s,c,0],[0,0,1]]; }
+  function matMul3(A, B) {
+    var R = [[0,0,0],[0,0,0],[0,0,0]];
+    for (var i=0;i<3;i++) for (var j=0;j<3;j++) for (var k=0;k<3;k++) R[i][j]+=A[i][k]*B[k][j];
+    return R;
+  }
+  function matVec3(M, v) {
+    return [M[0][0]*v[0]+M[0][1]*v[1]+M[0][2]*v[2],
+            M[1][0]*v[0]+M[1][1]*v[1]+M[1][2]*v[2],
+            M[2][0]*v[0]+M[2][1]*v[1]+M[2][2]*v[2]];
+  }
+
+  // multiply 3x3 K by 3x4 Rt -> 3x4 C
+  function matMul34(K, Rt) {
+    var C = [[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+    for (var i=0;i<3;i++) for (var j=0;j<4;j++) for (var k=0;k<3;k++) C[i][j]+=K[i][k]*Rt[k][j];
+    return C;
+  }
+
+  var ppViewDist = 10;
+  var ppOrbit = addOrbitControls(canvas, function() { update(); }, 0.5, 0.35);
+
+  function proj3(x, y, z) {
+    var lw = canvas.width * 0.5;
+    var p = orbitProject3D(x, y, z, ppOrbit.getAzimuth(), ppOrbit.getElevation(), ppViewDist);
+    var sc = 22;
+    return [lw / 2 + p.x * sc, canvas.height / 2 + 20 + p.y * sc];
+  }
+
+  function update() {
+    var Xw = gv('pp-xw'), Yw = gv('pp-yw'), Zw = gv('pp-zw');
+    var f = gv('pp-f'), u0 = gv('pp-u0'), v0 = gv('pp-v0');
+    var panDeg = gv('pp-pan'), tiltDeg = gv('pp-tilt'), rollDeg = gv('pp-roll');
+    var tx = gv('pp-tx'), ty = gv('pp-ty'), tz = gv('pp-tz');
+
+    sv('pp-xw-val', fmt1(Xw)); sv('pp-yw-val', fmt1(Yw)); sv('pp-zw-val', fmt1(Zw));
+    sv('pp-f-val', f); sv('pp-u0-val', u0); sv('pp-v0-val', v0);
+    sv('pp-pan-val', panDeg); sv('pp-tilt-val', tiltDeg); sv('pp-roll-val', rollDeg);
+    sv('pp-tx-val', fmt1(tx)); sv('pp-ty-val', fmt1(ty)); sv('pp-tz-val', fmt1(tz));
+
+    var pan = deg2rad(panDeg), tilt = deg2rad(tiltDeg), roll = deg2rad(rollDeg);
+    var Rx = makeRx(tilt), Ry = makeRy(pan), Rz = makeRz(roll);
+    var R = matMul3(Rz, matMul3(Ry, Rx));
+
+    // Step 2: world to camera
+    var pw = [Xw, Yw, Zw];
+    var Rp = matVec3(R, pw);
+    var Xc = Rp[0] + tx, Yc = Rp[1] + ty, Zc = Rp[2] + tz;
+
+    // Step 3: perspective divide
+    var xs, ys;
+    var behindCamera = (Zc <= 0.01);
+    if (behindCamera) {
+      xs = 0; ys = 0;
+    } else {
+      xs = f * Xc / Zc;
+      ys = f * Yc / Zc;
+    }
+
+    // Step 4: add principal point
+    var uFinal = xs + u0;
+    var vFinal = ys + v0;
+
+    // K matrix
+    var K = [[f, 0, u0],[0, f, v0],[0, 0, 1]];
+    // Rt 3x4
+    var Rt = [[R[0][0],R[0][1],R[0][2],tx],[R[1][0],R[1][1],R[1][2],ty],[R[2][0],R[2][1],R[2][2],tz]];
+    // C = K * Rt
+    var C = matMul34(K, Rt);
+
+    // ===== DRAW CANVAS =====
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // LEFT half: 3D scene
+    var lw = w * 0.5, lh = h;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, lw, lh); ctx.clip();
+    // bg
+    ctx.fillStyle = '#f8f8f8'; ctx.fillRect(0, 0, lw, lh);
+
+    // Draw world axes
+    var axColors = ['#e53935','#43a047','#1e88e5'];
+    var axLabels = ['Xw','Yw','Zw'];
+    var axDirs = [[3,0,0],[0,3,0],[0,0,3]];
+    var orig = proj3(0,0,0);
+    axDirs.forEach(function(d, i) {
+      var p = proj3(d[0], d[1], d[2]);
+      ctx.strokeStyle = axColors[i]; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(orig[0], orig[1]); ctx.lineTo(p[0], p[1]); ctx.stroke();
+      ctx.fillStyle = axColors[i]; ctx.font = '10px sans-serif';
+      ctx.fillText(axLabels[i], p[0]+2, p[1]-2);
+    });
+
+    // Draw camera as a small pyramid
+    var camPos = [tx, ty, tz];
+    var camSize = 0.6;
+    var camDirs = [
+      matVec3(R, [camSize, camSize, camSize*2]),
+      matVec3(R, [-camSize, camSize, camSize*2]),
+      matVec3(R, [-camSize, -camSize, camSize*2]),
+      matVec3(R, [camSize, -camSize, camSize*2])
+    ];
+    var cp = proj3(camPos[0], camPos[1], camPos[2]);
+    ctx.fillStyle = '#1565c0'; ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 1;
+    camDirs.forEach(function(d) {
+      var fp = proj3(camPos[0]+d[0], camPos[1]+d[1], camPos[2]+d[2]);
+      ctx.beginPath(); ctx.moveTo(cp[0], cp[1]); ctx.lineTo(fp[0], fp[1]); ctx.stroke();
+    });
+    // connect frustum rectangle
+    for (var i = 0; i < 4; i++) {
+      var d0 = camDirs[i], d1 = camDirs[(i+1)%4];
+      var p0 = proj3(camPos[0]+d0[0],camPos[1]+d0[1],camPos[2]+d0[2]);
+      var p1 = proj3(camPos[0]+d1[0],camPos[1]+d1[1],camPos[2]+d1[2]);
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+    }
+    ctx.font = '10px sans-serif'; ctx.fillText('Cam', cp[0]+4, cp[1]-4);
+
+    // Draw world point
+    var wp = proj3(pw[0], pw[1], pw[2]);
+    ctx.fillStyle = '#ff6f00';
+    ctx.beginPath(); ctx.arc(wp[0], wp[1], 5, 0, 2*Math.PI); ctx.fill();
+    ctx.fillStyle = '#ff6f00'; ctx.font = '10px sans-serif';
+    ctx.fillText('P(' + fmt1(Xw) + ',' + fmt1(Yw) + ',' + fmt1(Zw) + ')', wp[0]+6, wp[1]-6);
+
+    ctx.fillStyle = '#888'; ctx.font = '10px sans-serif';
+    ctx.fillText('3D World View', 6, 14);
+    ctx.fillStyle = '#aaa'; ctx.font = '9px sans-serif';
+    ctx.fillText('Drag to orbit', lw - 72, 14);
+    ctx.restore();
+
+    // Divider
+    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(lw, 0); ctx.lineTo(lw, h); ctx.stroke();
+
+    // RIGHT half: image plane
+    ctx.save();
+    ctx.beginPath(); ctx.rect(lw, 0, w - lw, lh); ctx.clip();
+    ctx.fillStyle = '#fff'; ctx.fillRect(lw, 0, w - lw, lh);
+
+    var imgW = 640, imgH = 480;
+    var rw = w - lw, rh = lh;
+    var imgScale = Math.min((rw - 20) / imgW, (rh - 30) / imgH);
+    var imgOx = lw + (rw - imgW * imgScale) / 2;
+    var imgOy = 15 + (rh - 30 - imgH * imgScale) / 2;
+
+    // image boundary
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(imgOx, imgOy, imgW * imgScale, imgH * imgScale);
+    ctx.fillStyle = '#888'; ctx.font = '10px sans-serif';
+    ctx.fillText('Image Plane (640x480)', imgOx, imgOy - 3);
+    ctx.fillText('(0,0)', imgOx - 4, imgOy + imgH * imgScale + 12);
+    ctx.fillText('(640,480)', imgOx + imgW * imgScale - 44, imgOy + imgH * imgScale + 12);
+
+    // principal point cross
+    var ppx = imgOx + u0 * imgScale, ppy = imgOy + v0 * imgScale;
+    ctx.strokeStyle = '#e53935'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ppx - 6, ppy); ctx.lineTo(ppx + 6, ppy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ppx, ppy - 6); ctx.lineTo(ppx, ppy + 6); ctx.stroke();
+    ctx.fillStyle = '#e53935'; ctx.font = '9px sans-serif';
+    ctx.fillText('pp', ppx + 4, ppy - 4);
+
+    // projected point
+    if (!behindCamera) {
+      var dotX = imgOx + uFinal * imgScale;
+      var dotY = imgOy + vFinal * imgScale;
+      ctx.fillStyle = '#ff6f00';
+      ctx.beginPath(); ctx.arc(dotX, dotY, 5, 0, 2*Math.PI); ctx.fill();
+      ctx.fillStyle = '#ff6f00'; ctx.font = '10px sans-serif';
+      ctx.fillText('(' + fmt1(uFinal) + ', ' + fmt1(vFinal) + ')', dotX + 6, dotY - 6);
+    } else {
+      ctx.fillStyle = '#e53935'; ctx.font = '12px sans-serif';
+      ctx.fillText('Point behind camera!', lw + 20, lh / 2);
+    }
+    ctx.restore();
+
+    // ===== EQUATIONS =====
+    var html = '';
+
+    // Step 1
+    html += '<p style="font-weight:600;color:#1565c0;">Step 1: World point (homogeneous)</p>';
+    html += '$$\\mathbf{p}_w = \\begin{pmatrix} X_w \\\\ Y_w \\\\ Z_w \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} ' + fmt2(Xw) + ' \\\\ ' + fmt2(Yw) + ' \\\\ ' + fmt2(Zw) + ' \\\\ 1 \\end{pmatrix}$$';
+
+    // Step 2
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">Step 2: Extrinsic -- World to Camera coordinates</p>';
+    html += '<p style="font-size:12px;">Individual rotation matrices (tilt=' + Math.round(tiltDeg) + ', pan=' + Math.round(panDeg) + ', roll=' + Math.round(rollDeg) + '):</p>';
+    html += '$$R_x(\\text{tilt}) = \\begin{pmatrix} 1 & 0 & 0 \\\\ 0 & \\cos\\theta & -\\sin\\theta \\\\ 0 & \\sin\\theta & \\cos\\theta \\end{pmatrix} = \\begin{pmatrix} 1 & 0 & 0 \\\\ 0 & ' + fmt(Rx[1][1]) + ' & ' + fmt(Rx[1][2]) + ' \\\\ 0 & ' + fmt(Rx[2][1]) + ' & ' + fmt(Rx[2][2]) + ' \\end{pmatrix}$$';
+    html += '$$R_y(\\text{pan}) = \\begin{pmatrix} \\cos\\phi & 0 & \\sin\\phi \\\\ 0 & 1 & 0 \\\\ -\\sin\\phi & 0 & \\cos\\phi \\end{pmatrix} = \\begin{pmatrix} ' + fmt(Ry[0][0]) + ' & 0 & ' + fmt(Ry[0][2]) + ' \\\\ 0 & 1 & 0 \\\\ ' + fmt(Ry[2][0]) + ' & 0 & ' + fmt(Ry[2][2]) + ' \\end{pmatrix}$$';
+    html += '$$R_z(\\text{roll}) = \\begin{pmatrix} \\cos\\psi & -\\sin\\psi & 0 \\\\ \\sin\\psi & \\cos\\psi & 0 \\\\ 0 & 0 & 1 \\end{pmatrix} = \\begin{pmatrix} ' + fmt(Rz[0][0]) + ' & ' + fmt(Rz[0][1]) + ' & 0 \\\\ ' + fmt(Rz[1][0]) + ' & ' + fmt(Rz[1][1]) + ' & 0 \\\\ 0 & 0 & 1 \\end{pmatrix}$$';
+
+    html += '<p style="font-size:12px;">Combined: $R = R_z \\cdot R_y \\cdot R_x$</p>';
+    html += '$$R = \\begin{pmatrix} ' + fmt(R[0][0]) + ' & ' + fmt(R[0][1]) + ' & ' + fmt(R[0][2]) + ' \\\\ ' + fmt(R[1][0]) + ' & ' + fmt(R[1][1]) + ' & ' + fmt(R[1][2]) + ' \\\\ ' + fmt(R[2][0]) + ' & ' + fmt(R[2][1]) + ' & ' + fmt(R[2][2]) + ' \\end{pmatrix}$$';
+
+    html += '<p style="font-size:12px;">Applying extrinsic $[R|\\mathbf{t}]$ to $\\mathbf{p}_w$:</p>';
+    html += '$$\\mathbf{p}_c = [R|\\mathbf{t}] \\cdot \\mathbf{p}_w = \\begin{pmatrix} ' + fmt(R[0][0]) + ' & ' + fmt(R[0][1]) + ' & ' + fmt(R[0][2]) + ' & ' + fmt2(tx) + ' \\\\ ' + fmt(R[1][0]) + ' & ' + fmt(R[1][1]) + ' & ' + fmt(R[1][2]) + ' & ' + fmt2(ty) + ' \\\\ ' + fmt(R[2][0]) + ' & ' + fmt(R[2][1]) + ' & ' + fmt(R[2][2]) + ' & ' + fmt2(tz) + ' \\end{pmatrix} \\begin{pmatrix} ' + fmt2(Xw) + ' \\\\ ' + fmt2(Yw) + ' \\\\ ' + fmt2(Zw) + ' \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} ' + fmt2(Xc) + ' \\\\ ' + fmt2(Yc) + ' \\\\ ' + fmt2(Zc) + ' \\end{pmatrix}$$';
+    html += '<p style="font-size:12px;color:#555;">Camera-frame coordinates: $(X_c, Y_c, Z_c) = (' + fmt2(Xc) + ',\\; ' + fmt2(Yc) + ',\\; ' + fmt2(Zc) + ')$</p>';
+
+    // Step 3
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">Step 3: Perspective projection (camera to image plane)</p>';
+    if (behindCamera) {
+      html += '<p style="color:#e53935;font-weight:600;">$Z_c \\leq 0$ -- point is behind the camera. Projection undefined.</p>';
+    } else {
+      html += '$$\\begin{pmatrix} x_s \\\\ y_s \\end{pmatrix} = \\begin{pmatrix} f \\cdot X_c / Z_c \\\\ f \\cdot Y_c / Z_c \\end{pmatrix} = \\begin{pmatrix} ' + f + ' \\times ' + fmt2(Xc) + ' / ' + fmt2(Zc) + ' \\\\ ' + f + ' \\times ' + fmt2(Yc) + ' / ' + fmt2(Zc) + ' \\end{pmatrix} = \\begin{pmatrix} ' + fmt2(xs) + ' \\\\ ' + fmt2(ys) + ' \\end{pmatrix}$$';
+      html += '<p style="font-size:12px;color:#555;font-style:italic;">Division by $Z_c$ is the perspective divide -- farther objects project smaller.</p>';
+    }
+
+    // Step 4
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">Step 4: Intrinsic -- Image plane to pixel coordinates</p>';
+    if (!behindCamera) {
+      html += '$$\\begin{pmatrix} u \\\\ v \\end{pmatrix} = \\begin{pmatrix} x_s + u_0 \\\\ y_s + v_0 \\end{pmatrix} = \\begin{pmatrix} ' + fmt2(xs) + ' + ' + u0 + ' \\\\ ' + fmt2(ys) + ' + ' + v0 + ' \\end{pmatrix} = \\begin{pmatrix} ' + fmt2(uFinal) + ' \\\\ ' + fmt2(vFinal) + ' \\end{pmatrix}$$';
+      html += '<p style="font-size:12px;color:#555;font-style:italic;">Since $f$ is already in pixels (square pixels, $\\alpha = \\beta = 1$ scaling), applying $K$ just adds the principal point offset.</p>';
+    }
+
+    // Step 5
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">Step 5: Full combined matrix form</p>';
+    html += '$$K = \\begin{pmatrix} ' + f + ' & 0 & ' + u0 + ' \\\\ 0 & ' + f + ' & ' + v0 + ' \\\\ 0 & 0 & 1 \\end{pmatrix}$$';
+    html += '$$[R|\\mathbf{t}] = \\begin{pmatrix} ' + fmt(R[0][0]) + ' & ' + fmt(R[0][1]) + ' & ' + fmt(R[0][2]) + ' & ' + fmt2(tx) + ' \\\\ ' + fmt(R[1][0]) + ' & ' + fmt(R[1][1]) + ' & ' + fmt(R[1][2]) + ' & ' + fmt2(ty) + ' \\\\ ' + fmt(R[2][0]) + ' & ' + fmt(R[2][1]) + ' & ' + fmt(R[2][2]) + ' & ' + fmt2(tz) + ' \\end{pmatrix}$$';
+    html += '$$C = K[R|\\mathbf{t}] = \\begin{pmatrix} ' + fmt1(C[0][0]) + ' & ' + fmt1(C[0][1]) + ' & ' + fmt1(C[0][2]) + ' & ' + fmt1(C[0][3]) + ' \\\\ ' + fmt1(C[1][0]) + ' & ' + fmt1(C[1][1]) + ' & ' + fmt1(C[1][2]) + ' & ' + fmt1(C[1][3]) + ' \\\\ ' + fmt(C[2][0]) + ' & ' + fmt(C[2][1]) + ' & ' + fmt(C[2][2]) + ' & ' + fmt(C[2][3]) + ' \\end{pmatrix}$$';
+
+    if (!behindCamera) {
+      html += '<p style="font-size:12px;">Verification: $C \\cdot \\mathbf{p}_w = (' + fmt2(C[0][0]*Xw+C[0][1]*Yw+C[0][2]*Zw+C[0][3]) + ',\\; ' + fmt2(C[1][0]*Xw+C[1][1]*Yw+C[1][2]*Zw+C[1][3]) + ',\\; ' + fmt2(C[2][0]*Xw+C[2][1]*Yw+C[2][2]*Zw+C[2][3]) + ')^T$</p>';
+      var sVal = C[2][0]*Xw+C[2][1]*Yw+C[2][2]*Zw+C[2][3];
+      if (Math.abs(sVal) > 0.001) {
+        html += '<p style="font-size:12px;">Divide by $s = ' + fmt2(sVal) + '$ to get pixel coordinates: $(u, v) = (' + fmt2((C[0][0]*Xw+C[0][1]*Yw+C[0][2]*Zw+C[0][3])/sVal) + ',\\; ' + fmt2((C[1][0]*Xw+C[1][1]*Yw+C[1][2]*Zw+C[1][3])/sVal) + ')$</p>';
+      }
+    }
+
+    html += '<div class="definition-box" style="margin-top:12px;"><div class="box-label">DOF Summary</div><div style="font-size:12px;">Total DOF: 5 (intrinsic: $f, u_0, v_0$, skew, aspect ratio) + 6 (extrinsic: 3 rotation + 3 translation) = <strong>11</strong></div></div>';
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  var sliderIds = ['pp-xw','pp-yw','pp-zw','pp-f','pp-u0','pp-v0','pp-pan','pp-tilt','pp-roll','pp-tx','pp-ty','pp-tz'];
+  sliderIds.forEach(function(id) {
+    document.getElementById(id).addEventListener('input', update);
+  });
+  document.getElementById('pp-reset-btn').addEventListener('click', function() {
+    var defs = {xw:2,yw:1,zw:5,f:500,u0:320,v0:240,pan:0,tilt:0,roll:0,tx:0,ty:0,tz:0};
+    Object.keys(defs).forEach(function(k) { document.getElementById('pp-' + k).value = defs[k]; });
+    update();
+  });
+
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: HOMOGRAPHY VISUALIZER ===== -->
+<script>
+(function() {
+  var canvas3d = document.getElementById('homography-canvas-3d');
+  var canvas2d = document.getElementById('homography-canvas-2d');
+  var ctx3 = canvas3d.getContext('2d');
+  var ctx2 = canvas2d.getContext('2d');
+  var eqEl = document.getElementById('homography-equations');
+
+  function gv(id) { return parseFloat(document.getElementById(id).value); }
+  function sv(id, v) { document.getElementById(id).textContent = v; }
+  function deg2rad(d) { return d * Math.PI / 180; }
+  function fmt(v) { return v.toFixed(3); }
+  function fmt1(v) { return v.toFixed(1); }
+  function fmt2(v) { return v.toFixed(2); }
+
+  // Ground plane corner points (Z=0)
+  var groundPts = [
+    { label: 'P1', X: -3, Y: -3 },
+    { label: 'P2', X:  3, Y: -3 },
+    { label: 'P3', X:  3, Y:  3 },
+    { label: 'P4', X: -3, Y:  3 }
+  ];
+
+  var hgViewDist = 14;
+  var orbit3d = addOrbitControls(canvas3d, function() { update(); }, 0.6, 0.5);
+
+  function proj3(x, y, z) {
+    var p = orbitProject3D(x, y, z, orbit3d.getAzimuth(), orbit3d.getElevation(), hgViewDist);
+    var sc = 18;
+    return [canvas3d.width / 2 + p.x * sc, canvas3d.height / 2 + p.y * sc, p.scale];
+  }
+
+  // Camera intrinsic (fixed for this visualization)
+  var focalPx = 160;
+  var u0 = 175, v0 = 175; // principal point at image center
+
+  function makeRx(a) { var c=Math.cos(a),s=Math.sin(a); return [[1,0,0],[0,c,-s],[0,s,c]]; }
+  function makeRy(a) { var c=Math.cos(a),s=Math.sin(a); return [[c,0,s],[0,1,0],[-s,0,c]]; }
+  function matMul3(A, B) {
+    var R=[[0,0,0],[0,0,0],[0,0,0]];
+    for(var i=0;i<3;i++)for(var j=0;j<3;j++)for(var k=0;k<3;k++)R[i][j]+=A[i][k]*B[k][j];
+    return R;
+  }
+  function matVec3(M, v) {
+    return [M[0][0]*v[0]+M[0][1]*v[1]+M[0][2]*v[2],
+            M[1][0]*v[0]+M[1][1]*v[1]+M[1][2]*v[2],
+            M[2][0]*v[0]+M[2][1]*v[1]+M[2][2]*v[2]];
+  }
+  function matMul34(K, Rt) {
+    var C=[[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+    for(var i=0;i<3;i++)for(var j=0;j<4;j++)for(var k=0;k<3;k++)C[i][j]+=K[i][k]*Rt[k][j];
+    return C;
+  }
+
+  function update() {
+    var camH = gv('hg-height');
+    var tiltDeg = gv('hg-tilt');
+    var panDeg = gv('hg-pan');
+    sv('hg-height-val', fmt1(camH));
+    sv('hg-tilt-val', tiltDeg);
+    sv('hg-pan-val', panDeg);
+
+    var tilt = deg2rad(tiltDeg);
+    var pan = deg2rad(panDeg);
+
+    // Camera looks down at ground: Rx(π/2 + tilt) rotates from +Z to downward
+    // tilt=0° → horizontal, tilt=90° → straight down
+    var Rx = makeRx(Math.PI / 2 + tilt);
+    var Ry = makeRy(pan);
+    var R = matMul3(Ry, Rx);
+
+    // Camera position in world: above origin, looking down
+    var camWorldPos = [0, 0, camH]; // camera is at (0, 0, height)
+    // Translation t = -R * camWorldPos
+    var negCamRot = matVec3(R, camWorldPos);
+    var tx = -negCamRot[0], ty = -negCamRot[1], tz = -negCamRot[2];
+
+    var K = [[focalPx, 0, u0],[0, focalPx, v0],[0, 0, 1]];
+    var Rt = [[R[0][0],R[0][1],R[0][2],tx],[R[1][0],R[1][1],R[1][2],ty],[R[2][0],R[2][1],R[2][2],tz]];
+    var C = matMul34(K, Rt);
+
+    // Homography H = [C col1, C col2, C col4] (since Z=0 drops col3)
+    var H = [
+      [C[0][0], C[0][1], C[0][3]],
+      [C[1][0], C[1][1], C[1][3]],
+      [C[2][0], C[2][1], C[2][3]]
+    ];
+
+    // Project ground plane points through H
+    function projectH(X, Y) {
+      var w = H[2][0]*X + H[2][1]*Y + H[2][2];
+      // w <= 0 means point is behind the camera — not visible
+      if (w < 1e-4) return null;
+      var u = (H[0][0]*X + H[0][1]*Y + H[0][2]) / w;
+      var v = (H[1][0]*X + H[1][1]*Y + H[1][2]) / w;
+      return { u: u, v: v, uw: H[0][0]*X + H[0][1]*Y + H[0][2], vw: H[1][0]*X + H[1][1]*Y + H[1][2], ww: w };
+    }
+
+    var projectedPts = groundPts.map(function(gp) {
+      var p = projectH(gp.X, gp.Y);
+      return { label: gp.label + "'", X: gp.X, Y: gp.Y, proj: p };
+    });
+
+    // ===== DRAW 3D CANVAS =====
+    var w3 = canvas3d.width, h3 = canvas3d.height;
+    ctx3.clearRect(0, 0, w3, h3);
+
+    // Draw ground plane grid (Z=0)
+    ctx3.strokeStyle = '#ddd';
+    ctx3.lineWidth = 0.5;
+    for (var gi = -3; gi <= 3; gi++) {
+      var pa = proj3(gi, -3, 0);
+      var pb = proj3(gi, 3, 0);
+      ctx3.beginPath(); ctx3.moveTo(pa[0], pa[1]); ctx3.lineTo(pb[0], pb[1]); ctx3.stroke();
+      pa = proj3(-3, gi, 0);
+      pb = proj3(3, gi, 0);
+      ctx3.beginPath(); ctx3.moveTo(pa[0], pa[1]); ctx3.lineTo(pb[0], pb[1]); ctx3.stroke();
+    }
+
+    // Draw ground plane quad (fill lightly)
+    var gc = groundPts.map(function(gp) { return proj3(gp.X, gp.Y, 0); });
+    ctx3.fillStyle = 'rgba(21, 101, 192, 0.08)';
+    ctx3.beginPath();
+    ctx3.moveTo(gc[0][0], gc[0][1]);
+    for (var i = 1; i < 4; i++) ctx3.lineTo(gc[i][0], gc[i][1]);
+    ctx3.closePath(); ctx3.fill();
+    ctx3.strokeStyle = '#1565c0'; ctx3.lineWidth = 1.5;
+    ctx3.stroke();
+
+    // Checkerboard on ground
+    var colors2 = ['rgba(21,101,192,0.12)', 'rgba(21,101,192,0.04)'];
+    for (var ci = -3; ci < 3; ci++) {
+      for (var cj = -3; cj < 3; cj++) {
+        var cc = (ci + cj + 6) % 2;
+        var qa = proj3(ci, cj, 0);
+        var qb = proj3(ci+1, cj, 0);
+        var qc = proj3(ci+1, cj+1, 0);
+        var qd = proj3(ci, cj+1, 0);
+        ctx3.fillStyle = colors2[cc];
+        ctx3.beginPath();
+        ctx3.moveTo(qa[0],qa[1]); ctx3.lineTo(qb[0],qb[1]); ctx3.lineTo(qc[0],qc[1]); ctx3.lineTo(qd[0],qd[1]);
+        ctx3.closePath(); ctx3.fill();
+      }
+    }
+
+    // Draw corner points
+    var ptColors = ['#e53935','#43a047','#ff6f00','#7b1fa2'];
+    groundPts.forEach(function(gp, i) {
+      var p = proj3(gp.X, gp.Y, 0);
+      ctx3.fillStyle = ptColors[i];
+      ctx3.beginPath(); ctx3.arc(p[0], p[1], 4, 0, 2*Math.PI); ctx3.fill();
+      ctx3.font = 'bold 11px sans-serif';
+      ctx3.fillText(gp.label, p[0]+5, p[1]-5);
+    });
+
+    // Draw camera frustum
+    var camP = proj3(camWorldPos[0], camWorldPos[1], camWorldPos[2]);
+    // Camera forward direction (looking down and panned)
+    var camFwd = matVec3([[R[0][0],R[1][0],R[2][0]],[R[0][1],R[1][1],R[2][1]],[R[0][2],R[1][2],R[2][2]]], [0,0,1]);
+    var camUp = matVec3([[R[0][0],R[1][0],R[2][0]],[R[0][1],R[1][1],R[2][1]],[R[0][2],R[1][2],R[2][2]]], [0,-1,0]);
+    var camRight = matVec3([[R[0][0],R[1][0],R[2][0]],[R[0][1],R[1][1],R[2][1]],[R[0][2],R[1][2],R[2][2]]], [1,0,0]);
+    var fLen = 1.5;
+    var fSize = 0.8;
+    var frustumCorners = [
+      [camWorldPos[0]+camFwd[0]*fLen+camUp[0]*fSize+camRight[0]*fSize,
+       camWorldPos[1]+camFwd[1]*fLen+camUp[1]*fSize+camRight[1]*fSize,
+       camWorldPos[2]+camFwd[2]*fLen+camUp[2]*fSize+camRight[2]*fSize],
+      [camWorldPos[0]+camFwd[0]*fLen+camUp[0]*fSize-camRight[0]*fSize,
+       camWorldPos[1]+camFwd[1]*fLen+camUp[1]*fSize-camRight[1]*fSize,
+       camWorldPos[2]+camFwd[2]*fLen+camUp[2]*fSize-camRight[2]*fSize],
+      [camWorldPos[0]+camFwd[0]*fLen-camUp[0]*fSize-camRight[0]*fSize,
+       camWorldPos[1]+camFwd[1]*fLen-camUp[1]*fSize-camRight[1]*fSize,
+       camWorldPos[2]+camFwd[2]*fLen-camUp[2]*fSize-camRight[2]*fSize],
+      [camWorldPos[0]+camFwd[0]*fLen-camUp[0]*fSize+camRight[0]*fSize,
+       camWorldPos[1]+camFwd[1]*fLen-camUp[1]*fSize+camRight[1]*fSize,
+       camWorldPos[2]+camFwd[2]*fLen-camUp[2]*fSize+camRight[2]*fSize]
+    ];
+    ctx3.strokeStyle = '#1565c0'; ctx3.lineWidth = 1.5;
+    frustumCorners.forEach(function(fc) {
+      var fp = proj3(fc[0], fc[1], fc[2]);
+      ctx3.beginPath(); ctx3.moveTo(camP[0], camP[1]); ctx3.lineTo(fp[0], fp[1]); ctx3.stroke();
+    });
+    for (var i=0; i<4; i++) {
+      var fp0 = proj3(frustumCorners[i][0], frustumCorners[i][1], frustumCorners[i][2]);
+      var fp1 = proj3(frustumCorners[(i+1)%4][0], frustumCorners[(i+1)%4][1], frustumCorners[(i+1)%4][2]);
+      ctx3.beginPath(); ctx3.moveTo(fp0[0], fp0[1]); ctx3.lineTo(fp1[0], fp1[1]); ctx3.stroke();
+    }
+    ctx3.fillStyle = '#1565c0';
+    ctx3.beginPath(); ctx3.arc(camP[0], camP[1], 3, 0, 2*Math.PI); ctx3.fill();
+    ctx3.font = '10px sans-serif';
+    ctx3.fillText('Cam', camP[0]+5, camP[1]-5);
+
+    // Draw axes
+    var axColors = ['#e53935','#43a047','#1e88e5'];
+    var axLabels = ['X','Y','Z'];
+    var axDirs = [[4,0,0],[0,4,0],[0,0,4]];
+    var origP = proj3(0,0,0);
+    axDirs.forEach(function(d, i) {
+      var p = proj3(d[0], d[1], d[2]);
+      ctx3.strokeStyle = axColors[i]; ctx3.lineWidth = 1.5;
+      ctx3.beginPath(); ctx3.moveTo(origP[0], origP[1]); ctx3.lineTo(p[0], p[1]); ctx3.stroke();
+      ctx3.fillStyle = axColors[i]; ctx3.font = 'bold 11px sans-serif';
+      ctx3.fillText(axLabels[i], p[0]+3, p[1]-3);
+    });
+
+    ctx3.fillStyle = '#aaa'; ctx3.font = '9px sans-serif';
+    ctx3.fillText('Drag to orbit', w3 - 72, 14);
+    ctx3.fillStyle = '#888'; ctx3.font = '10px sans-serif';
+    ctx3.fillText('Z=0 ground plane', 6, h3 - 6);
+
+    // ===== DRAW 2D CAMERA IMAGE =====
+    var w2 = canvas2d.width, h2 = canvas2d.height;
+    ctx2.clearRect(0, 0, w2, h2);
+
+    // Image boundary
+    var imgW = 350, imgH = 350;
+    var margin = 10;
+    var imgScale = (Math.min(w2, h2) - 2*margin) / Math.max(imgW, imgH);
+    // Map pixel coords to canvas coords
+    function px2canvas(u, v) {
+      return [margin + u * imgScale, margin + v * imgScale];
+    }
+
+    ctx2.strokeStyle = '#333'; ctx2.lineWidth = 1;
+    ctx2.strokeRect(margin, margin, imgW * imgScale, imgH * imgScale);
+
+    // Draw projected grid lines (clip to image bounds, skip behind-camera segments)
+    ctx2.save();
+    ctx2.beginPath();
+    ctx2.rect(margin, margin, imgW * imgScale, imgH * imgScale);
+    ctx2.clip();
+    ctx2.strokeStyle = '#ccc'; ctx2.lineWidth = 0.5;
+    function drawGridLine(samples) {
+      var started = false;
+      for (var si = 0; si < samples.length; si++) {
+        if (samples[si] === null) { started = false; continue; }
+        var cp = px2canvas(samples[si].u, samples[si].v);
+        if (!started) { ctx2.beginPath(); ctx2.moveTo(cp[0], cp[1]); started = true; }
+        else { ctx2.lineTo(cp[0], cp[1]); }
+      }
+      if (started) ctx2.stroke();
+    }
+    for (var gi = -3; gi <= 3; gi++) {
+      var samples = [];
+      for (var t = -3; t <= 3; t += 0.5) samples.push(projectH(gi, t));
+      drawGridLine(samples);
+      samples = [];
+      for (var t = -3; t <= 3; t += 0.5) samples.push(projectH(t, gi));
+      drawGridLine(samples);
+    }
+    ctx2.restore();
+
+    // Draw projected quadrilateral (only if all points are in front of camera)
+    var allValid = projectedPts.every(function(pp) { return pp.proj !== null; });
+    if (allValid) {
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.rect(margin, margin, imgW * imgScale, imgH * imgScale);
+      ctx2.clip();
+
+      ctx2.strokeStyle = '#1565c0'; ctx2.lineWidth = 2;
+      ctx2.fillStyle = 'rgba(21, 101, 192, 0.08)';
+      ctx2.beginPath();
+      var p0 = px2canvas(projectedPts[0].proj.u, projectedPts[0].proj.v);
+      ctx2.moveTo(p0[0], p0[1]);
+      for (var i = 1; i < 4; i++) {
+        var pi = px2canvas(projectedPts[i].proj.u, projectedPts[i].proj.v);
+        ctx2.lineTo(pi[0], pi[1]);
+      }
+      ctx2.closePath(); ctx2.fill(); ctx2.stroke();
+
+      // Draw projected corner points
+      projectedPts.forEach(function(pp, i) {
+        var cp = px2canvas(pp.proj.u, pp.proj.v);
+        ctx2.fillStyle = ptColors[i];
+        ctx2.beginPath(); ctx2.arc(cp[0], cp[1], 4, 0, 2*Math.PI); ctx2.fill();
+        ctx2.font = 'bold 11px sans-serif';
+        ctx2.fillText(pp.label, cp[0]+5, cp[1]-5);
+        ctx2.font = '9px sans-serif';
+        ctx2.fillText('(' + fmt1(pp.proj.u) + ', ' + fmt1(pp.proj.v) + ')', cp[0]+5, cp[1]+10);
+      });
+      ctx2.restore();
+    } else {
+      ctx2.fillStyle = '#999'; ctx2.font = '12px sans-serif';
+      ctx2.fillText('Some points are behind the camera', margin + 10, margin + 30);
+    }
+
+    // Principal point
+    var ppCanv = px2canvas(u0, v0);
+    ctx2.strokeStyle = '#e53935'; ctx2.lineWidth = 1;
+    ctx2.beginPath(); ctx2.moveTo(ppCanv[0]-4, ppCanv[1]); ctx2.lineTo(ppCanv[0]+4, ppCanv[1]); ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(ppCanv[0], ppCanv[1]-4); ctx2.lineTo(ppCanv[0], ppCanv[1]+4); ctx2.stroke();
+
+    ctx2.fillStyle = '#888'; ctx2.font = '10px sans-serif';
+    ctx2.fillText('Projected image (perspective distortion)', 6, h2 - 6);
+
+    // ===== EQUATIONS =====
+    var html = '';
+
+    // 1. Why Z=0 simplifies
+    html += '<p style="font-weight:600;color:#1565c0;">1. Why $Z=0$ simplifies the projection</p>';
+    html += '<p style="font-size:12px;">The full $3 \\times 4$ camera matrix $C$ maps $(X, Y, Z, 1)^T$ to pixel coordinates. When all points lie on the $Z=0$ plane, the third column is multiplied by zero and drops out:</p>';
+    html += '$$\\begin{pmatrix} u \\\\ v \\\\ w \\end{pmatrix} = C \\begin{pmatrix} X \\\\ Y \\\\ 0 \\\\ 1 \\end{pmatrix} = \\underbrace{\\begin{pmatrix} C_{11} & C_{12} & C_{14} \\\\ C_{21} & C_{22} & C_{24} \\\\ C_{31} & C_{32} & C_{34} \\end{pmatrix}}_{H} \\begin{pmatrix} X \\\\ Y \\\\ 1 \\end{pmatrix}$$';
+
+    // 2. The homography matrix H with computed values
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">2. Computed Homography Matrix $H$</p>';
+    html += '$$H = \\begin{pmatrix} ' + fmt2(H[0][0]) + ' & ' + fmt2(H[0][1]) + ' & ' + fmt2(H[0][2]) + ' \\\\ ' + fmt2(H[1][0]) + ' & ' + fmt2(H[1][1]) + ' & ' + fmt2(H[1][2]) + ' \\\\ ' + fmt(H[2][0]) + ' & ' + fmt(H[2][1]) + ' & ' + fmt(H[2][2]) + ' \\end{pmatrix}$$';
+
+    // 3. DOF
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">3. Degrees of Freedom</p>';
+    html += '<p style="font-size:12px;">$H$ has <strong>8 DOF</strong> (9 entries $-$ 1 for scale). Need minimum <strong>4 point correspondences</strong> (each gives 2 equations, so $4 \\times 2 = 8$ equations for 8 unknowns).</p>';
+
+    // 4. Point correspondence table
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">4. Point Correspondences</p>';
+    html += '<table style="font-size:12px;width:100%;"><tr><th>Point</th><th>Ground $(X,Y)$</th><th>Pixel $(u, v)$</th></tr>';
+    projectedPts.forEach(function(pp, i) {
+      var uStr = pp.proj ? fmt1(pp.proj.u) : '---';
+      var vStr = pp.proj ? fmt1(pp.proj.v) : '---';
+      html += '<tr><td style="color:' + ptColors[i] + ';font-weight:600;">' + groundPts[i].label + '</td><td>$(' + groundPts[i].X + ', ' + groundPts[i].Y + ')$</td><td>$(' + uStr + ', ' + vStr + ')$</td></tr>';
+    });
+    html += '</table>';
+
+    // 5. Verification
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:14px;">5. Verification: $H \\cdot (X, Y, 1)^T$</p>';
+    projectedPts.forEach(function(pp, i) {
+      if (!pp.proj) return;
+      html += '<p style="font-size:11px;color:' + ptColors[i] + ';margin:2px 0;"><strong>' + groundPts[i].label + ':</strong> $H \\cdot (' + groundPts[i].X + ',\\,' + groundPts[i].Y + ',\\,1)^T = (' + fmt1(pp.proj.uw) + ',\\,' + fmt1(pp.proj.vw) + ',\\,' + fmt2(pp.proj.ww) + ')^T$';
+      html += ' &rarr; $(' + fmt1(pp.proj.uw) + '/' + fmt2(pp.proj.ww) + ',\\;' + fmt1(pp.proj.vw) + '/' + fmt2(pp.proj.ww) + ') = (' + fmt1(pp.proj.u) + ',\\,' + fmt1(pp.proj.v) + ')$ &#10003;</p>';
+    });
+
+    // 6. Insight
+    html += '<div class="insight-box" style="margin-top:14px;"><div class="box-label">Practical insight</div><div style="font-size:12px;">A homography maps any quadrilateral to any other quadrilateral. This is why you can correct perspective distortion in photos of documents/whiteboards -- it is just applying $H^{-1}$.</div></div>';
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  ['hg-height','hg-tilt','hg-pan'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', update);
+  });
+
+  update();
+})();
+</script>
+
+<script>
+  initWalkthrough('projection-walkthrough', [
+    {
+      tab: '1. World Point',
+      title: 'Step 1: Start with a 3D World Point',
+      text: 'Begin with a point $P_w = (X_w, Y_w, Z_w)$ in the world coordinate system (WCS). This is the fixed reference frame for the 3D scene. Any 3D coordinate in the scene can be expressed in world coordinates.',
+      visual: '<div class="definition-box"><div class="box-label">World Point (Homogeneous)</div><div>$$\\mathbf{p}_w = \\begin{pmatrix} X_w \\\\ Y_w \\\\ Z_w \\\\ 1 \\end{pmatrix}$$</div></div><div class="figure-container"><img src="figures/mod7/coordinate_frames_overview.png" alt="Coordinate frames"><div class="figure-caption">All four coordinate frames: world, camera, image plane, pixel.</div></div>',
+      insight: 'The choice of world coordinate system is arbitrary. For a scene with multiple cameras, all cameras share the same world coordinate system — they differ only in their extrinsic parameters.'
+    },
+    {
+      tab: '2. Extrinsic',
+      title: 'Step 2: Apply Extrinsic Transform [R|t]',
+      text: 'The extrinsic matrix $[R|t]$ transforms the world point into camera coordinates. $R$ is a $3 \\times 3$ rotation matrix (3 DOF), $t$ is a 3D translation vector (3 DOF). Together they encode where the camera is positioned and how it is oriented in the world.',
+      visual: '<div class="definition-box"><div class="box-label">World to Camera Coordinates</div><div>$$\\begin{pmatrix} X_c \\\\ Y_c \\\\ Z_c \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} R & \\mathbf{t} \\\\ \\mathbf{0}^T & 1 \\end{pmatrix} \\begin{pmatrix} X_w \\\\ Y_w \\\\ Z_w \\\\ 1 \\end{pmatrix}$$</div></div><div class="figure-container"><img src="figures/mod7/extrinsic_parameters_diagram.png" alt="Extrinsic parameters"><div class="figure-caption">Extrinsic transform: world coordinate frame to camera coordinate frame.</div></div>',
+      insight: 'The extrinsic parameters change every time the camera moves. For a robot with multiple cameras, each camera has unique extrinsics. The intrinsics (next step) stay the same for the same camera regardless of where it is placed.'
+    },
+    {
+      tab: '3. Projection',
+      title: 'Step 3: Project onto Image Plane (Simple Projection)',
+      text: 'Apply the simple $3 \\times 4$ projection matrix. This performs the perspective divide — dividing by $Z_c$ maps the 3D camera-frame point to a 2D point in millimeters on the sensor. Objects at twice the depth appear half the size. This is the nonlinear perspective effect.',
+      visual: '<div class="definition-box"><div class="box-label">Camera Coordinates to Sensor (mm)</div><div>$$\\begin{pmatrix} x_s \\\\ y_s \\\\ 1 \\end{pmatrix} \\sim \\begin{pmatrix} f & 0 & 0 & 0 \\\\ 0 & f & 0 & 0 \\\\ 0 & 0 & 1 & 0 \\end{pmatrix} \\begin{pmatrix} X_c \\\\ Y_c \\\\ Z_c \\\\ 1 \\end{pmatrix}$$</div></div><div class="figure-container"><img src="figures/mod7/projection_geometry_3d_to_2d.png" alt="Projection geometry"><div class="figure-caption">Similar triangles: the projection divides by Z_c.</div></div>',
+      insight: 'The "divide by Z" that makes perspective projection nonlinear is elegantly hidden inside the homogeneous-to-Cartesian conversion. In matrix form it looks linear; the nonlinearity appears only when you extract Cartesian coordinates from the homogeneous result.'
+    },
+    {
+      tab: '4. Intrinsic',
+      title: 'Step 4: Apply Intrinsic Matrix K',
+      text: 'The intrinsic matrix $K$ converts from sensor millimeters to pixel coordinates. It encodes focal length in pixels ($f_x, f_y$), principal point offset ($u_0, v_0$), and skew ($s$). This step is where physical sensor properties are captured.',
+      visual: '<div class="definition-box"><div class="box-label">Sensor (mm) to Pixel Coordinates</div><div>$$\\begin{pmatrix} u \\\\ v \\\\ 1 \\end{pmatrix} = \\underbrace{\\begin{pmatrix} \\alpha & s & u_0 \\\\ 0 & \\beta & v_0 \\\\ 0 & 0 & 1 \\end{pmatrix}}_{K} \\begin{pmatrix} x_s \\\\ y_s \\\\ 1 \\end{pmatrix}$$</div></div><div class="figure-container"><img src="figures/mod7/intrinsic_matrix_equation.png" alt="Intrinsic matrix equation"><div class="figure-caption">The intrinsic matrix maps sensor coordinates to pixel coordinates.</div></div>',
+      insight: 'Most modern cameras have nearly square pixels (alpha ≈ beta) and negligible skew (s ≈ 0). The principal point (u0, v0) is close to but not exactly the image center due to manufacturing tolerances.'
+    },
+    {
+      tab: '5. Full Pipeline',
+      title: 'Step 5: The Combined Camera Matrix C',
+      text: 'Combining Steps 2-4, the full pipeline from world point to pixel is expressed by the $3 \\times 4$ camera matrix $C = K[R|t]$. This single matrix encodes all 11 degrees of freedom of the camera system.',
+      visual: '<div class="definition-box"><div class="box-label">Full Camera Projection</div><div>$$s \\begin{pmatrix} u \\\\ v \\\\ 1 \\end{pmatrix} = \\underbrace{K}_{3\\times3} \\underbrace{[R|\\mathbf{t}]}_{3\\times4} \\begin{pmatrix} X_w \\\\ Y_w \\\\ Z_w \\\\ 1 \\end{pmatrix} = \\underbrace{C}_{3\\times4} \\begin{pmatrix} X_w \\\\ Y_w \\\\ Z_w \\\\ 1 \\end{pmatrix}$$</div></div><div class="figure-container"><img src="figures/mod7/projection_summary_equation.png" alt="Full projection summary"><div class="figure-caption">The full projection pipeline: world point → extrinsic → intrinsic → pixel.</div></div>',
+      insight: 'The camera matrix C is what you estimate during calibration. Once known, you can project any 3D world point to its pixel location instantly with a single 3x4 matrix-vector multiplication.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod7-flashcards', [
+    {
+      q: 'What is the fundamental question of the camera model module?',
+      a: 'Given a 3D point $P = (X, Y, Z)$ in world coordinates, on which pixel $(u, v)$ does it appear in the image? This is answered by the full camera projection equation: $s(u, v, 1)^T = K[R|\\mathbf{t}](X_w, Y_w, Z_w, 1)^T$.'
+    },
+    {
+      q: 'Why does placing a bare sensor in front of a scene produce a blurred image?',
+      a: 'Every point in the scene sends light rays in <strong>all directions</strong>. Without an aperture, every sensor cell receives light from many scene points simultaneously, so all spatial information is mixed together. A pinhole restricts each sensor cell to light from only one direction, creating a sharp (inverted) image.'
+    },
+    {
+      q: 'What are the perspective projection equations and what do they tell us?',
+      a: '$x_s = f x_v / z_v$ and $y_s = f y_v / z_v$. They show that projected size decreases as depth $z_v$ increases (objects farther away look smaller). The mapping is <strong>nonlinear</strong> because of the division by $z_v$.'
+    },
+    {
+      q: 'Write the full intrinsic matrix $K$ and name all 5 degrees of freedom.',
+      a: '$K = \\begin{pmatrix} \\alpha & s & u_0 \\\\ 0 & \\beta & v_0 \\\\ 0 & 0 & 1 \\end{pmatrix}$. The 5 DOF are: $\\alpha = f_x$ (horizontal focal length in pixels), $\\beta = f_y$ (vertical), $s$ (skew), $u_0$ and $v_0$ (principal point offset).'
+    },
+    {
+      q: 'What is the full camera projection matrix $C$ and how many degrees of freedom does it have?',
+      a: '$C = K[R|\\mathbf{t}]$, a $3\\times4$ matrix. It has <strong>11 DOF</strong>: 5 intrinsic + 6 extrinsic. Although $C$ has 12 entries, it is defined only up to scale (multiplying all entries by a constant does not change the projection), removing 1 DOF.'
+    },
+    {
+      q: 'How many 3D-2D point correspondences are needed for camera calibration? Why?',
+      a: 'At least <strong>6 non-coplanar</strong> correspondences. Each point gives 2 equations (one for $x_{ip}$, one for $y_{ip}$). Six points give 12 equations for 11 unknowns. In practice, more points form an overdetermined system solved via least-squares / SVD for robustness to noise.'
+    },
+    {
+      q: 'What are the extrinsic parameters and what do they represent?',
+      a: 'The extrinsic parameters are the rotation $R$ (a $3\\times3$ orthogonal matrix, 3 DOF) and translation $\\mathbf{t}$ (a 3-vector, 3 DOF). Together they describe the <strong>position and orientation of the camera in the world</strong> — they change whenever the camera moves.'
+    },
+    {
+      q: 'What is a homography? When does the full projection matrix reduce to a homography?',
+      a: 'A homography $H$ is a $3\\times3$ projective transformation (8 DOF) mapping points from one plane to another. When all scene points lie on a plane ($Z = 0$), the third column of the $3\\times4$ projection matrix is multiplied by zero and drops out, leaving a $3\\times3$ matrix $H$.'
+    },
+    {
+      q: 'Why are homogeneous coordinates useful for camera projection?',
+      a: 'Perspective projection involves a nonlinear division by depth $Z$. Homogeneous coordinates absorb this division into the homogeneous-to-Cartesian conversion, allowing the nonlinear projection to be expressed as a <strong>linear matrix multiplication</strong>. This enables elegant matrix-based formulations of the entire projection pipeline.'
+    },
+    {
+      q: 'What properties does a rotation matrix $R$ have?',
+      a: '$R$ is <strong>orthogonal</strong>: $R^T R = I$ (so $R^{-1} = R^T$) and $\\det(R) = 1$ (proper rotation, no reflection). Although $R$ has 9 entries, the 6 orthogonality constraints leave only 3 degrees of freedom (the three rotation angles: pan/yaw, tilt/pitch, roll).'
+    },
+    {
+      q: 'What is lost and what is preserved in perspective projection?',
+      a: '<strong>Lost:</strong> depth/distance, absolute size, angles (right angles may not project to right angles), parallelism (parallel lines converge to vanishing points). <strong>Preserved:</strong> straightness of lines (a 3D line projects to a 2D line), and incidence (a point on a line projects to a point on the projected line).'
+    },
+    {
+      q: 'A 3D point in camera coordinates is $P = (2, 3, 10)$ and $f = 5$ mm. Compute the projected sensor coordinates $(x_s, y_s)$.',
+      a: '$x_s = 5 \\times 2 / 10 = 1$ mm, $y_s = 5 \\times 3 / 10 = 1.5$ mm. Use the formula $x_s = f x_v / z_v$ and $y_s = f y_v / z_v$.'
+    }
+  ]);
+</script>
+</body>
+</html>

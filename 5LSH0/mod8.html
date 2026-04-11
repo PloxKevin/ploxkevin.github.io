@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>8. 3D Sensors &amp; Depth Sensing — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">8. 3D Sensors &amp; Depth Sensing</h1>
+    <p class="page-subtitle">Stereo vision, Time-of-Flight, structured light, LiDAR, 4D radar, sonar, and 3D data formats</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#taxonomy">1. Taxonomy of 3D Sensors</a>
+      <a href="#stereo">2. Stereo Vision &amp; Disparity</a>
+      <a href="#tof">3. Time-of-Flight (ToF) Sensors</a>
+      <a href="#structured-light">4. Structured Light</a>
+      <a href="#passive-vs-active">5. Passive vs Active Sensors</a>
+      <a href="#lidar">6. LiDAR</a>
+      <a href="#radar">7. 4D Imaging Radar</a>
+      <a href="#sonar">8. Multi-beam Sonar</a>
+      <a href="#sensor-comparison">9. Sensor Comparison</a>
+      <a href="#3d-formats">10. 3D Data Formats</a>
+      <a class="toc-interactive" href="#stereo-walkthrough">Interactive: Stereo Depth Pipeline</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: TAXONOMY ===== -->
+    <h2 class="section-heading" id="taxonomy">1. Taxonomy of 3D Sensors</h2>
+
+    <p>The real world is three-dimensional, yet 2D images discard all depth information — a person at 2 m and at 20 m can project to the same pixel pattern. 3D sensing restores the lost depth dimension, enabling applications impossible with 2D data alone.</p>
+
+    <p>All 3D sensors divide into two fundamental categories based on whether they emit their own energy signal:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Two Fundamental Categories</div>
+      <div>
+        <p><strong>Passive sensors</strong> — do NOT emit energy; rely entirely on ambient light:</p>
+        <ul>
+          <li>Stereo cameras (e.g., ZED Mini)</li>
+          <li>Moving single camera (Structure from Motion)</li>
+          <li>Light-field sensors</li>
+        </ul>
+        <p><strong>Active sensors</strong> — emit their own signal (IR, laser, EM, acoustic):</p>
+        <ul>
+          <li>Time-of-Flight cameras (e.g., Kinect v2, Azure Kinect)</li>
+          <li>Structured light (e.g., Kinect v1)</li>
+          <li>LiDAR (e.g., Velodyne, Faro)</li>
+          <li>4D imaging radars</li>
+          <li>Multi-beam sonars</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Supportive Sensors</h3>
+    <p>Active and passive 3D sensors are often combined with <strong>supportive sensors</strong> that do not measure depth directly but provide auxiliary position and orientation information:</p>
+    <ul>
+      <li><strong>GPS</strong> — global position (latitude, longitude, altitude)</li>
+      <li><strong>Odometers</strong> — distance traveled from wheel rotation counts</li>
+      <li><strong>IMU (Inertial Measurement Unit):</strong> accelerometers (linear acceleration), gyroscopes (rotational velocity), magnetometers (heading), altimeters (elevation)</li>
+    </ul>
+    <p>These are essential for aerial LiDAR (GPS/IMU tell you where the aircraft was oriented when each pulse fired) and mobile mapping.</p>
+
+    <table>
+      <tr><th></th><th>Direct Depth Sensors</th><th>Indirect Depth Sensors</th></tr>
+      <tr><td><strong>Mechanism</strong></td><td>Physically measures distance (time-of-flight, triangulation)</td><td>Depth computed from image correspondences</td></tr>
+      <tr><td><strong>Examples</strong></td><td>ToF, structured light, LiDAR, radar, sonar</td><td>Stereo cameras, single moving camera</td></tr>
+      <tr><td><strong>Works in darkness?</strong></td><td>Yes (emit own signal)</td><td>No (need ambient light)</td></tr>
+      <tr><td><strong>Texture dependence</strong></td><td>None to low</td><td>High — need visual features to match</td></tr>
+    </table>
+
+    <!-- ===== SECTION 2: STEREO VISION ===== -->
+    <h2 class="section-heading" id="stereo">2. Stereo Vision &amp; Disparity</h2>
+
+    <p>Stereo vision exploits the same principle as human depth perception: two slightly offset viewpoints create parallax — nearby objects shift more between the two views than distant objects.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/disparity_concept_visual_angles.png" alt="Disparity concept: eyes fixate on one object while others appear at different visual angles">
+      <div class="figure-caption">Binocular disparity: when fixating on one object, others appear at slightly different visual angles in each eye. Larger angular difference = closer object.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>A single image contains <strong>no</strong> depth information. Depth is fundamentally ambiguous from one viewpoint: a small nearby object and a large distant object can project to identical pixel patterns. Two viewpoints resolve this ambiguity.</div>
+    </div>
+
+    <h3 class="subsection-heading">Stereo Disparity Equation</h3>
+    <p>Consider left and right cameras separated by baseline $b$. A 3D point projects to pixel $p_L$ in the left image and $p_R$ in the right image. The <strong>disparity</strong> is $d = p_L - p_R$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Disparity-to-Depth Equation (MEMORIZE)</div>
+      <div>
+        $$z = \frac{b \cdot f}{p \cdot d}$$
+        <table>
+          <tr><th>Symbol</th><th>Meaning</th><th>Unit</th></tr>
+          <tr><td>$z$</td><td>Depth to scene point</td><td>meters</td></tr>
+          <tr><td>$b$</td><td>Baseline (distance between optical centres)</td><td>meters</td></tr>
+          <tr><td>$f$</td><td>Focal length</td><td>meters</td></tr>
+          <tr><td>$p$</td><td>Pixel width (physical size of one pixel)</td><td>m/pixel</td></tr>
+          <tr><td>$d$</td><td>Disparity (pixel displacement)</td><td>pixels</td></tr>
+        </table>
+        If $f$ is given in pixels (already incorporating $p$), simplifies to: $z = b \cdot f_\text{px} / d$
+      </div>
+    </div>
+
+    <p>Derivation via similar triangles: left camera projects point $P = (X, Y, Z)$ to $p_L = f(X + b/2)/Z$, right camera to $p_R = f(X - b/2)/Z$. Disparity $d = p_L - p_R = fb/Z$, so $Z = fb/d$.</p>
+
+    <h3 class="subsection-heading">Key Relationships</h3>
+    <table>
+      <tr><th>Relationship</th><th>Explanation</th></tr>
+      <tr><td>$z \propto 1/d$</td><td>Depth is <strong>inversely proportional</strong> to disparity — double the disparity, half the depth</td></tr>
+      <tr><td>$z \propto b$</td><td>Depth is <strong>directly proportional</strong> to baseline — wider baseline = better depth resolution for far objects</td></tr>
+      <tr><td>$z \propto f$</td><td>Depth is <strong>directly proportional</strong> to focal length — longer focal length = better depth precision</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod8/disparity_to_depth_map.png" alt="Disparity-to-depth computation diagram">
+      <div class="figure-caption">Disparity-to-depth: $z = (b \cdot f) / (p \cdot d)$. Brighter pixels in the disparity map = higher disparity = closer objects.</div>
+    </div>
+
+    <h3 class="subsection-heading">Disparity Map</h3>
+    <p>By finding correspondences across the full image pair, we obtain a <strong>disparity map</strong> where each pixel value encodes the horizontal displacement between left and right views:</p>
+    <ul>
+      <li><strong>Bright pixels</strong> = high disparity = close to camera</li>
+      <li><strong>Dark pixels</strong> = low disparity = far from camera</li>
+      <li><strong>Black/undefined</strong> = no match found</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/standard_disparity_map_noisy.png" alt="Standard noisy disparity map">
+      <div class="figure-caption">A raw disparity map: depth values found only for textured areas; significant noise. Brighter = closer.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/depth_enhancement_comparison.png" alt="Depth enhancement: before and after processing">
+      <div class="figure-caption">Depth enhancement: raw disparity map (left) vs. enhanced map after watershed/inpainting (right).</div>
+    </div>
+
+    <h3 class="subsection-heading">Stereo Enhancement Techniques</h3>
+    <table>
+      <tr><th>Technique</th><th>Description</th></tr>
+      <tr><td>Watershed transform</td><td>Region-growing propagates known disparity into neighboring unknown pixels, using image contours as boundaries</td></tr>
+      <tr><td>Inpainting / Hole filling</td><td>Interpolates missing values from surrounding known values using diffusion or patch-based methods</td></tr>
+      <tr><td>CNN-based filling</td><td>Deep learning predicts dense, complete depth from sparse stereo input — state of the art</td></tr>
+      <tr><td>Bilateral / guided filtering</td><td>Smooths noise while preserving sharp depth edges at object boundaries</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Problems with stereo depth estimation</div>
+      <div class="collapsible-body">
+        <ul>
+          <li><strong>Correspondence problem:</strong> Finding which pixel in the right image corresponds to a given left-image pixel is the hardest part — closely related to feature matching</li>
+          <li><strong>Textureless surfaces:</strong> Blank walls and uniform regions have no unique features — disparity cannot be computed</li>
+          <li><strong>Occlusions:</strong> Parts visible in one camera may be hidden in the other — no correspondence exists</li>
+          <li><strong>Noise and mismatches:</strong> Lighting changes, shadows, and reflections cause incorrect matches</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/stereo_camera_depth_images.png" alt="ZED Mini stereo camera depth output">
+      <div class="figure-caption">ZED Mini stereo camera: RGB views (top) and corresponding depth maps (bottom). Passive stereo fails in low light and on textureless surfaces.</div>
+    </div>
+
+    <!-- ===== SECTION 3: TIME-OF-FLIGHT ===== -->
+    <h2 class="section-heading" id="tof">3. Time-of-Flight (ToF) Sensors</h2>
+
+    <p>A ToF sensor measures depth by timing how long a light signal takes to travel to a scene point and return. It floods the entire scene with modulated infrared (IR) light and measures the phase shift independently at every pixel simultaneously — producing a <strong>dense depth map</strong> at real-time rates.</p>
+
+    <div class="definition-box">
+      <div class="box-label">ToF Distance Equations</div>
+      <div>
+        <p><strong>Direct time measurement:</strong></p>
+        $$\text{Distance} = \frac{t \times c}{2}$$
+        where $t$ = round-trip time, $c = 3 \times 10^8$ m/s (speed of light). Factor of 2 for the round trip.
+        <p><strong>Phase-shift method (practical implementation):</strong></p>
+        $$\text{Distance} = \frac{c \cdot \phi}{4\pi \cdot f_\text{mod}}$$
+        where $\phi$ = measured phase shift (radians), $f_\text{mod}$ = modulation frequency (Hz).
+      </div>
+    </div>
+
+    <p>Direct nanosecond timing is impractical for consumer electronics. Instead, ToF sensors use <strong>continuous-wave modulation</strong>: the sensor emits a periodic signal, the reflected signal arrives with a phase delay, and the sensor correlates the sent and received signals to extract the phase shift (and thus the distance).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/tof_signal_correlation_principle.png" alt="ToF signal correlation principle">
+      <div class="figure-caption">ToF correlation: close objects (left) produce short delays with closely aligned correlation peaks; far objects (right) produce longer delays with shifted peaks.</div>
+    </div>
+
+    <h3 class="subsection-heading">ToF Hardware — Kinect One (v2)</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod8/tof_kinect_one_teardown.png" alt="Kinect One teardown: RGB camera, IR sensor, IR illuminator">
+      <div class="figure-caption">Kinect One (v2) teardown: RGB camera (red), IR sensor array (green), and IR illuminator (blue). The illuminator and sensor work as a pair to measure per-pixel phase shift.</div>
+    </div>
+
+    <table>
+      <tr><th>Component</th><th>Function</th></tr>
+      <tr><td>RGB camera</td><td>Captures standard color images (not used for depth — provides color overlay)</td></tr>
+      <tr><td>IR illuminator</td><td>Emits modulated infrared light that floods the entire scene uniformly</td></tr>
+      <tr><td>IR sensor array</td><td>2D pixel array sensitive to IR; measures phase shift at each pixel independently</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Common exam trap — Kinect v1 vs v2</div>
+      <div>
+        <strong>Kinect v1 (Xbox 360):</strong> uses <strong>structured light</strong> (projects an IR dot pattern). NOT a ToF sensor.<br>
+        <strong>Kinect v2 / Kinect One (Xbox One):</strong> uses <strong>Time-of-Flight</strong> with IR illuminator + IR sensor array.<br>
+        <strong>Azure Kinect (Microsoft):</strong> modern ToF successor with improved accuracy and range.<br>
+        They look superficially similar but use completely different depth-sensing principles.
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/tof_depth_map_example.png" alt="ToF depth map example">
+      <div class="figure-caption">Depth map from a ToF sensor: brighter = closer, darker = farther. Dense, per-pixel depth at real-time frame rates.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>ToF Sensor</th></tr>
+      <tr><td>Type</td><td>Active (emits modulated IR)</td></tr>
+      <tr><td>Works in darkness</td><td>Yes</td></tr>
+      <tr><td>Typical range</td><td>0.5 m to 4&ndash;5 m (consumer); longer for industrial</td></tr>
+      <tr><td>Output</td><td>Dense depth map at 30+ fps</td></tr>
+      <tr><td>Accuracy</td><td>~cm level</td></tr>
+      <tr><td>Software complexity</td><td><strong>Low</strong> (direct per-pixel measurement, no matching)</td></tr>
+      <tr><td>Main limitations</td><td>Multipath interference; strong sunlight can overwhelm IR sensor; limited range for consumer devices</td></tr>
+    </table>
+
+    <!-- ===== SECTION 4: STRUCTURED LIGHT ===== -->
+    <h2 class="section-heading" id="structured-light">4. Structured Light Sensors</h2>
+
+    <p>Structured light computes depth by <strong>active triangulation</strong>: a projector emits a known pattern (stripes, dots, grid) onto the scene; a camera at a known distance from the projector observes how the pattern deforms on 3D surfaces. The deformation encodes depth.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/structured_light_triangulation.png" alt="Structured light triangulation diagram">
+      <div class="figure-caption">Structured light triangulation: a stripe projector (left) projects light stripes onto a shaped object (hand). A matrix camera (right) observes the deformed pattern. Known geometry of the triangle (baseline, projection angle, observation angle) yields depth.</div>
+    </div>
+
+    <h3 class="subsection-heading">Triangulation Geometry</h3>
+    <table>
+      <tr><th>Known</th><th>Description</th></tr>
+      <tr><td>Pattern element identity</td><td>Which specific stripe or dot was projected (each has a unique code)</td></tr>
+      <tr><td>Camera pixel position</td><td>Where that element appears on the camera sensor $(u, v)$</td></tr>
+      <tr><td>Triangulation base $\zeta$</td><td>Measured distance between projector and camera</td></tr>
+      <tr><td>Projection angle</td><td>Angle at which each pattern element was projected</td></tr>
+    </table>
+    <p>The <strong>unknown</strong> is depth — the distance to the surface where the pattern element landed. Basic trigonometry from the projector-camera-surface triangle yields it.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/kinect_v1_internal_components.png" alt="Kinect v1 internal components">
+      <div class="figure-caption">Kinect v1 internal components: IR Emitter, Color Sensor, IR Depth Sensor, Tilt Motor, and Microphone Array. The Kinect v1 projects ~30,000 IR dots and observes their displacement.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>Structured Light</th></tr>
+      <tr><td>Type</td><td>Active (emits IR pattern)</td></tr>
+      <tr><td>Works in darkness</td><td>Yes</td></tr>
+      <tr><td>Outdoor performance</td><td><strong>Weak</strong> — sunlight washes out the projected IR pattern</td></tr>
+      <tr><td>Typical range</td><td>0.5 m to 4 m</td></tr>
+      <tr><td>Accuracy</td><td>~cm level</td></tr>
+      <tr><td>Software complexity</td><td>High (pattern decoding, stripe identification, triangulation)</td></tr>
+      <tr><td>Best use cases</td><td>Indoor 3D scanning, gesture recognition, face scanning (e.g., Apple Face ID)</td></tr>
+    </table>
+
+    <!-- ===== SECTION 5: PASSIVE VS ACTIVE ===== -->
+    <h2 class="section-heading" id="passive-vs-active">5. Passive vs Active Sensors</h2>
+
+    <table>
+      <tr><th></th><th>Passive Sensors</th><th>Active Sensors</th></tr>
+      <tr><td><strong>Signal emission</strong></td><td>None — rely on ambient light</td><td>Emit own signal (IR, laser, EM, acoustic)</td></tr>
+      <tr><td><strong>Examples</strong></td><td>Stereo cameras, SfM, light-field</td><td>ToF, structured light, LiDAR, 4D radar, sonar</td></tr>
+      <tr><td><strong>Works in darkness</strong></td><td>NO</td><td>YES</td></tr>
+      <tr><td><strong>Texture dependence</strong></td><td>HIGH</td><td>LOW or NONE</td></tr>
+      <tr><td><strong>Depth quality</strong></td><td>Lower (noisy, incomplete)</td><td>Higher (dense, accurate)</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Experimental Comparison — ZED Mini vs Azure Kinect (Enigma Project)</div>
+      <div>
+        <table>
+          <tr><th></th><th>Passive Stereo (ZED Mini)</th><th>Active ToF (Azure Kinect)</th></tr>
+          <tr><td>In full darkness</td><td>Completely blind — no data</td><td>Works perfectly — full depth data</td></tr>
+          <tr><td>Wall reconstruction</td><td>Noisy, warped, wobbly surfaces</td><td>Thin, straight, geometrically accurate</td></tr>
+          <tr><td>Overall accuracy</td><td>Lower, significant distortion</td><td>Much higher, faithful to geometry</td></tr>
+        </table>
+        <p>The same building interior, same conditions: active ToF produced clean reconstructions with straight walls and proper angles; passive stereo produced coarse, sparse, warped point clouds.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: LIDAR ===== -->
+    <h2 class="section-heading" id="lidar">6. LiDAR</h2>
+
+    <p><strong>LiDAR</strong> stands for Light Detection And Ranging (or Laser Imaging Detection And Ranging). It uses the same time-of-flight principle as ToF cameras but with a <strong>focused laser beam</strong> instead of a flood of modulated IR — enabling much longer range and higher accuracy.</p>
+
+    <h3 class="subsection-heading">Why Laser Light Is Special</h3>
+    <table>
+      <tr><th>Property</th><th>Advantage for LiDAR</th></tr>
+      <tr><td><strong>Monochromatic</strong> (single wavelength)</td><td>Precisely known interaction with atmosphere, water vapor, and surface materials — no ambiguity in scattering models</td></tr>
+      <tr><td><strong>Very narrow beam</strong></td><td>Remains tightly focused over long distances — maintains energy at hundreds of meters for precise point measurements</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">LiDAR Distance Equation</div>
+      <div>
+        $$\text{Distance} = \frac{t \times c}{2}$$
+        Same time-of-flight principle as ToF. From measured distance $D$ and known firing angles ($\theta$ = elevation, $\phi$ = azimuth):
+        $$X = D\cos\theta\cos\phi, \quad Y = D\cos\theta\sin\phi, \quad Z = D\sin\theta$$
+        Each pulse that returns creates one $(X, Y, Z)$ point in the point cloud. Millions of pulses per second.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">LiDAR Scanning Mechanisms</h3>
+    <table>
+      <tr><th>Mechanism</th><th>Ground Pattern</th><th>Common Manufacturers</th></tr>
+      <tr><td>Oscillating mirror</td><td>Sawtooth / Z-shaped</td><td>Leica, Optech (most common)</td></tr>
+      <tr><td>Rotating polygon</td><td>Parallel lines</td><td>Various</td></tr>
+      <tr><td>Nodding mirror (Palmer scan)</td><td>Elliptical</td><td>Various</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod8/lidar_scanning_mechanisms.png" alt="LiDAR scanning mechanisms and ground patterns">
+      <div class="figure-caption">LiDAR scanning mechanisms: oscillating mirror (sawtooth, most common), rotating polygon (parallel lines), nodding mirror (elliptical).</div>
+    </div>
+
+    <h3 class="subsection-heading">Velodyne LiDAR (Multi-beam, Real-time)</h3>
+    <p>The Velodyne contains <strong>8, 16, or 64 laser beams</strong> at different vertical angles that spin together via a rotating mechanism, producing full 360-degree scans 10&ndash;20 times per second.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/velodyne_multibeam_lidar_diagram.png" alt="Velodyne multi-beam LiDAR diagram">
+      <div class="figure-caption">Velodyne multi-beam LiDAR: 8/16/64 beams fire at different vertical angles from a rotating sensor, producing a 360-degree point cloud in real time.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/velodyne_lidar_point_cloud.png" alt="Velodyne LiDAR point cloud of a road scene">
+      <div class="figure-caption">Point cloud from a Velodyne LiDAR scan, colored by reflectivity/height. Road, vehicles, and surroundings are clearly resolved.</div>
+    </div>
+
+    <h3 class="subsection-heading">Faro LiDAR (Single-beam, High Precision)</h3>
+    <p>The Faro uses a <strong>single laser beam</strong> with a rotating mirror, taking 2&ndash;20 minutes per scan but achieving <strong>millimeter precision</strong>. Used for architectural documentation and cultural heritage scanning.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/faro_lidar_cathedral_scan.png" alt="Faro LiDAR scan of a cathedral">
+      <div class="figure-caption">Faro LiDAR scan of a cathedral interior: every architectural detail — vaulted ceilings, columns, arches — captured with millimeter precision.</div>
+    </div>
+
+    <h3 class="subsection-heading">Aerial LiDAR</h3>
+    <p>LiDAR mounted on aircraft or drones, combined with GPS (absolute position) and IRS/IMU (aircraft orientation at each pulse), for topographic mapping, forestry, and urban planning. A GPS ground base station provides differential correction.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/lidar_airborne_scanning_concept.png" alt="Airborne LiDAR with GPS and IMU">
+      <div class="figure-caption">Airborne LiDAR: aircraft fires pulses at ground while GPS and IRS/IMU track position and orientation. A GPS base station provides differential correction.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>Depth Sensors (ToF, Structured Light)</th><th>LiDAR</th></tr>
+      <tr><td>Range</td><td>Short (0.5&ndash;5 m)</td><td>Long (tens to hundreds of meters)</td></tr>
+      <tr><td>Output</td><td>Dense depth map (per-pixel)</td><td>Sparse point cloud (discrete points)</td></tr>
+      <tr><td>Speed</td><td>Real-time (30+ fps)</td><td>Velodyne: real-time; Faro: 2&ndash;20 min</td></tr>
+      <tr><td>Accuracy</td><td>~cm</td><td>~mm to cm</td></tr>
+      <tr><td>Cost</td><td>$100&ndash;$1,000</td><td>$1,000&ndash;$100,000+</td></tr>
+      <tr><td>Primary use</td><td>Indoor, gaming, AR, robotics</td><td>Autonomous driving, surveying, mapping</td></tr>
+    </table>
+
+    <!-- ===== SECTION 7: 4D RADAR ===== -->
+    <h2 class="section-heading" id="radar">7. 4D Imaging Radar</h2>
+
+    <p>A 4D imaging radar uses <strong>electromagnetic (EM) pulses</strong> (millimeter-wave radio waves) and extracts four dimensions of information from each detection.</p>
+
+    <div class="definition-box">
+      <div class="box-label">The Four Dimensions of 4D Radar</div>
+      <div>
+        <table>
+          <tr><th>Dimension</th><th>What It Measures</th><th>How</th></tr>
+          <tr><td>1. Distance</td><td>Range to object</td><td>Time-of-flight: $D = tc/2$</td></tr>
+          <tr><td>2. Direction</td><td>Azimuth angle</td><td>Phase differences across antenna array (beam-forming)</td></tr>
+          <tr><td>3. Height</td><td>Elevation</td><td>Vertical antenna array elements</td></tr>
+          <tr><td>4. Speed</td><td>Radial velocity</td><td><strong>Doppler effect</strong> — frequency shift of reflected signal</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/imaging_radar_4d_principle.png" alt="4D imaging radar principle">
+      <div class="figure-caption">4D imaging radar: measures distance (up to 300 m), direction/azimuth, vertical height, and Doppler speed simultaneously.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Doppler Effect (4th Dimension)</h3>
+    <p>When an object moves <strong>toward</strong> the radar, reflected radio waves are compressed (shifted to higher frequency). When moving <strong>away</strong>, waves are stretched (lower frequency). The magnitude of the frequency shift is directly proportional to the object's radial velocity.</p>
+
+    <p>This is the critical differentiator of 4D radar: it senses not only <em>where</em> objects are but also <em>how fast they are moving</em> — invaluable for predicting whether a car ahead is braking, accelerating, or stationary.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/radar_4d_fog_example.png" alt="4D radar performance in fog: camera vs radar comparison">
+      <div class="figure-caption">4D radar in fog: camera image is nearly useless (blurry, low contrast), but the radar heatmap still clearly detects and localizes the car. Radio waves are largely unaffected by fog, rain, and dust.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>4D Radar</th></tr>
+      <tr><td>Signal type</td><td>Electromagnetic (millimeter-wave radio)</td></tr>
+      <tr><td>Range</td><td>Up to 300 m</td></tr>
+      <tr><td>Weather robustness</td><td><strong>Excellent</strong> — works in rain, fog, snow, dust, darkness</td></tr>
+      <tr><td>Unique capability</td><td>Direct velocity measurement (Doppler)</td></tr>
+      <tr><td>vs LiDAR</td><td>Lower spatial resolution, but all-weather</td></tr>
+      <tr><td>Primary use</td><td>Automotive ADAS, autonomous driving</td></tr>
+    </table>
+
+    <!-- ===== SECTION 8: SONAR ===== -->
+    <h2 class="section-heading" id="sonar">8. Multi-beam Sonar</h2>
+
+    <p>Multi-beam sonar uses <strong>acoustic pulses</strong> (sound waves) for underwater 3D sensing. Light and radio waves attenuate rapidly underwater and are useless beyond a few meters — only acoustic waves propagate effectively.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Sonar Distance Equation</div>
+      <div>
+        $$\text{Distance} = \frac{t \times v_\text{sound}}{2}, \quad v_\text{sound} \approx 1500 \text{ m/s in seawater}$$
+        Same time-of-flight principle as LiDAR, but uses <strong>speed of sound</strong> (~1500 m/s) not speed of light ($3 \times 10^8$ m/s). Sound is ~200,000 times slower — time intervals are milliseconds (easy to measure) but measurement rate is slower.
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/multibeam_sonar_principle.png" alt="Multi-beam sonar operating principle">
+      <div class="figure-caption">Multi-beam sonar: a vessel emits a fan of acoustic beams downward; beams bounce off the seabed and return to hydrophones on the hull.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/sonar_transducer_diagram.png" alt="Sonar transducer internal structure">
+      <div class="figure-caption">Sonar transducer: piezoelectric ceramic element (converts electrical signals to acoustic pulses), aluminum resonator, elastic adhesive, connector.</div>
+    </div>
+
+    <p>Sonar provides <strong>3 dimensions</strong> of information: distance (range), direction (beam angle), and seabed material type (inferred from acoustic return character — hard rock reflects sharply; soft mud absorbs and scatters).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/multibeam_sonar_seabed_mapping.png" alt="Multi-beam sonar seabed mapping">
+      <div class="figure-caption">Multi-beam sonar seabed mapping (British Antarctic Survey): color-coded bathymetric map revealing 3D topology of the ocean floor — blue = deep, red = shallow.</div>
+    </div>
+
+    <!-- ===== SECTION 9: SENSOR COMPARISON ===== -->
+    <h2 class="section-heading" id="sensor-comparison">9. Sensor Comparison</h2>
+
+    <div class="figure-container">
+      <img src="figures/mod8/sensor_comparison_table.png" alt="Sensor comparison table">
+      <div class="figure-caption">Multi-objective comparison of depth sensing technologies: stereoscopic vision, structured light, and Time-of-Flight.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/sensor_comparison_radar_chart.png" alt="Kinect vs FARO radar chart">
+      <div class="figure-caption">Radar chart: Kinect (depth sensor) vs FARO (LiDAR). No single sensor dominates all axes — the right sensor depends on your application.</div>
+    </div>
+
+    <table>
+      <tr><th>Sensor Type</th><th>Signal</th><th>Passive/Active</th><th>Range</th><th>Speed</th><th>Cost</th><th>Weather</th><th>Primary Use</th></tr>
+      <tr><td>Stereo Camera</td><td>None (passive)</td><td>Passive</td><td>Mid</td><td>Real-time</td><td>Low</td><td>Poor (needs light + texture)</td><td>Robotics, ADAS</td></tr>
+      <tr><td>Structured Light</td><td>IR pattern</td><td>Active</td><td>Short (~4 m)</td><td>Medium</td><td>Medium-High</td><td>Indoor only</td><td>Gaming, face scan</td></tr>
+      <tr><td>ToF Camera</td><td>Modulated IR</td><td>Active</td><td>Short-Mid</td><td>Real-time</td><td>Medium-High</td><td>Fair</td><td>AR, indoor mapping</td></tr>
+      <tr><td>LiDAR (Velodyne)</td><td>Laser pulse</td><td>Active</td><td>Long (100+ m)</td><td>Real-time</td><td>High</td><td>Good</td><td>Autonomous driving</td></tr>
+      <tr><td>LiDAR (Faro)</td><td>Laser pulse</td><td>Active</td><td>Long</td><td>Slow (min)</td><td>Very High</td><td>Good</td><td>Surveying, heritage</td></tr>
+      <tr><td>4D Radar</td><td>EM pulse</td><td>Active</td><td>Up to 300 m</td><td>Real-time</td><td>Medium-High</td><td>Excellent (all weather)</td><td>Automotive</td></tr>
+      <tr><td>Multi-beam Sonar</td><td>Acoustic pulse</td><td>Active</td><td>Underwater</td><td>Medium</td><td>High</td><td>N/A (underwater)</td><td>Marine mapping</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Kinect vs Faro — Trade-off Summary</h3>
+    <table>
+      <tr><th>Metric</th><th>Kinect (Depth Sensor)</th><th>Faro (LiDAR)</th></tr>
+      <tr><td>Cost</td><td>Excellent (~$100&ndash;200)</td><td>Poor (tens of thousands)</td></tr>
+      <tr><td>Speed</td><td>Excellent (real-time, 30 fps)</td><td>Poor (2&ndash;20 min/scan)</td></tr>
+      <tr><td>Quality</td><td>Low&ndash;Medium</td><td>Excellent</td></tr>
+      <tr><td>Portability</td><td>Excellent (small, handheld)</td><td>Low&ndash;Medium (tripod)</td></tr>
+      <tr><td>Accuracy</td><td>Low (~cm)</td><td>Excellent (~mm)</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>No single sensor dominates on all axes. The Kinect excels at cost, speed, and portability — ideal for real-time consumer/robotics applications. The Faro excels at quality and accuracy — ideal for precision-critical surveying. The right sensor depends entirely on application requirements.</div>
+    </div>
+
+    <!-- ===== SECTION 10: 3D DATA FORMATS ===== -->
+    <h2 class="section-heading" id="3d-formats">10. 3D Data Representation Formats</h2>
+
+    <p>Once depth data is acquired, it must be stored and processed in a digital representation. Eight formats exist, each with fundamentally different trade-offs.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/3d_formats_overview.png" alt="Overview of 3D data formats">
+      <div class="figure-caption">Overview of 3D data representation formats: voxel grid, octree, point cloud, mesh, RGB-D, multi-view, NeRF, and Gaussian Splatting.</div>
+    </div>
+
+    <h3 class="subsection-heading">Voxel Grid</h3>
+    <p>A regular 3D grid of cubic cells (voxels — volumetric pixels). Each cell is empty (0) or occupied (non-zero). Analogy: a 2D image is a grid of pixels; a voxel grid is a 3D grid of volume elements.</p>
+    <ul>
+      <li><strong>Pros:</strong> Easy sensor data aggregation; volumetric; good for physics simulation</li>
+      <li><strong>Cons:</strong> Requires lots of memory — even completely empty cells must be stored; no GPU hardware support for efficient rendering</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/voxel_grid_example.png" alt="Voxel grid with human figures">
+      <div class="figure-caption">Voxel grid: cells containing objects have non-zero values; vast majority of cells (air) are empty but still stored — memory wasteful.</div>
+    </div>
+
+    <h3 class="subsection-heading">Octree</h3>
+    <p>A hierarchical tree that <strong>adaptively subdivides</strong> 3D space. The root is one large cube; only regions needing detail are recursively divided into 8 sub-cubes (octants). Homogeneous regions remain undivided.</p>
+    <ul>
+      <li><strong>Pros:</strong> Memory-efficient (1000x less than voxel grid for typical scenes); volumetric; easy sensor aggregation</li>
+      <li><strong>Cons:</strong> Additional processing overhead when updating (tree restructuring); no GPU rendering hardware support</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/octree_model_example.png" alt="Octree model of the Stanford Bunny">
+      <div class="figure-caption">Octree of the Stanford Bunny: surface regions are finely subdivided; interior and distant exterior regions are large, undivided cells.</div>
+    </div>
+
+    <h3 class="subsection-heading">Point Cloud</h3>
+    <p>An unordered set of 3D points $(X_i, Y_i, Z_i)$ representing object surfaces. Points may carry additional attributes: color, intensity, surface normal, classification. This is the <strong>native output of LiDAR sensors</strong>.</p>
+    <ul>
+      <li><strong>Pros:</strong> Easy sensor aggregation (just append points); can accurately represent complex shapes</li>
+      <li><strong>Cons:</strong> No surface connectivity; high memory (12+ bytes per point, millions of points); difficult to convert to mesh</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/point_cloud_stanford_bunny.png" alt="Point cloud of the Stanford Bunny">
+      <div class="figure-caption">Point cloud: the Stanford Bunny as a dense cloud of colored 3D points — shape is clear but no surface connectivity exists.</div>
+    </div>
+
+    <h3 class="subsection-heading">Polygonal (Mesh) Model</h3>
+    <p>Vertices, edges, and faces (triangles) form the standard computer graphics representation. GPUs are <strong>fundamentally designed</strong> to process triangles at extreme throughput.</p>
+    <ul>
+      <li><strong>Pros:</strong> Best for GPU rendering and photorealism (native GPU format); compact memory; supports texturing, shading; good for physics simulation</li>
+      <li><strong>Cons:</strong> Does NOT allow direct sensor data aggregation — converting raw sensor data to a clean mesh (surface reconstruction) is expensive and error-prone</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/polygonal_mesh_model.png" alt="Polygonal mesh at different resolutions">
+      <div class="figure-caption">Polygonal mesh: Stanford Bunny at increasing resolution from coarse (few large triangles) to fine (thousands of small triangles).</div>
+    </div>
+
+    <h3 class="subsection-heading">RGB-D Image</h3>
+    <p>A color (RGB) image paired with a depth (D) image, pixel-aligned. The <strong>direct output of ToF cameras and structured light sensors</strong>. Brighter depth pixels = closer.</p>
+    <ul>
+      <li><strong>Pros:</strong> Direct sensor output; easy to visualize; low memory</li>
+      <li><strong>Cons:</strong> Captures only one viewpoint (technically "2.5D"); requires camera pose knowledge to aggregate multiple frames into a 3D model</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/rgbd_depth_image.png" alt="RGB-D depth image of the Stanford Bunny">
+      <div class="figure-caption">RGB-D depth image: the Stanford Bunny as a grayscale depth map. Brighter = closer. Only the front-facing surface is captured — this is 2.5D, not full 3D.</div>
+    </div>
+
+    <h3 class="subsection-heading">Multi-view Sequences</h3>
+    <p>RGB images from multiple camera viewpoints with known camera poses. No depth is directly measured — just photos from many angles.</p>
+    <ul>
+      <li><strong>Pros:</strong> Low memory (just 2D images + pose metadata)</li>
+      <li><strong>Cons:</strong> No 3D model as-is; requires further processing (SfM, MVS, NeRF, Gaussian Splatting); not suitable for large complex scenes without dense coverage</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod8/multiview_sequence_diagram.png" alt="Multi-view sequence setup">
+      <div class="figure-caption">Multi-view sequences: cameras positioned around a scene with known poses. These are the input to NeRF and Gaussian Splatting.</div>
+    </div>
+
+    <h3 class="subsection-heading">NeRF (Neural Radiance Field)</h3>
+    <p>A neural network (MLP) that learns a continuous 3D scene representation. Given any 3D position and viewing direction, it outputs color and density. The entire scene is "baked" into the network weights.</p>
+
+    <div class="definition-box">
+      <div class="box-label">NeRF Function</div>
+      <div>
+        $$F_\Theta: (x, y, z, \theta, \phi) \rightarrow (r, g, b, \sigma)$$
+        <ul>
+          <li>Input $\mathbf{x} = (x, y, z)$: 3D spatial coordinates</li>
+          <li>Input $\mathbf{d} = (\theta, \phi)$: viewing direction (spherical angles)</li>
+          <li>Output $\mathbf{c} = (r, g, b)$: color (view-dependent)</li>
+          <li>Output $\sigma$: volume density (view-independent — matter either exists at a location or it doesn't)</li>
+        </ul>
+        Density $\sigma$ depends only on position; color depends on both position and direction (to model specular highlights and reflections).
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/nerf_5d_function.png" alt="NeRF as a continuous 5D function">
+      <div class="figure-caption">NeRF: a 5D function mapping spatial position (3D) and viewing direction (2D) to color and density via a fully-connected neural network.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/nerf_architecture.png" alt="NeRF architecture">
+      <div class="figure-caption">NeRF architecture: 8 layers of 256 channels process positional-encoded $(x,y,z)$ to output density $\sigma$. A separate 128-channel branch takes the 256-dim feature plus viewing direction and outputs color $(r,g,b)$.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/nerf_pipeline.png" alt="NeRF pipeline: input images to novel view rendering">
+      <div class="figure-caption">NeRF pipeline: multi-view images with known camera poses are used to train the MLP, which can then render photorealistic novel views from any viewpoint.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>NeRF</th></tr>
+      <tr><td>Memory</td><td>Compact (~5 MB of MLP weights for an entire scene)</td></tr>
+      <tr><td>Rendering quality</td><td>High — photorealistic novel view synthesis</td></tr>
+      <tr><td>Training time</td><td>Slow — hours of GPU computation per scene</td></tr>
+      <tr><td>Dynamics/updates</td><td>Not supported — scene is baked into weights</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Gaussian Splatting</h3>
+    <p>Represents a 3D scene as a collection of <strong>3D Gaussian ellipsoids</strong>, each with learnable position, shape (covariance), color (spherical harmonics), and opacity. Gaussians are projected ("splatted") directly onto the 2D image plane — much faster than NeRF's per-ray MLP queries.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod8/gaussian_splatting_pipeline.png" alt="Gaussian Splatting pipeline">
+      <div class="figure-caption">Gaussian Splatting pipeline: SfM points initialize 3D Gaussians, which are projected via camera parameters, rendered with a differentiable tile rasterizer, and refined through gradient flow with adaptive density control.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Adaptive Density Control</div>
+      <div>
+        <table>
+          <tr><th>Situation</th><th>Problem</th><th>Solution</th></tr>
+          <tr><td>Under-reconstruction</td><td>Not enough Gaussians — region is blurry/incomplete</td><td><strong>Clone</strong>: duplicate the Gaussian, let both copies optimize independently</td></tr>
+          <tr><td>Over-reconstruction</td><td>Gaussians too large — sharp edges are blurred</td><td><strong>Split</strong>: divide the oversized Gaussian into two smaller, more precise ones</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/gaussian_splatting_adaptive_density.png" alt="Gaussian Splatting adaptive density control">
+      <div class="figure-caption">Adaptive density control: cloning fixes under-reconstruction (top row); splitting fixes over-reconstruction (bottom row).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod8/gaussian_splatting_concept.png" alt="3D Gaussian Splatting concept">
+      <div class="figure-caption">Gaussian Splatting: a scene represented as 3D Gaussian ellipsoids with learnable position, shape, color, and opacity.</div>
+    </div>
+
+    <h3 class="subsection-heading">3D Format Comparison Summary</h3>
+    <table>
+      <tr><th>Format</th><th>Sensor Aggregation</th><th>Memory</th><th>GPU Rendering</th><th>Dynamics</th><th>Photorealism</th><th>Volumetric</th></tr>
+      <tr><td>Voxel Grid</td><td>Easy</td><td>HIGH</td><td>No</td><td>Easy</td><td>Low</td><td>Yes</td></tr>
+      <tr><td>Octree</td><td>Easy</td><td>Low</td><td>No</td><td>Medium</td><td>Low</td><td>Yes</td></tr>
+      <tr><td>Point Cloud</td><td>Easy</td><td>HIGH</td><td>Moderate</td><td>N/A</td><td>Low</td><td>No</td></tr>
+      <tr><td>Polygonal Mesh</td><td>Hard</td><td>Low</td><td><strong>Best</strong> (GPU native)</td><td>Easy</td><td><strong>Best</strong></td><td>No</td></tr>
+      <tr><td>RGB-D Image</td><td>Needs pose info</td><td>Low</td><td>Easy</td><td>No</td><td>Medium</td><td>No</td></tr>
+      <tr><td>Multi-view</td><td>N/A</td><td>Low</td><td>N/A</td><td>No</td><td>N/A</td><td>No</td></tr>
+      <tr><td>NeRF</td><td>No (retrain)</td><td>Low</td><td>Fast</td><td>No</td><td>High</td><td>Yes (implicit)</td></tr>
+      <tr><td>Gaussian Splatting</td><td>No (retrain)</td><td>Low</td><td><strong>Fastest</strong></td><td>Difficult</td><td>High</td><td>Semi</td></tr>
+    </table>
+
+    <!-- ===== INTERACTIVE WALKTHROUGH ===== -->
+    <div id="stereo-walkthrough" class="interactive-container" data-title="Walkthrough — Stereo Depth Pipeline"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod8-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod7.html">&larr; 7. Camera Model</a>
+      <a href="mod9a.html">9A. NeRF &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod8');</script>
+<script>
+  initWalkthrough('stereo-walkthrough', [
+    {
+      tab: '1. Two Views',
+      title: 'Step 1: Capture Two Views Simultaneously',
+      text: 'A stereo camera rig has two lenses separated by a fixed baseline b (e.g., the ZED Mini). Both cameras capture synchronized images of the same scene from slightly different horizontal positions. The baseline is a known, fixed physical distance. The same 3D point P will appear at different pixel positions in the two images.',
+      visual: '<div class="figure-container"><img src="figures/mod8/stereo_camera_depth_images.png" alt="ZED Mini stereo images"><div class="figure-caption">ZED Mini: left and right RGB views (top) and corresponding depth maps (bottom).</div></div>',
+      insight: 'The baseline determines depth resolution. A wider baseline gives better depth precision for distant objects. The ZED Mini has a fixed, pre-calibrated baseline. Stereo rigs with adjustable baselines can optimize for different depth ranges.'
+    },
+    {
+      tab: '2. Disparity',
+      title: 'Step 2: Compute Disparity (Correspondence Matching)',
+      text: 'For each pixel in the left image, find the corresponding pixel in the right image. The horizontal shift (disparity) $d = p_L - p_R$ encodes depth. Nearby objects shift more than distant ones. This step is the hard part: it requires finding matching features between the two images. Textureless surfaces and occlusions cause failures.',
+      visual: '<div class="figure-container"><img src="figures/mod8/standard_disparity_map_noisy.png" alt="Raw disparity map"><div class="figure-caption">Raw disparity map: brighter = higher disparity = closer. Black areas have no correspondence found.</div></div>',
+      insight: 'The correspondence problem is closely related to feature matching from Module 1. Many modern stereo systems use deep learning (e.g., PSMNet, RAFT-Stereo) to compute dense, robust disparity maps that handle textureless surfaces much better than classic methods.'
+    },
+    {
+      tab: '3. Depth',
+      title: 'Step 3: Convert Disparity to Depth',
+      text: 'Apply the depth equation: $z = (b \\cdot f) / (p \\cdot d)$. Baseline $b$ is the camera rig geometry (known from calibration). Focal length $f$ is the intrinsic parameter (known from Module 7 calibration). Pixel width $p$ is the sensor pixel size. Disparity $d$ is what we just computed.',
+      visual: '<div class="definition-box"><div class="box-label">Depth Equation</div><div>$$z = \\frac{b \\cdot f}{p \\cdot d}$$</div></div><div class="figure-container"><img src="figures/mod8/disparity_to_depth_map.png" alt="Disparity to depth"><div class="figure-caption">Every pixel disparity value is converted to a depth estimate in meters.</div></div>',
+      insight: 'The connection to Module 7: the focal length f and pixel size p that appear in this equation are intrinsic camera parameters determined by camera calibration. Stereo depth estimation is impossible without a calibrated camera!'
+    },
+    {
+      tab: '4. Enhancement',
+      title: 'Step 4: Post-process and Enhance the Depth Map',
+      text: 'Raw disparity maps are incomplete (holes where matching failed) and noisy. Post-processing fills gaps and reduces noise: watershed transform propagates known depths into undefined regions; inpainting interpolates missing values; bilateral filtering smooths noise while preserving depth edges; CNN-based methods learn to predict dense, clean depth from sparse input.',
+      visual: '<div class="figure-container"><img src="figures/mod8/depth_enhancement_comparison.png" alt="Depth enhancement before/after"><div class="figure-caption">Before (left): sparse, noisy disparity. After (right): dense, clean depth map after watershed/inpainting.</div></div>',
+      insight: 'The fundamental limitation of stereo remains: it is a passive sensor. No matter how good the post-processing, it cannot recover depth information in completely dark scenes or on textureless surfaces. This is why active sensors (ToF, LiDAR) are used for demanding applications.'
+    },
+    {
+      tab: '5. Limitations',
+      title: 'Step 5: Understanding Stereo Limitations',
+      text: 'Stereo cameras are passive — they depend entirely on ambient light and scene texture. Four main failure modes: (1) Low light: images are too dark/noisy for reliable matching. (2) Textureless surfaces: blank walls have no distinctive features to match. (3) Occlusions: regions visible in one camera may be hidden in the other. (4) Outdoor challenges: changing illumination, shadows, specular reflections.',
+      visual: '<div class="insight-box"><div class="box-label">Why this motivates active sensors</div><div>The Azure Kinect (ToF) produces clean, accurate 3D reconstructions of building interiors even in full darkness. The ZED Mini (stereo) produces no usable data at all in the same conditions. Active sensors emit their own infrared light, bypassing all of stereo\'s fundamental limitations.</div></div>',
+      insight: 'Understanding stereo limitations is as important as understanding its operation. In a real system design, you choose stereo when cost is critical and you have adequate lighting, and choose ToF/LiDAR when accuracy, speed, or all-conditions operation matters more.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod8-flashcards', [
+    {
+      q: 'What is the fundamental difference between passive and active 3D sensors?',
+      a: '<strong>Passive sensors</strong> (stereo cameras, light-field) do NOT emit any signal — they rely on ambient light reflected from the scene. <strong>Active sensors</strong> (ToF, structured light, LiDAR, radar, sonar) emit their own signal and measure the reflected return. Critical implication: active sensors work in complete darkness; passive sensors do not.'
+    },
+    {
+      q: 'Give the stereo disparity-to-depth equation and explain each variable.',
+      a: '$z = \\dfrac{b \\cdot f}{p \\cdot d}$ &mdash; $z$: depth (m); $b$: baseline between optical centres (m); $f$: focal length (m); $p$: pixel width (m/pixel); $d$: disparity (pixels). Simplifies to $z = b f_\\text{px} / d$ when $f$ is in pixels.'
+    },
+    {
+      q: 'What happens to estimated depth if disparity doubles? If baseline doubles?',
+      a: 'If disparity $d$ doubles: depth $z$ <strong>halves</strong> (inverse relationship — the object is closer). If baseline $b$ doubles: depth $z$ <strong>doubles</strong> (direct relationship — the same disparity now corresponds to a greater depth). Wider baselines improve depth resolution for distant objects.'
+    },
+    {
+      q: 'Explain the working principle of ToF depth sensing. What are its two methods?',
+      a: 'A ToF sensor emits modulated IR light that floods the scene. Reflected light returns with a time delay. (1) <strong>Direct timing:</strong> $D = tc/2$, but nanosecond timing is impractical. (2) <strong>Phase-shift method:</strong> $D = c\\phi/(4\\pi f_\\text{mod})$ — correlates emitted and received signals to extract phase shift. Phase shift is much easier to measure electronically.'
+    },
+    {
+      q: 'What is the difference between Kinect v1 and Kinect v2 depth sensing?',
+      a: '<strong>Kinect v1 (Xbox 360):</strong> uses <strong>structured light</strong> — projects ~30,000 IR dots; depth from triangulation. <strong>Kinect v2 / Kinect One (Xbox One):</strong> uses <strong>Time-of-Flight</strong> — floods scene with modulated IR; depth from phase shift. They look similar but use completely different principles. Common exam trap!'
+    },
+    {
+      q: 'Why does structured light fail outdoors?',
+      a: 'Structured light projects a <strong>known IR pattern</strong> onto the scene. Sunlight contains strong broadband infrared radiation that overwhelms and washes out the projected IR pattern, making it completely invisible to the IR camera. The sensor cannot distinguish its own pattern from ambient IR noise.'
+    },
+    {
+      q: 'What are the 4 dimensions measured by a 4D imaging radar?',
+      a: '(1) <strong>Distance</strong> — time-of-flight of EM pulses. (2) <strong>Direction</strong> (azimuth) — phase differences across antenna array (beam-forming). (3) <strong>Height</strong> (elevation) — vertical antenna array. (4) <strong>Speed</strong> (radial velocity) — Doppler effect: frequency shift of reflected signal reveals velocity toward/away from radar.'
+    },
+    {
+      q: 'Why does sonar use the speed of sound instead of the speed of light?',
+      a: 'Sonar operates <strong>underwater</strong> and uses acoustic pulses. Light and radio waves attenuate rapidly in water and are useless beyond a few meters. Only acoustic waves propagate effectively. $D = t \\cdot v_\\text{sound}/2$, where $v_\\text{sound} \\approx 1500$ m/s in seawater — ~200,000x slower than light, so time intervals are milliseconds (easier to measure).'
+    },
+    {
+      q: 'Why are polygonal meshes the best format for rendering? What is their main limitation?',
+      a: 'GPUs are <strong>fundamentally designed</strong> to process triangles at extreme throughput — billions per second. The entire graphics pipeline is optimized for meshes. Main limitation: they do <strong>not</strong> support direct 3D sensor data aggregation. Sensor data arrives as raw points or depth pixels; converting to a clean mesh (surface reconstruction) is computationally expensive and error-prone.'
+    },
+    {
+      q: 'What is the main advantage of octrees over voxel grids?',
+      a: '<strong>Memory efficiency.</strong> A voxel grid stores every cell in the entire volume, including vast amounts of empty space. An octree adaptively subdivides only where geometric detail exists — large empty regions are a single tree node. Typical savings: 100&ndash;1000x less memory for the same spatial resolution where it matters.'
+    },
+    {
+      q: 'Describe the NeRF function. Why does density not depend on viewing direction but color does?',
+      a: '$F_\\Theta: (x, y, z, \\theta, \\phi) \\rightarrow (r, g, b, \\sigma)$. <strong>Density $\\sigma$ depends only on position</strong>: the physical presence of matter at a point is an intrinsic property — a wall either exists at $(x,y,z)$ or it doesn\'t. <strong>Color depends on both position and direction</strong>: specular highlights, reflections, and Fresnel effects make surfaces look different from different viewing angles.'
+    },
+    {
+      q: 'What is adaptive density control in Gaussian Splatting?',
+      a: 'A mechanism that automatically adjusts the number and size of Gaussians during training: <strong>Clone</strong> (under-reconstruction — not enough Gaussians, region blurry — duplicate the insufficient Gaussian and let both optimize independently) and <strong>Split</strong> (over-reconstruction — Gaussians too large, edges blurred — divide oversized Gaussian into two smaller, more precise ones).'
+    }
+  ]);
+</script>
+</body>
+</html>

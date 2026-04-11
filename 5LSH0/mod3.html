@@ -1,0 +1,1751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3. Classification: Supervised — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">3. Classification: Supervised</h1>
+    <p class="page-subtitle">Nearest neighbour, linear classifiers, Haar features, SVM, kernels, AdaBoost, sliding window detection</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#supervised-intro">1. Supervised Classification</a>
+      <a href="#semantic-gap">2. The Semantic Gap</a>
+      <a href="#nearest-neighbour">3. Nearest Neighbour Classifier</a>
+      <a href="#knn">4. K-Nearest Neighbour (K-NN)</a>
+      <a href="#linear-classifiers">5. Linear Classifiers</a>
+      <a href="#haar-features">6. Haar-like Features</a>
+      <a href="#dataset-splitting">7. Dataset Splitting</a>
+      <a href="#svc">8. Support Vector Classifier (Linear)</a>
+      <a href="#svm-kernels">9. SVM — Non-Linear Kernels</a>
+      <a href="#adaboost">10. AdaBoost</a>
+      <a href="#object-detection">11. Object Detection (Sliding Window)</a>
+      <a class="toc-interactive" href="#adaboost-walkthrough">Interactive: AdaBoost Walkthrough</a>
+      <a class="toc-interactive" href="#svm-walkthrough">Interactive: SVM Walkthrough</a>
+      <a class="toc-interactive" href="#knn-interactive">Interactive: K-NN Classifier</a>
+      <a class="toc-interactive" href="#linear-interactive">Interactive: Linear Classifier</a>
+      <a class="toc-interactive" href="#svm-kernel-interactive">Interactive: SVM Kernel Trick</a>
+      <a class="toc-interactive" href="#adaboost-interactive">Interactive: AdaBoost Step-Through</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: SUPERVISED INTRO ===== -->
+    <h2 class="section-heading" id="supervised-intro">1. Supervised Classification</h2>
+
+    <p>In supervised learning, every training example has both an <strong>input vector</strong> (image) and a <strong>target label</strong>. The algorithm learns a mapping from inputs to labels that generalizes to unseen examples.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/supervised_vs_unsupervised.png" alt="Supervised vs unsupervised learning">
+      <div class="figure-caption">Supervised learning: labeled data, direct feedback, goal is to predict outputs. Unsupervised: no labels, find hidden structure.</div>
+    </div>
+
+    <table>
+      <tr><th>Aspect</th><th>Supervised</th><th>Unsupervised</th></tr>
+      <tr><td>Training data</td><td>Inputs <strong>and</strong> labels</td><td>Inputs only</td></tr>
+      <tr><td>Feedback</td><td>Direct (knows correct answer)</td><td>None</td></tr>
+      <tr><td>Goal</td><td>Classify inputs into discrete categories</td><td>Find hidden groups (clustering)</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Data-Driven Approach Pipeline</h3>
+    <ol>
+      <li><strong>Collect</strong> a dataset of images and assign labels.</li>
+      <li><strong>Train</strong> a classifier using machine learning.</li>
+      <li><strong>Evaluate</strong> on a new, unseen set of images.</li>
+    </ol>
+
+    <p>There is no hardcoded function that can classify images — visual concepts are too variable and complex to specify with simple rules. Machine learning is essential.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/training_set_example.png" alt="Example training set with labeled images">
+      <div class="figure-caption">Example training set: labeled images from multiple categories. Each image is manually annotated.</div>
+    </div>
+
+    <!-- ===== SECTION 2: SEMANTIC GAP ===== -->
+    <h2 class="section-heading" id="semantic-gap">2. The Semantic Gap and Classification Challenges</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Semantic Gap</div>
+      <div>A human sees an image and perceives "cat." A computer sees only a grid of numbers (pixel intensity values in [0, 255]). This disconnect between human semantic understanding and raw numerical representation is the <strong>semantic gap</strong>.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/semantic_gap_pixel_values.png" alt="Semantic gap: human sees a cat, computer sees pixel values">
+      <div class="figure-caption">A 600x400 color image is stored as 600x400x3 integers. The computer has no built-in notion of "cat-ness."</div>
+    </div>
+
+    <h3 class="subsection-heading">Why Pixel-Level Matching Fails</h3>
+    <table>
+      <tr><th>Challenge</th><th>Effect on Pixels</th></tr>
+      <tr><td>Viewpoint variation</td><td>Camera angle/zoom changes all pixel values</td></tr>
+      <tr><td>Illumination</td><td>Lighting and shadows change all pixel values</td></tr>
+      <tr><td>Deformation</td><td>Object shape changes (e.g., cat stretching)</td></tr>
+      <tr><td>Occlusion</td><td>Objects may be partially hidden</td></tr>
+      <tr><td>Background clutter</td><td>Complex backgrounds interfere with object pixels</td></tr>
+      <tr><td>Intra-class variation</td><td>Same category can look very different (different cat breeds)</td></tr>
+    </table>
+
+    <!-- ===== SECTION 3: NEAREST NEIGHBOUR ===== -->
+    <h2 class="section-heading" id="nearest-neighbour">3. Nearest Neighbour Classifier</h2>
+
+    <p>The simplest possible classifier: memorize all training images, then classify a test image by finding the most similar training image.</p>
+
+    <table>
+      <tr><th>Phase</th><th>Operation</th><th>Cost</th></tr>
+      <tr><td>Training</td><td>Store all training images and labels</td><td>O(1) — no computation</td></tr>
+      <tr><td>Testing</td><td>Compare test image to every training image, return label of nearest</td><td>O(N &times; k) per query</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Distance Metrics</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Manhattan Distance (L1 norm)</div>
+      <div>$$d_{L1}(\mathbf{x}, \mathbf{y}) = \sum_{i=1}^{k} |x_i - y_i|$$
+      <p>Sum of absolute pixel differences. No square root needed — computationally cheaper.</p></div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Euclidean Distance (L2 norm)</div>
+      <div>$$d_{L2}(\mathbf{x}, \mathbf{y}) = \sqrt{\sum_{i=1}^{k} (x_i - y_i)^2}$$
+      <p>Standard straight-line distance in high-dimensional space.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/manhattan_distance_formula.png" alt="Manhattan L1 distance formula">
+      <div class="figure-caption">L1 Manhattan distance computation between two pixel vectors.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/nn_pixel_distance_example.png" alt="Pixel-wise absolute difference computation">
+      <div class="figure-caption">L1 distance: compute absolute difference at each pixel position and sum. Example yields L1 = 456.</div>
+    </div>
+
+    <h3 class="subsection-heading">Decision Regions: Voronoi Diagram</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod3/nn_decision_regions.png" alt="NN Voronoi decision regions">
+      <div class="figure-caption">Nearest Neighbour creates a Voronoi diagram: each region is assigned the label of the nearest training point.</div>
+    </div>
+
+    <h3 class="subsection-heading">CIFAR-10 Results</h3>
+    <p>CIFAR-10 has 10 classes, 50,000 training images, and 10,000 test images (32&times;32 color).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/cifar10_dataset.png" alt="CIFAR-10 dataset overview">
+      <div class="figure-caption">CIFAR-10: 10 classes (airplane, automobile, bird, cat, deer, dog, frog, horse, ship, truck).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/nn_cifar10_results.png" alt="NN results on CIFAR-10">
+      <div class="figure-caption">NN on CIFAR-10: each row shows a test image (left) and its 10 nearest training neighbors. Many neighbors come from wrong classes — pixel similarity does not capture semantic meaning.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key limitation</div>
+      <div>NN is essentially free at training time but extremely slow at test time: every test image requires comparing against all $N$ training images. With 50,000 training images and 3,072 pixels each, this is $\sim$150 million operations per test image.</div>
+    </div>
+
+    <!-- ===== SECTION 4: K-NN ===== -->
+    <h2 class="section-heading" id="knn">4. K-Nearest Neighbour (K-NN) Classifier</h2>
+
+    <p>Instead of using the single nearest neighbor, find the <strong>K closest training points</strong> and use <strong>majority voting</strong>:</p>
+
+    <div class="definition-box">
+      <div class="box-label">K-NN Prediction Rule</div>
+      <div>$\hat{y} = \text{mode}\{y_1, y_2, \ldots, y_K\}$ where $y_1, \ldots, y_K$ are labels of the K nearest training points.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/knn_decision_boundary_k1_k3_k5.png" alt="K-NN decision boundaries for K=1, K=3, K=5">
+      <div class="figure-caption">Decision boundaries for K=1 (jagged Voronoi), K=3 (smoother), and K=5 (smoothest). White regions = no majority class.</div>
+    </div>
+
+    <table>
+      <tr><th>K Value</th><th>Boundary</th><th>Bias</th><th>Variance</th></tr>
+      <tr><td>K = 1</td><td>Jagged, complex</td><td>Low (fits training data)</td><td>High (overfits to noise)</td></tr>
+      <tr><td>K = 3</td><td>Smoother</td><td>Medium</td><td>Medium</td></tr>
+      <tr><td>K = 5</td><td>Smoothest, may have undecided regions</td><td>Higher</td><td>Lower (generalizes better)</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">K-NN strengths and limitations</div>
+      <div class="collapsible-body">
+        <p><strong>Strengths:</strong> Simple, no explicit training, non-parametric (no distribution assumptions), naturally multi-class.</p>
+        <p><strong>Limitations:</strong> Low accuracy for pixel-based image comparison; O(N&times;k) test cost; high memory (stores all training data); distance metrics are uninformative for raw pixels.</p>
+        <p><strong>Conclusion:</strong> Rarely used in practice for image classification, but introduces the key concepts of data-driven and distance-based classification.</p>
+      </div>
+    </div>
+
+    <!-- K-NN Interactive Visualization -->
+    <div class="interactive-container" id="knn-interactive">
+      <div class="interactive-label">K-NN Classifier Interactive</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="knn-generate" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Generate Data</button>
+        <label style="font-size:12px;color:#555;">K = <select id="knn-k-select" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+          <option value="1">1</option>
+          <option value="3" selected>3</option>
+          <option value="5">5</option>
+          <option value="7">7</option>
+        </select></label>
+        <span style="font-size:11px;color:#888;">Click canvas to place a test point</span>
+      </div>
+      <canvas id="knn-canvas" width="500" height="400" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;cursor:crosshair;"></canvas>
+      <div id="knn-status" style="font-size:12px;color:#555;margin-top:6px;">Press "Generate Data" to create training points, then click to classify.</div>
+      <div id="knn-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 5: LINEAR CLASSIFIERS ===== -->
+    <h2 class="section-heading" id="linear-classifiers">5. Linear Classifiers</h2>
+
+    <p>Instead of comparing images by distance, linear classifiers use a <strong>parametric model</strong> — a mathematical function with learnable parameters.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Linear Classifier</div>
+      <div>$$f(\mathbf{x}, \mathbf{W}) = \mathbf{W}\mathbf{x} + \mathbf{b}$$
+      <p>$\mathbf{x}$ = input vector ($n \times 1$); $\mathbf{W}$ = weight matrix ($C \times n$, where $C$ = number of classes); $\mathbf{b}$ = bias vector ($C \times 1$); output = $C$ class scores.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/linear_classifier_equation.png" alt="Linear classifier equation for real images">
+      <div class="figure-caption">For a 32x32x3 CIFAR-10 image: x is 3072x1, W is 10x3072, output is 10 class scores.</div>
+    </div>
+
+    <h3 class="subsection-heading">Multi-Class Example</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod3/weight_matrix_multiclass.png" alt="Multi-class weight matrix W">
+      <div class="figure-caption">Weight matrix W with 3 rows (cat, dog, ship) and 4 columns (one weight per pixel).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/multiclass_scores_output.png" alt="Output class scores: Cat, Dog, Ship">
+      <div class="figure-caption">Class scores for a 4-pixel input: Cat = -96.8, Dog = 437.9, Ship = 61.95. Prediction: Dog (highest score).</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Training vs Testing</div>
+      <div><strong>Training</strong> finds the optimal weights $\mathbf{W}$ and biases $\mathbf{b}$ (e.g., via gradient descent). <strong>Testing</strong> is a single matrix multiplication — very fast at $O(C \times n)$ per image. This is the key advantage over NN/K-NN.</div>
+    </div>
+
+    <!-- Linear Classifier Interactive Visualization -->
+    <div class="interactive-container" id="linear-interactive">
+      <div class="interactive-label">Linear Classifier Interactive</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="linear-classify" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Classify</button>
+        <button id="linear-randomize" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Randomize Weights</button>
+      </div>
+      <div id="linear-inputs" style="margin-bottom:10px;"></div>
+      <div id="linear-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 6: HAAR FEATURES ===== -->
+    <h2 class="section-heading" id="haar-features">6. Haar-like Features</h2>
+
+    <p>Raw pixel values change with viewpoint and lighting. <strong>Haar-like features</strong> encode local structural patterns (edges, lines, rectangles) that are more robust to such variations.</p>
+
+    <h3 class="subsection-heading">Types of Haar-like Features</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod3/haar_like_features_types.png" alt="Haar-like feature types: edge, line, four-rectangle">
+      <div class="figure-caption">(a) Edge features: adjacent white/black rectangles. (b) Line features: 3 alternating rectangles. (c) Four-rectangle features: 2x2 checkerboard.</div>
+    </div>
+
+    <h3 class="subsection-heading">Computing Haar Features</h3>
+    <ol>
+      <li>Assign weight <strong>+1</strong> to white pixels in the mask, <strong>-1</strong> to black pixels.</li>
+      <li>Slide the mask over the image at every possible position.</li>
+      <li>At each position, compute the <strong>weighted sum</strong> (white sum &minus; black sum).</li>
+      <li>If $|\text{white sum} - \text{black sum}| > \tau$ (threshold), a Haar feature is <strong>detected</strong>.</li>
+    </ol>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example: Haar feature computation</div>
+      <div class="collapsible-body">
+        <p>For the horizontal edge mask (top 2 rows = +1, bottom 2 rows = -1) applied to a 4x4 patch:</p>
+        <pre style="background:#f8f9fa;border-radius:6px;padding:0.8em;font-size:0.87em;">Image patch:        Mask:
+ 2  3  2  3        +1 +1 +1 +1
+ 2  2  3  3        +1 +1 +1 +1
+ 8  9  8  7        -1 -1 -1 -1
+ 7  8  9  8        -1 -1 -1 -1
+
+White sum = 2+3+2+3+2+2+3+3 = 20
+Black sum = 8+9+8+7+7+8+9+8 = 64
+Response = |20 - 64| = 44 > threshold (5) --> Feature DETECTED</pre>
+        <p>This makes intuitive sense: there is a strong horizontal edge between rows 2 and 3.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Haar Features in a Linear Classifier</h3>
+    <p>Each Haar feature type becomes one dimension of the feature vector. The linear classifier learns weights $W_{C,i}$ for each feature $x_i$ per class $C$:</p>
+    <div class="math-block">$$\text{Score}_C = \sum_i W_{C,i} \cdot x_i$$</div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/haar_features_face_stages.png" alt="Haar features for face detection in stages">
+      <div class="figure-caption">AdaBoost selects Haar features in stages: Stage 0 uses the 3 most powerful, Stage 1 adds ~10 more, Stage 21 uses 200+.</div>
+    </div>
+
+    <table>
+      <tr><th>Strengths</th><th>Limitations</th></tr>
+      <tr><td>Computationally cheap</td><td>Weak classifiers individually</td></tr>
+      <tr><td>Available at any scale</td><td>Not invariant to rotation/scale</td></tr>
+      <tr><td>Good for binary tasks (face/no-face)</td><td>Too many features — costs in analysis</td></tr>
+      <tr><td>Simple and intuitive</td><td>Poor for multi-class problems</td></tr>
+    </table>
+
+    <!-- ===== SECTION 7: DATASET SPLITTING ===== -->
+    <h2 class="section-heading" id="dataset-splitting">7. Dataset Splitting for Machine Learning</h2>
+
+    <div class="figure-container">
+      <img src="figures/mod3/dataset_split_train_val_test.png" alt="Dataset three-way split: training, validation, test">
+      <div class="figure-caption">Three-way split: training set (fit parameters), validation set (tune hyperparameters), test set (final evaluation, used once).</div>
+    </div>
+
+    <table>
+      <tr><th>Set</th><th>Purpose</th><th>When Used</th></tr>
+      <tr><td><strong>Training</strong></td><td>Fit model parameters (W, b)</td><td>During every training run</td></tr>
+      <tr><td><strong>Validation</strong></td><td>Tune hyperparameters (K, OO, kernel)</td><td>After each training run</td></tr>
+      <tr><td><strong>Test</strong></td><td>Final unbiased evaluation</td><td><strong>Once</strong>, at the very end</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Cross-Validation</div>
+      <div>Split data into $k$ folds. For each fold $i$: train on remaining $k-1$ folds, validate on fold $i$. Average performance across all folds. More robust estimate, especially for small datasets.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Critical rule</div>
+      <div>The test set must <strong>never</strong> be used during training or hyperparameter tuning. If you look at test set performance to make decisions, you have contaminated the evaluation and your test accuracy is no longer an unbiased estimate.</div>
+    </div>
+
+    <!-- ===== SECTION 8: SVC ===== -->
+    <h2 class="section-heading" id="svc">8. Support Vector Classifier (Linear)</h2>
+
+    <p>The SVC finds the <strong>optimal separating hyperplane</strong> between two classes by <strong>maximizing the margin</strong> — the distance between the hyperplane and the nearest data points of each class.</p>
+
+    <h3 class="subsection-heading">1D Case: Hard vs Soft Margins</h3>
+    <p>For binary classification on a 1D feature: a naive threshold at the midpoint between nearest opposite-class samples fits the training data perfectly (low bias) but may generalize poorly (high variance) because outliers can pull it off.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/svc_soft_margin_1d.png" alt="SVC soft margins in 1D">
+      <div class="figure-caption">Soft margins: allow omission of $n$ outliers closest to the boundary. Wider margins = better generalization.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Bias-Variance Tradeoff in SVC</div>
+      <div>
+        <strong>More outliers omitted:</strong> higher bias (ignores some training data), lower variance (generalizes better).<br>
+        <strong>Fewer outliers omitted:</strong> lower bias (fits training data better), higher variance (sensitive to noise).
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Hyperplane Mathematics</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Hyperplane Equation</div>
+      <div>$$\mathbf{w}^T\mathbf{x} - b = 0$$
+      <p>$\mathbf{w}$ = normal vector (perpendicular to hyperplane); $b$ = bias (offset from origin).</p>
+      <p>A point $\mathbf{x}_i$ is on the positive side if $\mathbf{w}^T\mathbf{x}_i - b > 0$, negative side if $< 0$.</p></div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Classification Constraint</div>
+      <div>Assign $y_i = +1$ to class A, $y_i = -1$ to class B. A correctly classified sample satisfies:
+      $$y_i(\mathbf{w}^T\mathbf{x}_i - b) \geq 0$$
+      This unifies both classes: if $y_i$ and $\mathbf{w}^T\mathbf{x}_i - b$ have the same sign (correct side), the product is positive.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example: hyperplane side check</div>
+      <div class="collapsible-body">
+        <p>Given: $\mathbf{w} = [-2, 1]$, $b = -6$.</p>
+        <ul>
+          <li>Point $\mathbf{x}_7 = (5, 1)$: $(-2)(5) + (1)(1) - (-6) = -10 + 1 + 6 = -3 < 0$ (negative side)</li>
+          <li>Point $\mathbf{x}_2 = (1, 1)$: $(-2)(1) + (1)(1) - (-6) = -2 + 1 + 6 = 5 > 0$ (positive side)</li>
+        </ul>
+        <p>If $y = +1$ should be on the positive side, $\mathbf{x}_2$ is correctly classified and $\mathbf{x}_7$ is not.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Multi-Dimensional SVC</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod3/svc_2d_mass_height_age.png" alt="SVC in 2D extended to 3D with age">
+      <div class="figure-caption">In 2D (mass, height), the boundary is a line. Adding a 3rd feature (age) extends it to a plane.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/svc_3d_hyperplane.png" alt="SVC 3D hyperplane separating classes">
+      <div class="figure-caption">In 3D, the SVC finds a plane separating the classes. In n dimensions, it finds an (n-1)-dimensional hyperplane.</div>
+    </div>
+
+    <h3 class="subsection-heading">Multi-Class SVM</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod3/svm_multiclass_decision_boundaries.png" alt="Multi-class SVM decision boundaries">
+      <div class="figure-caption">Multi-class SVM: multiple hyperplanes partition the feature space. One-vs-Rest trains C binary classifiers; One-vs-One trains C(C-1)/2 classifiers.</div>
+    </div>
+
+    <!-- ===== SECTION 9: SVM KERNELS ===== -->
+    <h2 class="section-heading" id="svm-kernels">9. SVM — Non-Linear Kernels</h2>
+
+    <p>Linear SVC fails when data is not linearly separable. The <strong>kernel trick</strong> maps data to a higher-dimensional space where linear separation is possible.</p>
+
+    <div id="svm-walkthrough" class="interactive-container" data-title="Walkthrough — SVM Kernel Trick"></div>
+
+    <!-- SVM Kernel Trick Interactive Visualization -->
+    <div class="interactive-container" id="svm-kernel-interactive">
+      <div class="interactive-label">SVM Kernel Trick Interactive</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="svm-kernel-toggle" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Switch to Non-separable</button>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">1D Original Space</div>
+          <canvas id="svm-kernel-1d" width="250" height="300" style="border:1px solid #e0e0e0;background:#fff;display:block;"></canvas>
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px;">2D Feature Space $\phi(x)=(x, x^2)$</div>
+          <canvas id="svm-kernel-2d" width="300" height="300" style="border:1px solid #e0e0e0;background:#fff;display:block;"></canvas>
+        </div>
+      </div>
+      <div id="svm-kernel-status" style="font-size:12px;color:#555;margin-top:6px;">Showing linearly separable data. Toggle to see the kernel trick in action.</div>
+      <div id="svm-kernel-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/svm_kernel_overlapping_data_1d.png" alt="1D data not separable by a single threshold">
+      <div class="figure-caption">1D dosage data: "cured" patients in [3,7], "not cured" at [0,2] and [8,10]. No single threshold can separate them.</div>
+    </div>
+
+    <h3 class="subsection-heading">Kernel Types</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod3/svm_kernel_types_overview.png" alt="SVM kernel types overview">
+      <div class="figure-caption">Different kernels produce different decision boundary shapes: linear (flat), polynomial (curved), RBF (circular/elliptical), sigmoid.</div>
+    </div>
+
+    <table>
+      <tr><th>Kernel</th><th>Mapping</th><th>Decision Boundary</th><th>Use When</th></tr>
+      <tr><td><strong>Linear</strong></td><td>No transformation</td><td>Flat hyperplane</td><td>Data is linearly separable</td></tr>
+      <tr><td><strong>Polynomial</strong></td><td>Polynomial feature space</td><td>Curved (degree $d$)</td><td>Polynomial relationships suspected</td></tr>
+      <tr><td><strong>RBF / Gaussian</strong></td><td>Infinite-dimensional space</td><td>Circular/elliptical regions</td><td>Most common non-linear choice</td></tr>
+      <tr><td><strong>Sigmoid</strong></td><td>Similar to neural network</td><td>S-shaped</td><td>Less commonly used</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Polynomial Kernel: 1D to 2D</h3>
+    <p>Map each sample $x$ to $(x, x^2)$. Mid-range "cured" values (moderate $x^2$) separate from extreme "not cured" values.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/polynomial_kernel_1d_to_2d_step1.png" alt="Polynomial kernel: adding x-squared axis">
+      <div class="figure-caption">Step 1: Add a $x^2$ axis. 1D samples become 2D points $(x, x^2)$.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/polynomial_kernel_1d_to_2d_step2.png" alt="Polynomial kernel: linear separation in 2D">
+      <div class="figure-caption">Step 2: In 2D space, a linear SVC can now separate the two classes with a straight line.</div>
+    </div>
+
+    <h3 class="subsection-heading">Polynomial Kernel: 2D to 3D</h3>
+    <p>For circular boundaries in 2D: map $(x_1, x_2) \to (x_1^2, x_2^2, \sqrt{2}x_1x_2)$. In this 3D space, a flat hyperplane separates the classes. Projected back to 2D: circular boundary.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/polynomial_kernel_3d_separating_plane.png" alt="Polynomial kernel: flat plane in 3D space">
+      <div class="figure-caption">The circular 2D boundary becomes a flat separating plane in the 3D polynomial feature space.</div>
+    </div>
+
+    <!-- ===== SECTION 10: ADABOOST ===== -->
+    <h2 class="section-heading" id="adaboost">10. AdaBoost Classifier</h2>
+
+    <p>Naive Haar classifiers use all 100,000+ features — too slow and most are individually weak. <strong>AdaBoost</strong> (Adaptive Boosting) selects only the most powerful features and combines them into a strong classifier.</p>
+
+    <div id="adaboost-walkthrough" class="interactive-container" data-title="Walkthrough — AdaBoost Algorithm"></div>
+
+    <!-- AdaBoost Step-Through Interactive Visualization -->
+    <div class="interactive-container" id="adaboost-interactive">
+      <div class="interactive-label">AdaBoost Step-Through Interactive</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="adaboost-step" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Step</button>
+        <button id="adaboost-reset" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+        <span id="adaboost-round-label" style="font-size:12px;color:#555;margin-left:8px;">Round: 0 / not started</span>
+      </div>
+      <canvas id="adaboost-canvas" width="500" height="200" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="adaboost-status" style="font-size:12px;color:#555;margin-top:6px;">Press "Step" to begin the first round of AdaBoost.</div>
+      <div id="adaboost-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <h3 class="subsection-heading">Initialization</h3>
+    <p>Assign equal weights to all training images (faces and non-faces):</p>
+
+    <div class="definition-box">
+      <div class="box-label">Initial Sample Weights</div>
+      <div>$$w_{1,i} = \begin{cases} \frac{1}{2m} & \text{if } y_i = 0 \text{ (non-face)} \\ \frac{1}{2l} & \text{if } y_i = 1 \text{ (face)} \end{cases}$$
+      <p>$m$ = number of negative examples, $l$ = number of positive examples.</p></div>
+    </div>
+
+    <h3 class="subsection-heading">For Each of T Rounds</h3>
+
+    <p><strong>Step 1: Normalize weights</strong> to form a probability distribution: $w_{t,i} \leftarrow w_{t,i} / \sum_j w_{t,j}$</p>
+
+    <p><strong>Step 2: Select best weak classifier.</strong> For each Haar feature $j$, compute weighted error:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Weighted Error</div>
+      <div>$$\epsilon_j = \sum_{i=1}^{n} w_{t,i} \cdot |h_j(x_i) - y_i|$$
+      <p>$h_j(x_i) = 1$ if Haar feature $j$ is found in image $i$ (else 0). Select feature $h_t$ with minimum $\epsilon_t$.</p></div>
+    </div>
+
+    <p><strong>Step 3: Update weights.</strong> Misclassified images get higher relative weights — the next round focuses on hard cases:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Weight Update</div>
+      <div>$$w_{t+1,i} = w_{t,i} \cdot \beta_t^{e_i}, \quad \beta_t = \frac{\epsilon_t}{1 - \epsilon_t}$$
+      <p>$e_i = 0$ if image $i$ is <strong>correctly</strong> classified (weight decreases by factor $\beta_t$); $e_i = 1$ if <strong>incorrectly</strong> classified (weight unchanged). After re-normalization, hard examples get higher relative weight.</p></div>
+    </div>
+
+    <h3 class="subsection-heading">Final Strong Classifier</h3>
+
+    <div class="definition-box">
+      <div class="box-label">AdaBoost Strong Classifier</div>
+      <div>$$H(x) = \begin{cases} 1 & \text{if } \sum_{t=1}^{T} \alpha_t \cdot h_t(x) \geq \frac{1}{2}\sum_{t=1}^{T}\alpha_t \\ 0 & \text{otherwise} \end{cases}$$
+      <p>where $\alpha_t = \log\!\left(\frac{1-\epsilon_t}{\epsilon_t}\right) = \log\!\left(\frac{1}{\beta_t}\right)$.</p>
+      <p>Features with lower error get higher weight $\alpha_t$. For a test image: extract only the $T$ selected features, compute weighted sum, compare to threshold.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/adaboost_algorithm_paper.png" alt="AdaBoost / Viola-Jones algorithm paper">
+      <div class="figure-caption">Viola-Jones AdaBoost face detector: selected Haar features and the attentional cascade structure.</div>
+    </div>
+
+    <table>
+      <tr><th>Advantages</th><th>Disadvantages</th></tr>
+      <tr><td>Only uses powerful features</td><td>Needs many training examples</td></tr>
+      <tr><td>Training complexity linear in training set size</td><td>Sometimes outperformed by SVM (multi-class)</td></tr>
+      <tr><td>Extremely fast testing ($O(T)$, $T$ typically small)</td><td>Sensitive to noisy data (high-weighted outliers)</td></tr>
+      <tr><td>Flexible: any weak learner</td><td>Best for binary classification</td></tr>
+    </table>
+
+    <!-- ===== SECTION 11: OBJECT DETECTION ===== -->
+    <h2 class="section-heading" id="object-detection">11. Object Detection (Sliding Window)</h2>
+
+    <h3 class="subsection-heading">Image Pyramid</h3>
+    <p>Objects can appear at any scale. An <strong>image pyramid</strong> handles this: create copies of the image at decreasing resolutions (1/2, 1/4, 1/8, ...). The fixed-size detector can then find objects of any size.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod3/image_pyramid_multiscale.png" alt="Image pyramid at multiple scales">
+      <div class="figure-caption">Image pyramid: the original is repeatedly blurred and subsampled. A fixed-size sliding window can now detect objects of any original size.</div>
+    </div>
+
+    <h3 class="subsection-heading">Cascaded Detection (Attentional Cascade)</h3>
+    <p>Sliding a classifier over every position at every scale is slow. <strong>Key insight:</strong> most windows contain no object — reject them early.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Cascade Principle</div>
+      <div>Arrange classifiers from most to least powerful. At each window position, apply Stage 1 first. If it fails, immediately reject and move on. Only windows passing all stages are declared detections. Most non-object windows are rejected after just 1–2 feature evaluations.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod3/cascaded_detection_flowchart.png" alt="Cascaded detection flowchart">
+      <div class="figure-caption">Cascade: sub-windows pass through increasingly complex stages. Non-face windows are rejected early; only true detections pass all stages.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why cascading is fast</div>
+      <div>The vast majority of sub-windows are rejected after only 1–2 feature evaluations (microseconds each). Only a tiny fraction of "promising" windows proceed to the expensive later stages. This achieves real-time detection speeds.</div>
+    </div>
+
+    <h3 class="subsection-heading">Classifier Comparison Summary</h3>
+
+    <table>
+      <tr><th>Classifier</th><th>Train Cost</th><th>Test Cost</th><th>Accuracy</th><th>Key Idea</th></tr>
+      <tr><td>NN</td><td>O(1)</td><td>O(N&times;k)</td><td>Low</td><td>Memorize; nearest example</td></tr>
+      <tr><td>K-NN</td><td>O(1)</td><td>O(N&times;k)</td><td>Low-Med</td><td>Majority vote of K nearest</td></tr>
+      <tr><td>Linear (pixels)</td><td>Medium</td><td>O(C&times;n)</td><td>Low</td><td>Learn weights for each pixel</td></tr>
+      <tr><td>Linear (Haar)</td><td>Medium</td><td>O(C&times;n)</td><td>Medium</td><td>Learn weights for Haar features</td></tr>
+      <tr><td>SVC (linear)</td><td>Med-High</td><td>O(C&times;n)</td><td>Med-High</td><td>Maximize margin</td></tr>
+      <tr><td>SVM (kernel)</td><td>High</td><td>O(C&times;n)</td><td>High</td><td>Non-linear boundaries via kernels</td></tr>
+      <tr><td>AdaBoost</td><td>High</td><td><strong>O(T) (very fast)</strong></td><td>High (binary)</td><td>Select T best features, weighted vote</td></tr>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod3-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod2.html">&larr; 2. Clustering</a>
+      <a href="mod4.html">4. DL Fundamentals &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod3');</script>
+<script>
+  initWalkthrough('svm-walkthrough', [
+    {
+      tab: '1. Problem',
+      title: 'The Kernel Trick: Non-Linearly Separable Data',
+      text: 'A linear SVC cannot separate data where the decision boundary must be curved. For example: 1D dosage data where "cured" patients are in the middle range [3,7] and "not cured" are at the extremes [0,2] and [8,10]. No single threshold separates them.',
+      visual: '<div class="figure-container"><img src="figures/mod3/svm_kernel_overlapping_data_1d.png" alt="Non-separable 1D data"><div class="figure-caption">1D data: no single threshold can separate the two classes.</div></div>',
+      insight: 'The core idea: if data is not linearly separable in the original space, map it to a higher-dimensional space where it IS linearly separable. This is the "kernel trick".'
+    },
+    {
+      tab: '2. Map to 2D',
+      title: 'Polynomial Kernel: 1D to 2D Transformation',
+      text: 'Map each sample $x$ to $(x, x^2)$. Now each 1D point becomes a 2D point. Mid-range $x$ values (cured patients) have moderate $x^2$ values. Extreme $x$ values (not cured) have either very small or very large $x^2$ values.',
+      visual: '<div class="figure-container"><img src="figures/mod3/polynomial_kernel_1d_to_2d_step1.png" alt="1D to 2D mapping step 1"><div class="figure-caption">Adding the x^2 axis: 1D points are lifted into 2D space.</div></div><div class="figure-container"><img src="figures/mod3/polynomial_kernel_1d_to_2d_step2.png" alt="Linear separation in 2D"><div class="figure-caption">In 2D, the classes become linearly separable. A standard linear SVC finds the boundary.</div></div>',
+      insight: 'The parabolic mapping $x \\to x^2$ geometrically separates points that were interleaved in 1D. The linear separator in 2D corresponds to two thresholds in the original 1D space.'
+    },
+    {
+      tab: '3. Map to 3D',
+      title: 'Polynomial Kernel: 2D to 3D for Circular Boundaries',
+      text: 'For 2D data with a circular decision boundary, map $(x_1, x_2)$ to 3D: $(x_1^2, x_2^2, \\sqrt{2} \\cdot x_1 x_2)$. Points inside the circle and outside the circle become linearly separable with a flat plane in 3D.',
+      visual: '<div class="figure-container"><img src="figures/mod3/polynomial_kernel_3d_separating_plane.png" alt="3D separating plane"><div class="figure-caption">A flat plane in the 3D polynomial feature space corresponds to a circular boundary in the original 2D space.</div></div>',
+      insight: 'The kernel trick works for any dimension and any kernel function. You never need to explicitly compute the mapped features for RBF kernels -- the kernel function computes dot products in the mapped space directly.'
+    },
+    {
+      tab: '4. Kernels',
+      title: 'Choosing the Right Kernel',
+      text: 'Different kernels suit different data distributions: Linear (no transformation), Polynomial (curved boundaries, degree d), RBF/Gaussian (infinite-dimensional, circular regions), Sigmoid (similar to neural network activation). Kernel type is a hyperparameter tuned via cross-validation.',
+      visual: '<div class="figure-container"><img src="figures/mod3/svm_kernel_types_overview.png" alt="SVM kernel types"><div class="figure-caption">Each kernel produces a different decision boundary shape in the original feature space.</div></div>',
+      insight: 'Practical guidance: start with linear; if linear fails, try RBF (most generally powerful). Polynomial works when polynomial relationships are expected. The kernel choice controls the model complexity and bias-variance tradeoff.'
+    }
+  ]);
+</script>
+<script>
+  initWalkthrough('adaboost-walkthrough', [
+    {
+      tab: '1. Init Weights',
+      title: 'Step 1: Initialize Sample Weights',
+      text: 'Assign equal weights to all training samples. Positive examples (faces) each receive weight $1/(2l)$, negative examples (non-faces) each receive weight $1/(2m)$, where $l$ and $m$ are the counts of positive and negative examples respectively. This ensures both classes start with equal total weight.',
+      visual: '',
+      insight: 'Equal initialization means no sample is considered more important at the start. Over rounds, difficult samples will accumulate higher weights, forcing later classifiers to focus on them.'
+    },
+    {
+      tab: '2. Select Feature',
+      title: 'Step 2: Select Best Weak Classifier',
+      text: 'For each Haar feature $j$, compute its weighted error: $\\epsilon_j = \\sum_i w_i |h_j(x_i) - y_i|$. Errors (1) are accumulated with sample weight; correct classifications (0) do not contribute. Select the feature $h_t$ with minimum weighted error $\\epsilon_t$.',
+      visual: '',
+      insight: 'The first selected feature is typically the most powerful Haar feature overall -- one that clearly distinguishes faces from non-faces. For the Viola-Jones face detector, the first selected feature captures the intensity difference between the eye region (dark) and upper cheek (lighter).'
+    },
+    {
+      tab: '3. Update Weights',
+      title: 'Step 3: Update Sample Weights',
+      text: 'Compute $\\beta_t = \\epsilon_t / (1 - \\epsilon_t)$. Update: $w_{t+1,i} = w_i \\cdot \\beta_t^{e_i}$, where $e_i = 0$ for correctly classified samples and $e_i = 1$ for misclassified. Correctly classified samples have their weights reduced (multiplied by $\\beta_t < 1$ since $\\epsilon_t < 0.5$). Re-normalize so weights sum to 1.',
+      visual: '',
+      insight: 'After re-normalization, samples that were hard for the current classifier get a higher share of the total weight. The NEXT classifier is trained with these reweighted samples, so it focuses on the cases that the current one got wrong. This is "Adaptive Boosting".'
+    },
+    {
+      tab: '4. Combine',
+      title: 'Step 4: Combine Weak Classifiers',
+      text: 'After $T$ rounds, combine all selected weak classifiers: $H(x) = 1$ if $\\sum \\alpha_t h_t(x) \\geq \\frac{1}{2} \\sum \\alpha_t$. The weight $\\alpha_t = \\log(1/\\beta_t) = \\log((1-\\epsilon_t)/\\epsilon_t)$. Features with lower error get higher weight $\\alpha_t$.',
+      visual: '<div class="figure-container"><img src="figures/mod3/adaboost_algorithm_paper.png" alt="Viola-Jones AdaBoost"><div class="figure-caption">The selected Haar features and cascaded structure of the Viola-Jones face detector.</div></div>',
+      insight: 'Each weak classifier is a stumbling block alone, but their weighted combination forms a powerful strong classifier. The diversity of classifiers (each focused on different hard examples) is what makes boosting work.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod3-flashcards', [
+    {
+      q: 'Why is the Nearest Neighbour classifier rarely used in practice for image classification?',
+      a: '1. <strong>Low accuracy:</strong> pixel-level comparison is sensitive to viewpoint, lighting, deformation.<br>2. <strong>Uninformative metrics:</strong> L1/L2 distance between pixel vectors does not capture semantic similarity.<br>3. <strong>Slow at test time:</strong> every test image requires comparing against all N training images &mdash; $O(N \\times k)$.<br>4. <strong>High memory:</strong> all training images must be stored.'
+    },
+    {
+      q: 'What is the effect of increasing K in K-NN? Explain in terms of bias and variance.',
+      a: 'As K increases:<br><strong>Decision boundary:</strong> becomes smoother, less sensitive to individual noisy points.<br><strong>Bias increases:</strong> model makes stronger smoothing assumptions, may misclassify some training points.<br><strong>Variance decreases:</strong> less sensitive to the specific training set, generalizes better.<br>At K=1: Voronoi diagram (max complexity). At K=5: smooth regions.'
+    },
+    {
+      q: 'Write the linear classifier formula and define each term.',
+      a: '$f(\\mathbf{x}, \\mathbf{W}) = \\mathbf{W}\\mathbf{x} + \\mathbf{b}$<br>$\\mathbf{x}$: input vector ($n \\times 1$); $\\mathbf{W}$: weight matrix ($C \\times n$); $\\mathbf{b}$: bias ($C \\times 1$); output: $C$ class scores. The class with the highest score is the prediction.'
+    },
+    {
+      q: 'How are Haar-like features computed and classified?',
+      a: 'Assign $+1$ to white pixels and $-1$ to black pixels of the mask. Slide the mask across the image. At each position: compute $|\\text{white sum} - \\text{black sum}|$. If this exceeds threshold $\\tau$, a feature is <strong>detected</strong>.<br>Three types: (a) edge (2 rectangles), (b) line (3 rectangles), (c) four-rectangle ($2 \\times 2$ checkerboard).'
+    },
+    {
+      q: 'What are the three parts of a dataset split and what is each used for?',
+      a: '<strong>Training set:</strong> fit model parameters (W, b).<br><strong>Validation set:</strong> tune hyperparameters (K, kernel type, outliers to omit) &mdash; evaluated after each training run.<br><strong>Test set:</strong> final evaluation, used <strong>once</strong> at the very end. Never use during training or hyperparameter selection.'
+    },
+    {
+      q: 'Explain the SVC hyperplane equation and classification constraint.',
+      a: '<strong>Hyperplane:</strong> $\\mathbf{w}^T\\mathbf{x} - b = 0$ where $\\mathbf{w}$ is the normal vector and $b$ is the bias.<br><strong>Classification constraint:</strong> $y_i(\\mathbf{w}^T\\mathbf{x}_i - b) \\geq 0$<br>For $y_i = +1$: must have $\\mathbf{w}^T\\mathbf{x}_i - b > 0$. For $y_i = -1$: must have $\\mathbf{w}^T\\mathbf{x}_i - b < 0$. Multiplying by $y_i$ makes both cases positive when correctly classified.'
+    },
+    {
+      q: 'What are soft margins in SVC and how do they relate to bias-variance tradeoff?',
+      a: 'Soft margins allow omitting some outlier samples (those closest to the opposite class) before fitting the hyperplane. This creates wider, more robust margins.<br><strong>More outliers omitted:</strong> higher bias (ignores some training data), lower variance (generalizes better).<br><strong>Fewer outliers omitted:</strong> lower bias (fits training data well), higher variance (sensitive to noise).<br>Optimal number of outliers is found via cross-validation.'
+    },
+    {
+      q: 'Explain the SVM kernel trick. How does the polynomial kernel make 1D data separable?',
+      a: '<strong>Kernel trick:</strong> map data to a higher-dimensional space where linear separation is possible. The linear hyperplane in the higher-dimensional space corresponds to a non-linear boundary in the original space.<br><br><strong>1D example:</strong> Map $x \\to (x, x^2)$. Mid-range "cured" values (moderate $x^2$) separate geometrically from extreme "not cured" values (very low or very high $x^2$). A line in 2D corresponds to two thresholds in 1D.'
+    },
+    {
+      q: 'Describe the key steps of AdaBoost. Why are sample weights updated after each round?',
+      a: '1. Initialize equal weights for all samples.<br>2. For each of T rounds: normalize weights; for each Haar feature, compute weighted error $\\epsilon_j = \\sum_i w_i|h_j(x_i) - y_i|$; select feature with minimum error; update weights ($\\beta_t^{e_i}$, $e_i = 0$ if correct, 1 if not).<br>3. Combine: $H(x) = 1$ if $\\sum \\alpha_t h_t(x) \\geq \\frac{1}{2}\\sum \\alpha_t$, where $\\alpha_t = \\log(1/\\beta_t)$.<br><br><strong>Why update weights:</strong> misclassified samples get higher relative weights, forcing the next round to focus on the hard cases. This creates a diverse ensemble.'
+    },
+    {
+      q: 'How does cascaded detection speed up the sliding window approach?',
+      a: '<strong>Key insight:</strong> most sub-windows contain no object. Testing all features on every window is wasteful.<br><br><strong>Cascade:</strong> arrange classifiers from most to least powerful. At each window, apply Stage 1. If it fails, reject immediately. If all stages pass, declare detection.<br><br><strong>Speed benefit:</strong> most non-object windows are rejected after 1&ndash;2 feature evaluations. Only promising windows proceed to expensive later stages. Dramatically reduces average computation per window.'
+    },
+    {
+      q: 'Compute the AdaBoost classifier weight alpha_t when the weighted error epsilon_t = 0.2.',
+      a: '$$\\beta_t = \\frac{\\epsilon_t}{1-\\epsilon_t} = \\frac{0.2}{0.8} = 0.25$$<br>$$\\alpha_t = \\log\\frac{1}{\\beta_t} = \\log\\frac{1}{0.25} = \\log(4) \\approx 1.386$$<br>A lower error means a higher weight, making this classifier more influential in the final weighted vote.'
+    },
+    {
+      q: 'Compare NN, linear classifier, SVM, and AdaBoost at training and test time.',
+      a: '<table><tr><th>Classifier</th><th>Training</th><th>Testing</th></tr><tr><td>NN</td><td>Store everything ($O(1)$)</td><td>Compare to all images $O(N \\times k)$</td></tr><tr><td>Linear</td><td>Gradient descent for $W, b$</td><td>Matrix multiply $O(C \\times n)$</td></tr><tr><td>SVM</td><td>Find max-margin hyperplane</td><td>Similar to linear (kernel: kernel function)</td></tr><tr><td>AdaBoost</td><td>Iteratively select $T$ best features</td><td>Extract $T$ features, weighted sum $O(T)$</td></tr></table>'
+    }
+  ]);
+</script>
+
+<!-- ===== K-NN INTERACTIVE ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('knn-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('knn-equations');
+  var statusEl = document.getElementById('knn-status');
+  var btnGenerate = document.getElementById('knn-generate');
+  var kSelect = document.getElementById('knn-k-select');
+
+  var COLORS = ['#e53935', '#1e88e5', '#43a047'];
+  var CLASS_NAMES = ['Class A (Red)', 'Class B (Blue)', 'Class C (Green)'];
+  var trainPoints = [];
+  var testPoint = null;
+
+  function fmt(v) { return v.toFixed(2); }
+
+  function randRange(lo, hi) { return lo + Math.random() * (hi - lo); }
+
+  function generateData() {
+    trainPoints = [];
+    testPoint = null;
+    var centers = [
+      [120, 120], [350, 100], [230, 310]
+    ];
+    for (var c = 0; c < 3; c++) {
+      var n = 5 + Math.floor(Math.random() * 4);
+      for (var i = 0; i < n; i++) {
+        trainPoints.push({
+          x: centers[c][0] + randRange(-60, 60),
+          y: centers[c][1] + randRange(-60, 60),
+          cls: c
+        });
+      }
+    }
+    draw();
+    eqEl.innerHTML = '';
+    statusEl.textContent = trainPoints.length + ' training points generated (3 classes). Click on the canvas to place a test point.';
+  }
+
+  function dist(a, b) {
+    return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Grid
+    ctx.strokeStyle = '#f0f0f0';
+    ctx.lineWidth = 1;
+    for (var gx = 0; gx < canvas.width; gx += 50) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, canvas.height); ctx.stroke();
+    }
+    for (var gy = 0; gy < canvas.height; gy += 50) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+    }
+    // Training points
+    for (var i = 0; i < trainPoints.length; i++) {
+      var p = trainPoints[i];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+      ctx.fillStyle = COLORS[p.cls];
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#333';
+      ctx.font = '9px sans-serif';
+      ctx.fillText(i + 1, p.x + 8, p.y - 4);
+    }
+    if (testPoint) {
+      var K = parseInt(kSelect.value);
+      // Compute distances
+      var dists = [];
+      for (var i = 0; i < trainPoints.length; i++) {
+        dists.push({ idx: i, d: dist(testPoint, trainPoints[i]), cls: trainPoints[i].cls });
+      }
+      dists.sort(function(a, b) { return a.d - b.d; });
+      // Draw lines to all points (faint)
+      for (var i = 0; i < dists.length; i++) {
+        var p = trainPoints[dists[i].idx];
+        ctx.beginPath();
+        ctx.moveTo(testPoint.x, testPoint.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = i < K ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.06)';
+        ctx.lineWidth = i < K ? 1.5 : 0.5;
+        ctx.stroke();
+      }
+      // Highlight K nearest with bold outlines
+      for (var i = 0; i < K && i < dists.length; i++) {
+        var p = trainPoints[dists[i].idx];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 10, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+      // Majority vote
+      var votes = [0, 0, 0];
+      for (var i = 0; i < K && i < dists.length; i++) {
+        votes[dists[i].cls]++;
+      }
+      var winner = 0;
+      if (votes[1] > votes[winner]) winner = 1;
+      if (votes[2] > votes[winner]) winner = 2;
+      // Draw test point as diamond
+      ctx.save();
+      ctx.translate(testPoint.x, testPoint.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = COLORS[winner];
+      ctx.fillRect(-7, -7, 14, 14);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-7, -7, 14, 14);
+      ctx.restore();
+      // Draw K radius circle
+      if (dists.length >= K) {
+        ctx.beginPath();
+        ctx.arc(testPoint.x, testPoint.y, dists[K - 1].d, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // Build equation panel
+      showKnnEquations(dists, votes, winner, K);
+    }
+  }
+
+  function showKnnEquations(dists, votes, winner, K) {
+    var html = '';
+    // Distance formula
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Euclidean Distance Formula</div>';
+    html += '<div>$$d(q, p) = \\sqrt{\\sum_{i=1}^{n}(q_i - p_i)^2}$$</div>';
+    html += '<div style="font-size:12px;color:#555;margin-top:4px;">Test point: $q = (' + fmt(testPoint.x) + ',\\,' + fmt(testPoint.y) + ')$</div>';
+    html += '</div>';
+    // Distance table
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Distances to all training points (sorted ascending)</div>';
+    html += '<table style="font-size:11px;width:100%;"><tr><th>Rank</th><th>Point</th><th>Class</th><th>Position</th><th>Distance</th></tr>';
+    for (var i = 0; i < dists.length; i++) {
+      var d = dists[i];
+      var p = trainPoints[d.idx];
+      var bold = i < K;
+      var style = bold ? 'font-weight:700;background:#fffde7;' : '';
+      html += '<tr style="' + style + '">';
+      html += '<td>' + (i + 1) + (bold ? ' *' : '') + '</td>';
+      html += '<td>$p_{' + (d.idx + 1) + '}$</td>';
+      html += '<td style="color:' + COLORS[d.cls] + ';font-weight:600;">' + CLASS_NAMES[d.cls] + '</td>';
+      html += '<td>(' + fmt(p.x) + ', ' + fmt(p.y) + ')</td>';
+      html += '<td>' + fmt(d.d) + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    // Vote counts
+    html += '<div style="border-left:3px solid #e67e22;background:#fff8f0;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#e67e22;text-transform:uppercase;margin-bottom:6px;">Majority Vote (K = ' + K + ')</div>';
+    html += '<table style="font-size:12px;"><tr><th>Class</th><th>Votes</th><th>Fraction</th></tr>';
+    for (var c = 0; c < 3; c++) {
+      var isWinner = c === winner;
+      var style = isWinner ? 'font-weight:700;background:#e8f5e9;' : '';
+      html += '<tr style="' + style + '">';
+      html += '<td style="color:' + COLORS[c] + ';font-weight:600;">' + CLASS_NAMES[c] + '</td>';
+      html += '<td>' + votes[c] + ' / ' + K + '</td>';
+      html += '<td>' + fmt(votes[c] / K * 100) + '%</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    html += '<div style="margin-top:8px;font-size:13px;"><strong>Prediction:</strong> <span style="color:' + COLORS[winner] + ';font-weight:700;">' + CLASS_NAMES[winner] + '</span> (confidence: ' + votes[winner] + '/' + K + ' = ' + fmt(votes[winner] / K * 100) + '%)</div>';
+    html += '</div>';
+    // How different K values would change the decision
+    if (K > 1) {
+      html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Effect of different K values</div>';
+      html += '<table style="font-size:11px;"><tr><th>K</th><th>Neighbors</th><th>Votes (A/B/C)</th><th>Prediction</th></tr>';
+      var allK = [1, 3, 5, 7];
+      for (var ki = 0; ki < allK.length; ki++) {
+        var testK = allK[ki];
+        if (testK > dists.length) continue;
+        var tv = [0, 0, 0];
+        for (var j = 0; j < testK; j++) tv[dists[j].cls]++;
+        var tw = 0;
+        if (tv[1] > tv[tw]) tw = 1;
+        if (tv[2] > tv[tw]) tw = 2;
+        var isCurrent = testK === K;
+        html += '<tr style="' + (isCurrent ? 'font-weight:700;background:#e3f2fd;' : '') + '">';
+        html += '<td>' + testK + (isCurrent ? ' (current)' : '') + '</td>';
+        html += '<td>Top ' + testK + '</td>';
+        html += '<td>' + tv[0] + ' / ' + tv[1] + ' / ' + tv[2] + '</td>';
+        html += '<td style="color:' + COLORS[tw] + ';font-weight:600;">' + CLASS_NAMES[tw] + '</td>';
+        html += '</tr>';
+      }
+      html += '</table>';
+    }
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  canvas.addEventListener('click', function(e) {
+    if (trainPoints.length === 0) return;
+    var rect = canvas.getBoundingClientRect();
+    var scaleX = canvas.width / rect.width;
+    var scaleY = canvas.height / rect.height;
+    testPoint = {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+    draw();
+    statusEl.textContent = 'Test point placed. Showing K=' + kSelect.value + ' nearest neighbors and classification result.';
+  });
+
+  kSelect.addEventListener('change', function() {
+    if (testPoint) draw();
+  });
+
+  btnGenerate.addEventListener('click', generateData);
+})();
+</script>
+
+<!-- ===== LINEAR CLASSIFIER INTERACTIVE ===== -->
+<script>
+(function() {
+  var eqEl = document.getElementById('linear-equations');
+  var inputsEl = document.getElementById('linear-inputs');
+  var btnClassify = document.getElementById('linear-classify');
+  var btnRandomize = document.getElementById('linear-randomize');
+
+  var classNames = ['Cat', 'Dog', 'Ship'];
+  var classColors = ['#e53935', '#1e88e5', '#43a047'];
+  var pixelValues = [56, 231, 24, 2];
+  var W = [];
+  var b = [];
+
+  function fmt(v) { return v.toFixed(2); }
+  function fmtW(v) { return v >= 0 ? '+' + v.toFixed(3) : v.toFixed(3); }
+
+  function randomWeights() {
+    W = [];
+    b = [];
+    for (var r = 0; r < 3; r++) {
+      var row = [];
+      for (var c = 0; c < 4; c++) {
+        row.push(parseFloat(((Math.random() - 0.5) * 0.4).toFixed(3)));
+      }
+      W.push(row);
+      b.push(parseFloat(((Math.random() - 0.5) * 10).toFixed(2)));
+    }
+  }
+
+  function buildInputs() {
+    var html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">Input image: 4x1 pixel vector</div>';
+    html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+    var pixColors = ['#e57373', '#64b5f6', '#81c784', '#ffb74d'];
+    for (var i = 0; i < 4; i++) {
+      html += '<div style="text-align:center;">';
+      html += '<div style="width:50px;height:50px;background:rgb(' + pixelValues[i] + ',' + pixelValues[i] + ',' + pixelValues[i] + ');border:2px solid ' + pixColors[i] + ';display:flex;align-items:center;justify-content:center;color:' + (pixelValues[i] > 128 ? '#000' : '#fff') + ';font-size:12px;font-weight:700;border-radius:4px;">' + pixelValues[i] + '</div>';
+      html += '<input type="range" min="0" max="255" value="' + pixelValues[i] + '" style="width:50px;margin-top:4px;" data-px="' + i + '">';
+      html += '<div style="font-size:10px;color:#888;">$x_' + (i + 1) + '$</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    inputsEl.innerHTML = html;
+    renderMath(inputsEl);
+    // Attach slider listeners
+    var sliders = inputsEl.querySelectorAll('input[type=range]');
+    for (var i = 0; i < sliders.length; i++) {
+      sliders[i].addEventListener('input', function() {
+        var idx = parseInt(this.getAttribute('data-px'));
+        pixelValues[idx] = parseInt(this.value);
+        buildInputs();
+      });
+    }
+  }
+
+  function classify() {
+    // Compute scores
+    var scores = [];
+    for (var r = 0; r < 3; r++) {
+      var s = b[r];
+      for (var c = 0; c < 4; c++) {
+        s += W[r][c] * pixelValues[c];
+      }
+      scores.push(s);
+    }
+    // Find argmax
+    var maxIdx = 0;
+    if (scores[1] > scores[maxIdx]) maxIdx = 1;
+    if (scores[2] > scores[maxIdx]) maxIdx = 2;
+    showEquations(scores, maxIdx);
+  }
+
+  function showEquations(scores, maxIdx) {
+    var html = '';
+    // Formula
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Linear Classifier Formula</div>';
+    html += '<div>$$f(\\mathbf{x}) = \\mathbf{W}\\mathbf{x} + \\mathbf{b}$$</div>';
+    html += '</div>';
+    // Weight matrix display
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Weight Matrix W (3x4) and Bias Vector b (3x1)</div>';
+    html += '<table style="font-size:11px;"><tr><th>Class</th><th>$w_1$</th><th>$w_2$</th><th>$w_3$</th><th>$w_4$</th><th>$b$</th></tr>';
+    for (var r = 0; r < 3; r++) {
+      html += '<tr><td style="color:' + classColors[r] + ';font-weight:600;">' + classNames[r] + '</td>';
+      for (var c = 0; c < 4; c++) {
+        html += '<td>' + fmtW(W[r][c]) + '</td>';
+      }
+      html += '<td>' + fmt(b[r]) + '</td></tr>';
+    }
+    html += '</table>';
+    // Full matrix multiplication for each class
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Score Computation</div>';
+    for (var r = 0; r < 3; r++) {
+      html += '<div style="margin-bottom:8px;' + (r === maxIdx ? 'font-weight:700;' : '') + '">';
+      html += '<span style="color:' + classColors[r] + ';">' + classNames[r] + ':</span> ';
+      html += '$\\text{score} = ';
+      var terms = [];
+      for (var c = 0; c < 4; c++) {
+        terms.push('(' + fmtW(W[r][c]) + ' \\times ' + pixelValues[c] + ')');
+      }
+      html += terms.join(' + ') + ' + ' + fmt(b[r]) + '$<br>';
+      // Show intermediate
+      var intermediates = [];
+      for (var c = 0; c < 4; c++) {
+        intermediates.push(fmt(W[r][c] * pixelValues[c]));
+      }
+      html += '$= ' + intermediates.join(' + ') + ' + ' + fmt(b[r]) + ' = \\mathbf{' + fmt(scores[r]) + '}$';
+      html += '</div>';
+    }
+    html += '</div>';
+    // Result
+    html += '<div style="border-left:3px solid #43a047;background:#e8f5e9;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#43a047;text-transform:uppercase;margin-bottom:6px;">Classification Result</div>';
+    html += '<table style="font-size:12px;"><tr><th>Class</th><th>Score</th><th></th></tr>';
+    for (var r = 0; r < 3; r++) {
+      var isWin = r === maxIdx;
+      html += '<tr style="' + (isWin ? 'font-weight:700;background:#c8e6c9;' : '') + '">';
+      html += '<td style="color:' + classColors[r] + ';">' + classNames[r] + '</td>';
+      html += '<td>' + fmt(scores[r]) + '</td>';
+      html += '<td>' + (isWin ? 'PREDICTED (argmax)' : '') + '</td></tr>';
+    }
+    html += '</table>';
+    html += '<div style="margin-top:8px;font-size:13px;">$\\hat{y} = \\text{argmax}_c\\, f_c(\\mathbf{x}) = $ <strong style="color:' + classColors[maxIdx] + ';">' + classNames[maxIdx] + '</strong></div>';
+    html += '</div>';
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  randomWeights();
+  buildInputs();
+
+  btnClassify.addEventListener('click', classify);
+  btnRandomize.addEventListener('click', function() {
+    randomWeights();
+    classify();
+  });
+})();
+</script>
+
+<!-- ===== SVM KERNEL TRICK INTERACTIVE ===== -->
+<script>
+(function() {
+  var canvas1d = document.getElementById('svm-kernel-1d');
+  var canvas2d = document.getElementById('svm-kernel-2d');
+  var ctx1 = canvas1d.getContext('2d');
+  var ctx2 = canvas2d.getContext('2d');
+  var eqEl = document.getElementById('svm-kernel-equations');
+  var statusEl = document.getElementById('svm-kernel-status');
+  var btnToggle = document.getElementById('svm-kernel-toggle');
+
+  var isSeparable = true;
+  var separableData = [
+    { x: 1, cls: 0 }, { x: 2, cls: 0 },
+    { x: 4, cls: 1 }, { x: 5, cls: 1 }
+  ];
+  var nonSeparableData = [
+    { x: 1, cls: 0 }, { x: 5, cls: 0 },
+    { x: 2, cls: 1 }, { x: 4, cls: 1 }
+  ];
+
+  var COLORS = ['#e53935', '#1e88e5'];
+  var CLS_NAMES = ['Red', 'Blue'];
+
+  function fmt(v) { return v.toFixed(2); }
+
+  function getData() {
+    return isSeparable ? separableData : nonSeparableData;
+  }
+
+  function draw1D() {
+    var data = getData();
+    var W = canvas1d.width, H = canvas1d.height;
+    ctx1.clearRect(0, 0, W, H);
+    // Axes
+    var margin = 30;
+    var axisY = H / 2;
+    ctx1.strokeStyle = '#999';
+    ctx1.lineWidth = 1;
+    ctx1.beginPath();
+    ctx1.moveTo(margin, axisY);
+    ctx1.lineTo(W - margin, axisY);
+    ctx1.stroke();
+    // Ticks
+    ctx1.fillStyle = '#555';
+    ctx1.font = '11px sans-serif';
+    ctx1.textAlign = 'center';
+    for (var t = 0; t <= 6; t++) {
+      var tx = margin + t * (W - 2 * margin) / 6;
+      ctx1.beginPath();
+      ctx1.moveTo(tx, axisY - 4);
+      ctx1.lineTo(tx, axisY + 4);
+      ctx1.stroke();
+      ctx1.fillText(t, tx, axisY + 18);
+    }
+    ctx1.fillText('x', W - 15, axisY - 8);
+    // Data points
+    for (var i = 0; i < data.length; i++) {
+      var px = margin + data[i].x * (W - 2 * margin) / 6;
+      ctx1.beginPath();
+      ctx1.arc(px, axisY, 8, 0, 2 * Math.PI);
+      ctx1.fillStyle = COLORS[data[i].cls];
+      ctx1.fill();
+      ctx1.strokeStyle = '#fff';
+      ctx1.lineWidth = 2;
+      ctx1.stroke();
+      ctx1.fillStyle = '#000';
+      ctx1.font = '10px sans-serif';
+      ctx1.fillText('x=' + data[i].x, px, axisY - 16);
+    }
+    // Show separability status
+    ctx1.font = '12px sans-serif';
+    ctx1.textAlign = 'left';
+    if (!isSeparable) {
+      ctx1.fillStyle = '#e53935';
+      ctx1.fillText('No single threshold separates', 10, 25);
+      ctx1.fillText('red and blue in 1D', 10, 40);
+      // Draw dashed lines showing failure
+      ctx1.setLineDash([4, 4]);
+      ctx1.strokeStyle = 'rgba(0,0,0,0.2)';
+      for (var thr = 1.5; thr <= 4.5; thr += 1) {
+        var thrX = margin + thr * (W - 2 * margin) / 6;
+        ctx1.beginPath();
+        ctx1.moveTo(thrX, 50);
+        ctx1.lineTo(thrX, H - 20);
+        ctx1.stroke();
+      }
+      ctx1.setLineDash([]);
+    } else {
+      ctx1.fillStyle = '#43a047';
+      ctx1.fillText('Linearly separable:', 10, 25);
+      ctx1.fillText('threshold at x=3 works', 10, 40);
+      var thrX = margin + 3 * (W - 2 * margin) / 6;
+      ctx1.strokeStyle = '#43a047';
+      ctx1.lineWidth = 2;
+      ctx1.beginPath();
+      ctx1.moveTo(thrX, 50);
+      ctx1.lineTo(thrX, H - 20);
+      ctx1.stroke();
+    }
+    // Title area
+    ctx1.fillStyle = '#333';
+    ctx1.font = 'bold 11px sans-serif';
+    ctx1.textAlign = 'center';
+    ctx1.fillText(isSeparable ? 'Separable Dataset' : 'Non-separable Dataset', W / 2, H - 8);
+  }
+
+  function draw2D() {
+    var data = getData();
+    var W = canvas2d.width, H = canvas2d.height;
+    ctx2.clearRect(0, 0, W, H);
+    var margin = 40;
+    // Map data
+    var mapped = [];
+    var maxX2 = 0;
+    for (var i = 0; i < data.length; i++) {
+      var x = data[i].x;
+      mapped.push({ x: x, x2: x * x, cls: data[i].cls });
+      if (x * x > maxX2) maxX2 = x * x;
+    }
+    // Axes
+    var xMax = 6;
+    var yMax = maxX2 + 5;
+    function mapToCanvas(xv, yv) {
+      return {
+        cx: margin + (xv / xMax) * (W - 2 * margin),
+        cy: H - margin - (yv / yMax) * (H - 2 * margin)
+      };
+    }
+    // Draw axes
+    ctx2.strokeStyle = '#999';
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    ctx2.moveTo(margin, H - margin);
+    ctx2.lineTo(W - margin, H - margin);
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.moveTo(margin, H - margin);
+    ctx2.lineTo(margin, margin);
+    ctx2.stroke();
+    // Axis labels
+    ctx2.fillStyle = '#555';
+    ctx2.font = '11px sans-serif';
+    ctx2.textAlign = 'center';
+    for (var t = 0; t <= 6; t++) {
+      var pos = mapToCanvas(t, 0);
+      ctx2.fillText(t, pos.cx, H - margin + 16);
+    }
+    ctx2.fillText('x', W - 15, H - margin + 16);
+    ctx2.save();
+    ctx2.translate(14, H / 2);
+    ctx2.rotate(-Math.PI / 2);
+    ctx2.fillText('x^2', 0, 0);
+    ctx2.restore();
+    // Y ticks
+    for (var t = 0; t <= yMax; t += 5) {
+      var pos = mapToCanvas(0, t);
+      ctx2.textAlign = 'right';
+      ctx2.fillText(t, margin - 6, pos.cy + 4);
+    }
+    // Draw parabola curve (phi mapping)
+    ctx2.strokeStyle = 'rgba(0,0,0,0.1)';
+    ctx2.lineWidth = 1;
+    ctx2.beginPath();
+    for (var xv = 0; xv <= xMax; xv += 0.1) {
+      var pos = mapToCanvas(xv, xv * xv);
+      if (xv === 0) ctx2.moveTo(pos.cx, pos.cy);
+      else ctx2.lineTo(pos.cx, pos.cy);
+    }
+    ctx2.stroke();
+    // Separating line in 2D if non-separable
+    if (!isSeparable) {
+      // For non-separable data: red at x=1,5, blue at x=2,4
+      // mapped: (1,1),(5,25) red, (2,4),(4,16) blue
+      // A line like x^2 = 3.5*x - 2.5 separates them
+      // Let's compute: at x=1: 3.5-2.5=1 (on line), x=2: 7-2.5=4.5>4 (blue side ok), x=4: 14-2.5=11.5<16 (blue ok), x=5: 17.5-2.5=15<25 (red ok)
+      // Line: x^2 = ax + c. Need (1,1),(5,25) above, (2,4),(4,16) below
+      // 1 > a+c, 25 > 5a+c, 4 < 2a+c, 16 < 4a+c
+      // Try a=5, c=-3: 1>2 NO. Try separating: avg of mapped pairs
+      // Red mapped: (1,1), (5,25). Blue mapped: (2,4), (4,16).
+      // All on parabola y=x^2. Midpoints: between (1,1)&(2,4) -> (1.5, 2.5), between (4,16)&(5,25) -> (4.5, 20.5)
+      // Line through (1.5, 2.5) and (4.5, 20.5): slope = 18/3 = 6, intercept = 2.5 - 6*1.5 = -6.5
+      // y = 6x - 6.5. Check: x=1: -0.5 < 1 (red above ok), x=2: 5.5 > 4 (blue below NO)
+      // Try: we want red above line, blue below.
+      // Red: (1,1),(5,25). Blue: (2,4),(4,16)
+      // line: y = mx + c. Red above: 1>m+c, 25>5m+c. Blue below: 4<2m+c, 16<4m+c.
+      // From 4<2m+c and 1>m+c: 4<2m+c and 1>m+c -> 4-2m<c and c<1-m -> 4-2m < 1-m -> 3<m -> m>3
+      // From 16<4m+c and 25>5m+c: 16-4m<c and c<25-5m -> 16-4m<25-5m -> m<9
+      // Let m=5, from c>4-10=-6 and c<1-5=-4. So c=-5.
+      // Check: x=1: 5-5=0<1 red above (1>0 ok). x=5: 25-5=20<25 red above ok. x=2: 10-5=5>4 blue below (4<5 ok). x=4: 20-5=15<16 blue below ok.
+      ctx2.strokeStyle = '#43a047';
+      ctx2.lineWidth = 2;
+      ctx2.setLineDash([6, 3]);
+      ctx2.beginPath();
+      for (var xv = 0; xv <= xMax; xv += 0.1) {
+        var yLine = 5 * xv - 5;
+        var pos = mapToCanvas(xv, yLine);
+        if (xv === 0) ctx2.moveTo(pos.cx, pos.cy);
+        else ctx2.lineTo(pos.cx, pos.cy);
+      }
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+      ctx2.fillStyle = '#43a047';
+      ctx2.font = '11px sans-serif';
+      ctx2.textAlign = 'left';
+      ctx2.fillText('Separating line:', W - 130, 20);
+      ctx2.fillText('x^2 = 5x - 5', W - 130, 35);
+    } else {
+      // Separable: red (1,1),(2,4), blue (4,16),(5,25). Threshold at x=3 works even in 2D.
+      ctx2.strokeStyle = '#43a047';
+      ctx2.lineWidth = 2;
+      var thrPos = mapToCanvas(3, 0);
+      ctx2.beginPath();
+      ctx2.moveTo(thrPos.cx, margin);
+      ctx2.lineTo(thrPos.cx, H - margin);
+      ctx2.stroke();
+      ctx2.fillStyle = '#43a047';
+      ctx2.font = '11px sans-serif';
+      ctx2.textAlign = 'left';
+      ctx2.fillText('Vertical separator at x=3', 10, 20);
+    }
+    // Data points in 2D
+    for (var i = 0; i < mapped.length; i++) {
+      var pos = mapToCanvas(mapped[i].x, mapped[i].x2);
+      ctx2.beginPath();
+      ctx2.arc(pos.cx, pos.cy, 8, 0, 2 * Math.PI);
+      ctx2.fillStyle = COLORS[mapped[i].cls];
+      ctx2.fill();
+      ctx2.strokeStyle = '#fff';
+      ctx2.lineWidth = 2;
+      ctx2.stroke();
+      ctx2.fillStyle = '#000';
+      ctx2.font = '10px sans-serif';
+      ctx2.textAlign = 'left';
+      ctx2.fillText('(' + mapped[i].x + ',' + mapped[i].x2 + ')', pos.cx + 10, pos.cy - 4);
+    }
+    // Title
+    ctx2.fillStyle = '#333';
+    ctx2.font = 'bold 11px sans-serif';
+    ctx2.textAlign = 'center';
+    ctx2.fillText('Feature space: phi(x) = (x, x^2)', W / 2, H - 4);
+  }
+
+  function showEquations() {
+    var data = getData();
+    var html = '';
+    // Mapping formula
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Kernel Mapping</div>';
+    html += '<div>$$\\phi(x) = (x,\\, x^2)$$</div>';
+    html += '<div style="font-size:12px;color:#555;">Each 1D point $x$ is mapped to a 2D point $(x, x^2)$, which lies on a parabola.</div>';
+    html += '</div>';
+    // Point table
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Data Points and Mapped Values</div>';
+    html += '<table style="font-size:11px;"><tr><th>Point</th><th>Class</th><th>$x$</th><th>$\\phi(x) = (x,\\, x^2)$</th></tr>';
+    for (var i = 0; i < data.length; i++) {
+      var d = data[i];
+      html += '<tr>';
+      html += '<td>$p_' + (i + 1) + '$</td>';
+      html += '<td style="color:' + COLORS[d.cls] + ';font-weight:600;">' + CLS_NAMES[d.cls] + '</td>';
+      html += '<td>' + d.x + '</td>';
+      html += '<td>$(' + d.x + ',\\, ' + (d.x * d.x) + ')$</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    // Kernel function
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Polynomial Kernel Function</div>';
+    html += '<div>$$K(x_i, x_j) = (x_i \\cdot x_j + 1)^d \\quad (d=2)$$</div>';
+    html += '</div>';
+    // Kernel matrix
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Kernel Matrix $K(x_i, x_j) = (x_i \\cdot x_j + 1)^2$</div>';
+    html += '<table style="font-size:11px;"><tr><th></th>';
+    for (var j = 0; j < data.length; j++) {
+      html += '<th style="color:' + COLORS[data[j].cls] + ';">$x_' + (j + 1) + '=' + data[j].x + '$</th>';
+    }
+    html += '</tr>';
+    for (var i = 0; i < data.length; i++) {
+      html += '<tr><th style="color:' + COLORS[data[i].cls] + ';">$x_' + (i + 1) + '=' + data[i].x + '$</th>';
+      for (var j = 0; j < data.length; j++) {
+        var kval = Math.pow(data[i].x * data[j].x + 1, 2);
+        html += '<td>' + kval + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</table>';
+    // Explanation
+    html += '<div style="border-left:3px solid #e67e22;background:#fff8f0;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#e67e22;text-transform:uppercase;margin-bottom:6px;">Interpretation</div>';
+    if (isSeparable) {
+      html += '<div style="font-size:12px;">The data is already linearly separable in the original 1D space (a threshold at $x = 3$ works). The mapping to 2D is not needed, but it still preserves the separability.</div>';
+    } else {
+      html += '<div style="font-size:12px;">In the original 1D space, red points ($x=1,5$) and blue points ($x=2,4$) are interleaved -- no single threshold can separate them.<br><br>';
+      html += 'After mapping $\\phi(x) = (x, x^2)$: red becomes $(1,1)$ and $(5,25)$, blue becomes $(2,4)$ and $(4,16)$. In the mapped 2D space, a linear separator (line $x^2 = 5x - 5$) cleanly divides the classes.<br><br>';
+      html += '<strong>This is the kernel trick:</strong> a linear classifier in the higher-dimensional feature space corresponds to a non-linear decision boundary in the original space.</div>';
+    }
+    html += '</div>';
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  function drawAll() {
+    draw1D();
+    draw2D();
+    showEquations();
+  }
+
+  btnToggle.addEventListener('click', function() {
+    isSeparable = !isSeparable;
+    btnToggle.textContent = isSeparable ? 'Switch to Non-separable' : 'Switch to Separable';
+    statusEl.textContent = isSeparable
+      ? 'Showing linearly separable data. Toggle to see the kernel trick in action.'
+      : 'Non-separable in 1D: red and blue are interleaved. The kernel maps to 2D where they become separable.';
+    drawAll();
+  });
+
+  drawAll();
+})();
+</script>
+
+<!-- ===== ADABOOST STEP-THROUGH INTERACTIVE ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('adaboost-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('adaboost-equations');
+  var statusEl = document.getElementById('adaboost-status');
+  var roundLabel = document.getElementById('adaboost-round-label');
+  var btnStep = document.getElementById('adaboost-step');
+  var btnReset = document.getElementById('adaboost-reset');
+
+  var positions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var labels = [1, 1, 1, -1, -1, -1, 1, 1, 1, -1];
+  var N = positions.length;
+
+  var weights = [];
+  var round = 0;
+  var stumps = []; // { threshold, polarity, alpha, epsilon, predictions }
+  var COLORS = { pos: '#e53935', neg: '#1e88e5' };
+
+  function fmt(v) { return v.toFixed(4); }
+  function fmt2(v) { return v.toFixed(2); }
+  function fmt3(v) { return v.toFixed(3); }
+
+  function reset() {
+    weights = [];
+    for (var i = 0; i < N; i++) weights.push(1 / N);
+    round = 0;
+    stumps = [];
+    roundLabel.textContent = 'Round: 0 / not started';
+    statusEl.textContent = 'Press "Step" to begin the first round of AdaBoost.';
+    eqEl.innerHTML = '';
+    draw();
+  }
+
+  function draw() {
+    var W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    var margin = 40;
+    var axisY = H / 2 + 10;
+    // Axis
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(margin, axisY);
+    ctx.lineTo(W - margin, axisY);
+    ctx.stroke();
+    // Ticks
+    ctx.fillStyle = '#555';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    for (var t = 0; t <= 11; t++) {
+      var tx = margin + t * (W - 2 * margin) / 11;
+      ctx.beginPath();
+      ctx.moveTo(tx, axisY - 3);
+      ctx.lineTo(tx, axisY + 3);
+      ctx.stroke();
+      if (t >= 1 && t <= 10) ctx.fillText(t, tx, axisY + 16);
+    }
+    // Draw thresholds for past stumps
+    for (var s = 0; s < stumps.length; s++) {
+      var stump = stumps[s];
+      var tx = margin + stump.threshold * (W - 2 * margin) / 11;
+      ctx.strokeStyle = 'rgba(100,100,100,0.3)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(tx, 20);
+      ctx.lineTo(tx, axisY - 5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#888';
+      ctx.font = '9px sans-serif';
+      ctx.fillText('t' + (s + 1), tx, 16);
+    }
+    // Current stump threshold (bold)
+    if (stumps.length > 0) {
+      var cur = stumps[stumps.length - 1];
+      var tx = margin + cur.threshold * (W - 2 * margin) / 11;
+      ctx.strokeStyle = '#43a047';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tx, 20);
+      ctx.lineTo(tx, axisY - 5);
+      ctx.stroke();
+      // Arrow showing polarity
+      ctx.fillStyle = '#43a047';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText('h' + stumps.length + ': ' + (cur.polarity > 0 ? '+1 if x>=' : '+1 if x<') + fmt2(cur.threshold), tx, 10);
+    }
+    // Data points with weight-proportional sizes
+    var maxW = 0;
+    for (var i = 0; i < N; i++) if (weights[i] > maxW) maxW = weights[i];
+    for (var i = 0; i < N; i++) {
+      var px = margin + positions[i] * (W - 2 * margin) / 11;
+      var radius = 5 + 15 * (weights[i] / maxW);
+      if (labels[i] === 1) {
+        // Red circle for +1
+        ctx.beginPath();
+        ctx.arc(px, axisY - 25, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = COLORS.pos;
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#b71c1c';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else {
+        // Blue square for -1
+        ctx.fillStyle = COLORS.neg;
+        ctx.globalAlpha = 0.7;
+        ctx.fillRect(px - radius, axisY - 25 - radius, radius * 2, radius * 2);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#0d47a1';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(px - radius, axisY - 25 - radius, radius * 2, radius * 2);
+      }
+      // Weight label
+      ctx.fillStyle = '#333';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('w=' + fmt3(weights[i]), px, axisY + 30);
+    }
+    // Legend
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.pos;
+    ctx.fillText('+1 (circle)', W - 120, 15);
+    ctx.fillStyle = COLORS.neg;
+    ctx.fillText('-1 (square)', W - 120, 30);
+  }
+
+  function findBestStump() {
+    var bestErr = Infinity;
+    var bestThreshold = 0;
+    var bestPolarity = 1;
+    var bestPreds = [];
+    // Try all thresholds: between each pair and at extremes
+    var thresholds = [0.5];
+    for (var i = 0; i < N - 1; i++) {
+      thresholds.push((positions[i] + positions[i + 1]) / 2);
+    }
+    thresholds.push(10.5);
+    for (var ti = 0; ti < thresholds.length; ti++) {
+      var thr = thresholds[ti];
+      for (var pol = -1; pol <= 1; pol += 2) {
+        var preds = [];
+        var err = 0;
+        for (var i = 0; i < N; i++) {
+          var pred;
+          if (pol > 0) {
+            pred = positions[i] >= thr ? 1 : -1;
+          } else {
+            pred = positions[i] < thr ? 1 : -1;
+          }
+          preds.push(pred);
+          if (pred !== labels[i]) err += weights[i];
+        }
+        if (err < bestErr) {
+          bestErr = err;
+          bestThreshold = thr;
+          bestPolarity = pol;
+          bestPreds = preds.slice();
+        }
+      }
+    }
+    return { threshold: bestThreshold, polarity: bestPolarity, epsilon: bestErr, predictions: bestPreds };
+  }
+
+  function step() {
+    round++;
+    // Normalize weights
+    var wSum = 0;
+    for (var i = 0; i < N; i++) wSum += weights[i];
+    for (var i = 0; i < N; i++) weights[i] /= wSum;
+
+    var stump = findBestStump();
+    var epsilon = stump.epsilon;
+    if (epsilon >= 0.5) epsilon = 0.4999; // safety clamp
+    var alpha = 0.5 * Math.log((1 - epsilon) / epsilon);
+    stump.alpha = alpha;
+    stumps.push(stump);
+
+    // Show equations BEFORE weight update (with current weights)
+    var oldWeights = weights.slice();
+    showEquations(stump, oldWeights);
+
+    // Update weights
+    var newWeights = [];
+    for (var i = 0; i < N; i++) {
+      newWeights.push(weights[i] * Math.exp(-alpha * labels[i] * stump.predictions[i]));
+    }
+    // Normalize
+    var nwSum = 0;
+    for (var i = 0; i < N; i++) nwSum += newWeights[i];
+    for (var i = 0; i < N; i++) newWeights[i] /= nwSum;
+    weights = newWeights;
+
+    roundLabel.textContent = 'Round: ' + round;
+    statusEl.textContent = 'Round ' + round + ' complete. Threshold at x=' + fmt2(stump.threshold) + ', alpha=' + fmt2(alpha) + '. Press "Step" for next round.';
+    draw();
+  }
+
+  function getCombinedPredictions() {
+    var preds = [];
+    for (var i = 0; i < N; i++) {
+      var score = 0;
+      for (var s = 0; s < stumps.length; s++) {
+        score += stumps[s].alpha * stumps[s].predictions[i];
+      }
+      preds.push(score >= 0 ? 1 : -1);
+    }
+    return preds;
+  }
+
+  function showEquations(stump, oldWeights) {
+    var html = '';
+    // Round number
+    html += '<div style="font-size:14px;font-weight:700;color:#333;margin-bottom:8px;">Round $t = ' + round + '$</div>';
+    // Weight table
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Sample Weights and Predictions</div>';
+    html += '<table style="font-size:11px;width:100%;"><tr><th>$i$</th><th>Position $x_i$</th><th>True $y_i$</th><th>Weight $w_i$</th><th>Prediction $h_t(x_i)$</th><th>Correct?</th></tr>';
+    var misclassifiedCount = 0;
+    for (var i = 0; i < N; i++) {
+      var correct = stump.predictions[i] === labels[i];
+      if (!correct) misclassifiedCount++;
+      var style = correct ? '' : 'background:#ffebee;';
+      html += '<tr style="' + style + '">';
+      html += '<td>' + (i + 1) + '</td>';
+      html += '<td>' + positions[i] + '</td>';
+      html += '<td style="color:' + (labels[i] === 1 ? COLORS.pos : COLORS.neg) + ';font-weight:600;">' + (labels[i] === 1 ? '+1' : '-1') + '</td>';
+      html += '<td>' + fmt(oldWeights[i]) + '</td>';
+      html += '<td>' + (stump.predictions[i] === 1 ? '+1' : '-1') + '</td>';
+      html += '<td>' + (correct ? 'Yes' : '<strong style="color:#e53935;">No</strong>') + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    // Selected weak learner
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Selected Weak Learner</div>';
+    html += '<div style="font-size:12px;">Threshold at $x = ' + fmt2(stump.threshold) + '$ with polarity $p = ' + (stump.polarity > 0 ? '+1' : '-1') + '$</div>';
+    html += '<div style="font-size:12px;color:#555;margin-top:4px;">';
+    if (stump.polarity > 0) {
+      html += '$h_' + round + '(x) = \\begin{cases} +1 & \\text{if } x \\geq ' + fmt2(stump.threshold) + ' \\\\ -1 & \\text{otherwise} \\end{cases}$';
+    } else {
+      html += '$h_' + round + '(x) = \\begin{cases} +1 & \\text{if } x < ' + fmt2(stump.threshold) + ' \\\\ -1 & \\text{otherwise} \\end{cases}$';
+    }
+    html += '</div>';
+    html += '<div style="font-size:12px;margin-top:6px;"><strong>Misclassified:</strong> ' + misclassifiedCount + ' out of ' + N + ' points</div>';
+    html += '</div>';
+    // Weighted error
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Weighted Error</div>';
+    html += '<div>$$\\epsilon_t = \\sum_{i:\\, h_t(x_i) \\neq y_i} w_i$$</div>';
+    // Show sum terms
+    var errTerms = [];
+    for (var i = 0; i < N; i++) {
+      if (stump.predictions[i] !== labels[i]) {
+        errTerms.push('w_{' + (i + 1) + '}');
+      }
+    }
+    if (errTerms.length > 0) {
+      html += '<div style="font-size:12px;margin-top:4px;">$\\epsilon_' + round + ' = ' + errTerms.join(' + ') + ' = \\mathbf{' + fmt(stump.epsilon) + '}$</div>';
+    } else {
+      html += '<div style="font-size:12px;margin-top:4px;">$\\epsilon_' + round + ' = 0$ (perfect classification)</div>';
+    }
+    html += '</div>';
+    // Learner weight alpha
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Learner Weight</div>';
+    html += '<div>$$\\alpha_t = \\frac{1}{2} \\ln\\frac{1 - \\epsilon_t}{\\epsilon_t}$$</div>';
+    html += '<div style="font-size:12px;margin-top:4px;">$\\alpha_' + round + ' = \\frac{1}{2} \\ln\\frac{1 - ' + fmt(stump.epsilon) + '}{' + fmt(stump.epsilon) + '} = \\frac{1}{2} \\ln(' + fmt2((1 - stump.epsilon) / stump.epsilon) + ') = \\mathbf{' + fmt(stump.alpha) + '}$</div>';
+    html += '</div>';
+    // Weight update formula
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Weight Update</div>';
+    html += '<div>$$w_i^{(t+1)} = w_i^{(t)} \\cdot e^{-\\alpha_t \\cdot y_i \\cdot h_t(x_i)}$$</div>';
+    html += '<div style="font-size:12px;color:#555;margin-top:4px;">Correctly classified ($y_i = h_t(x_i)$): weight decreases by $e^{-\\alpha_t}$. Misclassified: weight increases by $e^{\\alpha_t}$.</div>';
+    html += '</div>';
+    // New weights table
+    var newW = [];
+    for (var i = 0; i < N; i++) {
+      newW.push(oldWeights[i] * Math.exp(-stump.alpha * labels[i] * stump.predictions[i]));
+    }
+    var nwSum = 0;
+    for (var i = 0; i < N; i++) nwSum += newW[i];
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">Updated Weights (after normalization)</div>';
+    html += '<table style="font-size:11px;width:100%;"><tr><th>$i$</th><th>Old $w_i$</th><th>$e^{-\\alpha y_i h(x_i)}$</th><th>Unnormalized</th><th>Normalized $w_i^{\\text{new}}$</th></tr>';
+    for (var i = 0; i < N; i++) {
+      var factor = Math.exp(-stump.alpha * labels[i] * stump.predictions[i]);
+      var correct = stump.predictions[i] === labels[i];
+      var style = correct ? '' : 'background:#ffebee;font-weight:600;';
+      html += '<tr style="' + style + '">';
+      html += '<td>' + (i + 1) + '</td>';
+      html += '<td>' + fmt(oldWeights[i]) + '</td>';
+      html += '<td>' + fmt(factor) + '</td>';
+      html += '<td>' + fmt(newW[i]) + '</td>';
+      html += '<td>' + fmt(newW[i] / nwSum) + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    // Combined classifier
+    html += '<div style="border-left:3px solid #43a047;background:#e8f5e9;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#43a047;text-transform:uppercase;margin-bottom:6px;">Combined Classifier after ' + round + ' round(s)</div>';
+    html += '<div>$$H(x) = \\text{sign}\\left(\\sum_{s=1}^{' + round + '} \\alpha_s\\, h_s(x)\\right)$$</div>';
+    // Show each stump contribution
+    if (stumps.length > 0) {
+      html += '<div style="font-size:12px;margin-top:6px;"><strong>Components:</strong></div>';
+      html += '<table style="font-size:11px;"><tr><th>Round</th><th>$\\alpha_s$</th><th>Threshold</th><th>Polarity</th></tr>';
+      for (var s = 0; s < stumps.length; s++) {
+        html += '<tr><td>' + (s + 1) + '</td>';
+        html += '<td>' + fmt(stumps[s].alpha) + '</td>';
+        html += '<td>' + fmt2(stumps[s].threshold) + '</td>';
+        html += '<td>' + (stumps[s].polarity > 0 ? '+1 (x >= thr)' : '-1 (x < thr)') + '</td></tr>';
+      }
+      html += '</table>';
+    }
+    // Combined accuracy
+    var combined = getCombinedPredictions();
+    var correctCount = 0;
+    for (var i = 0; i < N; i++) if (combined[i] === labels[i]) correctCount++;
+    html += '<div style="margin-top:8px;font-size:12px;">';
+    html += '<strong>Combined classifier predictions:</strong><br>';
+    html += '<table style="font-size:11px;"><tr><th>$i$</th><th>$x_i$</th><th>$y_i$</th>';
+    for (var s = 0; s < stumps.length; s++) {
+      html += '<th>$\\alpha_' + (s + 1) + ' h_' + (s + 1) + '$</th>';
+    }
+    html += '<th>Sum</th><th>$H(x_i)$</th><th>Correct?</th></tr>';
+    for (var i = 0; i < N; i++) {
+      var score = 0;
+      html += '<tr>';
+      html += '<td>' + (i + 1) + '</td>';
+      html += '<td>' + positions[i] + '</td>';
+      html += '<td style="color:' + (labels[i] === 1 ? COLORS.pos : COLORS.neg) + ';">' + (labels[i] === 1 ? '+1' : '-1') + '</td>';
+      for (var s = 0; s < stumps.length; s++) {
+        var contrib = stumps[s].alpha * stumps[s].predictions[i];
+        score += contrib;
+        html += '<td>' + fmt2(contrib) + '</td>';
+      }
+      var pred = score >= 0 ? 1 : -1;
+      var correct2 = pred === labels[i];
+      html += '<td>' + fmt2(score) + '</td>';
+      html += '<td style="font-weight:600;color:' + (pred === 1 ? COLORS.pos : COLORS.neg) + ';">' + (pred === 1 ? '+1' : '-1') + '</td>';
+      html += '<td>' + (correct2 ? 'Yes' : '<strong style="color:#e53935;">No</strong>') + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    html += '<div style="margin-top:6px;font-size:13px;font-weight:700;">Accuracy: ' + correctCount + ' / ' + N + ' = ' + fmt2(correctCount / N * 100) + '%</div>';
+    html += '</div>';
+    html += '</div>';
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  btnStep.addEventListener('click', step);
+  btnReset.addEventListener('click', reset);
+
+  reset();
+})();
+</script>
+</body>
+</html>

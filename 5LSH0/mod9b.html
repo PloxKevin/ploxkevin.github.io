@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9B. 3D Gaussian Splatting &mdash; 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">9B. 3D Gaussian Splatting</h1>
+    <p class="page-subtitle">Gaussian primitives, splatting pipeline, spherical harmonics, covariance decomposition, adaptive density control</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#motivation">1. Motivation: Why Not NeRF?</a>
+      <a href="#gaussian-fundamentals">2. Gaussian Fundamentals (1D, 2D, 3D)</a>
+      <a href="#gaussian-primitive">3. 3D Gaussian as a Scene Primitive</a>
+      <a href="#pipeline-overview">4. Method Overview</a>
+      <a href="#sfm-initialization">5. Initialization via SfM</a>
+      <a href="#projection">6. Rendering: Projection (3D to 2D)</a>
+      <a href="#rasterization">7. Rendering: Rasterization and Alpha Compositing</a>
+      <a href="#spherical-harmonics">8. Spherical Harmonics for View-Dependent Color</a>
+      <a href="#covariance-decomposition">9. Covariance Decomposition (Scale + Rotation)</a>
+      <a href="#loss-function">10. Loss Function</a>
+      <a href="#adaptive-density">11. Adaptive Density Control</a>
+      <a href="#nerf-vs-3dgs">12. NeRF vs 3DGS Comparison</a>
+      <a href="#future-directions">13. Future Directions</a>
+      <a class="toc-interactive" href="#splatting-walkthrough">Interactive: Splatting Pipeline Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: MOTIVATION ===== -->
+    <h2 class="section-heading" id="motivation">1. Motivation: Why Not NeRF?</h2>
+
+    <p>NeRF (Module 9A) achieves impressive novel view synthesis but is painfully slow to render. The bottleneck is multi-level nesting: for each pixel, cast a ray; for each ray, sample many points; for each sampled point, query the MLP. This makes real-time rendering impossible.</p>
+
+    <div class="insight-box">
+      <div class="box-label">NeRF rendering cost (one training iteration)</div>
+      <div>$$1080 \times 1920 \times 100_{\text{samples/ray}} \times 100_{\text{images}} = 20.7 \text{ billion MLP evaluations}$$</div>
+    </div>
+
+    <table>
+      <tr><th>Problem with NeRF</th><th>3DGS Solution</th></tr>
+      <tr><td>Implicit representation (MLP)</td><td>Explicit representation (3D Gaussians)</td></tr>
+      <tr><td>Ray marching required</td><td>No ray marching &mdash; project (splat) Gaussians instead</td></tr>
+      <tr><td>Slow GPU utilization</td><td>Tile-based rasterization for GPU parallelism</td></tr>
+      <tr><td>Per-point MLP query at render time</td><td>No neural network at render time</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Core Idea of 3DGS</div>
+      <div>Represent a 3D scene as a <strong>set of 3D Gaussian distributions</strong> scattered in space. To render a novel viewpoint: (1) <strong>Splat</strong> (project) each 3D Gaussian onto the 2D camera plane. (2) <strong>Composite</strong> the projected 2D Gaussians using alpha blending. No ray marching, no MLP queries at render time.</div>
+    </div>
+
+    <!-- ===== SECTION 2: GAUSSIAN FUNDAMENTALS ===== -->
+    <h2 class="section-heading" id="gaussian-fundamentals">2. Gaussian Fundamentals (1D, 2D, 3D)</h2>
+
+    <h3 class="subsection-heading">1D Gaussian</h3>
+    <div class="math-block">$$G(x) = \exp\!\left(-\frac{(x - \mu)^2}{2\sigma^2}\right)$$</div>
+    <p>$\mu$: mean (center of the bell curve). $\sigma$: standard deviation (spread). The familiar bell curve shape.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/gaussian_1d_plot.png" alt="1D Gaussian bell curve">
+      <div class="figure-caption">1D Gaussian: a bell curve defined by mean $\mu$ and standard deviation $\sigma$.</div>
+    </div>
+
+    <h3 class="subsection-heading">2D Gaussian</h3>
+    <div class="math-block">$$G(\mathbf{p}) = \exp\!\left(-\frac{1}{2}(\mathbf{p} - \boldsymbol{\mu})^T \boldsymbol{\Sigma}^{-1} (\mathbf{p} - \boldsymbol{\mu})\right)$$</div>
+    <p>$\mathbf{p} = (x, y)^T$: query point. $\boldsymbol{\mu} = (\mu_x, \mu_y)^T$: center. $\boldsymbol{\Sigma}$: $2 \times 2$ covariance matrix encoding both <strong>spread</strong> and <strong>orientation</strong> (off-diagonal terms tilt the ellipse).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/gaussian_2d_heatmap.png" alt="2D Gaussian elliptical heatmap">
+      <div class="figure-caption">2D Gaussian heatmap: the covariance matrix determines the shape and tilt of the elliptical distribution.</div>
+    </div>
+
+    <h3 class="subsection-heading">3D Gaussian</h3>
+    <div class="math-block">$$G(\mathbf{p}) = \exp\!\left(-\frac{1}{2}(\mathbf{p} - \boldsymbol{\mu})^T \boldsymbol{\Sigma}^{-1} (\mathbf{p} - \boldsymbol{\mu})\right)$$</div>
+    <p>$\mathbf{p} \in \mathbb{R}^3$: 3D query point. $\boldsymbol{\mu} \in \mathbb{R}^3$: 3D mean position. $\boldsymbol{\Sigma} \in \mathbb{R}^{3 \times 3}$: 3D covariance matrix. The 3D Gaussian forms an <strong>ellipsoid</strong> in 3D space. The eigenvectors of $\boldsymbol{\Sigma}$ determine orientation; eigenvalues determine the extent along each principal axis.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/gaussian_3d_point_cloud.png" alt="3D Gaussian rendered as ellipsoid point cloud">
+      <div class="figure-caption">A 3D Gaussian rendered as a point cloud, showing the ellipsoidal shape determined by the covariance matrix.</div>
+    </div>
+
+    <!-- ===== SECTION 3: GAUSSIAN PRIMITIVE ===== -->
+    <h2 class="section-heading" id="gaussian-primitive">3. 3D Gaussian as a Scene Primitive</h2>
+
+    <p>A 3D Gaussian shape alone is not enough &mdash; we also need appearance. Each Gaussian has four groups of learnable parameters:</p>
+
+    <table>
+      <tr><th>Parameter</th><th>Symbol</th><th>Description</th><th>Dimension</th></tr>
+      <tr><td>Position (mean)</td><td>$\boldsymbol{\mu}_i$</td><td>Center of the Gaussian in 3D</td><td>3</td></tr>
+      <tr><td>Covariance</td><td>$\boldsymbol{\Sigma}_i$</td><td>Shape and orientation of the ellipsoid</td><td>$3 \times 3$ symmetric</td></tr>
+      <tr><td>Opacity</td><td>$\alpha_i$</td><td>How transparent the Gaussian is</td><td>1</td></tr>
+      <tr><td>Color (SH coefficients)</td><td>$\mathbf{k}_i$</td><td>View-dependent appearance</td><td>48 (degree 3)</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Influence Function of Gaussian $i$</div>
+      <div>$$f_i(\mathbf{p}) = \sigma(\alpha_i) \cdot \exp\!\left(-\frac{1}{2}(\mathbf{p} - \boldsymbol{\mu}_i)^T \boldsymbol{\Sigma}_i^{-1} (\mathbf{p} - \boldsymbol{\mu}_i)\right)$$
+      <p>$\sigma(\alpha_i)$ = sigmoid-activated opacity ensuring $\alpha_i \in [0,1]$. Points far from $\boldsymbol{\mu}_i$ receive near-zero contribution. The shape of $\boldsymbol{\Sigma}_i$ determines how quickly influence falls off in each direction.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/gaussian_equation_ellipsoid.png" alt="Gaussian influence function with 3D ellipsoid">
+      <div class="figure-caption">Each Gaussian is a fuzzy, semi-transparent, colored ellipsoid. Position, covariance, opacity, and color are all independently learnable.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Visual intuition</div>
+      <div>Each Gaussian is a <strong>fuzzy, semi-transparent, colored ellipsoid</strong>. Moving the mean shifts it in space. Changing the covariance stretches or rotates it. Changing opacity makes it more or less see-through. Changing color changes its appearance (possibly view-dependent via spherical harmonics).</div>
+    </div>
+
+    <!-- ===== SECTION 4: PIPELINE OVERVIEW ===== -->
+    <h2 class="section-heading" id="pipeline-overview">4. Method Overview</h2>
+
+    <p>The full 3DGS pipeline has two flows: a forward (operation) flow and a backward (gradient) flow.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/pipeline_overview.png" alt="Full 3DGS pipeline overview">
+      <div class="figure-caption">Full 3DGS pipeline: SfM points initialize Gaussians; projection and tile rasterization produce the rendered image; adaptive density control updates the set of Gaussians via gradient flow.</div>
+    </div>
+
+    <p>Three main stages:</p>
+    <ol>
+      <li><strong>Initialization</strong>: Create initial 3D Gaussians from the SfM sparse point cloud</li>
+      <li><strong>Rendering</strong>: Project (splat) Gaussians to 2D, then alpha-composite to produce the image</li>
+      <li><strong>Optimization</strong>: Update Gaussian parameters via gradient descent and adaptive density control</li>
+    </ol>
+
+    <!-- ===== SECTION 5: SFM INITIALIZATION ===== -->
+    <h2 class="section-heading" id="sfm-initialization">5. Initialization via Structure-from-Motion</h2>
+
+    <p>Just like NeRF, the input is a set of images from different viewpoints. Structure-from-Motion (COLMAP) provides:</p>
+    <ul>
+      <li><strong>Camera calibration</strong>: intrinsics $\mathbf{K}$ and extrinsics $[\mathbf{R}|\mathbf{t}]$ for each image</li>
+      <li><strong>Sparse 3D point cloud</strong>: matched feature points triangulated into 3D</li>
+    </ul>
+
+    <p>Each SfM point becomes the initial <strong>position</strong> $\boldsymbol{\mu}$ for one Gaussian. All Gaussians are initialized as <strong>spherical</strong> (isotropic covariance, identity-like $\boldsymbol{\Sigma}$). Colors can be initialized from the SfM point colors.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/sfm_initialization.png" alt="SfM initialization of 3D Gaussians">
+      <div class="figure-caption">SfM initialization: multiple camera viewpoints triangulate a sparse 3D point cloud; each point seeds a 3D Gaussian.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Limitation and alternative</div>
+      <div>The SfM point cloud is sparse; some regions may be under-represented at initialization. Adaptive Density Control (Section 11) addresses this dynamically during training. Alternatively, feedforward methods like <strong>MASt3R</strong> can predict dense point maps directly from image pairs, giving a much richer starting point.</div>
+    </div>
+
+    <!-- ===== SECTION 6: PROJECTION ===== -->
+    <h2 class="section-heading" id="projection">6. Rendering: Projection (3D to 2D)</h2>
+
+    <p>To render from a given camera viewpoint, each 3D Gaussian is projected (splatted) onto the 2D camera plane. A key mathematical property makes this tractable: <strong>the projection of a 3D Gaussian through a perspective camera is (approximately) a 2D Gaussian</strong> in the image plane.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Projection Equations</div>
+      <div>
+        <p><strong>Mean projection</strong> (standard pinhole camera model):</p>
+        <p>$$\boldsymbol{\mu}_{2D} = \text{proj}(\mathbf{K} \cdot \mathbf{W} \cdot \boldsymbol{\mu}_{3D})$$</p>
+        <p><strong>Covariance projection</strong> (using the Jacobian of the projective transform):</p>
+        <p>$$\boldsymbol{\Sigma}_{2D} = \mathbf{J} \mathbf{W} \boldsymbol{\Sigma}_{3D} \mathbf{W}^T \mathbf{J}^T$$</p>
+        <p>$\mathbf{W} = [\mathbf{R}|\mathbf{t}]$: world-to-camera transform (extrinsics). $\mathbf{K}$: camera intrinsics. $\mathbf{J}$: Jacobian of the affine approximation of the projective transformation.</p>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/projection_3d_to_2d.png" alt="3D to 2D projection">
+      <div class="figure-caption">3D Gaussian projected through a camera: the 3D mean projects to a 2D center; the 3D covariance projects to a 2D covariance via the Jacobian.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why this is key</div>
+      <div>This projection is <strong>analytical</strong> &mdash; no sampling or ray marching required. The 2D Gaussian parameters are computed directly from the 3D parameters and the camera model. This is the fundamental reason 3DGS avoids the sampling bottleneck that slows NeRF.</div>
+    </div>
+
+    <!-- ===== SECTION 7: RASTERIZATION ===== -->
+    <h2 class="section-heading" id="rasterization">7. Rendering: Rasterization and Alpha Compositing</h2>
+
+    <p>Once all 3D Gaussians are projected into 2D, the image is constructed via a <strong>differentiable tile-based rasterizer</strong>.</p>
+
+    <h3 class="subsection-heading">Algorithm</h3>
+    <ol>
+      <li><strong>Sort</strong> all projected Gaussians by depth (distance from camera), nearest to furthest</li>
+      <li><strong>For each pixel</strong>: iterate over depth-sorted overlapping Gaussians; accumulate color using alpha blending</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">3DGS Rendering Equation</div>
+      <div>$$C(\mathbf{p}) = \sum_{i=1}^{N} \mathbf{c}_i \cdot \alpha_i'(\mathbf{p}) \cdot T_i(\mathbf{p})$$
+      <p><strong>Effective alpha</strong> at pixel $\mathbf{p}$:</p>
+      $$\alpha_i'(\mathbf{p}) = \alpha_i \cdot \exp\!\left(-\frac{1}{2}(\mathbf{p} - \boldsymbol{\mu}_{2D,i})^T \boldsymbol{\Sigma}_{2D,i}^{-1} (\mathbf{p} - \boldsymbol{\mu}_{2D,i})\right)$$
+      <p><strong>Transmittance</strong>:</p>
+      $$T_i(\mathbf{p}) = \prod_{j=1}^{i-1} \left(1 - \alpha_j'(\mathbf{p})\right)$$
+      </div>
+    </div>
+
+    <p>For each pixel, the final color is a <strong>weighted sum</strong> of all contributing Gaussian colors. The weight of each Gaussian depends on:</p>
+    <ol>
+      <li>How close the pixel is to the Gaussian's projected 2D center (Gaussian falloff)</li>
+      <li>How opaque the Gaussian is (learned opacity $\alpha_i$)</li>
+      <li>How much the Gaussians in front have already blocked the light (transmittance $T_i$)</li>
+    </ol>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Connection to NeRF volume rendering</div>
+      <div class="collapsible-body">
+        <p>The transmittance term $T_i(\mathbf{p}) = \prod_{j < i}(1 - \alpha_j'(\mathbf{p}))$ is mathematically identical to the discrete transmittance in NeRF volume rendering. The key difference is that in 3DGS, there is no ray marching: the Gaussians themselves define where matter is, and the projection is computed analytically. NeRF queries a neural network at sampled points; 3DGS evaluates the 2D Gaussian function at the pixel location.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 8: SPHERICAL HARMONICS ===== -->
+    <h2 class="section-heading" id="spherical-harmonics">8. Spherical Harmonics for View-Dependent Color</h2>
+
+    <p>Real surfaces exhibit view-dependent appearance: specular reflections, glossy highlights, metallic sheen. A single fixed RGB color per Gaussian cannot capture these effects. Instead, each Gaussian stores <strong>Spherical Harmonics (SH) coefficients</strong> defining a view-dependent color function.</p>
+
+    <div class="definition-box">
+      <div class="box-label">SH Color Evaluation</div>
+      <div>$$\mathbf{c}_i(\mathbf{d}) = \sum_{l=0}^{l_{\max}} \sum_{m=-l}^{l} \mathbf{k}_{i,l,m} \cdot Y_l^m(\mathbf{d})$$
+      <p>$Y_l^m(\mathbf{d})$: spherical harmonics basis functions (degree $l$, order $m$). $\mathbf{k}_{i,l,m} \in \mathbb{R}^3$: learnable SH coefficients per Gaussian per color channel. $\mathbf{d}$: viewing direction. 3DGS typically uses $l_{\max} = 3$.</p></div>
+    </div>
+
+    <table>
+      <tr><th>SH Degree $l_{\max}$</th><th>Coefficients per channel</th><th>Total (RGB)</th><th>Captures</th></tr>
+      <tr><td>0</td><td>1</td><td>3</td><td>Constant color (no view-dependence)</td></tr>
+      <tr><td>1</td><td>4</td><td>12</td><td>Basic directional lighting</td></tr>
+      <tr><td>2</td><td>9</td><td>27</td><td>Soft specular highlights</td></tr>
+      <tr><td>3</td><td>16</td><td>48</td><td>Sharp specular, complex reflections</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/spherical_harmonics.png" alt="Spherical harmonics basis functions">
+      <div class="figure-caption">Spherical harmonics basis functions $Y_l^m$ organized by degree (rows) and order (columns), showing increasingly complex directional patterns.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Without spherical harmonics, each Gaussian would have a single fixed RGB color regardless of viewing direction. Surfaces that appear shiny, metallic, or reflective in real life would look flat and unrealistic. SH coefficients are learnable parameters &mdash; higher degree allows more accurate view-dependent effects but requires more memory per Gaussian (48 scalars for degree 3 vs 3 scalars for degree 0).</div>
+    </div>
+
+    <!-- ===== SECTION 9: COVARIANCE DECOMPOSITION ===== -->
+    <h2 class="section-heading" id="covariance-decomposition">9. Covariance Decomposition (Scale + Rotation)</h2>
+
+    <h3 class="subsection-heading">The Problem with Direct Optimization</h3>
+    <p>The covariance matrix $\boldsymbol{\Sigma}$ must be <strong>positive semi-definite (PSD)</strong> and invertible for the Gaussian to be valid. If we directly optimize the 6 unique elements of $\boldsymbol{\Sigma}$, gradient descent can produce matrices that are not PSD (negative eigenvalues) or not invertible, making the Gaussian undefined.</p>
+
+    <h3 class="subsection-heading">The Solution: Scale + Rotation Decomposition</h3>
+    <div class="definition-box">
+      <div class="box-label">Covariance Decomposition</div>
+      <div>$$\boldsymbol{\Sigma} = \mathbf{R} \mathbf{S} \mathbf{S}^T \mathbf{R}^T$$
+      <p>$\mathbf{S} = \text{diag}(s_x, s_y, s_z)$: diagonal scale matrix (3 parameters, stored as log-scale for positivity). $\mathbf{R}$: rotation matrix (derived from a unit quaternion $\mathbf{q} = (q_w, q_x, q_y, q_z)$, 4 parameters). Since $\mathbf{S}\mathbf{S}^T$ is always PSD and $\mathbf{R}$ is orthogonal, the result is <strong>guaranteed to be positive semi-definite</strong>.</p></div>
+    </div>
+
+    <h3 class="subsection-heading">Per-Gaussian Optimizable Parameters</h3>
+
+    <table>
+      <tr><th>Parameter</th><th>Symbol</th><th>Scalars</th></tr>
+      <tr><td>Position</td><td>$\boldsymbol{\mu}$</td><td>3</td></tr>
+      <tr><td>Scale</td><td>$(s_x, s_y, s_z)$</td><td>3</td></tr>
+      <tr><td>Rotation quaternion</td><td>$(q_w, q_x, q_y, q_z)$</td><td>4</td></tr>
+      <tr><td>Opacity</td><td>$\alpha$</td><td>1</td></tr>
+      <tr><td>SH coefficients (degree 3)</td><td>$\mathbf{k}$</td><td>48</td></tr>
+      <tr><td><strong>Total</strong></td><td></td><td><strong>59</strong></td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Why quaternions for rotation?</div>
+      <div class="collapsible-body">
+        <p>A rotation matrix $\mathbf{R}$ has 9 elements but only 3 degrees of freedom (subject to orthogonality constraints). Quaternions provide a compact 4-parameter representation that avoids gimbal lock, supports smooth interpolation, and is easy to normalize during optimization to maintain the unit-norm constraint. The quaternion-to-rotation-matrix conversion is a standard closed-form formula.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 10: LOSS FUNCTION ===== -->
+    <h2 class="section-heading" id="loss-function">10. Loss Function</h2>
+
+    <div class="definition-box">
+      <div class="box-label">3DGS Combined Loss</div>
+      <div>$$\mathcal{L} = (1 - \lambda) \cdot \mathcal{L}_1 + \lambda \cdot \mathcal{L}_{\text{D-SSIM}}$$
+      <p><strong>$\mathcal{L}_1$</strong>: pixel-wise absolute difference: $\frac{1}{|\mathcal{P}|}\sum_\mathbf{p} |C_{\text{pred}}(\mathbf{p}) - C_{\text{GT}}(\mathbf{p})|$</p>
+      <p><strong>$\mathcal{L}_{\text{D-SSIM}}$</strong>: differentiable SSIM loss. $\text{D-SSIM} = (1 - \text{SSIM})/2$, where SSIM compares luminance, contrast, and structural similarity. Captures perceptual quality beyond pixel accuracy.</p>
+      <p><strong>$\lambda$</strong>: hyperparameter balancing the two terms.</p></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/ssim_noise_example.png" alt="SSIM example with noisy image">
+      <div class="figure-caption">SSIM is highly sensitive to structural degradation: an image corrupted with noise has a very low SSIM score (0.024), illustrating how SSIM captures perceptual quality beyond per-pixel error.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why combine L1 and D-SSIM?</div>
+      <div><strong>L1</strong> ensures pixel-accurate color reconstruction. <strong>D-SSIM</strong> ensures perceptually pleasing structural quality (sharp edges, coherent structures). Together they produce sharper, more visually coherent results than either alone. This contrasts with NeRF, which uses only a simple L2 loss.</div>
+    </div>
+
+    <!-- ===== SECTION 11: ADAPTIVE DENSITY CONTROL ===== -->
+    <h2 class="section-heading" id="adaptive-density">11. Adaptive Density Control</h2>
+
+    <p>The initial SfM point cloud is sparse. Some regions are under-represented; some Gaussians may grow too large and cover areas they should not. Adaptive density control dynamically adjusts the number of Gaussians during optimization.</p>
+
+    <h3 class="subsection-heading">Three Operations</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Cloning (Under-Reconstruction)</div>
+      <div>Trigger: high positional gradient magnitude AND the Gaussian is <strong>small</strong>. The Gaussian is <strong>duplicated</strong> and the clone is moved toward the under-represented region. Both original and clone then refine their parameters independently.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Splitting (Over-Reconstruction)</div>
+      <div>Trigger: high positional gradient magnitude AND the Gaussian is <strong>large</strong>. The large Gaussian is <strong>replaced by two smaller Gaussians</strong>, each with reduced scale. This enables finer detail in the region.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Pruning (Unnecessary Gaussians)</div>
+      <div>Trigger: opacity $\alpha \approx 0$ (Gaussian has become nearly transparent). The Gaussian is <strong>removed</strong> to save memory and computation.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/adaptive_density_control.png" alt="Adaptive density control: cloning and splitting">
+      <div class="figure-caption">Adaptive density control: under-reconstruction is handled by cloning small Gaussians; over-reconstruction is handled by splitting large Gaussians into two smaller ones.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Why use positional gradient as the trigger?</div>
+      <div class="collapsible-body">
+        <p>A large gradient on the Gaussian's position $\boldsymbol{\mu}$ means the optimizer is trying to move the Gaussian to better explain the training images, but cannot do so sufficiently with a single Gaussian. This indicates the region needs better coverage (more Gaussians). The gradient magnitude threshold $\tau_{\text{pos}}$ is set empirically by the authors. Adaptive density control is applied periodically during training (not every iteration).</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 12: NERF VS 3DGS ===== -->
+    <h2 class="section-heading" id="nerf-vs-3dgs">12. NeRF vs 3DGS Comparison</h2>
+
+    <table>
+      <tr><th>Aspect</th><th>NeRF</th><th>3D Gaussian Splatting</th></tr>
+      <tr><td>Representation</td><td>Implicit (MLP weights)</td><td>Explicit (set of 3D Gaussians)</td></tr>
+      <tr><td>Rendering approach</td><td>Ray marching: cast ray per pixel, sample points, query MLP</td><td>Splatting: project Gaussians to 2D, composite</td></tr>
+      <tr><td>Sampling required</td><td>Yes &mdash; points along each ray</td><td>No &mdash; projection is analytical</td></tr>
+      <tr><td>Wasted computation</td><td>Empty space still requires MLP queries</td><td>Only Gaussians that overlap a pixel contribute</td></tr>
+      <tr><td>GPU efficiency</td><td>Sequential per-ray processing</td><td>Tile-based parallel rasterization</td></tr>
+      <tr><td>Speed</td><td>Slow (seconds per frame)</td><td>Real-time (&gt;30 FPS)</td></tr>
+      <tr><td>Training time</td><td>Hours</td><td>Minutes</td></tr>
+      <tr><td>Memory</td><td>Fixed (network size, &lt;10 MB)</td><td>Scales with scene complexity</td></tr>
+      <tr><td>Editability</td><td>Difficult (encoded in weights)</td><td>Easier (move/delete/add Gaussians)</td></tr>
+      <tr><td>Quality</td><td>High</td><td>High (comparable or better)</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Why 3DGS is faster</div>
+      <div>(1) <strong>No ray marching</strong>: NeRF wastes computation on empty regions; 3DGS only processes Gaussians where they exist. (2) <strong>No MLP at render time</strong>: NeRF queries a neural network at every sampled point; 3DGS uses pre-computed Gaussian parameters. (3) <strong>GPU-friendly rasterization</strong>: the tile-based rasterizer divides the image into tiles, assigns Gaussians to tiles, and processes tiles in parallel on GPU. (4) <strong>Explicit storage</strong>: direct memory access rather than network inference.</div>
+    </div>
+
+    <!-- ===== SECTION 13: FUTURE DIRECTIONS ===== -->
+    <h2 class="section-heading" id="future-directions">13. Future Directions</h2>
+
+    <h3 class="subsection-heading">4D Gaussian Splatting (Dynamic Scenes)</h3>
+    <p>Standard 3DGS only handles static scenes. 4DGS (Wu et al., 2024) adds a <strong>deformation field</strong> $F(\mathbf{G}, t)$ that deforms Gaussians over time. At time $t$, the original Gaussians $\mathbf{G}$ are warped to $\mathbf{G}' = F(\mathbf{G}, t)$ and then rendered normally. Limitation: requires training over the full video sequence.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/dynamic_scene_deformation.png" alt="4DGS dynamic scene deformation">
+      <div class="figure-caption">4DGS: original 3D Gaussians are deformed via a deformation field $F(\mathbf{G}, t_i)$ to produce time-varying Gaussians, then rasterized from the camera viewpoint.</div>
+    </div>
+
+    <h3 class="subsection-heading">Feedforward Methods (Splatt3r, MASt3R)</h3>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Splatt3r: Zero-Shot Gaussian Splatting</div>
+      <div class="collapsible-body">
+        <p>Splatt3r (Smart et al., 2024) is a feedforward neural network that directly predicts Gaussian parameters from uncalibrated image pairs &mdash; no SfM, no per-scene optimization. Uses a frozen MASt3R backbone with additional prediction heads. Works zero-shot on new scenes. Currently limited to static scenes.</p>
+        <div class="figure-container">
+          <img src="figures/mod9b/splatt3r_architecture.png" alt="Splatt3r architecture">
+          <div class="figure-caption">Splatt3r: frozen MASt3R backbone (ViT encoder + transformer decoder) with prediction heads for 3D Gaussian parameters.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">MASt3R: Dense Point Map Prediction</div>
+      <div class="collapsible-body">
+        <p>MASt3R provides a denser alternative to SfM for initialization. A <strong>ViT encoder-decoder architecture</strong> takes two patchified images and uses cross-attention between views to predict per-pixel 3D point maps and confidence maps. These dense point maps can directly initialize Gaussians at much higher density than sparse SfM.</p>
+        <div class="figure-container">
+          <img src="figures/mod9b/mast3r_architecture.png" alt="MASt3R architecture">
+          <div class="figure-caption">MASt3R: two images through ViT encoders and cross-attention transformer decoders produce per-pixel 3D point maps and confidence maps.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Human Avatars (Gaussian Avatars)</h3>
+    <p>3DGS can create animatable human avatars by initializing Gaussians on an SMPL parametric body mesh. Non-rigid and rigid (kinematic tree) deformations match the person's shape and pose. Once trained, the avatar can be animated with novel poses via pose transfer.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod9b/human_avatar_pipeline.png" alt="Human avatar pipeline using 3DGS">
+      <div class="figure-caption">Human avatar pipeline: canonical SMPL Gaussians undergo non-rigid and rigid deformation, then differentiable rasterization, with reconstruction loss against ground truth video.</div>
+    </div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="splatting-walkthrough" class="interactive-container" data-title="Walkthrough &mdash; 3D Gaussian Splatting Pipeline"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod9b-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod9a.html">&larr; 9A. NeRF</a>
+      <a href="mod10-slam.html">10. SLAM &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod9b');</script>
+<script>
+  initWalkthrough('splatting-walkthrough', [
+    {
+      tab: '1. Init',
+      title: 'Step 1: Initialize Gaussians from SfM',
+      text: 'Run Structure-from-Motion (COLMAP) on the input images to obtain camera calibration (intrinsics $K$ and extrinsics $[R|t]$) and a sparse 3D point cloud. Each SfM point becomes the center (mean $\\mu$) of one 3D Gaussian. All Gaussians start as spheres (isotropic covariance). Colors are initialized from point colors in the SfM reconstruction.',
+      visual: '<div class="figure-container"><img src="figures/mod9b/sfm_initialization.png" alt="SfM initialization"><div class="figure-caption">SfM produces a sparse point cloud; each point seeds one 3D Gaussian with spherical initial shape.</div></div>',
+      insight: 'Starting from SfM points means the Gaussians begin at physically meaningful locations rather than random positions. The sparse initialization is later densified by adaptive density control where needed.'
+    },
+    {
+      tab: '2. Project',
+      title: 'Step 2: Project 3D Gaussians to 2D',
+      text: 'For a given training camera, project each 3D Gaussian to the image plane analytically. The 3D mean projects via $\\mu_{2D} = \\text{proj}(K W \\mu_{3D})$. The 3D covariance projects via $\\Sigma_{2D} = J W \\Sigma_{3D} W^T J^T$, where $J$ is the Jacobian of the projective transformation. The result is a set of 2D Gaussians on the image plane.',
+      visual: '<div class="figure-container"><img src="figures/mod9b/projection_3d_to_2d.png" alt="3D to 2D projection"><div class="figure-caption">Each 3D Gaussian projects analytically to a 2D Gaussian on the image plane &mdash; no sampling required.</div></div>',
+      insight: 'The key property: the projection of a 3D Gaussian through a perspective camera is a 2D Gaussian. This closed-form projection eliminates the need for ray marching entirely. No sampling strategy, no wasted computation on empty space.'
+    },
+    {
+      tab: '3. Rasterize',
+      title: 'Step 3: Tile-Based Rasterization and Alpha Compositing',
+      text: 'Sort all projected 2D Gaussians by depth (nearest first). Divide the image into tiles; assign Gaussians to tiles. For each pixel $\\mathbf{p}$, iterate depth-sorted overlapping Gaussians and accumulate: $C(\\mathbf{p}) = \\sum_i c_i \\cdot \\alpha_i\'(\\mathbf{p}) \\cdot T_i(\\mathbf{p})$. The effective alpha $\\alpha_i\'(\\mathbf{p})$ combines learned opacity $\\alpha_i$ with the 2D Gaussian falloff from the projected center. Transmittance $T_i$ models occlusion by front Gaussians.',
+      visual: '',
+      insight: 'The tile-based rasterizer processes tiles in parallel on the GPU, giving much better GPU utilization than NeRF\'s sequential ray marching. Sorting front-to-back and using transmittance correctly handles occlusion: opaque foreground Gaussians block background ones.'
+    },
+    {
+      tab: '4. Loss',
+      title: 'Step 4: Compute Combined Loss',
+      text: 'Compare the rendered image to the ground-truth training image with the combined loss: $\\mathcal{L} = (1-\\lambda)\\mathcal{L}_1 + \\lambda \\mathcal{L}_{\\text{D-SSIM}}$. $\\mathcal{L}_1$ penalizes pixel-wise absolute differences. $\\mathcal{L}_{\\text{D-SSIM}} = (1 - \\text{SSIM})/2$ penalizes structural dissimilarity (luminance, contrast, structure). $\\lambda$ is a tunable hyperparameter. This dual loss produces sharper, more perceptually coherent images than L2 pixel loss alone.',
+      visual: '<div class="figure-container"><img src="figures/mod9b/ssim_noise_example.png" alt="SSIM loss example"><div class="figure-caption">D-SSIM captures structural degradation: even visually noticeable noise produces very low SSIM, providing a strong perceptual learning signal.</div></div>',
+      insight: 'The entire pipeline (projection + rasterization) is differentiable. Gradients flow from the rendered pixel values back through rasterization and projection to all Gaussian parameters (position, scale, rotation, opacity, SH coefficients).'
+    },
+    {
+      tab: '5. Optimize',
+      title: 'Step 5: Backpropagate and Update Parameters',
+      text: 'Backpropagate gradients through the differentiable rasterizer to all 59 parameters per Gaussian: position (3), scale (3), rotation quaternion (4), opacity (1), SH coefficients (48). Update all parameters via the Adam optimizer. The scales are stored in log-space to ensure positivity; the quaternion is normalized to unit norm after each update.',
+      visual: '',
+      insight: 'The covariance $\\Sigma$ is never optimized directly. Instead, scales and quaternion are optimized, and $\\Sigma = R S S^T R^T$ is recomputed. This guarantees $\\Sigma$ is always positive semi-definite regardless of what gradient descent does to the scale and rotation parameters.'
+    },
+    {
+      tab: '6. ADC',
+      title: 'Step 6: Adaptive Density Control (Periodic)',
+      text: 'Periodically, apply adaptive density control to adjust the set of Gaussians. CLONE: small Gaussians with large positional gradients are duplicated and the clone moved toward the under-represented region. SPLIT: large Gaussians with large positional gradients are replaced by two smaller ones for finer detail. PRUNE: near-transparent Gaussians ($\\alpha \\approx 0$) are removed.',
+      visual: '<div class="figure-container"><img src="figures/mod9b/adaptive_density_control.png" alt="Adaptive density control"><div class="figure-caption">Adaptive density control: cloning handles under-reconstruction, splitting handles over-reconstruction, pruning removes unnecessary Gaussians.</div></div>',
+      insight: 'Adaptive density control is what makes 3DGS work from a sparse SfM initialization. It adds Gaussians where the scene needs more detail (high positional gradient) and removes them where they contribute nothing (near-zero opacity). The number of Gaussians changes throughout training.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod9b-flashcards', [
+    {
+      q: 'What are the main drawbacks of NeRF that motivated 3D Gaussian Splatting?',
+      a: '<ol><li><strong>Implicit MLP representation</strong>: must query a neural network for every sampled point at render time.</li><li><strong>Ray marching required</strong>: cast a ray per pixel, sample many points along each ray &mdash; most computation wasted on empty space.</li><li><strong>Not GPU-friendly</strong>: sequential per-ray processing prevents real-time performance.</li></ol>3DGS solves all three: explicit Gaussians, no ray marching (analytical projection), tile-based parallel GPU rasterization.'
+    },
+    {
+      q: 'List all learnable parameters of a single 3D Gaussian. How many scalars total (SH degree 3)?',
+      a: '<table><tr><th>Parameter</th><th>Scalars</th></tr><tr><td>Position $\\boldsymbol{\\mu}$</td><td>3</td></tr><tr><td>Scale $(s_x, s_y, s_z)$</td><td>3</td></tr><tr><td>Rotation quaternion $(q_w, q_x, q_y, q_z)$</td><td>4</td></tr><tr><td>Opacity $\\alpha$</td><td>1</td></tr><tr><td>SH coefficients (degree 3)</td><td>48</td></tr><tr><td><strong>Total</strong></td><td><strong>59</strong></td></tr></table>'
+    },
+    {
+      q: 'Why is the covariance matrix not optimized directly? What decomposition is used instead?',
+      a: 'Direct optimization of $\\boldsymbol{\\Sigma}$\'s 6 elements can produce a matrix that is not positive semi-definite (invalid Gaussian). Instead, decompose: $$\\boldsymbol{\\Sigma} = \\mathbf{R}\\mathbf{S}\\mathbf{S}^T\\mathbf{R}^T$$ where $\\mathbf{S} = \\text{diag}(s_x, s_y, s_z)$ (scale matrix) and $\\mathbf{R}$ is a rotation matrix from unit quaternion. Since $\\mathbf{S}\\mathbf{S}^T$ is always PSD and $\\mathbf{R}$ is orthogonal, the result is <strong>guaranteed PSD</strong> regardless of optimized values.'
+    },
+    {
+      q: 'Write and explain the 3DGS rendering equation for a pixel.',
+      a: '$$C(\\mathbf{p}) = \\sum_{i=1}^{N} \\mathbf{c}_i \\cdot \\alpha_i\'(\\mathbf{p}) \\cdot T_i(\\mathbf{p})$$<br>$\\mathbf{c}_i$: Gaussian color (from SH evaluation for viewing direction). $\\alpha_i\'(\\mathbf{p}) = \\alpha_i \\cdot \\exp(-\\frac{1}{2}(\\mathbf{p}-\\boldsymbol{\\mu}_{2D})^T \\boldsymbol{\\Sigma}_{2D}^{-1}(\\mathbf{p}-\\boldsymbol{\\mu}_{2D}))$: effective alpha combining learned opacity with 2D Gaussian falloff. $T_i(\\mathbf{p}) = \\prod_{j<i}(1-\\alpha_j\'(\\mathbf{p}))$: transmittance (occlusion from front Gaussians). Gaussians are sorted front-to-back by depth.'
+    },
+    {
+      q: 'What is the role of Spherical Harmonics in 3DGS? What would happen without them?',
+      a: 'SH encode <strong>view-dependent color</strong> for each Gaussian: $\\mathbf{c}_i(\\mathbf{d}) = \\sum_{l,m} \\mathbf{k}_{i,l,m} \\cdot Y_l^m(\\mathbf{d})$. Without SH, each Gaussian would have a single fixed RGB color regardless of viewing direction, making it impossible to represent specular reflections, glossy surfaces, or metallic highlights. Surfaces that change appearance with viewing angle would look flat and unrealistic. Higher SH degree (up to $l_{\\max}=3$) captures increasingly complex directional effects at the cost of more parameters (48 scalars for degree 3 vs 3 for degree 0).'
+    },
+    {
+      q: 'Describe the adaptive density control mechanism. When are Gaussians cloned vs split vs pruned?',
+      a: '<strong>Cloning</strong>: Gaussian has large positional gradient <em>and</em> is <strong>small</strong>. Region is under-reconstructed. Duplicate the Gaussian; move clone toward under-represented area.<br><strong>Splitting</strong>: Gaussian has large positional gradient <em>and</em> is <strong>large</strong>. Region needs finer detail. Replace with two smaller Gaussians.<br><strong>Pruning</strong>: opacity $\\alpha \\approx 0$. Gaussian contributes nothing to rendering. Remove it to save memory and compute.<br>Thresholds for clone/split are set empirically; applied periodically during training.'
+    },
+    {
+      q: 'Write and explain the 3DGS loss function. Why combine L1 with D-SSIM?',
+      a: '$$\\mathcal{L} = (1-\\lambda)\\mathcal{L}_1 + \\lambda\\mathcal{L}_{\\text{D-SSIM}}$$<br>$\\mathcal{L}_1 = \\frac{1}{|\\mathcal{P}|}\\sum_\\mathbf{p}|C_{\\text{pred}}(\\mathbf{p}) - C_{\\text{GT}}(\\mathbf{p})|$: pixel-wise absolute difference (accurate color).<br>$\\mathcal{L}_{\\text{D-SSIM}} = (1-\\text{SSIM})/2$: structural dissimilarity capturing luminance, contrast, and structure (perceptual quality).<br>L1 alone misses structural patterns; D-SSIM alone can ignore per-pixel accuracy. Together they produce sharper, more coherent results.'
+    },
+    {
+      q: 'How does projecting a 3D Gaussian to 2D work? Why is this key to 3DGS speed?',
+      a: '<strong>Mean projection:</strong> $\\boldsymbol{\\mu}_{2D} = \\text{proj}(\\mathbf{K}\\mathbf{W}\\boldsymbol{\\mu}_{3D})$ (standard pinhole model).<br><strong>Covariance projection:</strong> $\\boldsymbol{\\Sigma}_{2D} = \\mathbf{J}\\mathbf{W}\\boldsymbol{\\Sigma}_{3D}\\mathbf{W}^T\\mathbf{J}^T$ where $\\mathbf{J}$ is the Jacobian of the projective transform.<br><strong>Key property:</strong> the projection of a 3D Gaussian is a 2D Gaussian &mdash; both have closed-form expressions. This is <strong>analytical</strong> (no sampling, no ray marching). It replaces thousands of MLP queries per pixel with a single matrix multiplication per Gaussian.'
+    },
+    {
+      q: 'What is the transmittance $T_i$ in 3DGS, and what would happen if it were removed?',
+      a: '$T_i(\\mathbf{p}) = \\prod_{j=1}^{i-1}(1-\\alpha_j\'(\\mathbf{p}))$ represents the <strong>fraction of light reaching Gaussian $i$ after passing through all Gaussians in front of it</strong>. It models occlusion: opaque foreground Gaussians block background ones. Without $T_i$, all Gaussians would contribute equally regardless of depth &mdash; a Gaussian behind an opaque wall would still affect the pixel color, producing ghosting artifacts and physically incorrect rendering.'
+    },
+    {
+      q: 'Compare the rendering process of NeRF and 3DGS step-by-step.',
+      a: '<strong>NeRF:</strong> For each pixel &rarr; cast ray &rarr; sample N points &rarr; positional encode &rarr; query MLP at each point &rarr; get color + density &rarr; volume render (integrate along ray). Cost: $O(\\text{pixels} \\times \\text{samples} \\times \\text{MLP})$.<br><strong>3DGS:</strong> Project all Gaussians to 2D (one pass) &rarr; sort by depth &rarr; for each pixel, blend overlapping 2D Gaussians. Cost: $O(\\text{Gaussians} \\times \\text{projection}) + O(\\text{pixels} \\times \\text{avg overlapping Gaussians})$.<br>3DGS wins because: no MLP at render time, no wasted empty-space computation, GPU-parallel tile rasterization.'
+    },
+    {
+      q: 'What is 4D Gaussian Splatting and what problem does it solve?',
+      a: 'Standard 3DGS represents only <strong>static</strong> scenes. 4DGS (Wu et al., 2024) adds a <strong>deformation field</strong> $F(\\mathbf{G}, t)$ to handle dynamic content. At time $t$, the original Gaussians $\\mathbf{G}$ are deformed to $\\mathbf{G}\' = F(\\mathbf{G}, t)$ and then rendered normally via standard splatting. Each Gaussian has temporal parameters describing how it changes over time. Limitation: requires the full video to be available at training time, restricting maximum video length.'
+    },
+    {
+      q: 'What is Splatt3r and how does it differ from standard 3DGS initialization?',
+      a: 'Standard 3DGS requires (1) SfM to get camera poses and a sparse point cloud, then (2) per-scene optimization for 30+ minutes. <strong>Splatt3r</strong> (Smart et al., 2024) is a feedforward neural network (frozen MASt3R backbone + Gaussian prediction heads) that predicts Gaussian parameters directly from uncalibrated image pairs. No SfM needed, no per-scene optimization, zero-shot on new scenes. Much faster at inference but currently limited to static scenes.'
+    }
+  ]);
+</script>
+</body>
+</html>

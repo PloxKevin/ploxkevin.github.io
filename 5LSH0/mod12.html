@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>12. 3D Data Analysis — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">12. 3D Data Analysis</h1>
+    <p class="page-subtitle">PointNet, permutation invariance, MVCNN, VoxNet, 3D segmentation</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#challenges">1. Challenges of 3D Data Analysis</a>
+      <a href="#three-families">2. Three Families of Approaches</a>
+      <a href="#mvcnn">3. Multi-View Projection: MVCNN</a>
+      <a href="#snapnet">4. SnapNet: Multi-View Segmentation</a>
+      <a href="#voxnet">5. Volumetric: VoxNet and 3D CNNs</a>
+      <a href="#pointnet-intro">6. Direct Point Cloud: PointNet</a>
+      <a href="#pointnet-arch">7. PointNet Architecture Walkthrough</a>
+      <a href="#advanced">8. Advanced Point-Based Architectures</a>
+      <a href="#comparison">9. Comparison of All Three Families</a>
+      <a class="toc-interactive" href="#pointnet-walkthrough">Interactive: PointNet Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: CHALLENGES ===== -->
+    <h2 class="section-heading" id="challenges">1. Challenges of 3D Data Analysis</h2>
+
+    <p>3D data analysis extends the three core 2D vision tasks into 3D: <strong>classification</strong> (one label per object), <strong>object detection</strong> (locate and classify multiple objects), and <strong>semantic segmentation</strong> (label every single point or voxel).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointcloud_classification_examples.png" alt="3D classification examples">
+      <div class="figure-caption">3D classification: point cloud objects (sofa, chair, desk, monitor, table) each labeled with their class.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointcloud_semantic_segmentation.png" alt="Semantic segmentation of 3D point cloud">
+      <div class="figure-caption">Semantic segmentation: an indoor room point cloud (left: raw) and per-point class labels (right: walls blue, floor brown, furniture in other colors).</div>
+    </div>
+
+    <h3 class="subsection-heading">Six Key Challenges</h3>
+
+    <table>
+      <tr><th>Challenge</th><th>Explanation</th></tr>
+      <tr><td><strong>Volume of data</strong></td><td>Indoor factory scans contain billions of points; orders of magnitude more than 2D images</td></tr>
+      <tr><td><strong>Non-uniform sparsity</strong></td><td>Points denser near sensor, sparser far away; density varies enormously</td></tr>
+      <tr><td><strong>No grid-like structure</strong></td><td>Unlike pixels, the $n$-th point can be anywhere in 3D space</td></tr>
+      <tr><td><strong>Permutation invariance</strong></td><td>Shuffling the point list changes nothing about the geometry — any processing method must respect this</td></tr>
+      <tr><td><strong>Acquisition artifacts</strong></td><td>Noise, missing data, registration errors, temporal ghosting from moving objects</td></tr>
+      <tr><td><strong>Occlusions</strong></td><td>Sensors only capture surfaces facing them; back sides require multiple viewpoints</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Permutation Invariance — Formal Definition</div>
+      <div>A point cloud $\{p_1, \ldots, p_n\}$ represents the same geometry regardless of ordering. Any function $f$ processing a point cloud must satisfy:
+      $$f(\{p_1, \ldots, p_n\}) = f(\{p_{\sigma(1)}, \ldots, p_{\sigma(n)}\}) \quad \forall \text{ permutations } \sigma$$
+      This is fundamentally different from images, where pixel $(i,j)$ always maps to a fixed spatial location.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointcloud_density_comparison.png" alt="Point cloud density comparison">
+      <div class="figure-caption">Same car point cloud at 256, 512, 768, and 1024 points. In each case point ordering is arbitrary; only spatial distribution matters.</div>
+    </div>
+
+    <!-- ===== SECTION 2: THREE FAMILIES ===== -->
+    <h2 class="section-heading" id="three-families">2. Three Families of Approaches</h2>
+
+    <table>
+      <tr><th>Approach</th><th>Representation</th><th>Core Idea</th><th>Pioneer</th></tr>
+      <tr><td><strong>Multi-view projection</strong></td><td>2D rendered images</td><td>Sidestep 3D challenges by projecting to 2D; use proven 2D CNNs</td><td>MVCNN</td></tr>
+      <tr><td><strong>Volumetric</strong></td><td>Regular 3D voxel grid</td><td>Discretize 3D space into a regular grid; use 3D CNNs</td><td>VoxNet</td></tr>
+      <tr><td><strong>Direct point cloud</strong></td><td>Raw unordered $(x,y,z)$ points</td><td>Process the raw point cloud directly with specialized architectures</td><td>PointNet</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointcloud_vs_voxelcloud.png" alt="Point cloud vs. voxel cloud">
+      <div class="figure-caption">The same 3D scene as a raw point cloud (left) and as a colored voxel grid (right).</div>
+    </div>
+
+    <!-- ===== SECTION 3: MVCNN ===== -->
+    <h2 class="section-heading" id="mvcnn">3. Multi-View Projection: MVCNN</h2>
+
+    <p>MVCNN (Multi-View Convolutional Neural Network) is the pioneering projection-based method. It leverages pre-trained 2D CNN models — critical because labeled 3D training data is scarce compared to massive 2D datasets like ImageNet.</p>
+
+    <h3 class="subsection-heading">MVCNN Architecture for Classification</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod12/mvcnn_architecture.png" alt="MVCNN architecture">
+      <div class="figure-caption">MVCNN: a 3D shape rendered from 12 virtual viewpoints, processed by a shared CNN, aggregated via view pooling, then classified.</div>
+    </div>
+
+    <ol>
+      <li><strong>Multi-view rendering:</strong> Render the 3D shape from <strong>12 virtual camera viewpoints</strong>, producing 12 standard 2D images.</li>
+      <li><strong>Per-view feature extraction (CNN_1, shared weights):</strong> Each of the 12 images passes through the same CNN (e.g., VGG pre-trained on ImageNet). All 12 views share identical weights.</li>
+      <li><strong>View pooling (element-wise max):</strong> Aggregate 12 feature vectors into a single descriptor:
+        <div class="math-block">$$\mathbf{d} = \text{ViewPool}(\mathbf{f}_1, \ldots, \mathbf{f}_{12}) = \max(\mathbf{f}_1, \ldots, \mathbf{f}_{12})$$</div>
+        where max is applied element-wise across the feature dimension.
+      </li>
+      <li><strong>Classification (CNN_2 + FC):</strong> The pooled feature passes through CNN_2 and fully connected layers to produce class probabilities.</li>
+    </ol>
+
+    <h3 class="subsection-heading">MVCNN Fusion Strategies</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod12/mvcnn_fusion_options.png" alt="MVCNN fusion strategies">
+      <div class="figure-caption">Three multi-view fusion strategies: early fusion (combine after initial layers), late fusion (combine after full per-view processing), score fusion (combine at prediction level).</div>
+    </div>
+
+    <table>
+      <tr><th>Strategy</th><th>Fusion Point</th><th>Trade-off</th></tr>
+      <tr><td><strong>Early fusion</strong></td><td>After first shared CNN layers</td><td>More view interaction; less per-view specialization</td></tr>
+      <tr><td><strong>Late fusion</strong></td><td>After full per-view CNN processing</td><td>More per-view processing; combination happens late</td></tr>
+      <tr><td><strong>Score fusion</strong></td><td>At final prediction level</td><td>Simplest; each view votes independently</td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Advantages and limitations of multi-view methods</div>
+      <div class="collapsible-body">
+        <p><strong>Advantages:</strong> Reuses well-established 2D CNN methods; relatively low computation cost; leverages massive pre-trained 2D models.</p>
+        <p><strong>Limitations:</strong> Loss of internal geometric structure — 2D projections cannot represent what is behind visible surfaces. Incomplete segmentation because occluded points receive no label. View-dependent results.</p>
+        <p><strong>Status:</strong> Popularity is fading as the field moves toward direct point cloud methods.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 4: SNAPNET ===== -->
+    <h2 class="section-heading" id="snapnet">4. SnapNet: Multi-View 3D Segmentation</h2>
+
+    <p>SnapNet extends the multi-view idea from classification to <strong>semantic segmentation</strong> of point clouds.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod12/snapnet_pipeline.png" alt="SnapNet pipeline">
+      <div class="figure-caption">SnapNet full pipeline: mesh view generation, semantic labeling with autoencoder, back-projection to 3D points.</div>
+    </div>
+
+    <ol>
+      <li><strong>View generation:</strong> Place virtual cameras around/within the scene; synthesize RGB and depth composite texture images from each camera.</li>
+      <li><strong>Semantic labeling:</strong> Feed each RGB-depth image pair into an encoder-decoder segmentation network, producing per-pixel class labels.</li>
+      <li><strong>Back-projection and voting:</strong> Map 2D per-pixel labels back onto 3D points. When multiple views see the same 3D point, accumulate votes and take the majority class.</li>
+      <li><strong>Output:</strong> A fully semantized point cloud where every point has a class label.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod12/snapnet_rendering.png" alt="SnapNet rendering: RGB and depth textures">
+      <div class="figure-caption">SnapNet rendering: (a) RGB texture and (b) depth composite texture synthesized from virtual cameras placed around the scene.</div>
+    </div>
+
+    <!-- ===== SECTION 5: VOXNET ===== -->
+    <h2 class="section-heading" id="voxnet">5. Volumetric Methods: VoxNet and 3D CNNs</h2>
+
+    <p>VoxNet is the pioneering volumetric method. It converts the raw point cloud to a regular 3D voxel grid, then applies 3D CNNs — solving the problem of irregular, unstructured point clouds by imposing a regular grid like pixels in an image.</p>
+
+    <h3 class="subsection-heading">Voxelization: The Critical Trade-off</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod12/voxel_quantization_levels.png" alt="Voxel quantization levels">
+      <div class="figure-caption">Coarse vs. fine voxel quantization: coarse grids are fast but delete detail; fine grids preserve detail but memory grows cubically.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Cubic Memory Growth</div>
+      <div>$$\text{Memory} \propto N^3$$
+      Doubling resolution from $N$ to $2N$ increases memory by factor $2^3 = 8$. For $N=512$: $512^3 \approx 134$ million voxels. High resolution is often infeasible.</div>
+    </div>
+
+    <h3 class="subsection-heading">Octree: Memory-Efficient Voxels</h3>
+    <p>An octree recursively subdivides 3D space into 8 octants, only where data exists. Empty regions are never subdivided — concentrating resolution where data actually is while saving enormous memory on empty space.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointcloud_to_voxel_tree.png" alt="Point cloud to octree">
+      <div class="figure-caption">Point cloud (left) converted to an octree-like voxel representation (right): from a single bounding cube progressively subdivided to Level 6.</div>
+    </div>
+
+    <h3 class="subsection-heading">3D Spatial Convolution</h3>
+
+    <div class="insight-box">
+      <div class="box-label">Critical distinction for exams</div>
+      <div>A "3D convolution on 2D images with channels" still only slides across <strong>2 spatial dimensions</strong>. A <strong>true 3D spatial convolution on voxels</strong> slides across <strong>3 spatial dimensions</strong> (x, y, z). These are fundamentally different operations.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">3D Spatial Convolution</div>
+      <div>$$\text{out}(x, y, z) = \sum_{i=0}^{k_x-1} \sum_{j=0}^{k_y-1} \sum_{l=0}^{k_z-1} w(i, j, l) \cdot \text{in}(x+i, y+j, z+l) + b$$
+      A 3D kernel $w$ of size $k_x \times k_y \times k_z$ slides through a 3D data volume, producing a 3D output feature volume.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod12/3d_convolution_illustration.png" alt="3D convolution illustration">
+      <div class="figure-caption">3D spatial convolution: a 3D kernel cube sliding through a larger 3D data volume in all three spatial directions.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod12/voxnet_3dcnn_pipeline.png" alt="VoxNet 3D CNN pipeline">
+      <div class="figure-caption">3D CNN classification pipeline: 3D data cube through 3D convolution + pooling stages, reshaping to a flat vector, then dense layers for classification.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Advantages and limitations of volumetric methods</div>
+      <div class="collapsible-body">
+        <p><strong>Advantages:</strong> Solves irregular/unordered point cloud problem by imposing a regular grid. All standard CNN techniques apply (batch norm, skip connections, etc.).</p>
+        <p><strong>Limitations:</strong> Very expensive memory ($N^3$ cubic growth). Quantization loses detail. Sparse voxel grids waste memory on empty space.</p>
+        <p><strong>Current status:</strong> Applied mainly in <strong>medical imaging</strong> where data samples are small and high resolution is less critical.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: POINTNET INTRO ===== -->
+    <h2 class="section-heading" id="pointnet-intro">6. Direct Point Cloud: PointNet</h2>
+
+    <p>Multi-view and volumetric approaches are artificial workarounds that convert point clouds to other representations, introducing information loss and computational overhead. PointNet analyzes point clouds <strong>directly as they are</strong>.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointnet_overview.png" alt="PointNet overview">
+      <div class="figure-caption">PointNet: a unified framework accepting raw point clouds and supporting three tasks: object classification, part segmentation, and semantic scene parsing.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Core Design Problem</h3>
+    <p>How do you design a neural network whose output is invariant to the ordering of its inputs? Traditional networks expect fixed-order inputs (pixel $(0,0)$ is always top-left). A point cloud is a <strong>set</strong> — the same geometry listed in any order must produce the same output.</p>
+
+    <div class="definition-box">
+      <div class="box-label">PointNet's Solution — Symmetric Functions</div>
+      <div>$$f(\{p_1, \ldots, p_n\}) = g\!\left(\bigoplus_{i=1}^{n} h(p_i)\right)$$
+      where $h: \mathbb{R}^3 \rightarrow \mathbb{R}^d$ is a <strong>shared MLP</strong> applied independently to each point, $\bigoplus$ is <strong>max pooling</strong> (a symmetric function), and $g$ is a classification MLP. Since $h$ treats each point identically and max is order-independent, the whole pipeline is permutation-invariant.</div>
+    </div>
+
+    <!-- ===== SECTION 7: POINTNET ARCHITECTURE ===== -->
+    <h2 class="section-heading" id="pointnet-arch">7. PointNet Architecture Walkthrough</h2>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointnet_full_architecture.png" alt="PointNet full architecture">
+      <div class="figure-caption">Full PointNet classification architecture: input transform (T-Net), shared MLPs, feature transform (second T-Net), max pooling to global feature, and classification MLP.</div>
+    </div>
+
+    <div id="pointnet-walkthrough" class="interactive-container" data-title="Walkthrough — PointNet Classification Pipeline"></div>
+
+    <h3 class="subsection-heading">T-Net (Spatial Transformer Network)</h3>
+    <p>The T-Net is a sub-network that predicts a transformation matrix to align the point cloud to a standard canonical pose. Objects in real scans can appear in arbitrary orientations; the T-Net learns to undo this.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod12/tnet_transformation_visualization.png" alt="T-Net transformation">
+      <div class="figure-caption">T-Net transformation: (a) the same car overlaid in random orientations before alignment; (b) all copies aligned to a single canonical orientation after applying the learned transformation.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod12/tnet_subnetwork_architecture.png" alt="T-Net subnetwork architecture">
+      <div class="figure-caption">T-Net architecture: shared MLPs (3 to 64 to 128 to 1024), max pool to global vector, FC layers (1024 to 512 to 256), then matrix multiply with trainable weights to produce a 3x3 transformation matrix.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">T-Net is a mini-PointNet</div>
+      <div>The T-Net uses exactly the same structure as the main PointNet — shared MLPs followed by max pooling to get a global vector, then FC layers. It is literally a PointNet inside a PointNet, trained end-to-end.</div>
+    </div>
+
+    <h3 class="subsection-heading">Max Pooling: The Key to Permutation Invariance</h3>
+    <p>After shared MLP Block 2 maps each of the $n$ points to 1024 dimensions, max pooling is applied across all $n$ points for each feature dimension:</p>
+    <div class="math-block">$$g_j = \max_{i=1}^{n} f_{ij}, \qquad j = 1, \ldots, 1024$$</div>
+    <p>This produces a single <strong>1024-dimensional global feature vector</strong> describing the entire point cloud.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why max pooling achieves permutation invariance</div>
+      <div>Max is a symmetric function: $\max(a, b, c) = \max(c, a, b)$. Therefore, regardless of how the $n$ points are ordered, the max pooling output is identical. Max pooling was also found experimentally to outperform sum and average pooling — it captures the most salient features while being insensitive to the number of points.</div>
+    </div>
+
+    <h3 class="subsection-heading">PointNet Dimension Table</h3>
+    <table>
+      <tr><th>Step</th><th>Operation</th><th>Input Shape</th><th>Output Shape</th></tr>
+      <tr><td>1</td><td>Input</td><td>&mdash;</td><td>$1024 \times 3$</td></tr>
+      <tr><td>2</td><td>Input T-Net</td><td>$1024 \times 3$</td><td>$3 \times 3$ matrix</td></tr>
+      <tr><td>3</td><td>Matrix multiply (align)</td><td>$1024 \times 3$</td><td>$1024 \times 3$</td></tr>
+      <tr><td>4</td><td>Shared MLP Block 1</td><td>$1024 \times 3$</td><td>$1024 \times 64$</td></tr>
+      <tr><td>5</td><td>Feature T-Net</td><td>$1024 \times 64$</td><td>$64 \times 64$ matrix</td></tr>
+      <tr><td>6</td><td>Matrix multiply (align features)</td><td>$1024 \times 64$</td><td>$1024 \times 64$</td></tr>
+      <tr><td>7</td><td>Shared MLP Block 2</td><td>$1024 \times 64$</td><td>$1024 \times 1024$</td></tr>
+      <tr><td>8</td><td>Max pooling (across 1024 points)</td><td>$1024 \times 1024$</td><td>$1 \times 1024$</td></tr>
+      <tr><td>9</td><td>MLP Block 3</td><td>$1 \times 1024$</td><td>$1 \times k$</td></tr>
+      <tr><td>10</td><td>Softmax</td><td>$1 \times k$</td><td>$1 \times k$ (probabilities)</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">PointNet for Segmentation</h3>
+    <p>For per-point class labels, PointNet concatenates the global feature vector with each point's local feature (from shared MLP block 1, 64-dimensional):</p>
+    <div class="math-block">$$\mathbf{c}_i = [\mathbf{f}_i^{(64)} \,\|\, \mathbf{g}] \in \mathbb{R}^{1088}$$</div>
+    <p>Per-point MLPs then predict a class label for each point. This gives every point both <strong>local context</strong> (its own features) and <strong>global context</strong> (the entire object's feature).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod12/pointcloud_part_segmentation.png" alt="Point cloud part segmentation">
+      <div class="figure-caption">PointNet part segmentation: each point in the car point cloud labeled by part class (body, wheels, windows, etc.).</div>
+    </div>
+
+    <h3 class="subsection-heading">Feature Transform Regularization</h3>
+    <p>The second T-Net produces a $64 \times 64$ matrix. To prevent it from being arbitrary, a regularization loss encourages it to be close to an orthogonal matrix:</p>
+    <div class="math-block">$$L_{\text{reg}} = \| \mathbf{I} - \mathbf{T}_{64} \mathbf{T}_{64}^T \|_F^2$$</div>
+    <p>The total loss is $L = L_{\text{cls}} + \lambda \cdot L_{\text{reg}}$ where $L_{\text{cls}}$ is standard cross-entropy loss.</p>
+
+    <!-- ===== SECTION 8: ADVANCED ===== -->
+    <h2 class="section-heading" id="advanced">8. Advanced Point-Based Architectures</h2>
+
+    <p>In the 4 years following PointNet, approximately <strong>~300 point-based 3D analysis networks</strong> were published. They address PointNet's main limitation: it does not capture <strong>local geometric structure</strong> — max pooling creates a global feature but ignores relationships between nearby points.</p>
+
+    <table>
+      <tr><th>Network</th><th>Key Innovation</th><th>Task</th></tr>
+      <tr><td><strong>PointNet++</strong></td><td>Hierarchical feature learning with ball queries; captures local structure at multiple scales</td><td>Classification, segmentation</td></tr>
+      <tr><td><strong>Point Transformer</strong></td><td>Self-attention mechanisms on point clouds; models long-range dependencies</td><td>Classification, segmentation</td></tr>
+      <tr><td><strong>RandLA-Net</strong></td><td>Random sampling + local feature aggregation for efficient large-scale segmentation</td><td>Large-scale segmentation</td></tr>
+      <tr><td><strong>SqueezeSeg</strong></td><td>Projects LiDAR to 2D range images, applies efficient CNN</td><td>LiDAR segmentation</td></tr>
+      <tr><td><strong>RangeNet++</strong></td><td>Range-image semantic segmentation with post-processing for point labels</td><td>LiDAR segmentation</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">PointNet++ Key Idea</h3>
+    <p>PointNet++ applies PointNet <strong>hierarchically</strong> in local neighborhoods, mirroring how CNNs learn local then global features:</p>
+    <ol>
+      <li><strong>Farthest Point Sampling (FPS):</strong> Select well-spread subset of points.</li>
+      <li><strong>Ball Query:</strong> For each selected point, find all points within radius $r$.</li>
+      <li><strong>Mini-PointNet on local patches:</strong> Apply PointNet to each neighborhood to extract a local feature.</li>
+      <li><strong>Repeat hierarchically:</strong> Use outputs as inputs to the next level, capturing progressively larger-scale patterns.</li>
+    </ol>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Self-supervised learning of 3D point clouds (active research)</div>
+      <div class="collapsible-body">
+        <p>This is identified as a hot research topic. Current directions include:</p>
+        <ul>
+          <li>Pre-training on unlabeled point cloud data using pretext tasks (e.g., predicting missing points)</li>
+          <li>Contrastive learning in 3D: learning representations where different views of the same object are similar</li>
+          <li>Masked point modeling: analogous to masked language models (BERT-style pre-training for 3D)</li>
+          <li>Foundation models for 3D understanding: general-purpose models fine-tuned for specific 3D tasks</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 9: COMPARISON ===== -->
+    <h2 class="section-heading" id="comparison">9. Comparison of All Three Families</h2>
+
+    <table>
+      <tr><th>Criterion</th><th>Multi-View (MVCNN)</th><th>Volumetric (VoxNet)</th><th>Direct Point Cloud (PointNet)</th></tr>
+      <tr><td>Input</td><td>2D rendered images</td><td>Regular 3D voxel grid</td><td>Raw unordered $(x,y,z)$ points</td></tr>
+      <tr><td>Pre-trained models</td><td>Yes (ImageNet)</td><td>Limited</td><td>No</td></tr>
+      <tr><td>Memory cost</td><td>Low (just 2D images)</td><td>Very high ($N^3$)</td><td>Moderate (linear in $n$)</td></tr>
+      <tr><td>Information loss</td><td>Loses internal geometry</td><td>Quantization loss</td><td>Minimal</td></tr>
+      <tr><td>Permutation invariance</td><td>N/A (pixel grid)</td><td>N/A (voxel grid)</td><td>Achieved via max pooling</td></tr>
+      <tr><td>Segmentation quality</td><td>Limited (occlusion)</td><td>Good (3D autoencoder)</td><td>Excellent</td></tr>
+      <tr><td>Current status</td><td>Popularity fading</td><td>Mainly medical imaging</td><td><strong>Dominant paradigm</strong></td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">When to use which approach</div>
+      <div>
+        <ul>
+          <li><strong>Limited 3D training data:</strong> Multi-view (MVCNN) — leverage pre-trained 2D models</li>
+          <li><strong>Medical imaging:</strong> Volumetric (3D CNN) — small, regular medical volumes suit 3D grids</li>
+          <li><strong>Autonomous driving / indoor mapping:</strong> Direct point cloud (PointNet++, RandLA-Net) — handles massive irregular scans</li>
+          <li><strong>Real-time applications:</strong> Multi-view or RangeNet++ — fast inference with optimized 2D pipelines</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod12-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod11.html">&larr; 11. Data Fusion</a>
+      <a href="mod13.html">13. Behaviour Analysis &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod12');</script>
+<script>
+  initWalkthrough('pointnet-walkthrough', [
+    {
+      tab: '1. Input',
+      title: 'Step 1: Input Point Cloud (n x 3)',
+      text: 'The input is a point cloud of $n$ points (typically $n = 1024$), each with three coordinates $(x, y, z)$. Represented as an $n \\times 3$ matrix. No color, normals, or other features in the basic version -- just raw geometry.',
+      visual: '<div class="figure-container"><img src="figures/mod12/mesh_vs_pointcloud.png" alt="Mesh vs. point cloud"><div class="figure-caption">Same car object as mesh (top) and as a raw point cloud (bottom). PointNet works directly on the point cloud.</div></div>',
+      insight: 'There is no canonical ordering of these n points. The $n$-th row of the matrix can be any point. This is the fundamental challenge PointNet must solve.'
+    },
+    {
+      tab: '2. T-Net',
+      title: 'Step 2: Input Transform (T-Net 3x3)',
+      text: 'A sub-network predicts a $3 \\times 3$ transformation matrix $T$ to align the point cloud to a canonical pose. Architecture: shared MLP(64, 128, 1024) per point, max pool to 1024-dim vector, FC(512, 256), then matrix multiply with trainable weights to get $1 \\times 9$, reshape to $3 \\times 3$. Applied as: $P\' = P \\cdot T$.',
+      visual: '<div class="figure-container"><img src="figures/mod12/tnet_transformation_visualization.png" alt="T-Net alignment"><div class="figure-caption">(a) Random orientations before T-Net; (b) canonical pose after T-Net alignment.</div></div>',
+      insight: 'The T-Net is a mini-PointNet inside the main PointNet. It uses the exact same structure (shared MLPs + max pool + FC layers). The entire network is trained end-to-end -- no separate T-Net training step.'
+    },
+    {
+      tab: '3. MLP Block 1',
+      title: 'Step 3: Shared MLP Block 1 (3 to 64)',
+      text: 'A shared multi-layer perceptron maps each of the $n$ points from 3 dimensions to 64 dimensions. "Shared" means the same MLP weights are applied independently to every point -- no cross-point communication yet. Output: $n \\times 64$ matrix. Implemented in practice as 1D convolution with kernel size 1.',
+      visual: '',
+      insight: 'The shared weights are key: every point goes through the same transformation. This ensures that the function applied to each point is identical regardless of where that point appears in the input list.'
+    },
+    {
+      tab: '4. Feature T-Net',
+      title: 'Step 4: Feature Transform (T-Net 64x64)',
+      text: 'A second T-Net operates in 64-dimensional feature space and predicts a $64 \\times 64$ transformation matrix $T_{64}$. Applied as $F\' = F \\cdot T_{64}$. Regularized to be close to orthogonal: $L_{\\text{reg}} = \\|I - T_{64} T_{64}^T\\|_F^2$. This ensures features are in a canonical configuration.',
+      visual: '',
+      insight: 'The 64x64 matrix is large -- without regularization it could be arbitrary. The regularization loss forces it to be rotation-like (orthogonal), preserving feature magnitudes and directions, analogous to how the input T-Net keeps geometry intact.'
+    },
+    {
+      tab: '5. Max Pool',
+      title: 'Step 5: Max Pooling to Global Feature (1x1024)',
+      text: 'After Shared MLP Block 2 maps each point to 1024 dimensions, max pooling is applied ACROSS all $n$ points for each of the 1024 feature dimensions: $g_j = \\max_i f_{ij}$. This produces a single 1024-dimensional vector describing the ENTIRE point cloud.',
+      visual: '',
+      insight: 'This is the most critical operation in PointNet. Max is a symmetric function -- $\\max(a,b,c) = \\max(c,a,b)$. Therefore the global feature vector is identical regardless of how the $n$ points are ordered. Permutation invariance achieved.'
+    },
+    {
+      tab: '6. Classify',
+      title: 'Step 6: Classification MLP and Softmax',
+      text: 'MLP Block 3 maps the 1024-dimensional global feature to $k$ output scores: 1024 to 512 to 256 to $k$. Softmax converts raw scores to class probabilities: $P(\\text{class}_j) = \\exp(s_j) / \\sum_c \\exp(s_c)$. Predicted class = argmax over probabilities.',
+      visual: '',
+      insight: 'For segmentation, the 1024-dim global feature is concatenated with each point\'s 64-dim local feature (from step 3), giving 1088-dim per-point vectors. Per-point MLPs then predict per-point class labels.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod12-flashcards', [
+    {
+      q: 'What is permutation invariance and why is it essential for point cloud processing?',
+      a: 'A function $f$ is permutation-invariant if reordering its inputs does not change the output: $f(\\{p_1, \\ldots, p_n\\}) = f(\\{p_{\\sigma(1)}, \\ldots, p_{\\sigma(n)}\\})$ for all permutations $\\sigma$. It is essential because a point cloud is a <strong>set</strong> — there is no canonical ordering. The same physical geometry produces the same set of 3D points regardless of listing order. Any network that ignores this would give different outputs for the same physical object depending on how the list was stored.'
+    },
+    {
+      q: 'How does PointNet achieve permutation invariance?',
+      a: 'Two design choices: (1) <strong>Shared MLPs</strong> — the same weights are applied independently to each point, so per-point features $h(p_i)$ are order-independent. (2) <strong>Symmetric aggregation (max pooling)</strong> — max pooling across all n points is order-independent since $\\max(a,b,c) = \\max(c,a,b)$. The complete function $f(\\{p_1, \\ldots, p_n\\}) = g(\\max_{i=1}^n h(p_i))$ is provably permutation-invariant.'
+    },
+    {
+      q: 'Walk through the PointNet architecture with shapes for n=1024 input points and k=40 classes.',
+      a: 'Input: $1024 \\times 3$ &rarr; Input T-Net predicts $3\\times3$ matrix &rarr; align to $1024\\times3$ &rarr; Shared MLP1: $1024\\times64$ &rarr; Feature T-Net predicts $64\\times64$ &rarr; align to $1024\\times64$ &rarr; Shared MLP2: $1024\\times1024$ &rarr; Max pool across 1024 points: $1\\times1024$ &rarr; MLP3 ($1024\\to512\\to256\\to40$): $1\\times40$ &rarr; Softmax: $1\\times40$ probabilities.'
+    },
+    {
+      q: 'What is the T-Net in PointNet? Describe its architecture.',
+      a: 'The T-Net (Transformer Network) predicts a spatial transformation matrix ($3\\times3$ or $64\\times64$) to align the point cloud to a canonical pose. Architecture: input $n\\times3$ points &rarr; shared MLP($64\\to128\\to1024$) &rarr; max pool to $1024$-dim vector &rarr; FC($512\\to256$) &rarr; matrix multiply with trainable weights ($256\\times9$) + biases &rarr; reshape to $3\\times3$. Note: the T-Net is itself a <strong>mini-PointNet</strong> — it uses the same shared-MLP-then-max-pool structure.'
+    },
+    {
+      q: 'Why is max pooling used instead of average or sum pooling in PointNet?',
+      a: 'All three are symmetric functions providing permutation invariance. <strong>Max pooling works best experimentally</strong> because: it captures the most salient/extreme features from informative points; average pooling dilutes strong signals with noise from non-informative points; sum pooling is sensitive to the number of points (doubling point count doubles sum values). Max pooling effectively identifies a small set of <strong>critical points</strong> that define the shape.'
+    },
+    {
+      q: 'How is PointNet extended for per-point semantic segmentation?',
+      a: 'For segmentation, each point needs its own class label: (1) Compute the global feature vector $\\mathbf{g} \\in \\mathbb{R}^{1024}$ via max pooling (same as classification). (2) Concatenate $\\mathbf{g}$ with each point\'s local 64-dim feature: $\\mathbf{c}_i = [\\mathbf{f}_i^{(64)} \\| \\mathbf{g}] \\in \\mathbb{R}^{1088}$. (3) Per-point MLPs predict a class label for each point. Each point has both <strong>local context</strong> and <strong>global context</strong>.'
+    },
+    {
+      q: 'Describe the MVCNN architecture for 3D classification.',
+      a: '(1) Render 3D shape from <strong>12 virtual camera viewpoints</strong>. (2) Extract features from each view using shared CNN (CNN_1, e.g., VGG pre-trained on ImageNet) — all 12 views use same weights. (3) <strong>View pooling</strong>: element-wise max across all 12 feature vectors $\\mathbf{d}_j = \\max_v f_{v,j}$. (4) Pass pooled feature through CNN_2 and FC layers for classification. Pipeline: 3D shape &rarr; 12 views &rarr; [shared CNN_1] $\\times$ 12 &rarr; view pooling &rarr; CNN_2 &rarr; FC &rarr; class.'
+    },
+    {
+      q: 'Why can\'t standard 2D CNNs be applied directly to point clouds?',
+      a: 'Three fundamental obstacles: (1) <strong>No grid structure</strong> — points are scattered in continuous 3D space with no regular arrangement (unlike pixels at fixed $(i,j)$ positions). (2) <strong>Non-uniform density</strong> — points are sparser in some regions and denser in others; no fixed spatial layout. (3) <strong>Permutation invariance</strong> — there is no canonical ordering of points; standard CNNs assume a fixed spatial layout. Applying a CNN would require converting to voxels or rendered images first.'
+    },
+    {
+      q: 'Compare the three families of 3D analysis approaches on memory cost and information loss.',
+      a: '<strong>Multi-view (MVCNN):</strong> Low memory (just 2D images); loses internal geometry (cannot see behind surfaces).<br><strong>Volumetric (VoxNet):</strong> Very high memory ($N^3$ cubic growth); quantization loses fine detail.<br><strong>Direct point cloud (PointNet):</strong> Moderate memory (linear in $n$); minimal information loss (no conversion).'
+    },
+    {
+      q: 'What is PointNet++\'s key improvement over PointNet?',
+      a: 'PointNet does not capture <strong>local geometric structure</strong> — its max pooling creates a global feature but ignores relationships between nearby points. PointNet++ applies PointNet <strong>hierarchically</strong> in local neighborhoods: (1) Farthest Point Sampling selects well-spread subset. (2) Ball query finds all points within radius $r$. (3) Mini-PointNet extracts a local feature per neighborhood. (4) Repeat hierarchically for progressively larger patterns. This mirrors CNN\'s local-to-global feature hierarchy.'
+    },
+    {
+      q: 'What is the feature transform regularization loss in PointNet and why is it needed?',
+      a: 'The second T-Net predicts a $64 \\times 64$ matrix. Without constraints it could be arbitrary. The regularization loss $L_{\\text{reg}} = \\|\\mathbf{I} - \\mathbf{T}_{64}\\mathbf{T}_{64}^T\\|_F^2$ encourages the matrix to be <strong>orthogonal</strong> (rotation-like). This preserves feature magnitudes (an orthogonal matrix does not stretch or shrink features) and prevents the optimization from learning degenerate transformations. Total loss: $L = L_{\\text{cls}} + \\lambda L_{\\text{reg}}$.'
+    },
+    {
+      q: 'Why is memory growth cubic for voxel grids? What is the octree solution?',
+      a: 'A voxel grid with $N$ voxels per dimension has $N^3$ total voxels. Doubling resolution from $N$ to $2N$ increases memory by $2^3 = 8\\times$. For $N=512$: $\\approx 134$ million voxels; for $N=1024$: $\\approx 1$ billion voxels. An <strong>octree</strong> solves this by recursively subdividing only occupied regions — empty space is never subdivided. Resolution concentrates only where data exists, saving enormous memory while preserving detail in occupied areas.'
+    }
+  ]);
+</script>
+</body>
+</html>

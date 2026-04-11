@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1. Feature Extraction & Matching — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">1. Feature Extraction & Matching</h1>
+    <p class="page-subtitle">Color spaces, edges, SIFT, HOG, Harris corners, Hough transform, feature matching</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#color-systems">1. Color Systems</a>
+      <a href="#features-overview">2. Features and Image Matching</a>
+      <a href="#canny-edge-detection">3. Canny Edge Detection</a>
+      <a href="#hog-descriptor">4. HOG Descriptor</a>
+      <a href="#sift">5. SIFT</a>
+      <a href="#feature-matching">6. Feature Matching</a>
+      <a href="#hough-transform">7. Hough Transform</a>
+      <a href="#harris-corner-detector">8. Harris Corner Detector</a>
+      <a href="#haar-features">9. Haar-like Features</a>
+      <a class="toc-interactive" href="#matching-interactive">Interactive: Feature Matching & Ratio Test</a>
+      <a class="toc-interactive" href="#sift-walkthrough">Interactive: SIFT Walkthrough</a>
+      <a class="toc-interactive" href="#canny-walkthrough">Interactive: Canny Walkthrough</a>
+      <a class="toc-interactive" href="#conv-step-through">Interactive: Convolution Step-Through</a>
+      <a class="toc-interactive" href="#hough-voting">Interactive: Hough Transform Voting</a>
+      <a class="toc-interactive" href="#harris-explorer">Interactive: Harris Corner Explorer</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: COLOR SYSTEMS ===== -->
+    <h2 class="section-heading" id="color-systems">1. Color Systems</h2>
+
+    <p>Before extracting features, we need to understand how images encode color. Different color systems emphasize different properties of light, and choosing the right one can make feature extraction more robust.</p>
+
+    <h3 class="subsection-heading">RGB (Red, Green, Blue)</h3>
+    <p>The human eye has three cone types responding to long (~570nm, red), medium (~540nm, green), and short (~440nm, blue) wavelengths. Camera sensors replicate this with a <strong>Bayer filter pattern</strong>: 2 green, 1 blue, 1 red cell per pixel (green doubled because human vision is most sensitive to green).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod1/bayer_filter_camera_sensor.png" alt="Bayer filter pattern on a camera sensor">
+      <div class="figure-caption">Bayer filter mosaic on a camera sensor array.</div>
+    </div>
+
+    <h3 class="subsection-heading">HSV (Hue, Saturation, Value)</h3>
+    <p>HSV separates color from lighting, making it more useful for many CV tasks:</p>
+    <ul>
+      <li><strong>H (Hue):</strong> The color itself, angle in $[0, 360)$. 0 = red, 120 = green, 240 = blue.</li>
+      <li><strong>S (Saturation):</strong> Color purity, $[0, 1]$. 0 = grey, 1 = purest color.</li>
+      <li><strong>V (Value):</strong> Brightness, $[0, 1]$. 0 = black.</li>
+    </ul>
+
+    <div class="definition-box">
+      <div class="box-label">RGB to HSV Conversion</div>
+      <div>$V = \max(R, G, B)$, &nbsp; $S = \frac{\max - \min}{\max}$, &nbsp; $H = 60 \times \text{(depends on which channel is max)}$</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod1/rgb_cube_hsv_cylinder.png" alt="RGB color cube and HSV cylinder">
+      <div class="figure-caption">RGB cube and HSV cylinder representations.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Other color systems: CMYK, YUV</div>
+      <div class="collapsible-body">
+        <p><strong>CMYK</strong> (Cyan, Magenta, Yellow, Black) is a subtractive model used in printing. Mixing colors subtracts wavelengths from white light.</p>
+        <p><strong>YUV</strong> separates luminance (Y) from chrominance (U, V). The human eye is more sensitive to brightness than color, which is exploited in video compression.</p>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>HSV is often preferred in computer vision because it separates color (hue) from lighting conditions (value), making algorithms more robust to illumination changes.</div>
+    </div>
+
+    <!-- ===== SECTION 2: FEATURES OVERVIEW ===== -->
+    <h2 class="section-heading" id="features-overview">2. Features and Image Matching</h2>
+
+    <p>The core problem: given two or more images, how do we determine if they show the same scene? This is <strong>image matching</strong>, and it requires extracting <strong>features</strong> — pieces of information relevant to solving a computational task.</p>
+
+    <h3 class="subsection-heading">Image Matching Pipeline</h3>
+    <ol>
+      <li><strong>Extract features</strong> invariant to geometric (translation, rotation, scale) and photometric (brightness) transformations</li>
+      <li><strong>Compute descriptors</strong> — mathematical representations of local image regions</li>
+      <li><strong>Match descriptors</strong> between images by comparing their vector representations</li>
+    </ol>
+
+    <h3 class="subsection-heading">Requirements for Good Features</h3>
+    <table>
+      <tr><th>Requirement</th><th>Explanation</th></tr>
+      <tr><td>Discriminative</td><td>Captures important nuances distinguishing image regions</td></tr>
+      <tr><td>Descriptive power</td><td>Allows rich mathematical descriptions (high-dimensional vectors)</td></tr>
+      <tr><td>Sufficient quantity</td><td>Hundreds or thousands per image</td></tr>
+      <tr><td>Low computation cost</td><td>Real-time performance achievable</td></tr>
+      <tr><td>Generality</td><td>Found in various image types, not limited to specific scenes</td></tr>
+    </table>
+
+    <!-- ===== SECTION 3: CANNY EDGE DETECTION ===== -->
+    <h2 class="section-heading" id="canny-edge-detection">3. Canny Edge Detection</h2>
+
+    <p>An edge is a location with a significant change (gradient) in pixel intensity, corresponding to boundaries, texture changes, or shadows. The Canny detector was designed to satisfy three criteria: <strong>optimal detection</strong> (low error rate), <strong>good localization</strong>, and <strong>single response</strong> per edge.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod1/canny_edge_detection_result.png" alt="Canny edge detection result">
+      <div class="figure-caption">Original image (left) and Canny edge detection result (right).</div>
+    </div>
+
+    <div id="canny-walkthrough" class="interactive-container" data-title="Walkthrough — Canny Edge Detection"></div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Convolution</div>
+      <div>A kernel $K$ slides over the image $I$. At each position: $g(x,y) = \sum_i \sum_j K(i,j) \cdot I(x+i, y+j)$</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod1/convolution_kernel_operation.png" alt="Convolution operation">
+      <div class="figure-caption">Convolution: source matrix, kernel, and resulting output.</div>
+    </div>
+
+    <div id="conv-step-through" class="interactive-container" data-title="Interactive — Convolution Step-Through">
+      <div class="interactive-label">Interactive -- Convolution Step-Through</div>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Edit the image grid values, choose a kernel, then step through (or animate) to see convolution computed cell by cell.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Input Image (5x5)</div>
+          <table id="conv-input-grid" style="border-collapse:collapse;width:auto;"></table>
+        </div>
+        <div style="display:flex;align-items:center;font-size:22px;color:#999;padding-top:40px;">*</div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Kernel (3x3)</div>
+          <select id="conv-kernel-select" style="margin-bottom:6px;font-size:12px;padding:3px 6px;">
+            <option value="sobel_gx">Sobel Gx</option>
+            <option value="sobel_gy">Sobel Gy</option>
+            <option value="gaussian">Gaussian Blur</option>
+            <option value="sharpen">Sharpen</option>
+            <option value="custom">Custom</option>
+          </select>
+          <table id="conv-kernel-grid" style="border-collapse:collapse;width:auto;"></table>
+        </div>
+        <div style="display:flex;align-items:center;font-size:22px;color:#999;padding-top:40px;">=</div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Output (3x3)</div>
+          <table id="conv-output-grid" style="border-collapse:collapse;width:auto;"></table>
+        </div>
+      </div>
+      <div id="conv-computation" style="margin-top:12px;padding:10px;background:#fff;border:1px solid #e0e0e0;border-radius:4px;font-size:13px;color:#444;min-height:24px;"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button id="conv-step-btn" style="font-size:12px;padding:5px 14px;border:1px solid #1565c0;color:#1565c0;background:none;border-radius:3px;cursor:pointer;">Step</button>
+        <button id="conv-run-btn" style="font-size:12px;padding:5px 14px;border:1px solid #1565c0;color:#fff;background:#1565c0;border-radius:3px;cursor:pointer;">Run All</button>
+        <button id="conv-reset-btn" style="font-size:12px;padding:5px 14px;border:1px solid #999;color:#666;background:none;border-radius:3px;cursor:pointer;">Reset</button>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Sobel filter kernels</div>
+      <div class="collapsible-body">
+        <p>Sobel filters compute gradients in X and Y directions:</p>
+        <div class="math-block">$G_x = \begin{bmatrix} -1 & 0 & 1 \\ -2 & 0 & 2 \\ -1 & 0 & 1 \end{bmatrix} \quad G_y = \begin{bmatrix} -1 & -2 & -1 \\ 0 & 0 & 0 \\ 1 & 2 & 1 \end{bmatrix}$</div>
+        <p>$G_x$ detects vertical edges. $G_y$ detects horizontal edges. Combined: $G = \sqrt{G_x^2 + G_y^2}$, $\theta = \arctan(G_y / G_x)$.</p>
+        <div class="figure-container">
+          <img src="figures/mod1/sobel_filter_kernels_4directions.png" alt="Sobel filter kernels">
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 4: HOG ===== -->
+    <h2 class="section-heading" id="hog-descriptor">4. HOG Descriptor (Histogram of Oriented Gradients)</h2>
+
+    <p>Edges alone have limited descriptive power and are not rotation-invariant. HOG captures the <strong>distribution of gradient orientations</strong> in local regions, providing a richer, rotation-invariant feature.</p>
+
+    <h3 class="subsection-heading">HOG Pipeline</h3>
+    <ol>
+      <li><strong>Split image into 8x8 blocks</strong></li>
+      <li><strong>Compute gradients</strong> (magnitude + orientation) at each pixel</li>
+      <li><strong>Create 4x4 sub-windows</strong>, quantize gradients into 8 direction bins</li>
+      <li><strong>Build histogram</strong> per sub-window (8 bins, weighted by magnitude)</li>
+      <li><strong>Find dominant orientation</strong> of the block</li>
+      <li><strong>Normalize</strong> the descriptor relative to the dominant orientation (rotation invariance)</li>
+      <li><strong>Concatenate</strong> histograms into the HOG feature vector</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod1/hog_pipeline_overview.png" alt="HOG pipeline overview">
+      <div class="figure-caption">HOG pipeline: Image to cell division to gradient orientation to histogram to vectorization.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod1/hog_gradient_overlay_silhouette.png" alt="HOG gradient overlay on silhouette">
+      <div class="figure-caption">HOG gradient direction roses overlaid on a person silhouette.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>HOG</th></tr>
+      <tr><td>Descriptive</td><td>Yes — captures gradient distribution</td></tr>
+      <tr><td>Rotation-invariant</td><td>Yes — dominant orientation normalization</td></tr>
+      <tr><td>Scale-invariant</td><td><strong>No</strong> — key limitation</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>HOG's dominant orientation concept is reused in SIFT (Step 4) for rotation invariance. The Sobel filters used in Canny are also the foundation for computing gradients in HOG.</div>
+    </div>
+
+    <!-- ===== SECTION 5: SIFT ===== -->
+    <h2 class="section-heading" id="sift">5. SIFT (Scale Invariant Feature Transform)</h2>
+
+    <p>Edge points lack descriptive power. HOG is descriptive and rotation-invariant but <strong>not scale-invariant</strong>. SIFT addresses all three: scale invariance, rotation invariance, and rich 128-dimensional descriptors.</p>
+
+    <div id="sift-walkthrough" class="interactive-container" data-title="Walkthrough — SIFT Feature Detection"></div>
+
+    <div class="definition-box">
+      <div class="box-label">SIFT Descriptor — 128 dimensions</div>
+      <div>A 16x16 pixel region around the keypoint is divided into a 4x4 grid. Each cell gets an 8-bin gradient orientation histogram. Total: $4 \times 4 \times 8 = 128$ dimensions.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod1/sift_descriptor_construction.png" alt="SIFT descriptor construction">
+      <div class="figure-caption">SIFT descriptor: 4x4 gradient windows, 8 orientation bins, Gaussian weighting, yielding 128-D vector.</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>Edge</th><th>Harris</th><th>HOG</th><th>SIFT</th></tr>
+      <tr><td>Descriptive</td><td>Low</td><td>Low</td><td>High</td><td>Highest (128-D)</td></tr>
+      <tr><td>Rotation-invariant</td><td>No</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Scale-invariant</td><td>No</td><td>No</td><td>No</td><td>Yes</td></tr>
+    </table>
+
+    <!-- ===== SECTION 6: FEATURE MATCHING ===== -->
+    <h2 class="section-heading" id="feature-matching">6. Feature Matching</h2>
+
+    <p>Given features from two images, find correspondences by comparing descriptor vectors.</p>
+
+    <h3 class="subsection-heading">Euclidean Distance Matching</h3>
+    <p>For each feature $\mathbf{f}_1$ in Image 1, compute the L2 distance to every feature $\mathbf{f}_2$ in Image 2:</p>
+    <div class="math-block">$d(\mathbf{f}_1, \mathbf{f}_2) = \sqrt{\sum_{i=1}^{n}(f_{1,i} - f_{2,i})^2}$</div>
+    <p>The closest match (smallest distance) is the candidate correspondence. Complexity: $O(N \times M \times D)$.</p>
+
+    <h3 class="subsection-heading">Improving Match Quality</h3>
+    <ul>
+      <li><strong>Lowe's ratio test:</strong> Accept match only if $d_1 / d_2 < 0.8$ (best vs second-best). Rejects ambiguous matches.</li>
+      <li><strong>Cross-checking:</strong> Verify mutual nearest neighbor — if A matches B, B must also match A.</li>
+      <li><strong>Approximate search:</strong> KD-trees or FLANN for large feature sets.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod1/feature_detection_building_example.png" alt="Feature detection on building">
+      <div class="figure-caption">Detected local features shown as colored squares on a building facade.</div>
+    </div>
+
+    <div class="interactive-container" id="matching-interactive">
+      <div class="interactive-label">Interactive — Feature Matching and Lowe's Ratio Test</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="match-generate" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Generate Features</button>
+        <button id="match-select" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;" disabled>Select Next Feature</button>
+        <div class="slider-control" style="min-width:200px;">
+          <label>Ratio threshold: <span id="match-ratio-val">0.80</span></label>
+          <input type="range" id="match-ratio" min="50" max="100" value="80">
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px;">Image 1 — query features</div>
+          <canvas id="match-canvas1" width="240" height="240" style="border:1px solid #e0e0e0;background:#f5f7fa;"></canvas>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px;">Image 2 — candidate matches</div>
+          <canvas id="match-canvas2" width="240" height="240" style="border:1px solid #e0e0e0;background:#f5f7fa;"></canvas>
+        </div>
+      </div>
+      <div id="match-status" style="font-size:12px;color:#555;margin-top:6px;">Press "Generate Features" to create random feature descriptors.</div>
+      <div id="match-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 7: HOUGH TRANSFORM ===== -->
+    <h2 class="section-heading" id="hough-transform">7. Hough Transform — Line Detection</h2>
+
+    <p>After edge detection, edge pixels are fragmented. The Hough Transform detects geometric shapes (especially lines) by converting the problem to a voting scheme in parameter space.</p>
+
+    <h3 class="subsection-heading">Polar Line Parameterization</h3>
+    <p>Instead of $y = mx + c$ (fails for vertical lines), use: $\rho = x\cos\theta + y\sin\theta$, where $\rho$ is the perpendicular distance from origin to the line, and $\theta$ is the angle of that perpendicular.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod1/hough_rho_theta_parameterization.png" alt="Hough transform parameterization">
+      <div class="figure-caption">Line parameterization: rho is perpendicular distance, theta is angle.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Voting Algorithm</h3>
+    <ol>
+      <li>Run Canny to get edge pixels $(x_i, y_i)$</li>
+      <li>For each edge pixel, compute $\rho = x_i\cos\theta + y_i\sin\theta$ for all $\theta \in [0, 360)$</li>
+      <li>Increment the accumulator cell at $(\rho, \theta)$ for each computation</li>
+      <li>Peaks in the accumulator = detected lines (many collinear edge pixels voted for the same $(\rho, \theta)$)</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod1/hough_transform_voting_example.png" alt="Hough transform voting">
+      <div class="figure-caption">Three edge points generate votes; collinear points share the same (rho, theta) pair.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>A single point in image space maps to a sinusoidal curve in $(\rho, \theta)$ space. Two collinear points have curves that intersect at the line's parameters. The accumulator counts these intersections.</div>
+    </div>
+
+    <div id="hough-voting" class="interactive-container" data-title="Interactive — Hough Transform Voting">
+      <div class="interactive-label">Interactive -- Hough Transform Voting</div>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Click in the image space (left) to place edge points. Each point generates a sinusoidal curve in the parameter space (right). Where curves intersect, a line is detected and drawn back in image space.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Image Space $(x, y)$</div>
+          <canvas id="hough-image-canvas" width="300" height="300" style="border:1px solid #ccc;border-radius:4px;cursor:crosshair;background:#fff;"></canvas>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Parameter Space $(\theta, \rho)$</div>
+          <canvas id="hough-param-canvas" width="300" height="300" style="border:1px solid #ccc;border-radius:4px;background:#fff;"></canvas>
+        </div>
+      </div>
+      <div id="hough-info" style="margin-top:8px;font-size:12px;color:#666;">Click to place up to 10 edge points.</div>
+      <div style="margin-top:10px;">
+        <button id="hough-clear-btn" style="font-size:12px;padding:5px 14px;border:1px solid #999;color:#666;background:none;border-radius:3px;cursor:pointer;">Clear</button>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Post-processing and limitations</div>
+      <div class="collapsible-body">
+        <p><strong>Post-processing:</strong> Extract top candidates by vote count, cluster nearby lines, select the strongest per cluster, filter false detections.</p>
+        <p><strong>Strengths:</strong> Robust to gaps, detects multiple lines simultaneously, extensible to circles/ellipses.</p>
+        <p><strong>Limitations:</strong> Computational cost scales with parameter space dimensionality. Quantization effects and accidental alignments can produce false lines.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 8: HARRIS CORNER DETECTOR ===== -->
+    <h2 class="section-heading" id="harris-corner-detector">8. Harris Corner Detector</h2>
+
+    <p>Interest points are locations with distinctive local properties. <strong>Corners</strong> are ideal because they have intensity changes in <strong>multiple directions</strong>, making them unique and repeatable.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod1/corner_detection_checkerboard.png" alt="Corner detection on checkerboard">
+      <div class="figure-caption">Corners detected where intensity changes in multiple directions.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Mathematics</h3>
+    <p>Intensity change when shifting a window by $(u, v)$:</p>
+    <div class="math-block">$E(u,v) = \sum_{x,y} w(x,y)[I(x+u, y+v) - I(x,y)]^2$</div>
+
+    <p>Using Taylor expansion for small shifts, this becomes:</p>
+    <div class="math-block">$E(u,v) \approx \begin{bmatrix} u & v \end{bmatrix} M \begin{bmatrix} u \\ v \end{bmatrix}$</div>
+
+    <p>where $M$ is the <strong>structure tensor</strong>:</p>
+    <div class="math-block">$M = \sum_{x,y} w(x,y) \begin{bmatrix} I_x^2 & I_x I_y \\ I_x I_y & I_y^2 \end{bmatrix}$</div>
+
+    <div class="definition-box">
+      <div class="box-label">Harris Corner Response</div>
+      <div>$R = \det(M) - k \cdot (\text{trace}(M))^2 = \lambda_1\lambda_2 - k(\lambda_1 + \lambda_2)^2$, where $k \approx 0.04$&ndash;$0.06$.</div>
+    </div>
+
+    <h3 class="subsection-heading">Interpreting R via Eigenvalues</h3>
+    <table>
+      <tr><th>Region</th><th>$\lambda_1$</th><th>$\lambda_2$</th><th>$R$</th></tr>
+      <tr><td>Flat</td><td>Small</td><td>Small</td><td>$|R| \approx 0$</td></tr>
+      <tr><td>Edge</td><td>Large</td><td>Small</td><td>$R < 0$ (negative)</td></tr>
+      <tr><td>Corner</td><td>Large</td><td>Large, $\lambda_1 \approx \lambda_2$</td><td>$R > 0$ (positive)</td></tr>
+    </table>
+
+    <div id="harris-explorer" class="interactive-container" data-title="Interactive — Harris Corner Explorer">
+      <div class="interactive-label">Interactive -- Harris Corner Explorer</div>
+      <p style="font-size:13px;color:#666;margin-bottom:12px;">Click on a region in the image below to inspect its structure tensor eigenvalues and Harris response. Adjust $k$ to see how the corner response changes.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Click a region</div>
+          <canvas id="harris-scene-canvas" width="300" height="200" style="border:1px solid #ccc;border-radius:4px;cursor:pointer;"></canvas>
+        </div>
+        <div style="min-width:220px;">
+          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:6px;">Eigenvalue Ellipse</div>
+          <canvas id="harris-ellipse-canvas" width="160" height="160" style="border:1px solid #ccc;border-radius:4px;background:#fff;"></canvas>
+        </div>
+      </div>
+      <div class="slider-control" style="max-width:320px;margin-top:12px;">
+        <label>$k$ parameter <span id="harris-k-val">0.04</span></label>
+        <input type="range" id="harris-k-slider" min="0.01" max="0.15" step="0.001" value="0.04">
+      </div>
+      <div id="harris-info" style="margin-top:10px;padding:10px;background:#fff;border:1px solid #e0e0e0;border-radius:4px;font-size:13px;color:#444;">
+        Select a region to see eigenvalues and Harris response.
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod1/harris_corner_response_heatmap.png" alt="Harris corner response heatmap">
+      <div class="figure-caption">Corner response R heatmap: red/yellow = high corner response.</div>
+    </div>
+
+    <h3 class="subsection-heading">Harris Detector Workflow</h3>
+    <ol>
+      <li>Compute gradients $I_x$, $I_y$ (Sobel filters)</li>
+      <li>Compute structure tensor $M$ at each pixel</li>
+      <li>Compute $R = \det(M) - k(\text{trace}(M))^2$</li>
+      <li>Threshold: keep pixels where $R > \text{threshold}$</li>
+      <li>Non-maximum suppression: take only local maxima</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Harris corners are not scale-invariant and their $R$ values alone are not very descriptive. But they are excellent <strong>seed points</strong> for building rich descriptors like SIFT or HOG. The corner is the anchor; the descriptor is the feature.</div>
+    </div>
+
+    <table>
+      <tr><th>Transformation</th><th>Harris invariant?</th></tr>
+      <tr><td>Translation</td><td>Yes</td></tr>
+      <tr><td>Rotation</td><td>Yes (eigenvalues unchanged)</td></tr>
+      <tr><td>Scale</td><td>No (motivates SIFT's pyramid)</td></tr>
+    </table>
+
+    <!-- ===== SECTION 9: HAAR-LIKE FEATURES ===== -->
+    <h2 class="section-heading" id="haar-features">9. Haar-like Features</h2>
+
+    <p>Haar-like features use simple rectangular masks to capture basic intensity patterns in images. The idea is to detect regions where there is a significant difference in intensity between adjacent rectangular sub-regions.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition</div>
+      <div>A Haar-like feature computes the weighted sum of pixel intensities over a rectangular region: pixels under a <strong>white</strong> rectangle contribute $+1$, pixels under a <strong>black</strong> rectangle contribute $-1$. A feature is detected when $|\text{white sum} - \text{black sum}| > \text{threshold}$.</div>
+    </div>
+
+    <h3 class="subsection-heading">Types of Haar-like Features</h3>
+    <p>Three main types exist:</p>
+    <ol>
+      <li><strong>Edge features:</strong> Two adjacent rectangles (one white, one black) — detect horizontal or vertical edges</li>
+      <li><strong>Line features:</strong> Three rectangles (white-black-white or black-white-black) — detect line-like structures</li>
+      <li><strong>Four-rectangle features:</strong> A $2 \times 2$ checkerboard pattern — detect diagonal structures</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod1/haar_feature_types.png" alt="Haar-like feature types: (a) edge features, (b) line features, (c) four-rectangle features">
+      <div class="figure-caption">The three types of Haar-like features. White and black regions are assigned weights $+1$ and $-1$ respectively.</div>
+    </div>
+
+    <h3 class="subsection-heading">Computation</h3>
+    <ol>
+      <li>Assign weight $+1$ to white pixels and $-1$ to black pixels in the mask</li>
+      <li>Slide the mask over the image at all positions and scales</li>
+      <li>At each position compute the difference: $\text{white sum} - \text{black sum}$</li>
+      <li>If $|\text{difference}| > \text{threshold}$: a Haar feature is detected at this position</li>
+    </ol>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked numerical example</div>
+      <div class="collapsible-body">
+        <p>Given a $5 \times 5$ image and a $4 \times 4$ edge-feature mask (threshold = 10):</p>
+        <ul>
+          <li>Position 1: $|13 - 12| = 1 &lt; 10$ $\rightarrow$ No feature</li>
+          <li>Position 2: $|28 - 24| = 4 &lt; 10$ $\rightarrow$ No feature</li>
+          <li>Position 5: $|9 - 43| = 34 &gt; 10$ $\rightarrow$ <strong>Feature detected</strong></li>
+          <li>Position 6: $|8 - 18| = 10 = 10$ $\rightarrow$ <strong>Feature detected</strong></li>
+        </ul>
+        <p>The masks are applied in thousands of different sizes and positions across the image.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Cascaded Detection</h3>
+    <p>In practice, Haar features are organised into a cascade of stages. Early stages use very few features and quickly reject non-face regions; later stages use more features to verify candidates. This makes detection fast in practice.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod1/haar_cascade_stages_face_detection.png" alt="Haar cascade stages for face detection: Stage 0 uses 3 features, Stage 1 uses 10 more, through Stage 21 with 206+ features">
+      <div class="figure-caption">Haar cascade for face detection. Stage 0 uses 3 features, Stage 1 adds 10 more, and later stages accumulate 200+ features. Regions failing any stage are immediately discarded.</div>
+    </div>
+
+    <h3 class="subsection-heading">Properties</h3>
+    <table>
+      <tr><th>Pros</th><th>Cons</th></tr>
+      <tr>
+        <td>Inexpensive computation (especially with integral images)</td>
+        <td><strong>Weak classifiers</strong> — the same feature can describe many different things</td>
+      </tr>
+      <tr>
+        <td>Obtainable at any scale</td>
+        <td>Features are <strong>not invariant</strong> to rotation or scale</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><strong>Too many generated</strong> — costly if used without selection</td>
+      </tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to AdaBoost (Module 3)</div>
+      <div>Because each Haar feature is a <strong>weak classifier</strong> on its own, a boosting algorithm such as AdaBoost is used to select the most discriminative features from thousands of candidates and combine them into a single strong cascade classifier.</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod1-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <span></span>
+      <a href="mod2.html">2. Clustering &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod1');</script>
+<script>
+  initWalkthrough('sift-walkthrough', [
+    {
+      tab: '1. Scale Space',
+      title: 'Step 1: Scale-Space Construction (Gaussian Pyramid)',
+      text: 'Build an image pyramid by repeatedly blurring and subsampling. Each level (octave) is half the resolution. Within each octave, apply Gaussian filters with increasing sigma to create sub-scale images.',
+      visual: '<div class="figure-container"><img src="figures/mod1/dog_increasing_gaussian_blur.png" alt="Increasing Gaussian blur"><div class="figure-caption">Images blurred with increasing sigma values showing progressive loss of detail.</div></div>',
+      insight: 'The pyramid lets SIFT analyze features at their "natural" scale. An object that appears as a corner at one scale may look like an edge at another.'
+    },
+    {
+      tab: '2. DoG',
+      title: 'Step 2: Difference of Gaussian (DoG)',
+      text: 'Subtract consecutive Gaussian-blurred images: $D(x,y,\\sigma) = L(x,y,k\\sigma) - L(x,y,\\sigma)$. DoG approximates the Laplacian of Gaussian (LoG) but is much cheaper to compute. Fine-scale DoGs capture fine edges; coarse-scale DoGs capture broad edges.',
+      visual: '<div class="figure-container"><img src="figures/mod1/dog_subtraction_operation.png" alt="DoG subtraction"><div class="figure-caption">Subtracting consecutive blurred images reveals edges at each scale.</div></div><div class="figure-container"><img src="figures/mod1/sift_dog_pyramid_full.png" alt="Full SIFT DoG pyramid"><div class="figure-caption">Full SIFT scale-space: Gaussian pyramid, DoG images, and 3D structure.</div></div>',
+      insight: 'DoG approximates the scale-normalized Laplacian of Gaussian, which is the most stable feature detector across scales.'
+    },
+    {
+      tab: '3. Keypoints',
+      title: 'Step 3: Keypoint Detection and Filtering',
+      text: 'For each pixel in a DoG image, compare it to 26 neighbors: 8 spatial neighbors + 9 in the scale above + 9 in the scale below. Keep only extrema (local max or min). Then filter using the Hessian matrix to remove edge responses and keep only corners.',
+      visual: '',
+      insight: 'The same eigenvalue analysis used in the Harris corner detector is reused here. Both eigenvalues large means corner. One large, one small means edge (rejected).'
+    },
+    {
+      tab: '4. Orientation',
+      title: 'Step 4: Dominant Orientation Assignment',
+      text: 'For each keypoint, compute gradient magnitudes and orientations in a neighborhood. Build a histogram of orientations weighted by magnitude. The peak defines the dominant orientation. All subsequent computations are relative to this direction, achieving rotation invariance.',
+      visual: '<div class="figure-container"><img src="figures/mod1/sift_gradient_magnitude_orientation_formulas.png" alt="SIFT gradient formulas"><div class="figure-caption">Gradient magnitude and orientation computed from the blurred image at the keypoint\'s scale.</div></div>',
+      insight: 'This is the same technique HOG uses for rotation invariance. By normalizing to the dominant orientation, the same patch rotated by any angle produces the same descriptor.'
+    },
+    {
+      tab: '5. Descriptor',
+      title: 'Step 5: Generating the 128-D Descriptor',
+      text: 'Take a $16 \\times 16$ pixel window around the keypoint. Divide into $4 \\times 4$ grid of sub-windows. Compute 8-bin orientation histogram per sub-window, weighted by a Gaussian centered on the keypoint. Concatenate: $4 \\times 4 \\times 8 = 128$ dimensions.',
+      visual: '<div class="figure-container"><img src="figures/mod1/sift_descriptor_grid_128dim.png" alt="SIFT 128-D descriptor"><div class="figure-caption">4x4 grid of 8-direction gradient stars with keypoint at center.</div></div>',
+      insight: 'The 128-D vector captures both what gradients are present AND where they are relative to the keypoint. The Gaussian weighting ensures nearby gradients contribute more than distant ones.'
+    }
+  ]);
+</script>
+<script>
+  initWalkthrough('canny-walkthrough', [
+    {
+      tab: '1. Gaussian',
+      title: 'Step 1: Noise Removal (Gaussian Filter)',
+      text: 'Smooth the image with a Gaussian filter to remove noise. The kernel gives more weight to nearby pixels (center value highest, decreasing symmetrically). This preserves edges better than a simple box filter.',
+      visual: '<div class="figure-container"><img src="figures/mod1/convolution_matrix_computation.png" alt="Convolution computation"><div class="figure-caption">Convolution with a kernel: element-wise multiply and sum.</div></div>',
+      insight: 'A Gaussian filter is preferred over a box filter because it weights nearby pixels more heavily, preserving edge structure while still removing noise.'
+    },
+    {
+      tab: '2. Gradients',
+      title: 'Step 2: Intensity Gradients (Sobel Filters)',
+      text: 'Apply Sobel filters to compute gradient magnitude and orientation at each pixel. $G_x$ detects vertical edges, $G_y$ detects horizontal edges.',
+      visual: '<div class="figure-container"><img src="figures/mod1/sobel_filter_results_xy_edges.png" alt="Sobel filter results"><div class="figure-caption">Original, X-gradient (vertical edges), Y-gradient (horizontal edges), and combined.</div></div>',
+      insight: 'The same Sobel gradients computed here are the foundation for HOG and SIFT descriptors. This step is shared across many feature extraction methods.'
+    },
+    {
+      tab: '3. NMS',
+      title: 'Step 3: Non-Maximum Suppression',
+      text: 'Thin edges to exactly one pixel wide. For each pixel, check if its gradient magnitude is the maximum among neighbors along the gradient direction. If not, suppress it (set to zero). Only the strongest pixel along the gradient direction survives.',
+      visual: '<div class="figure-container"><img src="figures/mod1/non_maximum_suppression_grid.png" alt="Non-maximum suppression"><div class="figure-caption">Gradient values with direction arrows. Only the local maximum along the gradient is kept.</div></div>',
+      insight: 'Without NMS, edges would be several pixels thick. This satisfies the Canny criterion of "single response" &mdash; one pixel per true edge.'
+    },
+    {
+      tab: '4. Hysteresis',
+      title: 'Step 4: Hysteresis Thresholding',
+      text: 'Use two thresholds (upper, lower). Above upper: definite edge. Below lower: rejected. Between: kept only if connected to a strong edge pixel. This preserves edge continuity while rejecting isolated noise.',
+      visual: '<div class="figure-container"><img src="figures/mod1/hysteresis_thresholding_diagram.png" alt="Hysteresis thresholding"><div class="figure-caption">Edge above maxVal (kept), edge below minVal (rejected), edge between thresholds (connectivity analysis).</div></div>',
+      insight: 'A single threshold either misses weak edges (too high) or includes noise (too low). Two thresholds solve this: weak edges survive only if they connect to strong edges.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod1-flashcards', [
+    {
+      q: 'What are the four steps of the Canny edge detector?',
+      a: '<ol><li>Gaussian filtering (noise removal)</li><li>Gradient computation (Sobel filters) &mdash; magnitude and direction</li><li>Non-maximum suppression (thin edges to 1px)</li><li>Hysteresis thresholding (two thresholds, connectivity analysis)</li></ol>'
+    },
+    {
+      q: 'Why is SIFT considered better than HOG for image matching?',
+      a: 'SIFT achieves <strong>scale invariance</strong> through the Gaussian pyramid and DoG filtering, which HOG lacks. The same object at different sizes produces matching SIFT descriptors because features are detected at their natural scale.'
+    },
+    {
+      q: 'How does the Hough Transform detect lines? Why use $(\\rho, \\theta)$ instead of $(m, c)$?',
+      a: 'Each edge pixel votes for all lines passing through it by computing $\\rho = x \\cos\\theta + y \\sin\\theta$ for all angles. Collinear points vote for the same $(\\rho, \\theta)$, creating peaks. <strong>$(\\rho, \\theta)$ is used because $y = mx + c$ cannot represent vertical lines</strong> (infinite slope).'
+    },
+    {
+      q: 'What does the Harris corner response $R$ tell you about a pixel?',
+      a: '$R = \\lambda_1\\lambda_2 - k(\\lambda_1 + \\lambda_2)^2$.<br><strong>$R > 0$ (large):</strong> corner<br><strong>$R < 0$ (large negative):</strong> edge<br><strong>$|R| \\approx 0$:</strong> flat region'
+    },
+    {
+      q: 'Why does SIFT use exactly 128 dimensions?',
+      a: '$16 \\times 16$ pixel region &rarr; $4 \\times 4$ grid &rarr; 8-bin orientation histogram per cell. Total: $4 \\times 4 \\times 8 = $ <strong>128 dimensions</strong>.'
+    },
+    {
+      q: 'What is Lowe&rsquo;s ratio test in feature matching?',
+      a: 'Compare best match distance ($d_1$) to second-best ($d_2$). Accept only if <strong>$d_1/d_2 < 0.8$</strong>. Rejects ambiguous matches where best and second-best are similarly close.'
+    },
+    {
+      q: 'Why is HSV often preferred over RGB in computer vision?',
+      a: 'HSV <strong>separates color (Hue) from lighting conditions (Value)</strong>, making algorithms more robust to illumination changes.'
+    },
+    {
+      q: 'What is non-maximum suppression in Canny, and why is it needed?',
+      a: 'For each pixel, check if its gradient magnitude is the <strong>maximum among neighbors along the gradient direction</strong>. If not, suppress it. Thins multi-pixel edges to 1px wide (single response criterion).'
+    },
+    {
+      q: 'Why are corners better than edges as feature anchor points?',
+      a: 'Corners have intensity changes in <strong>multiple directions</strong>: locally unique, precisely localizable in 2D, stable/repeatable, and produce distinctive descriptors. Edge points all look alike along the edge.'
+    },
+    {
+      q: 'What is Difference of Gaussian (DoG) and what does it approximate?',
+      a: 'DoG subtracts consecutive Gaussian-blurred images: $D = L(x,y,k\\sigma) - L(x,y,\\sigma)$. It approximates the <strong>scale-normalized Laplacian of Gaussian</strong>, a stable edge/blob detector, but much cheaper to compute.'
+    },
+    {
+      q: 'How does SIFT achieve rotation invariance?',
+      a: 'Compute gradient orientations around the keypoint, build a histogram. The peak defines the <strong>dominant orientation</strong>. All descriptor computation is relative to this orientation, canceling out rotation.'
+    },
+    {
+      q: 'What is the structure tensor $M$ in Harris, and what do its eigenvalues represent?',
+      a: '$M = \\sum w(x,y) \\begin{bmatrix} I_x^2 & I_x I_y \\\\ I_x I_y & I_y^2 \\end{bmatrix}$. Eigenvalues $\\lambda_1, \\lambda_2$ represent <strong>principal curvatures of the local intensity surface</strong>. Two large eigenvalues = corner.'
+    },
+    {
+      q: 'What are the three types of Haar-like features?',
+      a: 'Edge features (2 adjacent rectangles), line features (3 rectangles), four-rectangle features (2&times;2 checkerboard). Each computes $|$sum of white region $-$ sum of black region$|$ and thresholds.'
+    },
+    {
+      q: 'Why do Haar features need AdaBoost?',
+      a: 'Haar features are <strong>weak classifiers</strong> &mdash; each one alone has poor discriminative power. AdaBoost selects the most useful features from thousands of candidates and combines them into a strong cascade classifier.'
+    }
+  ]);
+</script>
+
+<!-- ===== CONVOLUTION STEP-THROUGH ===== -->
+<script>
+(function() {
+  const KERNELS = {
+    sobel_gx: [[-1,0,1],[-2,0,2],[-1,0,1]],
+    sobel_gy: [[-1,-2,-1],[0,0,0],[1,2,1]],
+    gaussian: [[1,2,1],[2,4,2],[1,2,1]],
+    sharpen: [[0,-1,0],[-1,5,-1],[0,-1,0]],
+    custom: [[0,0,0],[0,1,0],[0,0,0]]
+  };
+  const DEFAULT_IMAGE = [
+    [10, 10, 10, 50, 50],
+    [10, 10, 10, 50, 50],
+    [10, 10, 10, 50, 50],
+    [80, 80, 80, 80, 80],
+    [80, 80, 80, 80, 80]
+  ];
+  const CELL_SIZE = 52;
+
+  let imageData = DEFAULT_IMAGE.map(r => r.slice());
+  let kernelData = KERNELS.sobel_gx.map(r => r.slice());
+  let outputData = [[null,null,null],[null,null,null],[null,null,null]];
+  let stepRow = 0, stepCol = 0;
+  let animTimer = null;
+
+  function buildGrid(tableId, data, editable, cellClass) {
+    const table = document.getElementById(tableId);
+    table.innerHTML = '';
+    for (let r = 0; r < data.length; r++) {
+      const tr = document.createElement('tr');
+      for (let c = 0; c < data[r].length; c++) {
+        const td = document.createElement('td');
+        td.style.cssText = 'width:'+CELL_SIZE+'px;height:'+CELL_SIZE+'px;text-align:center;border:1px solid #ccc;font-size:13px;padding:0;';
+        td.setAttribute('data-r', r);
+        td.setAttribute('data-c', c);
+        if (editable) {
+          td.contentEditable = 'true';
+          td.style.cursor = 'text';
+          td.addEventListener('blur', function() {
+            const val = parseInt(this.textContent, 10);
+            const row = parseInt(this.getAttribute('data-r'));
+            const col = parseInt(this.getAttribute('data-c'));
+            if (!isNaN(val)) {
+              if (tableId === 'conv-input-grid') imageData[row][col] = val;
+              else if (tableId === 'conv-kernel-grid') kernelData[row][col] = val;
+            }
+            this.textContent = tableId === 'conv-input-grid' ? imageData[row][col] : kernelData[row][col];
+          });
+        }
+        if (data[r][c] !== null) {
+          td.textContent = data[r][c];
+        } else {
+          td.textContent = '';
+          td.style.background = '#f0f0f0';
+        }
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+  }
+
+  function highlightKernelPosition(row, col) {
+    // Clear highlights on input grid
+    const inputTable = document.getElementById('conv-input-grid');
+    const cells = inputTable.querySelectorAll('td');
+    cells.forEach(td => { td.style.background = ''; });
+    // Highlight the 3x3 region starting at (row, col)
+    for (let kr = 0; kr < 3; kr++) {
+      for (let kc = 0; kc < 3; kc++) {
+        const ir = row + kr;
+        const ic = col + kc;
+        const cell = inputTable.querySelector('td[data-r="'+ir+'"][data-c="'+ic+'"]');
+        if (cell) cell.style.background = '#d0e8ff';
+      }
+    }
+  }
+
+  function computeStep(row, col) {
+    let terms = [];
+    let sum = 0;
+    const isGaussian = document.getElementById('conv-kernel-select').value === 'gaussian';
+    for (let kr = 0; kr < 3; kr++) {
+      for (let kc = 0; kc < 3; kc++) {
+        const iv = imageData[row + kr][col + kc];
+        const kv = kernelData[kr][kc];
+        const prod = iv * kv;
+        terms.push(kv + '\u00d7' + iv);
+        sum += prod;
+      }
+    }
+    if (isGaussian) {
+      const divisor = 16;
+      const rawSum = sum;
+      sum = Math.round(sum / divisor);
+      return { terms, sum, extra: ' = ' + rawSum + '/16 = ' + sum };
+    }
+    return { terms, sum, extra: '' };
+  }
+
+  function doStep() {
+    if (stepRow > 2) return;
+    highlightKernelPosition(stepRow, stepCol);
+    const result = computeStep(stepRow, stepCol);
+    outputData[stepRow][stepCol] = result.sum;
+
+    const compDiv = document.getElementById('conv-computation');
+    compDiv.innerHTML = 'Position (' + stepRow + ',' + stepCol + '): ' +
+      result.terms.join(' + ') + ' = ' + (result.extra ? result.terms.reduce((a, t) => {
+        const parts = t.split('\u00d7');
+        return a + parseInt(parts[0]) * parseInt(parts[1]);
+      }, 0) + result.extra : result.sum);
+
+    // Update output grid
+    buildGrid('conv-output-grid', outputData, false);
+    // Highlight the current output cell
+    const outTable = document.getElementById('conv-output-grid');
+    const outCell = outTable.querySelector('td[data-r="'+stepRow+'"][data-c="'+stepCol+'"]');
+    if (outCell) {
+      outCell.style.background = '#c8e6c9';
+      outCell.style.fontWeight = '600';
+    }
+
+    stepCol++;
+    if (stepCol > 2) { stepCol = 0; stepRow++; }
+  }
+
+  function runAll() {
+    resetConv();
+    animTimer = setInterval(function() {
+      if (stepRow > 2) {
+        clearInterval(animTimer);
+        animTimer = null;
+        // Clear input highlights
+        const inputTable = document.getElementById('conv-input-grid');
+        inputTable.querySelectorAll('td').forEach(td => { td.style.background = ''; });
+        document.getElementById('conv-computation').innerHTML = 'Convolution complete.';
+        return;
+      }
+      doStep();
+    }, 500);
+  }
+
+  function resetConv() {
+    if (animTimer) { clearInterval(animTimer); animTimer = null; }
+    stepRow = 0; stepCol = 0;
+    outputData = [[null,null,null],[null,null,null],[null,null,null]];
+    buildGrid('conv-output-grid', outputData, false);
+    const inputTable = document.getElementById('conv-input-grid');
+    inputTable.querySelectorAll('td').forEach(td => { td.style.background = ''; });
+    document.getElementById('conv-computation').innerHTML = '';
+  }
+
+  function init() {
+    buildGrid('conv-input-grid', imageData, true);
+    buildGrid('conv-kernel-grid', kernelData, true);
+    buildGrid('conv-output-grid', outputData, false);
+
+    document.getElementById('conv-kernel-select').addEventListener('change', function() {
+      const key = this.value;
+      kernelData = KERNELS[key].map(r => r.slice());
+      buildGrid('conv-kernel-grid', kernelData, key === 'custom');
+      resetConv();
+    });
+
+    document.getElementById('conv-step-btn').addEventListener('click', doStep);
+    document.getElementById('conv-run-btn').addEventListener('click', runAll);
+    document.getElementById('conv-reset-btn').addEventListener('click', resetConv);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+
+<!-- ===== HOUGH TRANSFORM VOTING ===== -->
+<script>
+(function() {
+  const imgCanvas = document.getElementById('hough-image-canvas');
+  const paramCanvas = document.getElementById('hough-param-canvas');
+  const imgCtx = imgCanvas.getContext('2d');
+  const paramCtx = paramCanvas.getContext('2d');
+  const W = 300, H = 300;
+  const THETA_BINS = 180;
+  const RHO_MAX = Math.ceil(Math.sqrt(W * W + H * H));
+  const RHO_BINS = 2 * RHO_MAX;
+  const COLORS = ['#e53935','#1e88e5','#43a047','#f4511e','#8e24aa','#00897b','#d81b60','#3949ab','#fdd835','#6d4c41'];
+  const MAX_POINTS = 10;
+  const ACCUM_THRESHOLD = 2;
+
+  let points = [];
+  let accumulator = [];
+
+  function resetAccumulator() {
+    accumulator = [];
+    for (let t = 0; t < THETA_BINS; t++) {
+      accumulator[t] = new Int32Array(RHO_BINS);
+    }
+  }
+
+  function clear() {
+    points = [];
+    resetAccumulator();
+    drawAll();
+    document.getElementById('hough-info').textContent = 'Click to place up to 10 edge points.';
+  }
+
+  function addPoint(x, y) {
+    if (points.length >= MAX_POINTS) return;
+    points.push({ x, y, color: COLORS[points.length % COLORS.length] });
+    // Vote in accumulator
+    for (let ti = 0; ti < THETA_BINS; ti++) {
+      const theta = (ti / THETA_BINS) * Math.PI;
+      const rho = x * Math.cos(theta) + y * Math.sin(theta);
+      const ri = Math.round(rho + RHO_MAX);
+      if (ri >= 0 && ri < RHO_BINS) {
+        accumulator[ti][ri]++;
+      }
+    }
+    drawAll();
+    document.getElementById('hough-info').textContent = points.length + ' point(s) placed. ' + (MAX_POINTS - points.length) + ' remaining.';
+  }
+
+  function drawAll() {
+    // --- Image space ---
+    imgCtx.clearRect(0, 0, W, H);
+    imgCtx.fillStyle = '#fff';
+    imgCtx.fillRect(0, 0, W, H);
+
+    // Draw detected lines (from accumulator peaks)
+    if (points.length >= 2) {
+      for (let ti = 0; ti < THETA_BINS; ti++) {
+        for (let ri = 0; ri < RHO_BINS; ri++) {
+          if (accumulator[ti][ri] >= ACCUM_THRESHOLD) {
+            const theta = (ti / THETA_BINS) * Math.PI;
+            const rho = ri - RHO_MAX;
+            drawLineOnImage(theta, rho);
+          }
+        }
+      }
+    }
+
+    // Draw points
+    for (let i = 0; i < points.length; i++) {
+      imgCtx.beginPath();
+      imgCtx.arc(points[i].x, points[i].y, 5, 0, 2 * Math.PI);
+      imgCtx.fillStyle = points[i].color;
+      imgCtx.fill();
+      imgCtx.strokeStyle = '#333';
+      imgCtx.lineWidth = 1;
+      imgCtx.stroke();
+    }
+
+    // --- Parameter space ---
+    paramCtx.clearRect(0, 0, W, H);
+    paramCtx.fillStyle = '#fff';
+    paramCtx.fillRect(0, 0, W, H);
+
+    // Axes
+    paramCtx.strokeStyle = '#ccc';
+    paramCtx.lineWidth = 0.5;
+    // theta axis label
+    paramCtx.fillStyle = '#999';
+    paramCtx.font = '11px sans-serif';
+    paramCtx.fillText('0', 2, H - 4);
+    paramCtx.fillText('\u03C0', W - 12, H - 4);
+    paramCtx.fillText('\u03B8', W / 2 - 4, H - 4);
+    paramCtx.fillText('\u03C1', 4, 12);
+
+    // Draw sinusoidal curves for each point
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+      paramCtx.beginPath();
+      paramCtx.strokeStyle = pt.color;
+      paramCtx.lineWidth = 1.5;
+      for (let ti = 0; ti < THETA_BINS; ti++) {
+        const theta = (ti / THETA_BINS) * Math.PI;
+        const rho = pt.x * Math.cos(theta) + pt.y * Math.sin(theta);
+        const px = (ti / THETA_BINS) * W;
+        const py = H / 2 - (rho / RHO_MAX) * (H / 2);
+        if (ti === 0) paramCtx.moveTo(px, py);
+        else paramCtx.lineTo(px, py);
+      }
+      paramCtx.stroke();
+    }
+
+    // Mark intersections (accumulator peaks)
+    if (points.length >= 2) {
+      for (let ti = 0; ti < THETA_BINS; ti++) {
+        for (let ri = 0; ri < RHO_BINS; ri++) {
+          if (accumulator[ti][ri] >= ACCUM_THRESHOLD) {
+            const px = (ti / THETA_BINS) * W;
+            const rho = ri - RHO_MAX;
+            const py = H / 2 - (rho / RHO_MAX) * (H / 2);
+            paramCtx.beginPath();
+            paramCtx.arc(px, py, 6, 0, 2 * Math.PI);
+            paramCtx.fillStyle = 'rgba(255, 235, 59, 0.7)';
+            paramCtx.fill();
+            paramCtx.strokeStyle = '#f57f17';
+            paramCtx.lineWidth = 2;
+            paramCtx.stroke();
+            // Show vote count
+            paramCtx.fillStyle = '#333';
+            paramCtx.font = 'bold 10px sans-serif';
+            paramCtx.fillText(accumulator[ti][ri], px + 8, py - 4);
+          }
+        }
+      }
+    }
+  }
+
+  function drawLineOnImage(theta, rho) {
+    // Draw the line rho = x*cos(theta) + y*sin(theta) across the canvas
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    let x0, y0, x1, y1;
+    if (Math.abs(sinT) > 0.001) {
+      x0 = 0; y0 = rho / sinT;
+      x1 = W; y1 = (rho - W * cosT) / sinT;
+    } else {
+      x0 = rho / cosT; y0 = 0;
+      x1 = rho / cosT; y1 = H;
+    }
+    imgCtx.beginPath();
+    imgCtx.moveTo(x0, y0);
+    imgCtx.lineTo(x1, y1);
+    imgCtx.strokeStyle = 'rgba(21, 101, 192, 0.35)';
+    imgCtx.lineWidth = 2;
+    imgCtx.setLineDash([6, 4]);
+    imgCtx.stroke();
+    imgCtx.setLineDash([]);
+  }
+
+  imgCanvas.addEventListener('click', function(e) {
+    const rect = imgCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    addPoint(Math.round(x), Math.round(y));
+  });
+
+  paramCanvas.addEventListener('mousemove', function(e) {
+    const rect = paramCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const ti = Math.floor((mx / W) * THETA_BINS);
+    const rho = -(my - H / 2) / (H / 2) * RHO_MAX;
+    const ri = Math.round(rho + RHO_MAX);
+    const votes = (ti >= 0 && ti < THETA_BINS && ri >= 0 && ri < RHO_BINS) ? accumulator[ti][ri] : 0;
+    const thetaDeg = ((ti / THETA_BINS) * 180).toFixed(1);
+    document.getElementById('hough-info').textContent =
+      points.length + ' point(s). Cursor: \u03B8=' + thetaDeg + '\u00B0, \u03C1=' + Math.round(rho) + ', votes=' + votes;
+  });
+
+  document.getElementById('hough-clear-btn').addEventListener('click', clear);
+
+  // Initial draw
+  resetAccumulator();
+  drawAll();
+})();
+</script>
+
+<!-- ===== HARRIS CORNER EXPLORER ===== -->
+<script>
+(function() {
+  const sceneCanvas = document.getElementById('harris-scene-canvas');
+  const ellipseCanvas = document.getElementById('harris-ellipse-canvas');
+  const sceneCtx = sceneCanvas.getContext('2d');
+  const ellipseCtx = ellipseCanvas.getContext('2d');
+  const kSlider = document.getElementById('harris-k-slider');
+  const kValSpan = document.getElementById('harris-k-val');
+  const infoDiv = document.getElementById('harris-info');
+
+  const REGIONS = {
+    flat:   { label: 'Flat Area',  l1: 2,  l2: 1,  x: 0,   w: 100 },
+    edge:   { label: 'Edge',       l1: 100, l2: 2,  x: 100, w: 100 },
+    corner: { label: 'Corner',     l1: 80,  l2: 75, x: 200, w: 100 }
+  };
+
+  let selectedRegion = null;
+
+  function drawScene() {
+    sceneCtx.clearRect(0, 0, 300, 200);
+
+    // Flat area: uniform grey
+    sceneCtx.fillStyle = '#d0d0d0';
+    sceneCtx.fillRect(0, 0, 100, 200);
+    sceneCtx.fillStyle = '#999';
+    sceneCtx.font = '12px sans-serif';
+    sceneCtx.textAlign = 'center';
+    sceneCtx.fillText('Flat', 50, 190);
+
+    // Edge: vertical gradient
+    sceneCtx.fillStyle = '#b0b0b0';
+    sceneCtx.fillRect(100, 0, 50, 200);
+    sceneCtx.fillStyle = '#606060';
+    sceneCtx.fillRect(150, 0, 50, 200);
+    sceneCtx.fillStyle = '#999';
+    sceneCtx.fillText('Edge', 150, 190);
+
+    // Corner: L-shape
+    sceneCtx.fillStyle = '#e8e8e8';
+    sceneCtx.fillRect(200, 0, 100, 200);
+    sceneCtx.fillStyle = '#505050';
+    sceneCtx.fillRect(220, 40, 60, 80);
+    sceneCtx.fillRect(220, 40, 30, 140);
+    sceneCtx.fillStyle = '#999';
+    sceneCtx.fillText('Corner', 250, 190);
+
+    // Highlight selected region
+    if (selectedRegion) {
+      const r = REGIONS[selectedRegion];
+      sceneCtx.strokeStyle = '#1565c0';
+      sceneCtx.lineWidth = 3;
+      sceneCtx.strokeRect(r.x + 2, 2, r.w - 4, 196);
+    }
+
+    // Draw divider lines
+    sceneCtx.strokeStyle = '#aaa';
+    sceneCtx.lineWidth = 1;
+    sceneCtx.setLineDash([4, 4]);
+    sceneCtx.beginPath();
+    sceneCtx.moveTo(100, 0); sceneCtx.lineTo(100, 200);
+    sceneCtx.moveTo(200, 0); sceneCtx.lineTo(200, 200);
+    sceneCtx.stroke();
+    sceneCtx.setLineDash([]);
+  }
+
+  function drawEllipse(l1, l2) {
+    const cw = 160, ch = 160;
+    ellipseCtx.clearRect(0, 0, cw, ch);
+    const cx = cw / 2, cy = ch / 2;
+    const maxR = 65;
+    const maxEig = 100;
+    const rx = Math.max(4, (l1 / maxEig) * maxR);
+    const ry = Math.max(4, (l2 / maxEig) * maxR);
+
+    // Axes
+    ellipseCtx.strokeStyle = '#e0e0e0';
+    ellipseCtx.lineWidth = 1;
+    ellipseCtx.beginPath();
+    ellipseCtx.moveTo(cx, 5); ellipseCtx.lineTo(cx, ch - 5);
+    ellipseCtx.moveTo(5, cy); ellipseCtx.lineTo(cw - 5, cy);
+    ellipseCtx.stroke();
+
+    // Ellipse
+    ellipseCtx.beginPath();
+    ellipseCtx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+    ellipseCtx.fillStyle = 'rgba(21, 101, 192, 0.15)';
+    ellipseCtx.fill();
+    ellipseCtx.strokeStyle = '#1565c0';
+    ellipseCtx.lineWidth = 2;
+    ellipseCtx.stroke();
+
+    // Label axes
+    ellipseCtx.fillStyle = '#555';
+    ellipseCtx.font = '10px sans-serif';
+    ellipseCtx.textAlign = 'center';
+    ellipseCtx.fillText('\u03BB\u2081', cx + rx + 8, cy + 4);
+    ellipseCtx.fillText('\u03BB\u2082', cx + 4, cy - ry - 4);
+  }
+
+  function updateInfo() {
+    if (!selectedRegion) {
+      infoDiv.innerHTML = 'Select a region to see eigenvalues and Harris response.';
+      ellipseCtx.clearRect(0, 0, 160, 160);
+      return;
+    }
+    const r = REGIONS[selectedRegion];
+    const k = parseFloat(kSlider.value);
+    const l1 = r.l1, l2 = r.l2;
+    const R = l1 * l2 - k * (l1 + l2) * (l1 + l2);
+    const Rround = Math.round(R * 100) / 100;
+
+    let classification, colorStyle;
+    if (R > 50) {
+      classification = 'Corner';
+      colorStyle = 'color:#2e7d32;font-weight:600;';
+    } else if (R < -50) {
+      classification = 'Edge';
+      colorStyle = 'color:#c62828;font-weight:600;';
+    } else {
+      classification = 'Flat';
+      colorStyle = 'color:#888;font-weight:600;';
+    }
+
+    infoDiv.innerHTML =
+      '<strong>' + r.label + '</strong><br>' +
+      '$\\lambda_1 = ' + l1 + '$, &nbsp; $\\lambda_2 = ' + l2 + '$<br>' +
+      '$R = \\lambda_1\\lambda_2 - k(\\lambda_1 + \\lambda_2)^2 = ' +
+      l1 + ' \\cdot ' + l2 + ' - ' + k + ' \\cdot (' + l1 + ' + ' + l2 + ')^2 = $ ' +
+      '<span style="font-size:15px;' + colorStyle + '">' + Rround + '</span><br>' +
+      'Classification: <span style="' + colorStyle + '">' + classification + '</span>';
+
+    // Re-render KaTeX in the info div
+    if (window.renderMathInElement) {
+      renderMathInElement(infoDiv, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false}
+        ]
+      });
+    }
+
+    drawEllipse(l1, l2);
+  }
+
+  sceneCanvas.addEventListener('click', function(e) {
+    const rect = sceneCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    if (x < 100) selectedRegion = 'flat';
+    else if (x < 200) selectedRegion = 'edge';
+    else selectedRegion = 'corner';
+    drawScene();
+    updateInfo();
+  });
+
+  kSlider.addEventListener('input', function() {
+    kValSpan.textContent = parseFloat(this.value).toFixed(3);
+    updateInfo();
+  });
+
+  // Initial draw
+  drawScene();
+  updateInfo();
+})();
+</script>
+
+<!-- ===== VISUALIZATION: FEATURE MATCHING ===== -->
+<script>
+(function() {
+  var c1 = document.getElementById('match-canvas1');
+  var c2 = document.getElementById('match-canvas2');
+  var ctx1 = c1.getContext('2d');
+  var ctx2 = c2.getContext('2d');
+  var W = c1.width, H = c1.height;
+  var statusEl = document.getElementById('match-status');
+  var eqEl = document.getElementById('match-equations');
+  var ratioSlider = document.getElementById('match-ratio');
+  var ratioValEl = document.getElementById('match-ratio-val');
+  var btnGen = document.getElementById('match-generate');
+  var btnSelect = document.getElementById('match-select');
+
+  // Feature data: each feature has position (for display) and a short descriptor vector
+  var DIM = 8; // descriptor dimensionality (simplified from 128)
+  var featuresA = []; // {x, y, desc: [numbers]}
+  var featuresB = [];
+  var selectedIdx = -1;
+  var matchResult = null;
+
+  var COLORS_A = '#1565c0';
+  var COLORS_B_MATCH = '#27ae60';
+  var COLORS_B_SECOND = '#e67e22';
+  var COLORS_B_REST = '#ccc';
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function randn() { var u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+
+  function generateDescriptor() {
+    var d = [];
+    for (var i = 0; i < DIM; i++) d.push(Math.round(rand(0, 200)));
+    return d;
+  }
+
+  function euclidean(a, b) {
+    var sum = 0;
+    for (var i = 0; i < a.length; i++) sum += (a[i] - b[i]) * (a[i] - b[i]);
+    return Math.sqrt(sum);
+  }
+
+  function generateFeatures() {
+    featuresA = [];
+    featuresB = [];
+    var nA = 5 + Math.floor(Math.random() * 3); // 5-7 features in image 1
+    var nB = 7 + Math.floor(Math.random() * 4); // 7-10 features in image 2
+
+    // Some features in B are "true matches" (similar descriptors to A), others are distractors
+    for (var i = 0; i < nA; i++) {
+      featuresA.push({ x: rand(30, W-30), y: rand(30, H-30), desc: generateDescriptor() });
+    }
+
+    // First nA features in B are near-matches (perturbed versions of A descriptors)
+    for (var i = 0; i < nA; i++) {
+      var perturbedDesc = featuresA[i].desc.map(function(v) {
+        return Math.max(0, Math.min(255, Math.round(v + randn() * 15)));
+      });
+      featuresB.push({ x: rand(30, W-30), y: rand(30, H-30), desc: perturbedDesc, trueMatchOf: i });
+    }
+    // Add some distractors that are close to some A features (to test ratio test)
+    for (var i = featuresB.length; i < nB; i++) {
+      // Some distractors are semi-close to a random A feature
+      var closeToIdx = Math.floor(Math.random() * nA);
+      var distDesc;
+      if (Math.random() < 0.4) {
+        // Ambiguous distractor — similar to the true match (ratio test should catch this)
+        distDesc = featuresA[closeToIdx].desc.map(function(v) {
+          return Math.max(0, Math.min(255, Math.round(v + randn() * 25)));
+        });
+      } else {
+        distDesc = generateDescriptor();
+      }
+      featuresB.push({ x: rand(30, W-30), y: rand(30, H-30), desc: distDesc, trueMatchOf: -1 });
+    }
+
+    selectedIdx = -1;
+    matchResult = null;
+    btnSelect.disabled = false;
+    draw();
+    eqEl.innerHTML = '';
+    statusEl.textContent = featuresA.length + ' features in Image 1, ' + featuresB.length + ' in Image 2. Click "Select Next Feature" to match.';
+  }
+
+  function selectNext() {
+    selectedIdx = (selectedIdx + 1) % featuresA.length;
+    computeMatch();
+    draw();
+    showMatchEquations();
+  }
+
+  function computeMatch() {
+    var query = featuresA[selectedIdx];
+    var distances = [];
+    for (var j = 0; j < featuresB.length; j++) {
+      distances.push({ idx: j, dist: euclidean(query.desc, featuresB[j].desc) });
+    }
+    distances.sort(function(a, b) { return a.dist - b.dist; });
+    var d1 = distances[0].dist;
+    var d2 = distances[1].dist;
+    var ratio = d2 > 0 ? d1 / d2 : 0;
+    var threshold = parseInt(ratioSlider.value) / 100;
+    var accepted = ratio < threshold;
+
+    matchResult = {
+      queryIdx: selectedIdx,
+      distances: distances,
+      bestIdx: distances[0].idx,
+      secondIdx: distances[1].idx,
+      d1: d1,
+      d2: d2,
+      ratio: ratio,
+      threshold: threshold,
+      accepted: accepted
+    };
+  }
+
+  function draw() {
+    ctx1.clearRect(0, 0, W, H);
+    ctx2.clearRect(0, 0, W, H);
+
+    // Draw all features in Image 1
+    for (var i = 0; i < featuresA.length; i++) {
+      var f = featuresA[i];
+      ctx1.beginPath();
+      ctx1.arc(f.x, f.y, i === selectedIdx ? 8 : 5, 0, 2*Math.PI);
+      ctx1.fillStyle = i === selectedIdx ? '#e74c3c' : COLORS_A;
+      ctx1.fill();
+      if (i === selectedIdx) {
+        ctx1.strokeStyle = '#c0392b';
+        ctx1.lineWidth = 2;
+        ctx1.stroke();
+      }
+      ctx1.fillStyle = '#333';
+      ctx1.font = '10px sans-serif';
+      ctx1.fillText('A' + (i+1), f.x + 8, f.y - 4);
+    }
+
+    // Draw all features in Image 2
+    for (var j = 0; j < featuresB.length; j++) {
+      var f = featuresB[j];
+      var color = COLORS_B_REST;
+      var radius = 5;
+      var lineWidth = 1;
+      var strokeColor = 'transparent';
+
+      if (matchResult && matchResult.queryIdx === selectedIdx) {
+        if (j === matchResult.bestIdx) {
+          color = matchResult.accepted ? COLORS_B_MATCH : '#999';
+          radius = 8;
+          strokeColor = matchResult.accepted ? '#1e8449' : '#666';
+          lineWidth = 2;
+        } else if (j === matchResult.secondIdx) {
+          color = COLORS_B_SECOND;
+          radius = 7;
+          strokeColor = '#d35400';
+          lineWidth = 2;
+        }
+      }
+
+      ctx2.beginPath();
+      ctx2.arc(f.x, f.y, radius, 0, 2*Math.PI);
+      ctx2.fillStyle = color;
+      ctx2.fill();
+      if (strokeColor !== 'transparent') {
+        ctx2.strokeStyle = strokeColor;
+        ctx2.lineWidth = lineWidth;
+        ctx2.stroke();
+      }
+      ctx2.fillStyle = '#333';
+      ctx2.font = '10px sans-serif';
+      ctx2.fillText('B' + (j+1), f.x + 8, f.y - 4);
+    }
+
+    // Draw match line if accepted
+    if (matchResult && matchResult.accepted) {
+      ctx1.strokeStyle = COLORS_B_MATCH;
+      ctx1.lineWidth = 1.5;
+      ctx1.setLineDash([4, 3]);
+      ctx1.beginPath();
+      ctx1.moveTo(featuresA[selectedIdx].x, featuresA[selectedIdx].y);
+      ctx1.lineTo(W, featuresA[selectedIdx].y);
+      ctx1.stroke();
+      ctx1.setLineDash([]);
+
+      ctx2.strokeStyle = COLORS_B_MATCH;
+      ctx2.lineWidth = 1.5;
+      ctx2.setLineDash([4, 3]);
+      ctx2.beginPath();
+      ctx2.moveTo(0, featuresB[matchResult.bestIdx].y);
+      ctx2.lineTo(featuresB[matchResult.bestIdx].x, featuresB[matchResult.bestIdx].y);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+    }
+  }
+
+  function fmt(v) { return v.toFixed(2); }
+
+  function showMatchEquations() {
+    if (!matchResult) return;
+    var r = matchResult;
+    var q = featuresA[r.queryIdx];
+    var threshold = parseInt(ratioSlider.value) / 100;
+
+    var html = '';
+
+    // Step 1: distance computation
+    html += '<div style="border-left:3px solid #1565c0;background:#f5f8ff;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1565c0;text-transform:uppercase;margin-bottom:6px;">Step 1: Compute Euclidean distances</div>';
+    html += '<div style="margin-bottom:6px;">For query feature $A_{' + (r.queryIdx+1) + '}$ with descriptor $\\mathbf{f}_1 = [' + q.desc.join(', ') + ']$:</div>';
+    html += '<div>$$d(\\mathbf{f}_1, \\mathbf{f}_2) = \\sqrt{\\sum_{i=1}^{' + DIM + '}(f_{1,i} - f_{2,i})^2}$$</div>';
+    html += '</div>';
+
+    // Distance table
+    html += '<div style="font-size:12px;font-weight:600;color:#555;margin:10px 0 6px;">All distances (sorted)</div>';
+    html += '<table style="font-size:11px;"><tr><th>Rank</th><th>Feature</th><th>Distance</th><th>Role</th></tr>';
+    var nShow = Math.min(r.distances.length, 6);
+    for (var i = 0; i < nShow; i++) {
+      var d = r.distances[i];
+      var role = '';
+      var style = '';
+      if (i === 0) { role = 'Best match ($d_1$)'; style = 'background:#e8f5e9;font-weight:600;'; }
+      else if (i === 1) { role = 'Second best ($d_2$)'; style = 'background:#fff3e0;font-weight:600;'; }
+      html += '<tr style="' + style + '"><td>' + (i+1) + '</td><td>B' + (d.idx+1) + '</td><td>' + fmt(d.dist) + '</td><td>' + role + '</td></tr>';
+    }
+    if (r.distances.length > nShow) {
+      html += '<tr><td colspan="4" style="color:#999;">... ' + (r.distances.length - nShow) + ' more</td></tr>';
+    }
+    html += '</table>';
+
+    // Step 2: Lowe's ratio test
+    html += '<div style="border-left:3px solid #e67e22;background:#fff8f0;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+    html += '<div style="font-size:11px;font-weight:600;color:#e67e22;text-transform:uppercase;margin-bottom:6px;">Step 2: Lowe\'s Ratio Test</div>';
+    html += '<div style="margin-bottom:6px;">$$\\text{ratio} = \\frac{d_1}{d_2} = \\frac{' + fmt(r.d1) + '}{' + fmt(r.d2) + '} = ' + fmt(r.ratio) + '$$</div>';
+    html += '<div style="margin-bottom:6px;">Threshold: $' + fmt(threshold) + '$</div>';
+    html += '<div style="margin-bottom:6px;">Test: $' + fmt(r.ratio) + (r.accepted ? ' < ' : ' \\geq ') + fmt(threshold) + '$</div>';
+    html += '</div>';
+
+    // Verdict
+    if (r.accepted) {
+      html += '<div style="border-left:3px solid #27ae60;background:#e8f5e9;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+      html += '<div style="font-size:11px;font-weight:600;color:#27ae60;text-transform:uppercase;margin-bottom:4px;">Match Accepted</div>';
+      html += '<div>The best match (B' + (r.bestIdx+1) + ', $d_1=' + fmt(r.d1) + '$) is <strong>significantly closer</strong> than the second best (B' + (r.secondIdx+1) + ', $d_2=' + fmt(r.d2) + '$). ';
+      html += 'The ratio $' + fmt(r.ratio) + ' < ' + fmt(threshold) + '$ means this match is <strong>unambiguous</strong> — B' + (r.bestIdx+1) + ' is clearly the best candidate.</div>';
+      html += '</div>';
+    } else {
+      html += '<div style="border-left:3px solid #c62828;background:#fef0f0;padding:12px 16px;margin:10px 0;border-radius:0 4px 4px 0;">';
+      html += '<div style="font-size:11px;font-weight:600;color:#c62828;text-transform:uppercase;margin-bottom:4px;">Match Rejected</div>';
+      html += '<div>The best match (B' + (r.bestIdx+1) + ', $d_1=' + fmt(r.d1) + '$) and second best (B' + (r.secondIdx+1) + ', $d_2=' + fmt(r.d2) + '$) have <strong>similar distances</strong>. ';
+      html += 'The ratio $' + fmt(r.ratio) + ' \\geq ' + fmt(threshold) + '$ means this match is <strong>ambiguous</strong> — we cannot be sure B' + (r.bestIdx+1) + ' is the correct match and not B' + (r.secondIdx+1) + '. It is safer to reject.</div>';
+      html += '</div>';
+    }
+
+    // Intuition box
+    html += '<div class="insight-box"><div class="box-label">Why the ratio test works</div>';
+    html += '<div>If the best match is a <strong>true correspondence</strong>, it should be much closer than any other feature (low ratio). ';
+    html += 'If two candidates have similar distances, the match is ambiguous and likely wrong. ';
+    html += 'Try adjusting the threshold slider: lower values are stricter (fewer but more reliable matches), higher values are more permissive (more matches but more false positives).</div></div>';
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+
+    var status = 'Feature A' + (r.queryIdx+1) + ' → ';
+    if (r.accepted) {
+      status += 'matched to B' + (r.bestIdx+1) + ' (ratio ' + fmt(r.ratio) + ' < ' + fmt(threshold) + ')';
+    } else {
+      status += 'rejected (ratio ' + fmt(r.ratio) + ' >= ' + fmt(threshold) + ')';
+    }
+    statusEl.textContent = status;
+  }
+
+  btnGen.addEventListener('click', generateFeatures);
+  btnSelect.addEventListener('click', selectNext);
+  ratioSlider.addEventListener('input', function() {
+    ratioValEl.textContent = (parseInt(ratioSlider.value) / 100).toFixed(2);
+    if (selectedIdx >= 0) {
+      computeMatch();
+      draw();
+      showMatchEquations();
+    }
+  });
+})();
+</script>
+</body>
+</html>

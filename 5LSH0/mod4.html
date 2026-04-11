@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4. Deep Learning Fundamentals — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">4. Deep Learning Fundamentals</h1>
+    <p class="page-subtitle">Neurons, activation functions, forward propagation, loss functions, gradient descent, backpropagation, overfitting</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#motivation">1. Why Deep Learning?</a>
+      <a href="#neuron">2. The Neuron</a>
+      <a href="#architecture">3. Network Architecture</a>
+      <a href="#activation-functions">4. Activation Functions</a>
+      <a href="#forward-propagation">5. Forward Propagation</a>
+      <a href="#softmax">6. SoftMax &amp; Output</a>
+      <a href="#loss-functions">7. Loss Functions</a>
+      <a href="#gradient-descent">8. Gradient Descent</a>
+      <a href="#backpropagation">9. Backpropagation</a>
+      <a href="#training-pipeline">10. Training Pipeline</a>
+      <a href="#overfitting">11. Overfitting &amp; Underfitting</a>
+      <a href="#hierarchical-learning">12. Hierarchical Feature Learning</a>
+      <a class="toc-interactive" href="#backprop-walkthrough">Interactive: Backpropagation Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: MOTIVATION ===== -->
+    <h2 class="section-heading" id="motivation">1. Why Deep Learning?</h2>
+
+    <p>Classical computer vision methods rely on <strong>hand-crafted features</strong> such as SIFT, HOG, and Haar-like features. While computationally cheap, they suffer from critical limitations that deep learning overcomes.</p>
+
+    <table>
+      <tr><th>Limitation of Classical Methods</th><th>Deep Learning Solution</th></tr>
+      <tr><td>Inflexible hand-crafted features</td><td>Learns features directly from data</td></tr>
+      <tr><td>Poor multi-class performance</td><td>Softmax naturally supports many classes</td></tr>
+      <tr><td>Sensitive to viewpoint, scale, illumination, occlusion</td><td>Learned invariances from large datasets</td></tr>
+      <tr><td>Cannot handle intra-class variation</td><td>Hierarchical representations capture variation</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The fundamental shift in deep learning: instead of engineering features by hand, we engineer the architecture and let the network discover which features matter for the task.</div>
+    </div>
+
+    <!-- ===== SECTION 2: THE NEURON ===== -->
+    <h2 class="section-heading" id="neuron">2. The Neuron: Basic Building Block</h2>
+
+    <h3 class="subsection-heading">Biological Inspiration</h3>
+    <p>Neural networks are loosely inspired by the brain. The key insight is that <strong>connections</strong> (not the neurons themselves) encode knowledge. In artificial neural networks, connection strengths are called <strong>weights</strong>.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod4/biological_neuron_diagram.png" alt="Biological neuron showing dendrites, cell body, axon">
+      <div class="figure-caption">Biological neuron: dendrites receive signals, the cell body integrates them, the axon transmits the output.</div>
+    </div>
+
+    <h3 class="subsection-heading">Artificial Neuron</h3>
+    <p>An artificial neuron takes weighted inputs, adds a bias, then applies an activation function:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Neuron Computation</div>
+      <div>
+        $$z = \sum_{i=1}^{n} w_i a_i + b$$
+        $$\text{output} = f(z)$$
+        where $a_i$ are input activations, $w_i$ are weights, $b$ is the bias, and $f$ is the activation function.
+      </div>
+    </div>
+
+    <p>The <strong>bias</strong> $b$ shifts the activation threshold. Without bias, neurons can only model functions passing through the origin. A bias of $-10$ means the neuron only activates when $\sum w_i a_i > 10$.</p>
+
+    <h3 class="subsection-heading">Input Layer Example: MNIST</h3>
+    <p>For a 28&times;28 grayscale image (MNIST handwritten digits), each pixel becomes one input neuron:</p>
+
+    <div class="definition-box">
+      <div class="box-label">MNIST Input Layer</div>
+      <div>$$784 \text{ neurons} = 28 \times 28 \text{ pixels}$$
+      Each neuron's activation = pixel intensity (0 = black, 1 = white).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/nn_first_layer_784_pixels.png" alt="MNIST digit mapped to 784 input neurons">
+      <div class="figure-caption">A 28x28 digit image: each pixel maps to one input neuron. Black pixel = 0.0, white pixel = 1.0.</div>
+    </div>
+
+    <!-- ===== SECTION 3: ARCHITECTURE ===== -->
+    <h2 class="section-heading" id="architecture">3. Network Architecture</h2>
+
+    <h3 class="subsection-heading">Layers of a Neural Network</h3>
+    <p>The MNIST digit recognition network has four layers:</p>
+    <ol>
+      <li><strong>Input layer (784 neurons):</strong> One neuron per pixel.</li>
+      <li><strong>Hidden layer 1 (16 neurons):</strong> Learns low-level patterns (edges, strokes).</li>
+      <li><strong>Hidden layer 2 (16 neurons):</strong> Learns higher-level combinations.</li>
+      <li><strong>Output layer (10 neurons):</strong> One neuron per class (digits 0&ndash;9). Highest activation = prediction.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod4/nn_full_architecture_784_16_16_10.png" alt="Full network architecture: 784-16-16-10">
+      <div class="figure-caption">Full 784-16-16-10 architecture. Activations propagate forward; the most active output neuron is the prediction.</div>
+    </div>
+
+    <h3 class="subsection-heading">Role of Weights</h3>
+    <ul>
+      <li><strong>Positive weight:</strong> amplifies the signal (excitatory connection).</li>
+      <li><strong>Negative weight:</strong> suppresses the signal (inhibitory connection).</li>
+      <li>Finding the right weights is the entire goal of training.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod4/neuron_weights_connections.png" alt="Neuron with 784 input connections">
+      <div class="figure-caption">A single hidden neuron with 784 incoming weighted connections. Each connection has a learned weight.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Parameter Count: 784-16-16-10 Network</div>
+      <div>
+        $$\text{Total} = \underbrace{(784 \times 16 + 16)}_{\text{layer 1}} + \underbrace{(16 \times 16 + 16)}_{\text{layer 2}} + \underbrace{(16 \times 10 + 10)}_{\text{layer 3}} = 13{,}002 \text{ parameters}$$
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/nn_weights_and_biases_count.png" alt="Parameter count breakdown">
+      <div class="figure-caption">Parameter count per layer: weights plus one bias per neuron.</div>
+    </div>
+
+    <!-- ===== SECTION 4: ACTIVATION FUNCTIONS ===== -->
+    <h2 class="section-heading" id="activation-functions">4. Activation Functions</h2>
+
+    <h3 class="subsection-heading">Why Non-Linearity is Essential</h3>
+    <p>This is a critical exam concept. If every neuron uses a linear activation $f(x) = x$, then no matter how many layers you stack, the entire network collapses to a single linear transformation:</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The sum of linear functions is always linear. Without non-linear activations, a deep network is mathematically equivalent to a single-layer linear classifier. Non-linearity is what gives deep networks their expressive power.</div>
+    </div>
+
+    <h3 class="subsection-heading">Sigmoid</h3>
+    <div class="definition-box">
+      <div class="box-label">Sigmoid Function</div>
+      <div>$$\sigma(x) = \frac{1}{1 + e^{-x}}, \quad \text{range: } (0, 1)$$
+      Derivative: $\sigma'(x) = \sigma(x) \cdot (1 - \sigma(x))$</div>
+    </div>
+
+    <p>The S-shaped curve maps any input to $(0, 1)$. Useful for output layers requiring probability-like values.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod4/sigmoid_function_plot.png" alt="Sigmoid function plot">
+      <div class="figure-caption">Sigmoid: S-shaped curve from 0 to 1. At x=0, output=0.5.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation of the sigmoid derivative</div>
+      <div class="collapsible-body">
+        <p>Starting from $\sigma(x) = (1 + e^{-x})^{-1}$, applying the chain rule:</p>
+        $$\sigma'(x) = (-1)(1 + e^{-x})^{-2} \cdot (-e^{-x}) = \frac{e^{-x}}{(1 + e^{-x})^{2}}$$
+        <p>Note that $\frac{e^{-x}}{1 + e^{-x}} = 1 - \sigma(x)$ and $\frac{1}{1 + e^{-x}} = \sigma(x)$, therefore:</p>
+        $$\sigma'(x) = \sigma(x) \cdot (1 - \sigma(x))$$
+        <div class="figure-container">
+          <img src="figures/mod4/sigmoid_derivative_proof_part1.png" alt="Sigmoid derivative proof part 1">
+        </div>
+        <div class="figure-container">
+          <img src="figures/mod4/sigmoid_derivative_proof_part2.png" alt="Sigmoid derivative proof part 2">
+        </div>
+      </div>
+    </div>
+
+    <p><strong>Drawback:</strong> The <strong>vanishing gradient problem</strong> &mdash; for very large or small inputs, the gradient approaches zero, slowing learning in deep networks.</p>
+
+    <h3 class="subsection-heading">ReLU (Rectified Linear Unit)</h3>
+    <div class="definition-box">
+      <div class="box-label">ReLU Function</div>
+      <div>$$f(x) = \max(0, x), \quad \text{range: } [0, +\infty)$$
+      Derivative: $f'(x) = \begin{cases} 0 & x < 0 \\ 1 & x > 0 \end{cases}$</div>
+    </div>
+
+    <p><strong>Advantages:</strong> Computationally efficient; does not saturate for positive values (no vanishing gradient on positive side); leads to sparse activations.<br>
+    <strong>Drawback:</strong> "Dying ReLU" problem &mdash; neurons can become permanently inactive if they always receive negative input.</p>
+
+    <h3 class="subsection-heading">SoftPlus</h3>
+    <div class="definition-box">
+      <div class="box-label">SoftPlus Function</div>
+      <div>$$f(x) = \log(1 + e^x), \quad \text{range: } (0, +\infty)$$
+      Derivative: $f'(x) = \sigma(x)$ (the sigmoid function)</div>
+    </div>
+    <p>A smooth, differentiable-everywhere approximation of ReLU. The most flexible shape for representing complex data distributions.</p>
+
+    <h3 class="subsection-heading">Comparison Table</h3>
+    <table>
+      <tr><th>Function</th><th>Formula</th><th>Range</th><th>Key Property / Drawback</th></tr>
+      <tr><td>Linear</td><td>$f(x) = x$</td><td>$(-\infty, +\infty)$</td><td>Stacking layers is useless; no non-linearity</td></tr>
+      <tr><td>Sigmoid</td><td>$\sigma(x) = \frac{1}{1+e^{-x}}$</td><td>$(0, 1)$</td><td>Smooth S-curve; vanishing gradient</td></tr>
+      <tr><td>ReLU</td><td>$\max(0, x)$</td><td>$[0, +\infty)$</td><td>Fast and sparse; dying ReLU</td></tr>
+      <tr><td>SoftPlus</td><td>$\log(1+e^x)$</td><td>$(0, +\infty)$</td><td>Smooth ReLU approximation; differentiable everywhere</td></tr>
+    </table>
+
+    <!-- ===== SECTION 5: FORWARD PROPAGATION ===== -->
+    <h2 class="section-heading" id="forward-propagation">5. Forward Propagation</h2>
+
+    <h3 class="subsection-heading">Matrix Formulation</h3>
+    <p>Instead of computing each neuron separately, an entire layer is computed at once using matrix multiplication:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Layer Transition (Matrix Form)</div>
+      <div>$$\mathbf{a}^{(l)} = \sigma\!\left(\mathbf{W}\,\mathbf{a}^{(l-1)} + \mathbf{b}\right)$$
+      where $\mathbf{W}$ is the $k \times n$ weight matrix, $\mathbf{a}^{(l-1)}$ is the input activation vector, and $\mathbf{b}$ is the bias vector.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/matrix_notation_activation.png" alt="Matrix notation for layer activation computation">
+      <div class="figure-caption">Matrix notation: weight matrix W times activation vector a(l-1) plus bias vector b, passed through activation function.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/layer_transition_equation.png" alt="Compact layer transition equation">
+      <div class="figure-caption">Compact form: $\mathbf{a}^{(l)} = \sigma(\mathbf{W}\mathbf{a}^{(l-1)} + \mathbf{b})$. The entire trained network is just a mathematical function mapping 784 pixel values to 10 output scores.</div>
+    </div>
+
+    <h3 class="subsection-heading">Inference (Test Time)</h3>
+    <p>During inference, weights $w$ and biases $b$ are fixed. Only activations $a$ change with each input image. The process:</p>
+    <ol>
+      <li>Set first-layer activations from pixel values</li>
+      <li>Propagate activations layer by layer: $\mathbf{a}^{(l)} = \sigma(\mathbf{W}\mathbf{a}^{(l-1)} + \mathbf{b})$</li>
+      <li>Read output scores from the final layer</li>
+      <li>Apply SoftMax to convert scores to probabilities</li>
+    </ol>
+
+    <!-- ===== SECTION 6: SOFTMAX ===== -->
+    <h2 class="section-heading" id="softmax">6. SoftMax and Output Interpretation</h2>
+
+    <p>Raw output scores (logits) from the last layer can be any real number. SoftMax converts them to a proper probability distribution:</p>
+
+    <div class="definition-box">
+      <div class="box-label">SoftMax Function</div>
+      <div>$$\text{SoftMax}(\vec{z})_i = \frac{e^{z_i}}{\displaystyle\sum_{j=1}^{K} e^{z_j}}$$
+      Properties: All outputs in $(0,1)$; outputs sum to exactly 1; amplifies differences between scores.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/softmax_formula.png" alt="SoftMax formula visualization">
+      <div class="figure-caption">SoftMax: each raw score is exponentiated, then divided by the sum of all exponentiated scores.</div>
+    </div>
+
+    <p>For a digit "3" input with raw score 1.77 (highest), SoftMax assigns 33% probability to class 3 &mdash; the network's prediction. Compared to simply taking the argmax, SoftMax provides calibrated confidence scores and smooth gradients for training.</p>
+
+    <!-- ===== SECTION 7: LOSS FUNCTIONS ===== -->
+    <h2 class="section-heading" id="loss-functions">7. Loss Functions</h2>
+
+    <p>A <strong>loss function</strong> measures how wrong the network's predictions are. The goal of training is to minimize the loss.</p>
+
+    <h3 class="subsection-heading">Sum of Squared Errors (SSE)</h3>
+    <div class="definition-box">
+      <div class="box-label">SSE Loss</div>
+      <div>$$\mathcal{L}_{\text{SSE}} = \sum_{i=1}^{n} (y_i - \hat{y}_i)^2$$
+      where $y_i$ is the true label (one-hot) and $\hat{y}_i$ is the predicted value.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/sse_cost_high_loss_example.png" alt="SSE high loss example">
+      <div class="figure-caption">SSE for an incorrect prediction: random network outputs on digit "3" give loss &approx; 3.37.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/sse_cost_low_loss_example.png" alt="SSE low loss example">
+      <div class="figure-caption">SSE for a correct prediction: outputs close to one-hot target give loss &approx; 0.03.</div>
+    </div>
+
+    <h3 class="subsection-heading">Cross-Entropy Loss</h3>
+    <div class="definition-box">
+      <div class="box-label">Cross-Entropy Loss (preferred for classification)</div>
+      <div>$$\mathcal{L}_{\text{CE}} = -\frac{1}{N}\sum_{i=1}^{N} Y_i \cdot \log(\hat{Y}_i)$$
+      Since $Y_i$ is one-hot, only the true class term contributes: $\mathcal{L}_{\text{CE}} = -\log(\hat{Y}_{\text{true class}})$</div>
+    </div>
+
+    <p>Example: digit "3" with SoftMax probability 0.33 for class 3:</p>
+    <div class="math-block">$$\mathcal{L}_{\text{CE}} = -\log(0.33) \approx 0.481$$</div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/cross_entropy_log_loss_curve.png" alt="Cross-entropy log loss curve">
+      <div class="figure-caption">Cross-entropy log-loss: steep gradient when prediction is wrong (near 0), gentle gradient when correct (near 1). This creates strong corrective signals for bad predictions.</div>
+    </div>
+
+    <h3 class="subsection-heading">Why Cross-Entropy Over SSE?</h3>
+    <table>
+      <tr><th>Property</th><th>SSE</th><th>Cross-Entropy</th></tr>
+      <tr><td>Gradient when very wrong</td><td>Moderate (quadratic)</td><td>Very large (logarithmic)</td></tr>
+      <tr><td>Focus</td><td>All output neurons equally</td><td>Only true class</td></tr>
+      <tr><td>Convergence speed</td><td>Slower</td><td>Faster (stronger correction signal)</td></tr>
+      <tr><td>Use case</td><td>Regression tasks</td><td>Classification tasks (standard)</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod4/cost_function_overview.png" alt="Cost function as meta-function">
+      <div class="figure-caption">The cost function takes all 13,002 weights and biases as input and outputs a single loss number. Training minimizes this number.</div>
+    </div>
+
+    <!-- ===== SECTION 8: GRADIENT DESCENT ===== -->
+    <h2 class="section-heading" id="gradient-descent">8. Gradient Descent</h2>
+
+    <p>We cannot analytically minimize the loss (we only have data samples, not a closed-form equation). Instead, we use <strong>gradient descent</strong> &mdash; iteratively stepping in the direction that decreases the loss.</p>
+
+    <h3 class="subsection-heading">One Parameter</h3>
+    <div class="definition-box">
+      <div class="box-label">Gradient Descent Update Rule</div>
+      <div>$$w_{\text{new}} = w_{\text{old}} - \eta \cdot \frac{\partial \mathcal{L}}{\partial w}$$
+      where $\eta$ is the <strong>learning rate</strong> (step size hyperparameter).</div>
+    </div>
+
+    <ul>
+      <li><strong>Positive gradient:</strong> $w$ is too large; decrease it (step left)</li>
+      <li><strong>Negative gradient:</strong> $w$ is too small; increase it (step right)</li>
+      <li><strong>Zero gradient:</strong> at a minimum (or saddle point)</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod4/gradient_descent_1d.png" alt="Gradient descent on 1D loss curve">
+      <div class="figure-caption">Gradient descent on a 1D loss curve: the tangent slope at each point indicates the direction and magnitude of the step.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked Example: Pike Fish Model (1 parameter)</div>
+      <div class="collapsible-body">
+        <p><strong>Problem:</strong> Predict pike fish length ($y$, meters) from weight ($a$, kg). Model: $\hat{y} = w \cdot a$.</p>
+        <p><strong>Training data:</strong> Pike 1: (0.3 kg, 0.2 m), Pike 2: (0.6 kg, 0.4 m), Pike 3: (1.0 kg, 0.45 m). Learning rate $\eta = 0.18$, initial $w = 1$.</p>
+        <p>The derivative of SSE with respect to $w$: $\frac{d\,\text{SSE}}{dw} = -2a_1(y_1 - wa_1) - 2a_2(y_2 - wa_2) - 2a_3(y_3 - wa_3)$</p>
+        <table>
+          <tr><th>Iteration</th><th>$w$</th><th>SSE</th><th>Gradient</th><th>Step</th><th>$w_{\text{new}}$</th></tr>
+          <tr><td>1</td><td>1.00</td><td>0.353</td><td>1.40</td><td>0.252</td><td>0.75</td></tr>
+          <tr><td>2</td><td>0.75</td><td>0.119</td><td>0.675</td><td>0.122</td><td>0.63</td></tr>
+          <tr><td>3</td><td>0.63</td><td>0.042</td><td>0.33</td><td>0.059</td><td>0.57</td></tr>
+          <tr><td>4</td><td>0.57</td><td>0.018</td><td>0.15</td><td>0.027</td><td>0.54</td></tr>
+          <tr><td>&hellip;</td><td>&hellip;</td><td>&hellip;</td><td>&hellip;</td><td>&hellip;</td><td>0.51</td></tr>
+        </table>
+        <p>Converges to $w \approx 0.51$ with SSE $\approx 0.012$ and gradient $\approx 0$.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Two Parameters: The Gradient Vector</h3>
+    <p>With model $\hat{y} = wa + b$, we compute partial derivatives forming the <strong>gradient vector</strong>:</p>
+
+    $$\nabla \text{SSE} = \begin{bmatrix} \frac{\partial\,\text{SSE}}{\partial w} \\ \frac{\partial\,\text{SSE}}{\partial b} \end{bmatrix}, \quad
+    \begin{bmatrix} w_{\text{new}} \\ b_{\text{new}} \end{bmatrix} = \begin{bmatrix} w_{\text{old}} \\ b_{\text{old}} \end{bmatrix} - \eta \cdot \nabla \text{SSE}$$
+
+    <div class="figure-container">
+      <img src="figures/mod4/gradient_descent_3d_surface.png" alt="3D paraboloid loss surface for two-parameter gradient descent">
+      <div class="figure-caption">3D loss surface for two parameters. Gradient descent traces a path down the bowl toward the minimum.</div>
+    </div>
+
+    <h3 class="subsection-heading">Many Parameters</h3>
+    <p>In a real network with 13,002 parameters, the gradient vector has 13,002 components. Each component tells the sign and magnitude of the required update:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod4/negative_gradient_vector.png" alt="Negative gradient vector showing weight updates">
+      <div class="figure-caption">Negative gradient vector: each entry indicates direction (increase/decrease) and magnitude for one parameter.</div>
+    </div>
+
+    $$\vec{\mathbf{W}}_{\text{new}} = \vec{\mathbf{W}}_{\text{old}} - \eta \cdot \nabla C(\vec{\mathbf{W}})$$
+
+    <div class="figure-container">
+      <img src="figures/mod4/gd_loss_landscape_many_params.png" alt="High-dimensional loss landscape">
+      <div class="figure-caption">High-dimensional loss landscape with local minima and saddle points. Modern networks often have well-behaved loss landscapes where local minima are nearly as good as the global minimum.</div>
+    </div>
+
+    <!-- ===== SECTION 9: BACKPROPAGATION ===== -->
+    <h2 class="section-heading" id="backpropagation">9. Error Backpropagation</h2>
+
+    <p>In a deep network, weights in early layers affect all subsequent layers. We cannot compute gradients independently for each weight. <strong>Backpropagation</strong> is the efficient algorithm that solves this using the <strong>chain rule</strong> of calculus.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Backpropagation is used <strong>only during training</strong>, not during inference. It propagates the error signal backward from the output layer to the input layer, computing gradients for every weight efficiently by reusing intermediate computations.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Chain Rule</h3>
+    <p>For a composite function $f(g(h(x)))$:</p>
+
+    $$\frac{df}{dx} = \frac{df}{dg} \cdot \frac{dg}{dh} \cdot \frac{dh}{dx}$$
+
+    <p>In a neural network, the loss depends on the output, which depends on the pre-activation, which depends on the weights. Backpropagation applies this rule layer by layer, starting from the output.</p>
+
+    <div id="backprop-walkthrough" class="interactive-container" data-title="Walkthrough — Backpropagation"></div>
+
+    <h3 class="subsection-heading">Chain Rule Depths</h3>
+    <table>
+      <tr><th>Weight</th><th>Chain Rule Decomposition</th><th>Terms</th></tr>
+      <tr><td>$w_5$ (output layer)</td><td>$\frac{\partial \mathcal{L}}{\partial y} \cdot \frac{\partial y}{\partial y_{\text{in}}} \cdot \frac{\partial y_{\text{in}}}{\partial w_5}$</td><td>3</td></tr>
+      <tr><td>$w_1$ (hidden layer)</td><td>$\frac{\partial \mathcal{L}}{\partial y} \cdot \frac{\partial y}{\partial y_{\text{in}}} \cdot \frac{\partial y_{\text{in}}}{\partial h_1} \cdot \frac{\partial h_1}{\partial h_{1,\text{in}}} \cdot \frac{\partial h_{1,\text{in}}}{\partial w_1}$</td><td>5</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The first two terms ($\frac{\partial \mathcal{L}}{\partial y} \cdot \frac{\partial y}{\partial y_{\text{in}}}$) are shared across all output-layer weight updates. Backpropagation's efficiency comes from reusing these intermediate computations rather than recomputing them.</div>
+    </div>
+
+    <h3 class="subsection-heading">Training Progress</h3>
+    <p>After 100 backpropagation steps on the example network (target $t=0$):</p>
+    <table>
+      <tr><th>Step</th><th>$w_1$</th><th>$w_5$</th><th>$h_1$</th><th>$h_2$</th><th>$y$</th></tr>
+      <tr><td>0</td><td>0.15</td><td>0.90</td><td>0.79</td><td>0.99</td><td>0.73</td></tr>
+      <tr><td>1</td><td>0.07</td><td>0.84</td><td>0.70</td><td>0.98</td><td>0.69</td></tr>
+      <tr><td>5</td><td>&minus;0.12</td><td>0.70</td><td>0.42</td><td>0.98</td><td>0.65</td></tr>
+      <tr><td>20</td><td>&minus;0.71</td><td>0.58</td><td>0.02</td><td>0.99</td><td>0.32</td></tr>
+      <tr><td>100</td><td>&minus;1.86</td><td>0.57</td><td>$2\times10^{-5}$</td><td>0.999</td><td>0.09</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod4/backprop_converged_step100.png" alt="Converged network after 100 backpropagation steps">
+      <div class="figure-caption">After 100 steps: output y has decreased from 0.73 to 0.09 (approaching target t=0). Hidden neuron h1 has been effectively silenced (activation near zero).</div>
+    </div>
+
+    <!-- ===== SECTION 10: TRAINING PIPELINE ===== -->
+    <h2 class="section-heading" id="training-pipeline">10. Training, Validation, and Testing Pipeline</h2>
+
+    <h3 class="subsection-heading">Phase 1: Preparation</h3>
+    <p>Split labeled data into three disjoint sets:</p>
+    <ul>
+      <li><strong>Training set:</strong> Used to update weights via backpropagation.</li>
+      <li><strong>Validation set:</strong> Used to tune hyperparameters and detect overfitting. Never used to update weights.</li>
+      <li><strong>Test set:</strong> Used exactly once at the very end to report final performance.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod4/train_test_split_labelled.png" alt="Dataset split into training and test sets">
+      <div class="figure-caption">Standard dataset split: training set for weight updates, test set for final evaluation.</div>
+    </div>
+
+    <h3 class="subsection-heading">Phase 2: Training Loop</h3>
+    <ol>
+      <li><strong>Forward pass:</strong> Feed a batch of images, compute predictions.</li>
+      <li><strong>Compute loss:</strong> Compare predictions to ground-truth labels.</li>
+      <li><strong>Backpropagation:</strong> Compute gradients for all parameters.</li>
+      <li><strong>Update parameters:</strong> Apply gradient descent update rule.</li>
+      <li><strong>Repeat</strong> with the next batch.</li>
+      <li><strong>Validate</strong> every epoch; stop when validation loss converges.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod4/nn_initialization_random.png" alt="Random weight initialization">
+      <div class="figure-caption">Weights are initialized randomly (e.g., Xavier initialization) before training begins.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key Terminology</div>
+      <div>
+        <ul>
+          <li><strong>Iteration:</strong> Processing one mini-batch of images.</li>
+          <li><strong>Epoch:</strong> One complete pass through the entire training dataset.</li>
+          <li><strong>Batch:</strong> A subset of training images processed together.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Important Rules</div>
+      <div>
+        <ul>
+          <li>Never train on validation or test data.</li>
+          <li>Never select a model based on test performance &mdash; use validation only.</li>
+          <li>The test set is used exactly once, at the very end.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/training_vs_validation_loss.png" alt="Training vs validation loss curves">
+      <div class="figure-caption">Typical training: training loss (blue) and validation loss (orange) should both decrease and remain close together.</div>
+    </div>
+
+    <!-- ===== SECTION 11: OVERFITTING ===== -->
+    <h2 class="section-heading" id="overfitting">11. Overfitting and Underfitting</h2>
+
+    <h3 class="subsection-heading">Recognizing the Scenarios</h3>
+
+    <table>
+      <tr><th>Scenario</th><th>Training Loss</th><th>Validation Loss</th><th>Diagnosis</th></tr>
+      <tr><td>Good fit</td><td>Decreasing</td><td>Decreasing, stays close to train</td><td>Desired behavior</td></tr>
+      <tr><td>Overfitting</td><td>Keeps decreasing to near zero</td><td>Decreases then <strong>increases</strong></td><td>Memorizing training data</td></tr>
+      <tr><td>Underfitting</td><td>High and not decreasing</td><td>High, not decreasing</td><td>Model too simple</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod4/good_fit_loss_curves.png" alt="Good fit loss curves">
+      <div class="figure-caption">Good fit: training and validation loss decrease together with a small gap.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod4/overfitting_loss_curves.png" alt="Overfitting loss curves">
+      <div class="figure-caption">Overfitting: training loss keeps decreasing while validation loss diverges upward.</div>
+    </div>
+
+    <h3 class="subsection-heading">Bias-Variance Tradeoff</h3>
+    <ul>
+      <li><strong>High bias (underfitting):</strong> Model too simple; both train and validation loss are high.</li>
+      <li><strong>High variance (overfitting):</strong> Model too complex; train loss low, validation loss high.</li>
+      <li><strong>Goal:</strong> Find the sweet spot &mdash; complex enough to capture patterns, simple enough to generalize.</li>
+    </ul>
+
+    <h3 class="subsection-heading">Remedies for Overfitting</h3>
+    <ul>
+      <li><strong>Early stopping:</strong> Halt training when validation loss starts increasing.</li>
+      <li><strong>Regularization:</strong> L1/L2 weight penalties, dropout.</li>
+      <li><strong>More training data:</strong> Reduces the chance of memorization.</li>
+      <li><strong>Simpler model:</strong> Fewer layers or neurons.</li>
+      <li><strong>Data augmentation:</strong> Artificially expand the training set.</li>
+    </ul>
+
+    <!-- ===== SECTION 12: HIERARCHICAL LEARNING ===== -->
+    <h2 class="section-heading" id="hierarchical-learning">12. Why Neural Networks Work: Hierarchical Feature Learning</h2>
+
+    <p>Neural networks learn features in a hierarchical, composable manner:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod4/nn_layers_why_hierarchy.png" alt="Hierarchical feature learning through layers">
+      <div class="figure-caption">Layer-by-layer abstraction: each layer builds on features from the previous layer to detect increasingly complex patterns.</div>
+    </div>
+
+    <table>
+      <tr><th>Layer</th><th>What It Learns</th><th>Example (Digit Recognition)</th></tr>
+      <tr><td>First hidden</td><td>Small, simple patterns</td><td>Edges, corners, strokes</td></tr>
+      <tr><td>Middle hidden</td><td>Combinations of simple patterns</td><td>Curves, loops, sub-shapes</td></tr>
+      <tr><td>Later hidden</td><td>Large, complex patterns</td><td>Full digit components (loop of "9", vertical stroke)</td></tr>
+      <tr><td>Output</td><td>Combines high-level features</td><td>Final classification decision</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>This hierarchical feature learning principle is the fundamental reason CNNs (Module 5) are so powerful for images. The architecture enforces a natural progression from pixels to edges to shapes to objects.</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod4-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod3.html">&larr; 3. Supervised</a>
+      <a href="mod5.html">5. CNNs &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod4');</script>
+
+<script>
+  initWalkthrough('backprop-walkthrough', [
+    {
+      tab: '0. Setup',
+      title: 'Network Setup',
+      text: 'Architecture: 2 inputs ($x_1, x_2$), 1 hidden layer with 2 neurons ($h_1, h_2$), 1 output neuron ($y$). All neurons use sigmoid activation.\n\nInitial weights: $w_1=0.15$ ($x_1 \\to h_1$), $w_2=0.80$ ($x_2 \\to h_1$), $w_3=0.50$ ($x_1 \\to h_2$), $w_4=0.20$ ($x_2 \\to h_2$), $w_5=0.90$ ($h_1 \\to y$), $w_6=0.30$ ($h_2 \\to y$). No biases.\n\nInputs: $x_1=5$, $x_2=1$. Target: $t=0$. Learning rate: $\\eta=0.5$. Loss: $L = \\frac{1}{2}(t-y)^2$',
+      visual: '<div class="figure-container"><img src="figures/mod4/backprop_perceptron_network.png" alt="Backpropagation example network"><div class="figure-caption">The small perceptron network used for the worked example. All six weights are labeled.</div></div>',
+      insight: 'We want the network to output $y \\approx 0$ for this input. Currently it does not. Backpropagation will compute how to adjust every weight to reduce the loss.'
+    },
+    {
+      tab: '1. Forward',
+      title: 'Step 1: Forward Pass',
+      text: 'Hidden pre-activations:\n  $h_{1,\\text{in}} = x_1 w_1 + x_2 w_2 = 5 \\times 0.15 + 1 \\times 0.80 = 1.55$\n  $h_{2,\\text{in}} = x_1 w_3 + x_2 w_4 = 5 \\times 0.50 + 1 \\times 0.20 = 2.70$\n\nHidden activations (sigmoid):\n  $h_1 = \\sigma(1.55) \\approx 0.79$\n  $h_2 = \\sigma(2.70) \\approx 0.99$\n\nOutput pre-activation:\n  $y_{\\text{in}} = h_1 w_5 + h_2 w_6 = 0.79 \\times 0.90 + 0.99 \\times 0.30 = 1.008$\n\nOutput activation:\n  $y = \\sigma(1.008) \\approx 0.73$\n\nLoss: $L = \\frac{1}{2}(0 - 0.73)^2 = 0.27$',
+      visual: '',
+      insight: 'The network outputs $0.73$ but the target is $0$. Loss $= 0.27$. Now we must propagate this error backward to find how each weight contributed.'
+    },
+    {
+      tab: '2. Output Weights',
+      title: 'Step 2: Gradients for w5 (Output Layer)',
+      text: 'Using the chain rule: $\\partial L/\\partial w_5 = (\\partial L/\\partial y) \\cdot (\\partial y/\\partial y_{\\text{in}}) \\cdot (\\partial y_{\\text{in}}/\\partial w_5)$\n\nTerm 1: $\\partial L/\\partial y = -(t - y) = -(0 - 0.73) = 0.73$\n\nTerm 2: $\\partial y/\\partial y_{\\text{in}} = y(1-y) = 0.73 \\times 0.27 \\approx 0.22$ [sigmoid derivative]\n\nTerm 3: $\\partial y_{\\text{in}}/\\partial w_5 = h_1 = 0.79$ [because $y_{\\text{in}} = h_1 w_5 + h_2 w_6$]\n\nCombined: $\\partial L/\\partial w_5 = 0.73 \\times 0.22 \\times 0.79 = 0.128$\n\nUpdate: $w_5^{\\text{new}} = 0.90 - 0.5 \\times 0.128 = 0.836$',
+      visual: '',
+      insight: 'For $w_6$, the same procedure applies but Term 3 uses $h_2=0.99$ instead of $h_1=0.79$. The first two terms are shared — this is backpropagation\'s key efficiency: intermediate results are reused.'
+    },
+    {
+      tab: '3. Hidden Weights',
+      title: 'Step 3: Gradients for $w_1$ (Hidden Layer)',
+      text: 'For weights in earlier layers, the chain rule extends further:\n$\\partial L/\\partial w_1 = (\\partial L/\\partial y) \\cdot (\\partial y/\\partial y_{\\text{in}}) \\cdot (\\partial y_{\\text{in}}/\\partial h_1) \\cdot (\\partial h_1/\\partial h_{1,\\text{in}}) \\cdot (\\partial h_{1,\\text{in}}/\\partial w_1)$\n\nTerms 1 and 2 (reused from output layer): $0.73$ and $0.22$\n\nTerm 3: $\\partial y_{\\text{in}}/\\partial h_1 = w_5 = 0.90$ [weight connecting $h_1$ to output]\n\nTerm 4: $\\partial h_1/\\partial h_{1,\\text{in}} = h_1(1-h_1) = 0.79 \\times 0.21 \\approx 0.21$ [sigmoid derivative at $h_1$]\n\nTerm 5: $\\partial h_{1,\\text{in}}/\\partial w_1 = x_1 = 5$ [because $h_{1,\\text{in}} = x_1 w_1 + x_2 w_2$]\n\nCombined: $\\partial L/\\partial w_1 = 0.73 \\times 0.22 \\times 0.90 \\times 0.21 \\times 5 = 0.155$\n\nUpdate: $w_1^{\\text{new}} = 0.15 - 0.5 \\times 0.155 = 0.073$',
+      visual: '',
+      insight: '5 chain rule terms for a weight two layers from the output. Deeper networks have even longer chains — this is why training very deep networks is harder. Vanishing gradients occur when terms in this chain become very small.'
+    },
+    {
+      tab: '4. Convergence',
+      title: 'Step 4: Training Over 100 Iterations',
+      text: 'After 100 backpropagation steps with $\\eta=0.5$:\n\nStep 0: $y = 0.73$ (initial, far from target $t=0$)\nStep 1: $y = 0.69$\nStep 5: $y = 0.65$\nStep 20: $y = 0.32$\nStep 100: $y = 0.09$ (approaching target)\n\nKey observations:\n• Some weights become negative (network learns to suppress signals)\n• $h_1$ activation $\\to \\sim 0$ by step 100 (network silenced this neuron)\n• Loss decreases steadily but slowly because sigmoid has small gradients',
+      visual: '<div class="figure-container"><img src="figures/mod4/backprop_converged_step100.png" alt="Converged network at step 100"><div class="figure-caption">After 100 iterations: output y=0.09, approaching target t=0. Weight w1 went from 0.15 to −1.86.</div></div>',
+      insight: 'The network is converging but has not fully reached $y=0$ after 100 steps. This is because sigmoid activations saturate (gradient near zero) for large inputs. In practice, ReLU activations and cross-entropy loss converge faster.'
+    }
+  ]);
+</script>
+
+<script>
+  initFlashcards('mod4-flashcards', [
+    {
+      q: 'Why are non-linear activation functions necessary? What happens with only linear activations?',
+      a: 'Without non-linearity, stacking multiple layers is equivalent to a single linear transformation. The sum of linear functions is always linear, so the network can only learn linear decision boundaries regardless of depth. Non-linear activations allow the network to approximate arbitrarily complex functions.'
+    },
+    {
+      q: 'What is the sigmoid derivative and why does it matter for backpropagation?',
+      a: '$\\sigma\'(x) = \\sigma(x) \\cdot (1 - \\sigma(x))$. It matters because it appears in every term of the chain rule when backpropagating through sigmoid neurons. It is at most 0.25 (at x=0), which causes the <strong>vanishing gradient problem</strong> in deep networks &mdash; gradients shrink as they propagate backward through many sigmoid layers.'
+    },
+    {
+      q: 'Explain the chain rule expansion for computing ∂L/∂w1 in a 2-layer network.',
+      a: '$\\frac{\\partial \\mathcal{L}}{\\partial w_1} = \\frac{\\partial \\mathcal{L}}{\\partial y} \\cdot \\frac{\\partial y}{\\partial y_{\\text{in}}} \\cdot \\frac{\\partial y_{\\text{in}}}{\\partial h_1} \\cdot \\frac{\\partial h_1}{\\partial h_{1,\\text{in}}} \\cdot \\frac{\\partial h_{1,\\text{in}}}{\\partial w_1}$<br>The terms are: (1) loss derivative, (2) output sigmoid derivative, (3) output weight connecting h1, (4) hidden neuron sigmoid derivative, (5) input value $x_1$.'
+    },
+    {
+      q: 'Why is cross-entropy preferred over SSE for classification?',
+      a: 'Cross-entropy produces <strong>larger gradients when predictions are very wrong</strong> (steep logarithmic loss), leading to stronger corrective signals and faster convergence. SSE has moderate, relatively uniform gradients. Cross-entropy also focuses only on the true class probability, while SSE penalizes all output neurons equally.'
+    },
+    {
+      q: 'What is the SoftMax function and what are its key properties?',
+      a: '$\\text{SoftMax}(\\vec{z})_i = \\frac{e^{z_i}}{\\sum_j e^{z_j}}$. Properties: (1) all outputs in $(0,1)$, (2) outputs sum to exactly 1, (3) amplifies differences between scores exponentially, (4) differentiable everywhere (needed for backpropagation).'
+    },
+    {
+      q: 'Describe the three-phase training pipeline: preparation, training, testing.',
+      a: '<strong>Preparation:</strong> Split data into train/validation/test, design architecture, initialize weights.<br><strong>Training:</strong> Repeated cycle of forward pass → compute loss → backpropagation → update weights. Validate each epoch; stop at convergence.<br><strong>Testing:</strong> Use the best model (chosen by validation) on the test set exactly once. <em>Never select a model based on test performance.</em>'
+    },
+    {
+      q: 'How do you recognize overfitting from loss curves?',
+      a: 'Overfitting shows as a growing gap between training and validation loss: training loss keeps decreasing while <strong>validation loss starts increasing</strong> after an initial decrease. The model is memorizing training data rather than learning generalizable patterns.'
+    },
+    {
+      q: 'What does the gradient vector tell you in multi-parameter gradient descent?',
+      a: 'Each component of the gradient vector $\\nabla C(\\vec{W})$ gives: (1) the <strong>sign</strong> &mdash; whether to increase or decrease that parameter, and (2) the <strong>magnitude</strong> &mdash; how much that parameter should change. The update rule moves all parameters simultaneously in the direction of steepest descent: $\\vec{W}_{\\text{new}} = \\vec{W}_{\\text{old}} - \\eta \\cdot \\nabla C(\\vec{W})$.'
+    },
+    {
+      q: 'What is the role of bias in a neuron? What problem does it solve?',
+      a: 'Bias $b$ shifts the activation threshold of the neuron. Without bias, the neuron can only model functions passing through the origin. With bias, the neuron activates meaningfully only when the weighted sum exceeds the threshold: $z = \\sum w_i a_i + b$. This gives each neuron an independent offset, greatly increasing expressiveness.'
+    },
+    {
+      q: 'Compute the total parameter count for a 784-16-16-10 fully connected network.',
+      a: 'Layer 1: $784 \\times 16 + 16 = 12{,}560$ (weights + biases)<br>Layer 2: $16 \\times 16 + 16 = 272$<br>Layer 3: $16 \\times 10 + 10 = 170$<br><strong>Total: 13,002 parameters</strong>'
+    },
+    {
+      q: 'What is the vanishing gradient problem and which activation function is most affected?',
+      a: 'In deep networks, gradients are multiplied through many chain rule terms. The sigmoid derivative is at most 0.25, so gradients shrink exponentially as they propagate backward through multiple sigmoid layers. By the time gradients reach early layers, they are nearly zero and learning stalls. <strong>Sigmoid and tanh</strong> are most affected. ReLU largely solves this on the positive side (gradient = 1).'
+    },
+    {
+      q: 'Why does hierarchical feature learning make neural networks powerful?',
+      a: 'Each layer builds on the previous layer\'s features to detect increasingly complex patterns. First layers detect edges and corners; middle layers detect shapes and parts; later layers detect semantically meaningful objects. This compositionality means the network can represent exponentially many patterns using a polynomial number of learned components, unlike flat feature extractors.'
+    }
+  ]);
+</script>
+</body>
+</html>

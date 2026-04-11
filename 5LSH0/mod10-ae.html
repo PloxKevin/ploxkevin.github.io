@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>10. Autoencoders — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">10. Autoencoders</h1>
+    <p class="page-subtitle">Encoder-decoder architecture, bottleneck, denoising AE, convolutional AE, anomaly detection</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#anomaly-detection">1. Anomaly Detection in Computer Vision</a>
+      <a href="#outlier-detection">2. Anomaly Detection as Outlier Detection</a>
+      <a href="#autoencoder-concept">3. Autoencoders: Core Concept</a>
+      <a href="#architecture">4. Architecture: Encoder, Bottleneck, Decoder</a>
+      <a href="#anomaly-score">5. Anomaly Detection with Autoencoders</a>
+      <a href="#denoising-ae">6. Denoising Autoencoders</a>
+      <a href="#convolutional-ae">7. Convolutional Autoencoders (CAE)</a>
+      <a href="#pooling-unpooling">8. Pooling, Unpooling, and Deconvolution</a>
+      <a href="#hyperparameters">9. Autoencoder Hyperparameters</a>
+      <a href="#loss-functions">10. Loss Functions</a>
+      <a href="#vae">11. Variational Autoencoders (VAE)</a>
+      <a class="toc-interactive" href="#ae-walkthrough">Interactive: Autoencoder Architecture</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: ANOMALY DETECTION CONTEXT ===== -->
+    <h2 class="section-heading" id="anomaly-detection">1. Anomaly Detection in Computer Vision</h2>
+
+    <p>Anomaly detection is the task of identifying events, observations, or data points that deviate significantly from expected "normal" behavior. In computer vision, this applies to detecting unusual events in images or video streams.</p>
+
+    <h3 class="subsection-heading">Well-Defined Anomalous Events</h3>
+    <p>Some anomalies are specific and definable:</p>
+    <ul>
+      <li><strong>Violence detection</strong> — identifying physical altercations in surveillance footage.</li>
+      <li><strong>Loitering</strong> — detecting people who remain in an area for an unusually long time.</li>
+      <li><strong>Traffic rule violations</strong> — cars running red lights, wrong-way driving, etc.</li>
+    </ul>
+
+    <h3 class="subsection-heading">The Fundamental Challenge</h3>
+    <p>Real-world anomalies are far more complicated. The core problem: <strong>it is not easy (or even possible) to list all possible anomalous behaviors.</strong> You cannot train a simple classifier because anomalies are, by definition, rare and unpredictable. A new type of anomaly may appear that was never seen in training data.</p>
+
+    <div class="insight-box">
+      <div class="box-label">The solution: model normality</div>
+      <div>Instead of enumerating all anomalies, learn what "normal" looks like from normal-only training data. At test time, check how well new data matches the model of normality. Significant mismatch = anomaly. This is <strong>one-class learning</strong> or <strong>novelty detection</strong>.</div>
+    </div>
+
+    <!-- ===== SECTION 2: OUTLIER DETECTION ===== -->
+    <h2 class="section-heading" id="outlier-detection">2. Anomaly Detection as Outlier Detection</h2>
+
+    <p>The implementation follows these steps:</p>
+    <ol>
+      <li><strong>Represent events as points in a high-dimensional feature space.</strong> Both normal and anomalous events are transformed into feature vectors $\mathbf{f} = [x_1, x_2, \ldots]$ by a feature extraction model.</li>
+      <li><strong>Model the "normal" using training data.</strong> Only normal examples are used during training. These form clusters in feature space.</li>
+      <li><strong>Declare statistically unlikely points as anomalies.</strong> At test time, new points that fall far from the learned clusters are anomalies.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/anomaly_detection_outlier_clusters.png" alt="Anomaly detection as outlier detection in feature space">
+      <div class="figure-caption">Normal data (purple dots) forms tight clusters in feature space. Normal test samples (green) fall within clusters; anomalies (red) appear as outliers far from any cluster.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key principle</div>
+      <div>The model never sees anomalies during training. It only learns what "normal" looks like. Anything that does not fit is flagged as an anomaly.</div>
+    </div>
+
+    <!-- ===== SECTION 3: AUTOENCODER CONCEPT ===== -->
+    <h2 class="section-heading" id="autoencoder-concept">3. Autoencoders: Core Concept</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Autoencoder</div>
+      <div>An <strong>autoencoder</strong> is a neural network trained to reconstruct its own input. The input and output are desired to be the same; the network minimizes the difference between them.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Bottleneck Constraint</h3>
+    <p>An autoencoder is forced to pass all information through a <strong>compressed representation</strong> — called the <em>bottleneck</em>, <em>code</em>, or <em>latent space</em> — that has far fewer dimensions than the input. This prevents a trivial identity-function solution and forces the network to:</p>
+    <ol>
+      <li><strong>Compress</strong> the input into its most essential features (encoding).</li>
+      <li><strong>Reconstruct</strong> the input from only those essential features (decoding).</li>
+    </ol>
+
+    <h3 class="subsection-heading">Types of Autoencoders</h3>
+    <table>
+      <tr><th>Type</th><th>Description</th></tr>
+      <tr><td><strong>Vanilla</strong></td><td>Fully-connected (dense) layers only</td></tr>
+      <tr><td><strong>Stacked</strong></td><td>Multiple layers in both encoder and decoder</td></tr>
+      <tr><td><strong>Convolutional (CAE)</strong></td><td>Convolutional and deconvolutional layers; good for images/video</td></tr>
+      <tr><td><strong>Denoising</strong></td><td>Trained to reconstruct clean inputs from noisy versions</td></tr>
+      <tr><td><strong>Variational (VAE)</strong></td><td>Encoder outputs a distribution; enables generation</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Applications</h3>
+    <ul>
+      <li>Anomaly detection (primary focus of this module)</li>
+      <li>Image reconstruction and denoising</li>
+      <li>Dimensionality reduction (nonlinear alternative to PCA)</li>
+      <li>Feature learning (bottleneck representations as features)</li>
+      <li>Recommendation systems</li>
+    </ul>
+
+    <!-- ===== SECTION 4: ARCHITECTURE ===== -->
+    <h2 class="section-heading" id="architecture">4. Architecture: Encoder, Bottleneck, Decoder</h2>
+
+    <div id="ae-walkthrough" class="interactive-container" data-title="Walkthrough — Autoencoder Architecture"></div>
+
+    <h3 class="subsection-heading">The Encoder</h3>
+    <p>The encoder takes the high-dimensional input and <strong>progressively reduces its dimensionality</strong> through successive layers (each with fewer nodes than the previous). It produces the compressed latent representation at the bottleneck, finding the fundamental information in the input and stripping away noise.</p>
+    <div class="math-block">$$z = f_{\text{encoder}}(x)$$</div>
+
+    <h3 class="subsection-heading">The Bottleneck</h3>
+    <p>The <strong>narrowest layer</strong> — with the fewest nodes. It holds the most compressed version of the input that the network has learned. The bottleneck dimension is a critical hyperparameter:</p>
+    <ul>
+      <li><strong>Smaller</strong>: more compression, more information loss, but forces the network to learn only the most essential features.</li>
+      <li><strong>Larger</strong>: less compression, better reconstruction, but the network may learn a near-identity mapping without meaningful features.</li>
+    </ul>
+
+    <h3 class="subsection-heading">The Decoder</h3>
+    <p>The decoder takes the bottleneck representation and <strong>progressively increases dimensionality</strong> through layers with increasing numbers of nodes, producing the reconstructed input.</p>
+    <div class="math-block">$$\hat{x} = f_{\text{decoder}}(z)$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">Complete Autoencoder</div>
+      <div>$$\hat{x} = f_{\text{decoder}}(f_{\text{encoder}}(x))$$<br>Training objective: minimize the difference between $x$ and $\hat{x}$ via backpropagation.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/autoencoder_bottleneck_architecture.png" alt="Stacked autoencoder architecture with bottleneck and MSE loss">
+      <div class="figure-caption">Stacked autoencoder: encoder blocks get progressively smaller, the bottleneck (pink) is the narrowest, decoder blocks expand symmetrically. MSE loss is computed between input and output.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/encoder_decoder_block_diagram.png" alt="Encoder-decoder block diagram with MNIST digits">
+      <div class="figure-caption">A clean MNIST digit passes through the Encoder to a compressed representation, then the Decoder reconstructs it. The autoencoder is trained to make the output match the input.</div>
+    </div>
+
+    <!-- ===== SECTION 5: ANOMALY DETECTION ===== -->
+    <h2 class="section-heading" id="anomaly-score">5. Anomaly Detection with Autoencoders</h2>
+
+    <h3 class="subsection-heading">The Core Idea</h3>
+    <ol>
+      <li><strong>Train the autoencoder on only normal data.</strong> The encoder learns to compress normal patterns; the decoder learns to reconstruct them.</li>
+      <li><strong>At test time, feed new data through the autoencoder.</strong>
+        <ul>
+          <li><strong>Normal input</strong>: reconstructed well, low reconstruction error.</li>
+          <li><strong>Anomalous input</strong>: reconstructed poorly, high reconstruction error — the model has never learned patterns of anomalies.</li>
+        </ul>
+      </li>
+      <li><strong>Threshold the reconstruction error</strong> to classify as normal or anomalous.</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Anomaly Score and Decision Rule</div>
+      <div>
+        $$\text{score}(x) = \| x - \hat{x} \|^2 = \| x - f_{\text{decoder}}(f_{\text{encoder}}(x)) \|^2$$
+        $$\text{decision}(x) = \begin{cases} \text{anomaly} & \text{if } \text{score}(x) > \tau \\ \text{normal} & \text{otherwise} \end{cases}$$
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why this works</div>
+      <div>The bottleneck forces the autoencoder to learn a compact representation of what "normal" looks like. When an anomaly arrives, the learned representation does not capture its unusual features. The decoder reconstructs something "normal" instead, and the mismatch with the actual anomalous input produces a high reconstruction error.</div>
+    </div>
+
+    <!-- ===== SECTION 6: DENOISING AE ===== -->
+    <h2 class="section-heading" id="denoising-ae">6. Denoising Autoencoders</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Denoising Autoencoder</div>
+      <div>A <strong>denoising autoencoder</strong> is trained to predict the <em>original clean input</em> from a <em>corrupted (noisy) version</em> of that input.</div>
+    </div>
+
+    <h3 class="subsection-heading">Training Procedure</h3>
+    <ol>
+      <li>Start with clean training data $x$.</li>
+      <li>Add noise: $\tilde{x} = x + \text{noise}$ (typically white/Gaussian noise).</li>
+      <li>Feed the noisy input $\tilde{x}$ through the autoencoder to produce reconstruction $\hat{x}$.</li>
+      <li>Compute loss between the reconstruction $\hat{x}$ and the <strong>original clean input $x$</strong> (not the noisy input!).</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Denoising Autoencoder Loss</div>
+      <div>$$\mathcal{L} = \| x - f_{\text{decoder}}(f_{\text{encoder}}(\tilde{x})) \|^2$$<br>Target is the <strong>clean original</strong> $x$, not the noisy input $\tilde{x}$.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/denoising_ae_mnist_example.png" alt="Denoising autoencoder MNIST example: original, noisy, and reconstructed digits">
+      <div class="figure-caption">Denoising autoencoder applied to MNIST: clean original digits (left), noisy corrupted versions (center), clean reconstructed outputs (right).</div>
+    </div>
+
+    <table>
+      <tr><th>Aspect</th><th>Standard Autoencoder</th><th>Denoising Autoencoder</th></tr>
+      <tr><td>Input to encoder</td><td>Clean $x$</td><td>Noisy $\tilde{x}$</td></tr>
+      <tr><td>Loss target</td><td>Clean $x$</td><td>Clean $x$ (same)</td></tr>
+      <tr><td>Training signal</td><td>Reconstruct input</td><td>Reconstruct clean from noisy</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight for anomaly detection</div>
+      <div>The denoising autoencoder learns to reconstruct normal, clean patterns even from corrupted inputs. When it encounters an anomaly, the reconstruction loss is significantly higher than for normal examples — because the model has only learned to reconstruct normal patterns. This elevated loss serves as the anomaly signal.</div>
+    </div>
+
+    <!-- ===== SECTION 7: CONVOLUTIONAL AE ===== -->
+    <h2 class="section-heading" id="convolutional-ae">7. Convolutional Autoencoders (CAE)</h2>
+
+    <p>Most state-of-the-art anomaly detection methods in video use <strong>Convolutional Autoencoders (CAEs)</strong>, which replace fully-connected layers with convolutional and deconvolutional layers.</p>
+
+    <h3 class="subsection-heading">Why CAEs?</h3>
+    <ul>
+      <li><strong>Spatial structure exploitation</strong>: Convolutions preserve and exploit 2D spatial relationships, unlike vanilla AEs that treat each pixel independently.</li>
+      <li><strong>Weight sharing</strong>: Convolutional kernels are applied everywhere — far fewer parameters than fully-connected layers.</li>
+      <li><strong>Translation invariance</strong>: Built into the convolutional operation.</li>
+      <li><strong>Scalability</strong>: Scales well to large images/video.</li>
+      <li><strong>Reconstruction quality</strong>: CAEs are notably good at reconstructing images from lower-dimensional latent features.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/convolutional_autoencoder_architecture.png" alt="Convolutional Autoencoder architecture">
+      <div class="figure-caption">CAE architecture: convolutional/pooling layers in the encoder (left) progressively reduce spatial dimensions. Corresponding unpooling/deconvolutional layers in the decoder (right) restore them. MSE loss is computed between input and output frames.</div>
+    </div>
+
+    <h3 class="subsection-heading">CAE Architecture Example</h3>
+    <table>
+      <tr><th>Side</th><th>Operations</th><th>Dimensions (example)</th></tr>
+      <tr><td rowspan="2"><strong>Encoder</strong></td><td>Input frames</td><td>$10 \times 227 \times 227$</td></tr>
+      <tr><td>Conv + Pool (repeated)</td><td>$512 \times 55 \times 55 \to 256 \times 13 \times 13$</td></tr>
+      <tr><td colspan="2" style="text-align:center"><strong>Latent features (bottleneck)</strong></td><td>Compressed representation</td></tr>
+      <tr><td rowspan="2"><strong>Decoder</strong></td><td>Unpool + Deconv (repeated)</td><td>$128 \times 13 \times 13 \to 256 \times 55 \times 55$</td></tr>
+      <tr><td>Output frames</td><td>$10 \times 227 \times 227$</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">Key design principle</div>
+      <div>The dimensionality of the input and output must be the same. Everything in between (the bottleneck and the depth/width of encoder/decoder) can be adjusted as a hyperparameter.</div>
+    </div>
+
+    <table>
+      <tr><th>Aspect</th><th>Vanilla Autoencoder</th><th>Convolutional Autoencoder</th></tr>
+      <tr><td>Layer type</td><td>Fully-connected (dense)</td><td>Conv + Pooling / Deconv + Unpooling</td></tr>
+      <tr><td>Spatial structure</td><td>Ignored; input flattened</td><td>Preserved via convolutions</td></tr>
+      <tr><td>Parameter count</td><td>Very large (all pixels connected)</td><td>Small (weight sharing via kernels)</td></tr>
+      <tr><td>Translation invariance</td><td>Not inherent</td><td>Built-in</td></tr>
+      <tr><td>Best for</td><td>Small, non-spatial data</td><td>Images, video, spatial data</td></tr>
+    </table>
+
+    <!-- ===== SECTION 8: POOLING UNPOOLING ===== -->
+    <h2 class="section-heading" id="pooling-unpooling">8. Pooling, Unpooling, and Deconvolution</h2>
+
+    <p>For each <strong>convolutional layer</strong> in the encoder there is a corresponding <strong>deconvolutional layer</strong> in the decoder. For each <strong>pooling layer</strong> there is a corresponding <strong>unpooling layer</strong>.</p>
+
+    <h3 class="subsection-heading">Max-Pooling (Encoder Side)</h3>
+    <p>Downsamples by selecting the maximum value from each local region. A $2 \times 2$ max-pool with stride 2 reduces a $4 \times 4$ map to $2 \times 2$.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/maxpool_unpool_operations.png" alt="Max-pooling and unpooling operations">
+      <div class="figure-caption">Max-pooling reduces a 4x4 input to 2x2 by taking the maximum of each 2x2 block. The locations of the maxima are stored as switch variables for later unpooling.</div>
+    </div>
+
+    <h3 class="subsection-heading">Switch Variables (Stored Max Locations)</h3>
+    <p>During max-pooling, the <strong>locations (indices) of the maximum values</strong> are stored. These are called <strong>switch variables</strong>. Without these stored locations, the decoder would not know where to place values during upsampling.</p>
+
+    <h3 class="subsection-heading">Unpooling (Decoder Side)</h3>
+    <p>Reverses max-pooling by placing values back at their original max locations (from the stored switch variables) and filling all other positions with zeros.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Numerical example: max-pooling and unpooling</div>
+      <div class="collapsible-body">
+        <p><strong>Input (4&times;4):</strong></p>
+        <table>
+          <tr><td>0.1</td><td>0.5</td><td><strong>1.2</strong></td><td>-0.7</td></tr>
+          <tr><td><strong>0.8</strong></td><td>-0.2</td><td>-0.5</td><td>0.3</td></tr>
+          <tr><td>0.4</td><td><strong>0.9</strong></td><td>-0.1</td><td>-0.2</td></tr>
+          <tr><td>-0.6</td><td>0.1</td><td><strong>0.5</strong></td><td>0.3</td></tr>
+        </table>
+        <p><strong>After 2&times;2 max-pool (stride 2): output (2&times;2)</strong></p>
+        <table>
+          <tr><td><strong>0.8</strong> (row 1, col 0)</td><td><strong>1.2</strong> (row 0, col 2)</td></tr>
+          <tr><td><strong>0.9</strong> (row 2, col 1)</td><td><strong>0.5</strong> (row 3, col 2)</td></tr>
+        </table>
+        <p><strong>Unpooling</strong> with values [1.3, 0.5; 0.4, 0.1] placed at stored max locations:</p>
+        <table>
+          <tr><td>0</td><td>0</td><td><strong>0.5</strong></td><td>0</td></tr>
+          <tr><td><strong>1.3</strong></td><td>0</td><td>0</td><td>0</td></tr>
+          <tr><td>0</td><td><strong>0.4</strong></td><td>0</td><td>0</td></tr>
+          <tr><td>0</td><td>0</td><td><strong>0.1</strong></td><td>0</td></tr>
+        </table>
+        <p>Values are placed at the stored max locations; all other positions are zero.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Deconvolution (Transposed Convolution)</h3>
+    <p>A <strong>transposed convolution</strong> (deconvolution) recovers spatial resolution from compressed features. Where a regular convolution maps many input elements to one output element (many-to-one), a transposed convolution maps each input element to multiple output elements (one-to-many), effectively spreading information to a larger spatial map.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/transposed_convolution_steps.png" alt="Transposed convolution steps">
+      <div class="figure-caption">Transposed convolution (deconvolution) upsampling: a smaller feature map is expanded to a larger spatial resolution by spreading each input element to multiple output elements.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_ae/pooling_unpooling_conv_deconv_comparison.png" alt="Comparison of pooling/unpooling and convolution/deconvolution">
+      <div class="figure-caption">Comparison: (top) pooling with switch variables and unpooling; (bottom) convolution (many-to-one) vs. deconvolution (one-to-many).</div>
+    </div>
+
+    <!-- ===== SECTION 9: HYPERPARAMETERS ===== -->
+    <h2 class="section-heading" id="hyperparameters">9. Autoencoder Hyperparameters</h2>
+
+    <p>There are <strong>4 key hyperparameters</strong> that must be set before training an autoencoder:</p>
+
+    <table>
+      <tr><th>Hyperparameter</th><th>Description</th><th>Effect of extremes</th></tr>
+      <tr><td><strong>Code size</strong><br>(bottleneck dimension)</td><td>Number of nodes in the middle layer</td><td>Too small: excessive compression, poor reconstruction even for normal data. Too large: near-identity mapping, no meaningful features learned.</td></tr>
+      <tr><td><strong>Number of layers</strong><br>(depth)</td><td>How many layers in encoder and decoder (not counting input/output)</td><td>Too shallow: cannot learn complex hierarchical features. Too deep: vanishing gradients, overfitting, training difficulty.</td></tr>
+      <tr><td><strong>Nodes per layer</strong><br>(width)</td><td>Neurons per layer; decreases in encoder, increases in decoder (symmetric)</td><td>Too few: information bottleneck at multiple points. Too many: excessive parameters, overfitting.</td></tr>
+      <tr><td><strong>Loss function</strong></td><td>Typically MSE; measures reconstruction quality</td><td>Wrong choice (e.g., MSE for binary data instead of binary cross-entropy): suboptimal training and poor reconstruction quality.</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Symmetry principle</div>
+      <div>The decoder is <strong>symmetric to the encoder</strong>: if the encoder has layers with 256, 128, 64 nodes, the decoder has layers with 64, 128, 256 nodes. This symmetry is a standard design choice, not a strict mathematical requirement.</div>
+    </div>
+
+    <!-- ===== SECTION 10: LOSS FUNCTIONS ===== -->
+    <h2 class="section-heading" id="loss-functions">10. Loss Functions</h2>
+
+    <h3 class="subsection-heading">Mean Squared Error (MSE)</h3>
+    <div class="definition-box">
+      <div class="box-label">MSE Loss</div>
+      <div>$$\mathcal{L}_{\text{MSE}} = \frac{1}{N} \sum_{i=1}^{N} (x_i - \hat{x}_i)^2$$</div>
+    </div>
+
+    <h3 class="subsection-heading">Mean Absolute Error (MAE / L1)</h3>
+    <div class="math-block">$$\mathcal{L}_{\text{MAE}} = \frac{1}{N} \sum_{i=1}^{N} |x_i - \hat{x}_i|$$</div>
+
+    <h3 class="subsection-heading">Loss for Denoising Autoencoders</h3>
+    <p>The loss is computed between the reconstruction and the <strong>clean original</strong>, not the noisy input that was fed to the encoder:</p>
+    <div class="math-block">$$\mathcal{L} = \| x - f_{\text{decoder}}(f_{\text{encoder}}(\tilde{x})) \|^2$$</div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">MSE vs. MAE for anomaly detection</div>
+      <div class="collapsible-body">
+        <p><strong>MSE</strong> penalizes large errors more heavily (quadratic), making it more sensitive to strongly anomalous pixels. This can be beneficial for anomaly detection — large deviations get disproportionately large scores.</p>
+        <p><strong>MAE</strong> treats all errors equally (linear), making it more robust to a few large outliers but potentially less sensitive to localized anomalies. The CAE formula shown in the lecture, $l(x,y) = \frac{1}{N}\sum\sqrt{(x_n - y_n)^2}$, is equivalent to MAE.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 11: VAE ===== -->
+    <h2 class="section-heading" id="vae">11. Variational Autoencoders (VAE)</h2>
+
+    <p>Standard autoencoders learn a <strong>deterministic</strong> mapping to a potentially discontinuous, unstructured latent space. A <strong>Variational Autoencoder (VAE)</strong> addresses this by making the encoder produce a <em>probability distribution</em> over latent space rather than a single point.</p>
+
+    <h3 class="subsection-heading">VAE Encoder</h3>
+    <p>Instead of mapping input $x$ to a single latent vector $z$, the encoder maps $x$ to the parameters of a Gaussian distribution:</p>
+    <div class="math-block">$$\mu = f_\mu(x), \quad \log \sigma^2 = f_{\sigma}(x)$$</div>
+    <p>The latent vector is then sampled: $z \sim \mathcal{N}(\mu, \sigma^2)$.</p>
+
+    <h3 class="subsection-heading">The Reparameterization Trick</h3>
+    <p>Sampling from $\mathcal{N}(\mu, \sigma^2)$ is a stochastic operation that breaks the backpropagation chain. The reparameterization trick rewrites sampling as:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Reparameterization Trick</div>
+      <div>$$z = \mu + \sigma \odot \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)$$<br>The randomness is externalized to $\epsilon$ (which has no network parameters). Gradients can flow through the deterministic $\mu$ and $\sigma$ back to the encoder weights, enabling end-to-end backpropagation.</div>
+    </div>
+
+    <h3 class="subsection-heading">VAE Loss Function</h3>
+    <div class="definition-box">
+      <div class="box-label">VAE Loss</div>
+      <div>$$\mathcal{L}_{\text{VAE}} = \mathcal{L}_{\text{reconstruction}} + \mathcal{L}_{\text{KL}}$$
+      $$\mathcal{L}_{\text{KL}} = D_{\text{KL}}(q(z|x) \| p(z)) = -\frac{1}{2} \sum_{j=1}^{J} \left(1 + \log(\sigma_j^2) - \mu_j^2 - \sigma_j^2 \right)$$</div>
+    </div>
+
+    <h3 class="subsection-heading">Role of the KL Divergence Term</h3>
+    <p>The KL divergence regularizes the latent space by forcing the learned distribution $q(z|x) = \mathcal{N}(\mu, \sigma^2)$ toward the standard normal prior $p(z) = \mathcal{N}(0, I)$:</p>
+    <ul>
+      <li><strong>Regularization</strong>: Prevents the encoder from mapping each input to a completely different, disconnected region.</li>
+      <li><strong>Continuity</strong>: Similar inputs map to nearby points in latent space.</li>
+      <li><strong>Completeness</strong>: Every point in latent space, when decoded, produces a meaningful output.</li>
+      <li><strong>Generation</strong>: You can sample $\epsilon \sim \mathcal{N}(0, I)$ and decode to generate new data.</li>
+    </ul>
+
+    <div class="collapsible">
+      <div class="collapsible-header">What happens without the KL term?</div>
+      <div class="collapsible-body">
+        <p>Without the KL divergence term, the VAE degenerates into a standard autoencoder. The encoder learns to map each input to very small-variance point estimates in disconnected regions of latent space. This leads to a <strong>discontinuous latent space</strong> with gaps, <strong>no ability to generate meaningful new data</strong> by sampling, and no regularization (the model may overfit to training data).</p>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">VAE vs. standard AE for anomaly detection</div>
+      <div>VAEs can be used for anomaly detection similarly to standard autoencoders, but with an additional signal: both the reconstruction error <em>and</em> the KL divergence can indicate anomalies. Anomalous inputs may have both high reconstruction error and unusual latent distributions (high KL divergence).</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod10-ae-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod10-slam.html">&larr; 10. SLAM</a>
+      <a href="mod11.html">11. Data Fusion &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod10-ae');</script>
+<script>
+  initWalkthrough('ae-walkthrough', [
+    {
+      tab: '1. Encoder',
+      title: 'Step 1: Encoder — Compressing the Input',
+      text: 'The encoder takes the high-dimensional input (e.g., an image or video frame) and passes it through successive layers with decreasing numbers of nodes. Each layer extracts progressively more abstract features. The output is the compressed latent representation z.',
+      visual: '<div class="figure-container"><img src="figures/mod10_ae/autoencoder_bottleneck_architecture.png" alt="Stacked autoencoder architecture"><div class="figure-caption">The encoder side (left): blocks get progressively smaller, forcing the network to learn compact, abstract representations of the input.</div></div>',
+      insight: 'The encoder acts like a lossy compressor. The layers learn which features are most important to retain — discarding noise and capturing the essential structure of "normal" patterns during training.'
+    },
+    {
+      tab: '2. Bottleneck',
+      title: 'Step 2: Bottleneck — The Compressed Code',
+      text: 'The bottleneck is the narrowest layer — the layer with the fewest nodes. It is the most compressed version of the input. Because the bottleneck is smaller than the input, the network cannot copy the input directly. It must learn to encode only the most essential features.',
+      visual: '<div class="figure-container"><img src="figures/mod10_ae/encoder_decoder_block_diagram.png" alt="Encoder-decoder block diagram"><div class="figure-caption">The bottleneck (compressed representation, shown in the middle) sits between the encoder and decoder. For MNIST digits, the bottleneck might have just a few dozen dimensions.</div></div>',
+      insight: 'The bottleneck dimension is the most critical hyperparameter. Too small: poor reconstruction even for normal data. Too large: the network learns an identity function rather than meaningful features. The right size forces the network to generalize.'
+    },
+    {
+      tab: '3. Decoder',
+      title: 'Step 3: Decoder — Reconstructing the Input',
+      text: 'The decoder mirrors the encoder: it takes the bottleneck representation and passes it through layers with increasing numbers of nodes, building back up to the original dimensionality. The output is the reconstructed version of the input.',
+      visual: '<div class="figure-container"><img src="figures/mod10_ae/autoencoder_bottleneck_architecture.png" alt="Autoencoder architecture"><div class="figure-caption">The decoder side (right): blocks expand symmetrically from the bottleneck back to the original input size. MSE loss measures the reconstruction quality.</div></div>',
+      insight: 'The decoder learns what "normal" looks like and reconstructs it from any compressed representation. This is why anomalies get poorly reconstructed — the decoder is tuned to produce normal outputs, not anomalous ones.'
+    },
+    {
+      tab: '4. Denoising',
+      title: 'Step 4: Denoising Variant — Learn to Clean',
+      text: 'A denoising autoencoder adds noise to the clean training input before encoding, but still computes the loss against the clean original. The network learns to denoise: it must map from noisy inputs back to clean outputs, building a robust representation of what "normal clean" looks like.',
+      visual: '<div class="figure-container"><img src="figures/mod10_ae/denoising_ae_mnist_example.png" alt="Denoising autoencoder MNIST example"><div class="figure-caption">Top row: clean original digits. Middle row: same digits with added noise. Bottom row: clean reconstructions. The loss is computed between top and bottom rows.</div></div>',
+      insight: 'The critical difference: $\\text{loss} = \\|x_{\\text{clean}} - \\text{decoder}(\\text{encoder}(x_{\\text{noisy}}))\\|^2$. By training on noisy inputs but targeting clean outputs, the network learns a robust internal representation of normality that ignores noise.'
+    },
+    {
+      tab: '5. CAE',
+      title: 'Step 5: Convolutional Variant — Preserve Spatial Structure',
+      text: 'A Convolutional Autoencoder (CAE) replaces dense layers with convolutional + pooling layers in the encoder and deconvolutional + unpooling layers in the decoder. Switch variables (stored max locations from pooling) are used during unpooling to restore spatial structure.',
+      visual: '<div class="figure-container"><img src="figures/mod10_ae/convolutional_autoencoder_architecture.png" alt="Convolutional Autoencoder architecture"><div class="figure-caption">CAE architecture: the encoder (left) uses conv+pool to reduce spatial dimensions. The decoder (right) uses unpool+deconv to restore them. The bottleneck holds the compressed latent features.</div></div>',
+      insight: 'Convolutions share weights across all spatial locations, giving CAEs far fewer parameters than vanilla AEs while better preserving spatial structure. This makes them much better at reconstructing images and localizing anomalies.'
+    },
+    {
+      tab: '6. Anomaly',
+      title: 'Step 6: Anomaly Detection — Threshold the Error',
+      text: 'At test time, compute the reconstruction error (anomaly score) for each input: $\\text{score}(x) = \\|x - \\text{decoder}(\\text{encoder}(x))\\|^2$. Normal inputs produce low error. Anomalous inputs produce high error. A threshold $\\tau$ separates them: anomaly if $\\text{score} > \\tau$, normal otherwise.',
+      visual: '<div class="figure-container"><img src="figures/mod10_ae/anomaly_detection_outlier_clusters.png" alt="Anomaly detection as outlier detection"><div class="figure-caption">Normal data (purple) forms clusters in feature space. Normal test samples (green) fall within clusters (low error); anomalies (red) are outliers (high error).</div></div>',
+      insight: 'The threshold $\\tau$ is a design choice. Setting it too low causes false alarms; too high misses real anomalies. In practice, $\\tau$ is tuned using a validation set of known normal samples, or set as a percentile of reconstruction errors on the training data.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod10-ae-flashcards', [
+    {
+      q: 'Why cannot we train a classifier to detect all anomalies? What alternative approach do autoencoders provide?',
+      a: 'Anomalies are diverse and unpredictable — it is impossible to enumerate and collect examples of all possible anomalous behaviors. Autoencoders provide an alternative: train on <strong>only normal data</strong> to learn normal patterns. At test time, normal inputs produce low reconstruction error; anomalous inputs produce high reconstruction error because the model has never learned their patterns. This is <strong>one-class learning</strong> (novelty detection).'
+    },
+    {
+      q: 'What are the three main components of an autoencoder? Why is the bottleneck essential?',
+      a: '<ol><li><strong>Encoder</strong>: Compresses input to lower-dimensional latent representation through layers of decreasing size.</li><li><strong>Bottleneck (code/latent space)</strong>: The narrowest layer — holds the compressed representation.</li><li><strong>Decoder</strong>: Reconstructs input from the bottleneck through layers of increasing size.</li></ol>The bottleneck is essential because without it the network could learn an identity function. The bottleneck forces the network to learn a compact, generalizable representation of the most essential features.'
+    },
+    {
+      q: 'Write the anomaly score formula and the decision rule for autoencoder-based anomaly detection.',
+      a: 'Anomaly score: $$\\text{score}(x) = \\| x - \\hat{x} \\|^2 = \\| x - f_{\\text{dec}}(f_{\\text{enc}}(x)) \\|^2$$<br>Decision rule: $$\\text{decision}(x) = \\begin{cases} \\text{anomaly} & \\text{if score}(x) > \\tau \\\\ \\text{normal} & \\text{otherwise} \\end{cases}$$'
+    },
+    {
+      q: 'How does a denoising autoencoder differ from a standard autoencoder in training and loss computation?',
+      a: '<strong>Training</strong>: A denoising AE adds noise to create $\\tilde{x} = x + \\text{noise}$, and feeds $\\tilde{x}$ (not clean $x$) into the encoder.<br><strong>Loss</strong>: Standard AE: $\\mathcal{L} = \\|x - \\hat{x}\\|^2$ where $\\hat{x} = f(x)$. Denoising AE: $\\mathcal{L} = \\|x - f(\\tilde{x})\\|^2$ — loss target is the <strong>clean original</strong> $x$, not the noisy input.'
+    },
+    {
+      q: 'In a Convolutional Autoencoder, what are switch variables and why are they needed?',
+      a: '<strong>Switch variables</strong> are the stored <strong>locations (indices) of maximum values</strong> recorded during max-pooling. They are needed because max-pooling is not directly invertible — the spatial information about where each maximum came from is lost. During <strong>unpooling</strong> in the decoder, each value is placed back at its stored max location; all other positions are filled with zeros. Without switch variables, the decoder cannot recover the spatial structure.'
+    },
+    {
+      q: 'What are the four hyperparameters of an autoencoder?',
+      a: '<ol><li><strong>Code size</strong> (bottleneck dimension): number of nodes in the middle layer.</li><li><strong>Number of layers</strong> (depth): layers in encoder and decoder, not counting input/output.</li><li><strong>Nodes per layer</strong> (width): decreases in encoder, increases in decoder (symmetric).</li><li><strong>Loss function</strong>: typically MSE; measures reconstruction quality.</li></ol>'
+    },
+    {
+      q: 'Why are Convolutional Autoencoders preferred over vanilla (fully-connected) autoencoders for video anomaly detection?',
+      a: 'CAEs are preferred because: (1) convolutions <strong>preserve and exploit spatial structure</strong> — vanilla AEs flatten input and lose spatial relationships; (2) <strong>weight sharing</strong> through kernels means far fewer parameters; (3) <strong>translation invariance</strong> is built-in; (4) they are "quite good at reconstructing images from lower-dimensional latent features," making normal/anomalous contrast sharper; (5) they scale well to large images/video.'
+    },
+    {
+      q: 'What is the reparameterization trick in a VAE and why is it necessary?',
+      a: 'In a VAE, the encoder outputs distribution parameters $\\mu$ and $\\sigma^2$, and $z$ is sampled from $\\mathcal{N}(\\mu, \\sigma^2)$. Sampling is a <strong>stochastic operation</strong> that breaks backpropagation (cannot compute gradients through a random step).<br><br>The reparameterization trick rewrites sampling as: $$z = \\mu + \\sigma \\odot \\epsilon, \\quad \\epsilon \\sim \\mathcal{N}(0, I)$$<br>Now $z$ is a deterministic, differentiable function of $\\mu$ and $\\sigma$. The randomness is externalized to $\\epsilon$, which has no network parameters, so gradients can flow back through $\\mu$ and $\\sigma$.'
+    },
+    {
+      q: 'What is the VAE loss function? What does the KL divergence term do?',
+      a: '$$\\mathcal{L}_{\\text{VAE}} = \\mathcal{L}_{\\text{reconstruction}} + \\mathcal{L}_{\\text{KL}}$$<br>$$\\mathcal{L}_{\\text{KL}} = -\\frac{1}{2}\\sum_j (1 + \\log\\sigma_j^2 - \\mu_j^2 - \\sigma_j^2)$$<br>The KL term regularizes the latent space by forcing the learned distribution toward $\\mathcal{N}(0,I)$. It ensures: (1) <strong>continuity</strong> — similar inputs map to nearby latent points; (2) <strong>completeness</strong> — every latent point decodes meaningfully; (3) the latent space is structured enough to <strong>sample and generate</strong> new data.'
+    },
+    {
+      q: 'Why does an autoencoder trained only on normal data produce high reconstruction error for anomalous inputs?',
+      a: 'The encoder learns features optimized for compressing <strong>normal</strong> patterns. When an anomalous input arrives: (1) the encoder compresses it using features optimized for normal data, losing information about the anomaly; (2) the bottleneck does not capture the anomalous features; (3) the decoder, tuned to produce normal-looking outputs, reconstructs something "normal" rather than matching the anomaly; (4) the resulting mismatch between anomalous input and normal-looking reconstruction produces a <strong>high reconstruction error</strong>.'
+    },
+    {
+      q: 'What is the MSE loss for a standard autoencoder? How does it differ for a denoising autoencoder?',
+      a: '<strong>Standard AE</strong>: $$\\mathcal{L} = \\frac{1}{N}\\sum_{i=1}^N (x_i - \\hat{x}_i)^2$$ where $\\hat{x} = f(x)$ (reconstruction of clean input).<br><br><strong>Denoising AE</strong>: $$\\mathcal{L} = \\frac{1}{N}\\sum_{i=1}^N (x_i - \\hat{x}_i)^2$$ where $\\hat{x} = f(\\tilde{x})$ — the reconstruction is of the <strong>noisy input</strong>, but the target $x$ is still the <strong>clean original</strong>.'
+    },
+    {
+      q: 'In max-pooling, what information is lost and how is it partially recovered in the decoder?',
+      a: 'Max-pooling retains the <strong>maximum value</strong> from each local region and discards the values at all other positions — spatial information about non-maximum values is lost permanently.<br><br>This is partially recovered using <strong>switch variables</strong> (stored max locations). During unpooling, each retained maximum value is placed back at its original spatial position. All other positions are filled with zeros. The spatial structure is approximately restored, though the non-maximum values themselves cannot be recovered.'
+    }
+  ]);
+</script>
+</body>
+</html>

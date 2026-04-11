@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5. Classification with Deep Learning — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">5. Classification with Deep Learning (CNNs)</h1>
+    <p class="page-subtitle">Convolution, pooling, batch normalization, dropout, regularization, optimizers, evaluation metrics</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#fcn-limitations">1. Limitations of Fully Connected Networks</a>
+      <a href="#cnn-innovations">2. CNN Innovations: Local Connectivity &amp; Weight Sharing</a>
+      <a href="#convolution">3. The Convolution Operation</a>
+      <a href="#3d-convolution">4. 3D Convolutions and Feature Maps</a>
+      <a href="#pooling">5. Pooling Layers</a>
+      <a href="#cnn-pipeline">6. Full CNN Pipeline</a>
+      <a href="#1x1-conv">7. 1&times;1 Convolution</a>
+      <a href="#stride-padding">8. Stride, Padding, and Output Size</a>
+      <a href="#overfitting-reg">9. Overfitting and Regularization</a>
+      <a href="#dropout">10. Dropout</a>
+      <a href="#batch-norm">11. Batch Normalization</a>
+      <a href="#weight-init">12. Weight Initialization &amp; Transfer Learning</a>
+      <a href="#optimizers">13. Gradient Descent Variants &amp; Optimizers</a>
+      <a href="#feature-viz">14. What Does a CNN See?</a>
+      <a href="#metrics">15. Classification Metrics</a>
+      <a class="toc-interactive" href="#weight-sharing-viz">Interactive: Weight Sharing Explainer</a>
+      <a class="toc-interactive" href="#pooling-viz">Interactive: Pooling Operations</a>
+      <a class="toc-interactive" href="#cnn-walkthrough">Interactive: CNN Forward Pass</a>
+      <a class="toc-interactive" href="#cnn-builder">Interactive: CNN Layer Builder</a>
+      <a class="toc-interactive" href="#cnn-size-calc">Interactive: Output Size Calculator</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: FCN LIMITATIONS ===== -->
+    <h2 class="section-heading" id="fcn-limitations">1. Limitations of Fully Connected Networks for Images</h2>
+
+    <p>Before CNNs, neural networks used fully connected layers where every input pixel connects to every neuron. This creates serious problems for image data:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod5/fcn_all_to_all_connections.png" alt="Fully connected network with all-to-all connections">
+      <div class="figure-caption">Fully connected network: every input neuron connects to every hidden neuron. For even modest images, this creates an impractical number of parameters.</div>
+    </div>
+
+    <table>
+      <tr><th>Problem</th><th>Explanation</th></tr>
+      <tr><td><strong>Spatial structure ignored</strong></td><td>FCNs flatten images to 1D, destroying 2D spatial relationships (edges, local patterns) crucial for vision.</td></tr>
+      <tr><td><strong>Enormous parameter count</strong></td><td>A 256&times;256 RGB image with a single 1000-neuron FC layer requires ~197 million weights. Impractical.</td></tr>
+      <tr><td><strong>No translation invariance</strong></td><td>A shifted object activates entirely different neurons; the network must re-learn every pattern at every location.</td></tr>
+      <tr><td><strong>Poor generalization</strong></td><td>All-to-all connections overfit easily and generalize poorly to unseen images.</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key question</div>
+      <div>Can we build a better architecture specifically for images? <strong>Yes &mdash; Convolutional Neural Networks (CNNs)</strong>, introduced conceptually by Yann LeCun in LeNet-5 (1989), but only made practical by GPU acceleration around 2011.</div>
+    </div>
+
+    <!-- ===== SECTION 2: CNN INNOVATIONS ===== -->
+    <h2 class="section-heading" id="cnn-innovations">2. CNN Innovations: Local Connectivity and Weight Sharing</h2>
+
+    <h3 class="subsection-heading">Innovation 1: Local Connectivity</h3>
+    <p>Instead of connecting each neuron to all inputs, each CNN neuron connects only to a small local region called its <strong>receptive field</strong> (e.g., 3&times;3 pixels). This mirrors how the visual cortex works: neurons respond to local regions of the visual field.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod5/fc_vs_conv_layer_comparison.png" alt="Fully connected vs convolutional layer comparison">
+      <div class="figure-caption">Left: FC layer connects to all inputs. Right: Conv layer connects each neuron to only its local receptive field.</div>
+    </div>
+
+    <h3 class="subsection-heading">Innovation 2: Weight Sharing</h3>
+    <p>The <strong>same filter weights</strong> are applied at every spatial position. A 3&times;3 filter has only 9 learnable weights regardless of image size. This is the core insight that makes CNNs parameter-efficient.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Convolutional Layer: Weight Sharing</div>
+      <div>$$\text{output}(i, j) = \sum_{m} \sum_{n} \text{input}(i+m,\; j+n) \cdot w(m, n) + b$$
+      The same $w(m,n)$ are used at every position $(i,j)$. A 3&times;3 filter: 9 weights + 1 bias = <strong>10 parameters</strong>, regardless of image size.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/neuron_weights_as_filter.png" alt="Neuron weights forming a convolutional filter">
+      <div class="figure-caption">The network weights literally become the convolutional filter parameters. Training learns the optimal filter values.</div>
+    </div>
+
+    <h3 class="subsection-heading">Parameter Count Comparison</h3>
+    <table>
+      <tr><th>Layer Type</th><th>Example Configuration</th><th>Parameters</th></tr>
+      <tr><td>Fully connected</td><td>32&times;32&times;3 input, 16 neurons</td><td>$32 \times 32 \times 3 \times 16 = 49{,}152$</td></tr>
+      <tr><td>Convolutional</td><td>16 filters of 3&times;3&times;3</td><td>$16 \times (3 \times 3 \times 3 + 1) = 448$</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>CNNs use the same fundamental principles as standard neural networks (neurons, weights, biases, backpropagation), but replace all-to-all connectivity with local, shared-weight connections. This gives <strong>translation equivariance</strong>: the same pattern is detected regardless of its position in the image.</div>
+    </div>
+
+    <div class="interactive-container" id="weight-sharing-viz">
+      <div class="interactive-label">Weight Sharing Explainer</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="ws-step" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Step</button>
+        <button id="ws-run" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Run All</button>
+        <button id="ws-reset" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+        <span id="ws-status" style="font-size:11px;color:#888;margin-left:8px;">Position 0 of 16</span>
+      </div>
+      <canvas id="ws-canvas" width="500" height="280" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="weight-sharing-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 3: CONVOLUTION ===== -->
+    <h2 class="section-heading" id="convolution">3. The Convolution Operation</h2>
+
+    <h3 class="subsection-heading">2D Discrete Convolution</h3>
+    <div class="definition-box">
+      <div class="box-label">2D Convolution Formula</div>
+      <div>$$\text{Output}(i, j) = \sum_{m=0}^{k_h - 1} \sum_{n=0}^{k_w - 1} \text{Input}(i + m, \; j + n) \cdot \text{Kernel}(m, n) + b$$
+      where $k_h \times k_w$ is the kernel size. This is technically cross-correlation, but called convolution by convention in deep learning.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/convolution_3d_filter_activation_map.png" alt="3D convolution filter sliding over input to produce activation map">
+      <div class="figure-caption">A filter slides across the input, computing a dot product at each position to produce an activation (feature) map.</div>
+    </div>
+
+    <h3 class="subsection-heading">Worked Example (5&times;5 image, 3&times;3 kernel)</h3>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Convolution computation: position (0,0)</div>
+      <div class="collapsible-body">
+        <p>Image (top-left 3&times;3 subregion): $\begin{bmatrix}1 & 1 & 1 \\ 0 & 1 & 1 \\ 0 & 0 & 1\end{bmatrix}$, Kernel: $\begin{bmatrix}1 & 0 & 1 \\ 0 & 1 & 0 \\ 1 & 0 & 1\end{bmatrix}$</p>
+        <p>Element-wise multiply and sum:<br>$1\cdot1 + 1\cdot0 + 1\cdot1 + 0\cdot0 + 1\cdot1 + 1\cdot0 + 0\cdot1 + 0\cdot0 + 1\cdot1 = 4$</p>
+        <p>Output dimensions for a 5&times;5 input with 3&times;3 kernel (stride 1, no padding): $(5-3+1)\times(5-3+1) = 3\times3$.</p>
+        <div class="figure-container">
+          <img src="figures/mod5/convolution_worked_example.png" alt="Convolution worked example">
+          <div class="figure-caption">Worked convolution: 5x5 image, 3x3 kernel, stride 1, producing a 3x3 output.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">After Convolution: Activation Function</h3>
+    <p>The convolution output is passed through a non-linear activation function (typically ReLU):</p>
+    $$\text{FeatureMap}(i,j) = \text{ReLU}\!\Big(\sum_{m}\sum_{n} \text{Input}(i+m, j+n) \cdot w(m,n) + b\Big)$$
+
+    <p>This is directly analogous to classical image filtering (Sobel, Gaussian), except the filter weights are <strong>learned from data</strong> rather than hand-designed.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod5/sobel_filter_examples.png" alt="Sobel filter examples">
+      <div class="figure-caption">Classical Sobel filters detect horizontal and vertical gradients. CNN filters learn to detect the features most useful for the task.</div>
+    </div>
+
+    <!-- ===== SECTION 4: 3D CONVOLUTION ===== -->
+    <h2 class="section-heading" id="3d-convolution">4. 3D Convolutions and Feature Maps</h2>
+
+    <h3 class="subsection-heading">Why 3D?</h3>
+    <p>Real images have multiple channels (RGB = 3 channels). Each CNN layer also produces multiple output channels (feature maps). Convolution is therefore inherently <strong>3D</strong>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">3D Convolution</div>
+      <div>A single filter has shape $k_h \times k_w \times d_{\text{in}}$ (depth must equal number of input channels):
+      $$\text{output}(i,j) = \sum_{c=1}^{d_{\text{in}}} \sum_{m=0}^{k_h-1} \sum_{n=0}^{k_w-1} \text{input}(i+m,\; j+n,\; c) \cdot w(m, n, c) + b$$
+      One filter produces <strong>one 2D feature map</strong>. $N$ filters produce an output volume of depth $N$.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/3d_convolution_rgb_filter.png" alt="3D convolution on an RGB image">
+      <div class="figure-caption">A single filter spans all 3 RGB channels, producing one output feature map by summing contributions from all input channels.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/3d_filter_input_output_tensor.png" alt="3D filter applied to input tensor">
+      <div class="figure-caption">Input volume (H&times;W&times;3) convolved with a 3&times;3&times;3 filter produces a 2D feature map. N filters produce an output of depth N.</div>
+    </div>
+
+    <h3 class="subsection-heading">Dimensions and Parameter Count</h3>
+    <table>
+      <tr><th></th><th>Example Values</th><th>Formula</th></tr>
+      <tr><td>Input volume</td><td>$H \times W \times d_{\text{in}}$</td><td>Given</td></tr>
+      <tr><td>Each filter shape</td><td>$k_h \times k_w \times d_{\text{in}}$</td><td>Depth must equal $d_{\text{in}}$</td></tr>
+      <tr><td>Output volume</td><td>$H' \times W' \times N$</td><td>$N$ = number of filters</td></tr>
+      <tr><td>Parameters per filter</td><td>$k_h \times k_w \times d_{\text{in}} + 1$</td><td>Including bias</td></tr>
+      <tr><td>Total parameters</td><td>$N \times (k_h \times k_w \times d_{\text{in}} + 1)$</td><td></td></tr>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Parameter count example: 32&times;32&times;3 input, 16 filters of 3&times;3</div>
+      <div class="collapsible-body">
+        <p>Parameters = $16 \times (3 \times 3 \times 3 + 1) = 16 \times 28 = 448$</p>
+        <p>Compare to FC layer: $32 \times 32 \times 3 \times 16 = 49{,}152$ weights &mdash; over 100 times more.</p>
+        <p>This dramatic reduction is why CNNs can be trained on modest hardware and generalize well.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 5: POOLING ===== -->
+    <h2 class="section-heading" id="pooling">5. Pooling Layers</h2>
+
+    <p>After convolution extracts local features, pooling layers reduce spatial resolution while increasing the effective receptive field of later layers.</p>
+
+    <h3 class="subsection-heading">Why Pooling?</h3>
+    <ol>
+      <li><strong>Reduce spatial resolution:</strong> Decreases computation in subsequent layers.</li>
+      <li><strong>Increase receptive field:</strong> Later filters see larger regions, detecting higher-level patterns.</li>
+      <li><strong>Partial translation/scale invariance:</strong> Small input shifts do not change pooling output.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod5/cnn_receptive_field_pooling.png" alt="CNN receptive field and pooling structure">
+      <div class="figure-caption">After pooling, subsequent convolution filters have larger effective receptive fields, allowing detection of larger patterns.</div>
+    </div>
+
+    <h3 class="subsection-heading">Max Pooling</h3>
+    <p>The most common pooling operation: a window slides over each feature map and selects the <strong>maximum value</strong> at each position.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Max Pooling: 2&times;2 window, stride 2</div>
+      <div>
+        <table>
+          <tr><th>Input (4&times;4)</th><th>Output (2&times;2)</th></tr>
+          <tr><td><pre>1  1  2  4
+5  6  7  8
+3  2  1  0
+1  2  3  4</pre></td><td><pre>6  8
+3  4</pre></td></tr>
+        </table>
+        Top-left: max(1,1,5,6)=6 &nbsp; Top-right: max(2,4,7,8)=8 &nbsp; Bottom-left: max(3,2,1,2)=3 &nbsp; Bottom-right: max(1,0,3,4)=4
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/max_pooling_2x2_example.png" alt="Max pooling 2x2 example">
+      <div class="figure-caption">Max pooling with 2&times;2 window and stride 2: halves spatial dimensions in both axes.</div>
+    </div>
+
+    <h3 class="subsection-heading">Average Pooling</h3>
+    $$\text{AvgPool}(i, j) = \frac{1}{p^2} \sum_{m=0}^{p-1} \sum_{n=0}^{p-1} \text{input}(i \cdot s + m, \; j \cdot s + n)$$
+
+    <table>
+      <tr><th>Property</th><th>Max Pooling</th><th>Average Pooling</th></tr>
+      <tr><td>What it preserves</td><td>Strongest activation (dominant feature)</td><td>Overall activation level</td></tr>
+      <tr><td>Effect</td><td>Sharpens feature responses</td><td>Smooths feature responses</td></tr>
+      <tr><td>Typical use</td><td>Classification CNNs (most common)</td><td>Final layers (e.g., Global Average Pooling)</td></tr>
+      <tr><td>Learnable parameters</td><td>None</td><td>None</td></tr>
+      <tr><td>Channel mixing</td><td>No (operates independently per channel)</td><td>No (operates independently per channel)</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod5/conv_maxpool_vs_avgpool.png" alt="Max pooling vs average pooling comparison">
+      <div class="figure-caption">Comparison of max pooling (preserves strongest activations) and average pooling (smooths responses).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/conv_then_pooling_spatial_reduction.png" alt="Spatial reduction through convolution and pooling">
+      <div class="figure-caption">Convolution followed by pooling: spatial dimensions shrink progressively (11&times;11 &rarr; 9&times;9 &rarr; 3&times;3).</div>
+    </div>
+
+    <div class="interactive-container" id="pooling-viz">
+      <div class="interactive-label">Pooling Operations Visualizer</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <label style="font-size:12px;color:#555;">Type:
+          <select id="pool-type" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+            <option value="max" selected>Max Pool</option>
+            <option value="avg">Average Pool</option>
+          </select>
+        </label>
+        <label style="font-size:12px;color:#555;">Pool size:
+          <select id="pool-size" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+            <option value="2" selected>2x2</option>
+            <option value="3">3x3</option>
+          </select>
+        </label>
+        <label style="font-size:12px;color:#555;">Stride:
+          <select id="pool-stride" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+          </select>
+        </label>
+        <button id="pool-step" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Step</button>
+        <button id="pool-run" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Run All</button>
+        <button id="pool-reset" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+      </div>
+      <canvas id="pool-canvas" width="620" height="280" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="pooling-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 6: CNN PIPELINE ===== -->
+    <h2 class="section-heading" id="cnn-pipeline">6. The Full CNN Pipeline</h2>
+
+    <h3 class="subsection-heading">Standard Architecture Pattern</h3>
+    $$\text{Input} \rightarrow [\text{Conv} + \text{ReLU} \rightarrow \text{Pool}]_{\times k} \rightarrow \text{Flatten} \rightarrow [\text{FC} + \text{ReLU}]_{\times m} \rightarrow \text{Softmax} \rightarrow \text{Output}$$
+
+    <div class="figure-container">
+      <img src="figures/mod5/cnn_full_architecture_pipeline.png" alt="Full CNN architecture pipeline">
+      <div class="figure-caption">Complete CNN pipeline: Input image &rarr; stacked Conv+Pool layers &rarr; FC layers &rarr; Softmax &rarr; class probabilities.</div>
+    </div>
+
+    <h3 class="subsection-heading">Role of Each Stage</h3>
+    <table>
+      <tr><th>Stage</th><th>Function</th><th>What It Learns</th></tr>
+      <tr><td>Early conv layers</td><td>Low-level feature detection</td><td>Edges, lines, corners (like learned Sobel filters)</td></tr>
+      <tr><td>Middle conv layers</td><td>Mid-level feature detection</td><td>Textures, simple shapes, combinations of edges</td></tr>
+      <tr><td>Deep conv layers</td><td>High-level feature detection</td><td>Object parts, complex patterns (semantically meaningful)</td></tr>
+      <tr><td>Pooling layers</td><td>Spatial reduction, abstraction</td><td>Progressive summarization; larger receptive fields</td></tr>
+      <tr><td>FC layers</td><td>Combine all features for classification</td><td>Decision making</td></tr>
+      <tr><td>Softmax</td><td>Convert raw scores to probabilities</td><td>Calibrated probability distribution over classes</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod5/cnn_classification_pipeline.png" alt="CNN classification pipeline with class probabilities">
+      <div class="figure-caption">Example CNN classification: boat (0.94), cat (0.04), bird (0.02), dog (0.01). The softmax output is a probability distribution over all classes.</div>
+    </div>
+
+    <h3 class="subsection-heading">Example: 125&times;125&times;3 Input Network</h3>
+    <table>
+      <tr><th>Stage</th><th>Output Dimensions</th></tr>
+      <tr><td>Input</td><td>$125 \times 125 \times 3$</td></tr>
+      <tr><td>Conv1 + Pool1</td><td>$62 \times 62 \times 32$</td></tr>
+      <tr><td>Conv2 + Pool2</td><td>$31 \times 31 \times 64$</td></tr>
+      <tr><td>Conv3 + Pool3</td><td>$15 \times 15 \times 64$</td></tr>
+      <tr><td>Conv4 + Pool4</td><td>$7 \times 7 \times 16$</td></tr>
+      <tr><td>Flatten</td><td>$784 \times 1$</td></tr>
+      <tr><td>FC1</td><td>$16 \times 1$</td></tr>
+      <tr><td>Output (Softmax)</td><td>$5 \times 1$ (5 classes)</td></tr>
+    </table>
+
+    <p><strong>Key pattern:</strong> Spatial dimensions decrease while depth (number of channels) increases as you go deeper. This represents progressive transformation from raw pixels to abstract, high-level features.</p>
+
+    <div id="cnn-walkthrough" class="interactive-container" data-title="Walkthrough — CNN Forward Pass"></div>
+
+    <div class="interactive-container" id="cnn-builder">
+      <div class="interactive-label">CNN Layer-by-Layer Builder</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <label style="font-size:12px;color:#555;">Input W:
+          <select id="builder-width" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+            <option value="28" selected>28</option>
+            <option value="32">32</option>
+            <option value="64">64</option>
+            <option value="128">128</option>
+            <option value="224">224</option>
+          </select>
+        </label>
+        <label style="font-size:12px;color:#555;">Channels:
+          <select id="builder-channels" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+            <option value="1" selected>1 (Grayscale)</option>
+            <option value="3">3 (RGB)</option>
+          </select>
+        </label>
+        <button id="builder-add-conv" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Add Conv2D</button>
+        <button id="builder-add-maxpool" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Add MaxPool</button>
+        <button id="builder-add-avgpool" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Add AvgPool</button>
+        <button id="builder-add-flatten" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Add Flatten</button>
+        <button id="builder-add-fc" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Add FC</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <button id="builder-reset" style="border:1px solid #c62828;color:#c62828;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reset</button>
+        <label style="font-size:12px;color:#555;">Load Preset:
+          <select id="builder-preset" style="font-size:12px;padding:2px 6px;border:1px solid #ccc;border-radius:3px;">
+            <option value="">-- Select --</option>
+            <option value="lenet5">LeNet-5</option>
+            <option value="simple">Simple CNN</option>
+            <option value="vgg">VGG-like block</option>
+          </select>
+        </label>
+      </div>
+      <div id="builder-layer-form" style="display:none;margin-bottom:10px;padding:10px;border:1px solid #ccc;border-radius:4px;background:#f5f5f5;"></div>
+      <canvas id="builder-canvas" width="700" height="180" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;margin-bottom:10px;"></canvas>
+      <div id="builder-table" style="overflow-x:auto;"></div>
+      <div id="builder-detail" style="display:none;margin-top:10px;padding:10px;border:1px solid #1565c0;border-radius:4px;background:#e3f2fd;"></div>
+      <div id="cnn-builder-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 7: 1x1 CONV ===== -->
+    <h2 class="section-heading" id="1x1-conv">7. 1&times;1 Convolution</h2>
+
+    <p>As networks grow deeper, the number of feature maps (channels) grows rapidly. <strong>1&times;1 convolutions</strong> are used to reduce or expand the number of channels without affecting spatial dimensions.</p>
+
+    <div class="definition-box">
+      <div class="box-label">1&times;1 Convolution</div>
+      <div>A 1&times;1 filter with shape $1 \times 1 \times d_{\text{in}}$ computes a weighted sum across all input channels at each spatial position. With $d_{\text{out}}$ such filters, the output has $d_{\text{out}}$ channels. <strong>Spatial receptive field is not affected</strong> &mdash; the filter mixes information across channels, not spatially.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/1x1_convolution_channel_reduction.png" alt="1x1 convolution reducing 192 channels to 64">
+      <div class="figure-caption">1&times;1 convolution: reduces 192 channels to 64 while preserving H&times;W dimensions.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Example: Channel compression from 192 to 64</div>
+      <div class="collapsible-body">
+        <p><strong>Input:</strong> $64 \times 64 \times 192$ (192 feature maps)</p>
+        <p><strong>1&times;1 conv:</strong> 64 filters of size $1 \times 1 \times 192$</p>
+        <p><strong>Output:</strong> $64 \times 64 \times 64$ (64 feature maps)</p>
+        <p><strong>Parameters:</strong> $64 \times (1 \times 1 \times 192 + 1) = 64 \times 193 = 12{,}352$</p>
+        <p>Compare to 3&times;3 conv: $64 \times (3 \times 3 \times 192 + 1) = 110{,}656$ parameters &mdash; nearly 9 times more expensive.</p>
+      </div>
+    </div>
+
+    <p>1&times;1 convolutions are used extensively in GoogLeNet/Inception (channel bottleneck before 3&times;3 and 5&times;5 convs) and ResNet bottleneck blocks.</p>
+
+    <!-- ===== SECTION 8: STRIDE AND PADDING ===== -->
+    <h2 class="section-heading" id="stride-padding">8. Stride, Padding, and Output Size</h2>
+
+    <h3 class="subsection-heading">Stride</h3>
+    <p><strong>Stride</strong> is the step size the filter moves between positions.</p>
+
+    <ul>
+      <li><strong>Stride = 1:</strong> Filter moves one pixel at a time. Largest output.</li>
+      <li><strong>Stride = 2:</strong> Filter moves two pixels at a time. Roughly halves output dimensions.</li>
+      <li>Stride &gt; 1 can replace pooling for downsampling.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod5/stride_1_vs_stride_2.png" alt="Stride 1 vs stride 2 comparison">
+      <div class="figure-caption">Stride 1 on a 5&times;5 input with 3&times;3 filter: 3&times;3 output. Stride 2: 2&times;2 output.</div>
+    </div>
+
+    <h3 class="subsection-heading">Padding</h3>
+    <p>Padding adds extra pixels (typically zeros) around the input border before convolution.</p>
+
+    <table>
+      <tr><th>Type</th><th>Description</th><th>Output Size</th></tr>
+      <tr><td><strong>Valid padding</strong> (no padding)</td><td>Filter only slides where it fully fits. Output smaller than input.</td><td>$(W - K + 1) \times (W - K + 1)$</td></tr>
+      <tr><td><strong>Same padding</strong> (zero padding)</td><td>Zeros added so output has same spatial dimensions as input.</td><td>$W \times W$ (same as input)</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod5/zero_padding_example.png" alt="Zero-padding example">
+      <div class="figure-caption">Zero-padding: a 6&times;6 input padded to 8&times;8, convolved with 3&times;3 kernel (stride 1), produces a 6&times;6 output (same dimensions).</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why padding matters</div>
+      <div>Without padding, each convolution layer shrinks spatial dimensions. After many layers, feature maps become too small. Padding preserves spatial information, especially at the borders (border pixels would otherwise contribute to fewer outputs), and enables building deeper networks.</div>
+    </div>
+
+    <h3 class="subsection-heading">Output Size Formula</h3>
+    <div class="definition-box">
+      <div class="box-label">Output Spatial Dimension</div>
+      <div>$$O = \left\lfloor \frac{W - K + 2P}{S} \right\rfloor + 1$$
+      where $W$ = input size, $K$ = kernel size, $P$ = padding, $S$ = stride.</div>
+    </div>
+
+    <table>
+      <tr><th>$W$</th><th>$K$</th><th>$P$</th><th>$S$</th><th>$O$</th><th>Note</th></tr>
+      <tr><td>32</td><td>3</td><td>0</td><td>1</td><td>30</td><td>Shrinks</td></tr>
+      <tr><td>32</td><td>3</td><td>1</td><td>1</td><td>32</td><td>Same size</td></tr>
+      <tr><td>32</td><td>5</td><td>2</td><td>1</td><td>32</td><td>Same size</td></tr>
+      <tr><td>32</td><td>3</td><td>0</td><td>2</td><td>15</td><td>Halved (approx.)</td></tr>
+      <tr><td>224</td><td>7</td><td>3</td><td>2</td><td>112</td><td>AlexNet first layer</td></tr>
+    </table>
+
+    <div class="interactive-container" id="cnn-size-calc">
+      <div class="interactive-label">CNN Output Size Calculator</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px;">
+        <div>
+          <label style="font-size:12px;color:#555;display:block;">Image size W: <span id="sc-w-val">28</span></label>
+          <input type="range" id="sc-w" min="4" max="256" value="28" style="width:140px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:block;">Channels C<sub>in</sub>:</label>
+          <button id="sc-cin-toggle" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;">1 (Grey)</button>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:block;">Kernel K: <span id="sc-k-val">3</span></label>
+          <input type="range" id="sc-k" min="0" max="3" value="1" style="width:100px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:block;">Stride S: <span id="sc-s-val">1</span></label>
+          <input type="range" id="sc-s" min="0" max="2" value="0" style="width:80px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:block;">Padding P: <span id="sc-p-val">0</span></label>
+          <input type="range" id="sc-p" min="0" max="2" value="0" style="width:80px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:block;">Filters F: <span id="sc-f-val">8</span></label>
+          <input type="range" id="sc-f" min="1" max="64" value="8" style="width:140px;">
+        </div>
+      </div>
+      <canvas id="sc-canvas" width="500" height="250" style="border:1px solid #e0e0e0;background:#fff;display:block;max-width:100%;"></canvas>
+      <div id="cnn-size-equations" style="margin-top:14px;"></div>
+    </div>
+
+    <!-- ===== SECTION 9: OVERFITTING AND REGULARIZATION ===== -->
+    <h2 class="section-heading" id="overfitting-reg">9. Overfitting and Regularization</h2>
+
+    <h3 class="subsection-heading">The Bias-Variance Tradeoff</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod5/underfitting_vs_overfitting.png" alt="Underfitting, just right, and overfitting">
+      <div class="figure-caption">Three model complexity regimes: underfitting (too simple), just right (optimal capacity), overfitting (too complex).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/bias_variance_tradeoff.png" alt="Bias-variance tradeoff curve">
+      <div class="figure-caption">Total generalization error = Bias + Variance. Optimal capacity minimizes both. Underfitting = high bias. Overfitting = high variance.</div>
+    </div>
+
+    <h3 class="subsection-heading">L1 and L2 Regularization</h3>
+    <p>Regularization penalizes large weight values, encouraging simpler models that generalize better.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Regularized Cost Function</div>
+      <div>$$\text{Cost} = \mathcal{L}(\theta) + \lambda \cdot R(\theta)$$
+      where $\lambda$ is the regularization strength hyperparameter.</div>
+    </div>
+
+    <table>
+      <tr><th>Type</th><th>Penalty Term</th><th>Full Cost</th><th>Effect</th></tr>
+      <tr><td><strong>L1 (Lasso)</strong></td><td>$\sum |w_i|$</td><td>$\mathcal{L}(\theta) + \lambda \sum |w_i|$</td><td>Drives some weights to exactly <strong>zero</strong>; sparse model; feature selection</td></tr>
+      <tr><td><strong>L2 (Ridge / Weight Decay)</strong></td><td>$\sum w_i^2$</td><td>$\mathcal{L}(\theta) + \lambda \sum w_i^2$</td><td>Drives weights toward <strong>small values</strong>; smooth decision boundaries</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod5/regularization_decision_boundaries.png" alt="Effect of regularization on decision boundaries">
+      <div class="figure-caption">Decision boundaries: linear (0.83 train acc, too simple), NN without regularization (0.89, jagged/overfitting), NN with regularization (0.87, smooth/generalizable).</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Regularization slightly reduces training accuracy but improves validation accuracy. A small training-validation gap with slightly lower training accuracy is preferable to a model that memorizes training data.</div>
+    </div>
+
+    <!-- ===== SECTION 10: DROPOUT ===== -->
+    <h2 class="section-heading" id="dropout">10. Dropout</h2>
+
+    <p>Dropout randomly <strong>disables neurons</strong> during each training iteration with probability $p$ (typically $p = 0.5$).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod5/dropout_illustration.png" alt="Dropout: standard network vs network after dropout">
+      <div class="figure-caption">Standard network (left) vs. network with dropout applied (right). Crossed-out neurons are disabled for this iteration.</div>
+    </div>
+
+    <table>
+      <tr><th></th><th>Training</th><th>Inference</th></tr>
+      <tr><td><strong>Neurons</strong></td><td>Each has probability $p$ of being set to zero</td><td>All neurons active</td></tr>
+      <tr><td><strong>Weights</strong></td><td>Only active neurons' weights are updated</td><td>Scaled by $(1-p)$ to compensate</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Why Dropout Works</h3>
+    <ul>
+      <li><strong>Ensemble approximation:</strong> Each dropout pattern creates a different sub-network; training on all patterns is like training an ensemble.</li>
+      <li><strong>Prevents co-adaptation:</strong> Neurons cannot rely on specific other neurons being present, forcing distributed, redundant representations.</li>
+      <li><strong>Noise injection:</strong> Acts as regularization by preventing exact memorization.</li>
+    </ul>
+
+    <div class="definition-box">
+      <div class="box-label">Practical Notes</div>
+      <div>
+        <ul>
+          <li>Typically applied to <strong>fully connected layers</strong>, not convolutional layers.</li>
+          <li>Common rates: $p = 0.5$ for hidden layers, $p = 0.2$ for input layers.</li>
+          <li><strong>Never apply dropout during inference.</strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 11: BATCH NORM ===== -->
+    <h2 class="section-heading" id="batch-norm">11. Batch Normalization</h2>
+
+    <h3 class="subsection-heading">The Problem: Internal Covariate Shift</h3>
+    <p>During training, the distribution of each layer's inputs changes as parameters in preceding layers change. Each layer must continuously adapt to a shifting input distribution, slowing training. This is called <strong>internal covariate shift</strong>.</p>
+
+    <h3 class="subsection-heading">The Algorithm</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Batch Normalization Steps</div>
+      <div>Given mini-batch $\mathcal{B} = \{x_1, \ldots, x_m\}$:
+      <ol>
+        <li>Compute batch mean: $\mu_{\mathcal{B}} = \frac{1}{m} \sum_{i=1}^{m} x_i$</li>
+        <li>Compute batch variance: $\sigma_{\mathcal{B}}^2 = \frac{1}{m} \sum_{i=1}^{m} (x_i - \mu_{\mathcal{B}})^2$</li>
+        <li>Normalize: $\hat{x}_i = \frac{x_i - \mu_{\mathcal{B}}}{\sqrt{\sigma_{\mathcal{B}}^2 + \epsilon}}$</li>
+        <li>Scale and shift: $y_i = \gamma \hat{x}_i + \beta$</li>
+      </ol>
+      $\gamma$ (scale) and $\beta$ (shift) are <strong>learnable parameters</strong> trained via backpropagation.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/batch_norm_neuron_pipeline.png" alt="Batch normalization placement in neuron pipeline">
+      <div class="figure-caption">BatchNorm placement: Linear &rarr; BatchNorm &rarr; Activation (most common) or Linear &rarr; Activation &rarr; BatchNorm.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/batch_norm_algorithm.png" alt="Batch normalization algorithm">
+      <div class="figure-caption">BatchNorm: normalize to zero mean and unit variance, then apply learned scale (gamma) and shift (beta).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/batch_norm_distribution_shift.png" alt="Batch normalization distribution shift">
+      <div class="figure-caption">The input distribution is normalized, then re-scaled and re-shifted by learned gamma and beta parameters.</div>
+    </div>
+
+    <h3 class="subsection-heading">Benefits</h3>
+    <table>
+      <tr><th>Benefit</th><th>Explanation</th></tr>
+      <tr><td>Faster convergence</td><td>Allows higher learning rates without instability</td></tr>
+      <tr><td>Reduced sensitivity to initialization</td><td>Normalized inputs are less sensitive to the starting weight values</td></tr>
+      <tr><td>Mild regularization</td><td>Mini-batch statistics introduce noise that acts like dropout</td></tr>
+      <tr><td>Gradient stability</td><td>Reduces vanishing/exploding gradient risk</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Inference behavior</div>
+      <div>At test time, there is no mini-batch. BatchNorm uses <strong>running averages</strong> of $\mu$ and $\sigma^2$ accumulated during training (exponential moving averages). The $\gamma$ and $\beta$ parameters remain as trained.</div>
+    </div>
+
+    <!-- ===== SECTION 12: WEIGHT INIT AND TRANSFER LEARNING ===== -->
+    <h2 class="section-heading" id="weight-init">12. Weight Initialization and Transfer Learning</h2>
+
+    <h3 class="subsection-heading">Initialization Schemes</h3>
+    <table>
+      <tr><th>Scheme</th><th>Formula</th><th>Best For</th></tr>
+      <tr><td>Gaussian (random)</td><td>$w \sim \mathcal{N}(0, \sigma^2)$ fixed $\sigma$</td><td>Simple baseline; often suboptimal</td></tr>
+      <tr><td><strong>Xavier / Glorot</strong></td><td>$w \sim \mathcal{N}\!\left(0, \frac{2}{n_{\text{in}} + n_{\text{out}}}\right)$</td><td><strong>Sigmoid / Tanh</strong> activations</td></tr>
+      <tr><td><strong>MSRA / He</strong></td><td>$w \sim \mathcal{N}\!\left(0, \frac{2}{n_{\text{in}}}\right)$</td><td><strong>ReLU</strong> activations</td></tr>
+      <tr><td><strong>Pretrained weights</strong></td><td>Load from model trained on large dataset</td><td><strong>Always preferred</strong> when available</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Transfer Learning</h3>
+    <p>Use a model pretrained on a large dataset (e.g., ImageNet, 1.2M images) as the starting point for a new task.</p>
+
+    <ol>
+      <li>Take a pretrained network (e.g., ResNet on ImageNet).</li>
+      <li><strong>Freeze</strong> early layers &mdash; they already learn generic features (edges, textures, colors).</li>
+      <li><strong>Replace and retrain</strong> the final FC layers for your specific task (different number of output classes).</li>
+      <li>Optionally <strong>fine-tune</strong> some later convolutional layers with a very small learning rate.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Why transfer learning works</div>
+      <div>Early CNN layers learn <strong>generic features</strong> (edges, textures) useful for almost any visual task. Only deeper layers learn task-specific features. Starting from pretrained weights provides a massive head start and allows training on small datasets that would otherwise cause overfitting.</div>
+    </div>
+
+    <!-- ===== SECTION 13: OPTIMIZERS ===== -->
+    <h2 class="section-heading" id="optimizers">13. Gradient Descent Variants and Optimizers</h2>
+
+    <h3 class="subsection-heading">Variants of Gradient Descent</h3>
+    <table>
+      <tr><th>Variant</th><th>Gradient computed over</th><th>Speed</th><th>Stability</th></tr>
+      <tr><td><strong>Batch GD</strong></td><td>Entire dataset</td><td>Slow</td><td>Very stable</td></tr>
+      <tr><td><strong>Stochastic GD (SGD)</strong></td><td>Single sample</td><td>Fast per update</td><td>Oscillating</td></tr>
+      <tr><td><strong>Mini-batch GD</strong></td><td>Batch of $n$ samples</td><td>Good balance</td><td>Good balance</td></tr>
+    </table>
+
+    <p>Mini-batch GD is the standard in practice. Typical batch sizes: 32, 64, 128 images.</p>
+
+    <h3 class="subsection-heading">Momentum</h3>
+    <p>Standard GD oscillates in narrow valleys or gets stuck in local minima. Momentum accumulates velocity from previous updates:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Gradient Descent with Momentum</div>
+      <div>$$v_t = \gamma \cdot v_{t-1} + \eta \cdot \nabla_{\theta} J(\theta)$$
+      $$\theta = \theta - v_t$$
+      where $\gamma \approx 0.9$ is the momentum coefficient. Dampens oscillations; accelerates progress in consistent directions.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/momentum_loss_surface.png" alt="Gradient descent with and without momentum">
+      <div class="figure-caption">Without momentum: oscillating, slow. With momentum: smoother path, faster convergence. Think of a ball rolling down a hill accumulating speed.</div>
+    </div>
+
+    <h3 class="subsection-heading">Advanced Optimizers</h3>
+    <table>
+      <tr><th>Optimizer</th><th>Key Idea</th></tr>
+      <tr><td>NAG (Nesterov)</td><td>"Look-ahead" momentum: computes gradient at anticipated future position</td></tr>
+      <tr><td>AdaGrad</td><td>Adapts learning rate per parameter; decreasing rate based on sum of past squared gradients</td></tr>
+      <tr><td>RMSprop</td><td>Like AdaGrad but uses exponential moving average of squared gradients (fixes diminishing rate)</td></tr>
+      <tr><td><strong>Adam</strong></td><td>Combines momentum (first moment) + RMSprop (second moment). Most popular in practice.</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod5/optimizer_comparison_3d.png" alt="Optimizer comparison on 3D loss surface">
+      <div class="figure-caption">Optimizer convergence paths on a 3D loss surface. Adam typically converges fastest and most reliably.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/optimizer_comparison_contour.png" alt="Optimizer comparison on 2D contour plot">
+      <div class="figure-caption">2D contour view: different optimizers trace different paths to the minimum. Adaptive methods (Adam, RMSprop) generally outperform vanilla SGD.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Practical recommendation</div>
+      <div><strong>Adam</strong> is the safe default choice for most CNN training tasks. Adaptive methods (Adam, RMSprop, Adadelta) generally outperform vanilla SGD. Start with a learning rate between $10^{-3}$ and $10^{-4}$, and reduce it after training plateaus.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Training tips: learning rate, initialization, general advice</div>
+      <div class="collapsible-body">
+        <ul>
+          <li><strong>Learning rate:</strong> Start low ($10^{-3}$ to $10^{-8}$). Reduce after thousands of iterations. Too high = oscillating loss. Too low = slow decrease.</li>
+          <li><strong>Weight initialization:</strong> Always prefer pretrained weights. Use Xavier for sigmoid/tanh, MSRA/He for ReLU.</li>
+          <li><strong>Monitor both training and validation loss</strong> to detect overfitting early.</li>
+          <li><strong>Use pretrained models</strong> at least for earlier layers &mdash; they extract generic features useful for any visual task.</li>
+          <li>CNNs can be difficult to train. If stuck, reduce the learning rate or check data preprocessing.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 14: FEATURE VISUALIZATION ===== -->
+    <h2 class="section-heading" id="feature-viz">14. What Does a CNN See? Feature Map Visualization</h2>
+
+    <p>Visualizing CNN feature maps reveals the hierarchical nature of learned representations:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod5/cnn_feature_map_visualization.png" alt="CNN feature map visualization">
+      <div class="figure-caption">Feature maps from early layers (top) show edge detectors in various orientations. Deeper layers (bottom) show increasingly abstract patterns.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/hierarchical_feature_learning_faces.png" alt="Hierarchical feature learning in CNN layers">
+      <div class="figure-caption">Layer 1: edges and orientations. Layer 2: simple shapes and parts. Layer 3: whole face structures. Each layer builds on the previous.</div>
+    </div>
+
+    $$\text{Pixels} \xrightarrow{\text{Conv1}} \text{Edges} \xrightarrow{\text{Conv2}} \text{Textures} \xrightarrow{\text{Conv3}} \text{Parts} \xrightarrow{\text{Conv4}} \text{Objects} \xrightarrow{\text{FC}} \text{Class}$$
+
+    <div class="figure-container">
+      <img src="figures/mod5/feature_map_3d_visualization.png" alt="3D feature map visualizations">
+      <div class="figure-caption">3D feature map visualizations: early layers show clear spatial structure; deeper layers show more abstract, less human-interpretable patterns.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/cnn_architecture_labeled_stages.png" alt="CNN architecture with labeled stages">
+      <div class="figure-caption">Labeled CNN stages: prediction/error, feature extraction, hierarchical feature extraction, cross-feature map learning, classification.</div>
+    </div>
+
+    <!-- ===== SECTION 15: METRICS ===== -->
+    <h2 class="section-heading" id="metrics">15. Classification Metrics</h2>
+
+    <h3 class="subsection-heading">Confusion Matrix</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Confusion Matrix</div>
+      <div>
+        <table>
+          <tr><th></th><th>Predicted: Yes</th><th>Predicted: No</th></tr>
+          <tr><th>Actual: Yes</th><td>TP (True Positive)</td><td>FN (False Negative)</td></tr>
+          <tr><th>Actual: No</th><td>FP (False Positive)</td><td>TN (True Negative)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/classification_threshold_tp_fp.png" alt="Classification threshold with TP and FP regions">
+      <div class="figure-caption">Sorted prediction scores with a threshold: above threshold = predicted positive (TP if correct, FP if wrong); below = predicted negative.</div>
+    </div>
+
+    <h3 class="subsection-heading">Core Metrics</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Accuracy, Precision, Recall, F1</div>
+      <div>
+        $$\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}$$
+        $$\text{Precision} = \frac{TP}{TP + FP} \quad \text{("of all predicted positive, how many were right?")}$$
+        $$\text{Recall (TPR)} = \frac{TP}{TP + FN} \quad \text{("of all actual positive, how many did we find?")}$$
+        $$F_1 = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">The Problem with Accuracy</h3>
+    <p>Accuracy is misleading for imbalanced datasets. Example: 9,990 Class 0 samples, 10 Class 1 samples. A model predicting everything as Class 0 achieves 99.9% accuracy while completely failing to detect any Class 1 samples.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Never use accuracy alone with imbalanced datasets. Use precision, recall, and F1. The harmonic mean in F1 penalizes extreme imbalances between precision and recall more than the arithmetic mean would.</div>
+    </div>
+
+    <h3 class="subsection-heading">Precision-Recall Tradeoff</h3>
+    <table>
+      <tr><th>Threshold direction</th><th>Precision</th><th>Recall</th></tr>
+      <tr><td>Raise threshold (more selective)</td><td>Increases (fewer FP)</td><td>Decreases (more FN)</td></tr>
+      <tr><td>Lower threshold (more inclusive)</td><td>Decreases (more FP)</td><td>Increases (fewer FN)</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">PR Curve and ROC Curve</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod5/precision_recall_curve.png" alt="Precision-Recall curve">
+      <div class="figure-caption">PR curve: sweeping threshold from 0 to 1 traces the precision-recall tradeoff. Ideal curve stays near the top-right corner (high precision AND recall).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/pr_auc_example.png" alt="PR AUC example">
+      <div class="figure-caption">PR-AUC = area under the PR curve. Higher = better. Random classifier baseline depends on class ratio (not 0.5 as in ROC).</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">ROC Curve</div>
+      <div>Plots TPR (= Recall) on y-axis vs. FPR = $\frac{FP}{FP + TN}$ on x-axis.
+      <ul>
+        <li>Perfect classifier: top-left corner (TPR=1, FPR=0)</li>
+        <li>Random classifier: diagonal line (ROC-AUC = 0.5)</li>
+        <li>Any curve above the diagonal is better than random</li>
+      </ul></div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/roc_curve_comparison.png" alt="ROC curve comparison">
+      <div class="figure-caption">ROC curves: perfect classifier (top-left), better model (green), worse model (orange), random classifier (diagonal).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod5/roc_curve_threshold_sweep.png" alt="ROC curve with threshold sweep">
+      <div class="figure-caption">ROC curve with threshold sweep: each point corresponds to a different classification threshold.</div>
+    </div>
+
+    <table>
+      <tr><th>Metric</th><th>ROC Curve</th><th>PR Curve</th></tr>
+      <tr><td>Best for</td><td>Balanced datasets</td><td>Imbalanced datasets</td></tr>
+      <tr><td>Random baseline</td><td>Diagonal (AUC = 0.5)</td><td>Depends on class ratio</td></tr>
+      <tr><td>Sensitive to imbalance?</td><td>Less sensitive</td><td>More sensitive (more informative)</td></tr>
+      <tr><td>Emphasizes</td><td>Overall discrimination</td><td>Performance on positive (minority) class</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Application-Driven Metric Selection</h3>
+    <table>
+      <tr><th>Application</th><th>Priority Metric</th><th>Threshold Setting</th><th>Reason</th></tr>
+      <tr><td>Tumor detection (medical)</td><td>High Recall</td><td>Low (more inclusive)</td><td>Missing a tumor is life-threatening</td></tr>
+      <tr><td>Spam detection (email)</td><td>High Precision</td><td>High (more selective)</td><td>Misclassifying important email is costly</td></tr>
+      <tr><td>Balanced application</td><td>F1 Score</td><td>0.5 (default)</td><td>Equal weight to precision and recall</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod5/pr_curves_10fold_cv.png" alt="PR curves from 10-fold cross-validation">
+      <div class="figure-caption">PR curves from 10-fold cross-validation. Low variance across folds indicates a reliable, generalizable model.</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod5-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod4.html">&larr; 4. DL Fundamentals</a>
+      <a href="mod5-1.html">5.1 CNN Architectures &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod5');</script>
+
+<script>
+  initWalkthrough('cnn-walkthrough', [
+    {
+      tab: '1. Input',
+      title: 'Step 1: Input Image',
+      text: 'The input is a 2D (or 3D for color) image. For a $28 \\times 28$ grayscale image, the input volume is $28 \\times 28 \\times 1$. For an RGB image of the same size, the input volume is $28 \\times 28 \\times 3$.\n\nUnlike fully connected networks that flatten the image, CNNs preserve the 2D spatial structure throughout the early layers.',
+      visual: '<div class="figure-container"><img src="figures/mod5/input_image_28x28_pixels.png" alt="28x28 input image"><div class="figure-caption">A 28x28 pixel image as input to the CNN. Spatial structure is preserved.</div></div>',
+      insight: 'Preserving spatial structure is what makes CNNs so powerful for images. Local features (edges, corners) can only be detected if neighboring pixel relationships are maintained.'
+    },
+    {
+      tab: '2. Conv+ReLU',
+      title: 'Step 2: Convolution + ReLU',
+      text: 'A filter slides across the image. At each position, compute the dot product between the filter weights and the local image patch:\n\n$\\text{Output}(i,j) = \\sum_m \\sum_n \\text{Input}(i+m, j+n) \\cdot w(m,n) + b$\n\nThen apply ReLU: $\\text{FeatureMap}(i,j) = \\max(0, \\text{Output}(i,j))$\n\nIf we use 32 filters of size $3 \\times 3$ on a $28 \\times 28 \\times 1$ input (same padding):\n• Output: $28 \\times 28 \\times 32$ (32 feature maps, same spatial size due to padding)\n• Parameters: $32 \\times (3 \\times 3 \\times 1 + 1) = 320$',
+      visual: '<div class="figure-container"><img src="figures/mod5/convolution_3d_filter_activation_map.png" alt="Convolution producing activation map"><div class="figure-caption">A filter sliding across the input produces one feature map. 32 different filters produce 32 feature maps (one per filter).</div></div>',
+      insight: 'Each filter learns to detect one specific pattern (e.g., a vertical edge, a diagonal, a blob). Different filters detect different patterns in parallel.'
+    },
+    {
+      tab: '3. Pooling',
+      title: 'Step 3: Max Pooling',
+      text: 'Max pooling with $2 \\times 2$ window and stride 2 halves spatial dimensions:\n• Input: $28 \\times 28 \\times 32$\n• Output: $14 \\times 14 \\times 32$\n\nAt each $2 \\times 2$ region in each feature map, select the maximum value. The operation:\n• Is applied independently to each channel\n• Has no learnable parameters\n• Provides partial translation invariance\n• Increases the effective receptive field of subsequent layers',
+      visual: '<div class="figure-container"><img src="figures/mod5/max_pooling_2x2_example.png" alt="Max pooling 2x2 example"><div class="figure-caption">Max pooling: each 2x2 region in the feature map is replaced by its maximum value. Spatial dimensions halve; depth unchanged.</div></div>',
+      insight: 'Pooling is crucial for two reasons: (1) it reduces computation in subsequent layers, and (2) it makes the network more robust to small spatial shifts in the input.'
+    },
+    {
+      tab: '4. Stack Layers',
+      title: 'Step 4: Stacking Conv+Pool Blocks',
+      text: 'The [Conv+ReLU &rarr; Pool] block is repeated multiple times:\n\nInput ($28 \\times 28 \\times 1$)\n  &rarr; Conv1 (32 filters, $3 \\times 3$, same) + ReLU &rarr; $28 \\times 28 \\times 32$\n  &rarr; Pool1 ($2 \\times 2$, stride 2) &rarr; $14 \\times 14 \\times 32$\n  &rarr; Conv2 (64 filters, $3 \\times 3$, same) + ReLU &rarr; $14 \\times 14 \\times 64$\n  &rarr; Pool2 ($2 \\times 2$, stride 2) &rarr; $7 \\times 7 \\times 64$\n\nPattern: spatial dimensions decrease, depth (channels) increases.\nTotal feature map size: $28 \\times 28 \\times 32 = 25{,}088$ after Conv1 &rarr; $7 \\times 7 \\times 64 = 3{,}136$ after Pool2.',
+      visual: '<div class="figure-container"><img src="figures/mod5/conv_then_pooling_spatial_reduction.png" alt="Spatial reduction through stacked layers"><div class="figure-caption">Progressive spatial reduction: spatial dimensions shrink while the number of feature maps grows with depth.</div></div>',
+      insight: 'Early layers detect low-level features (edges) across a large spatial area. Deep layers detect high-level features (objects) but only need a small, compact spatial representation.'
+    },
+    {
+      tab: '5. Flatten + FC',
+      title: 'Step 5: Flatten and Fully Connected Layers',
+      text: 'The 3D feature volume is flattened into a 1D vector, then passed through fully connected layers:\n\n$7 \\times 7 \\times 64 = 3{,}136$ values &rarr; Flatten &rarr; FC(128) + ReLU &rarr; FC(10) + Softmax\n\nFC layer parameters: $3{,}136 \\times 128 + 128 = 401{,}536$\nOutput layer: $128 \\times 10 + 10 = 1{,}290$\n\nSoftmax converts the 10 raw scores to probabilities.\nThe class with the highest probability is the prediction.',
+      visual: '<div class="figure-container"><img src="figures/mod5/cnn_classification_pipeline.png" alt="Full CNN classification pipeline"><div class="figure-caption">Final pipeline: flattened features fed to FC layers, then Softmax produces class probabilities.</div></div>',
+      insight: 'The FC layers learn to combine the high-level spatial features extracted by the convolutional layers into a final classification decision. This is the "where all the features vote" stage.'
+    }
+  ]);
+</script>
+
+<script>
+  initFlashcards('mod5-flashcards', [
+    {
+      q: 'What are the two fundamental innovations of CNNs over fully connected networks?',
+      a: '<ol><li><strong>Local connectivity:</strong> Each neuron connects only to a small receptive field (e.g., 3x3), not all inputs. Preserves spatial structure.</li><li><strong>Weight sharing:</strong> The same filter weights are used at every spatial position. A 3x3 filter has only 9+1=10 parameters regardless of image size. Gives translation equivariance.</li></ol>'
+    },
+    {
+      q: 'Given input W=64, kernel K=3, padding P=1, stride S=1. Compute the output dimension O.',
+      a: '$O = \\lfloor(64 - 3 + 2 \\times 1)/1\\rfloor + 1 = \\lfloor 64 / 1 \\rfloor = 64$. The output is the same size as the input (same padding). Formula: $O = \\lfloor(W - K + 2P)/S\\rfloor + 1$.'
+    },
+    {
+      q: 'Compute the number of learnable parameters in a conv layer: input 32x32x3, 16 filters of size 3x3.',
+      a: 'Each filter has shape $3 \\times 3 \\times 3 = 27$ weights plus 1 bias = 28 parameters.<br>Total: $16 \\times 28 = \\mathbf{448}$ parameters.<br>Compare to FC layer with 1 neuron per output position: $32 \\times 32 \\times 3 \\times 16 = 49{,}152$ weights &mdash; over 100x more.'
+    },
+    {
+      q: 'Explain the Batch Normalization algorithm. What are gamma and beta?',
+      a: 'Given a mini-batch: (1) compute batch mean $\\mu_\\mathcal{B}$, (2) compute batch variance $\\sigma_\\mathcal{B}^2$, (3) normalize: $\\hat{x}_i = (x_i - \\mu_\\mathcal{B}) / \\sqrt{\\sigma_\\mathcal{B}^2 + \\epsilon}$, (4) scale and shift: $y_i = \\gamma \\hat{x}_i + \\beta$. $\\gamma$ and $\\beta$ are <strong>learnable parameters</strong> that allow the network to undo the normalization if needed. At inference, running averages from training are used.'
+    },
+    {
+      q: 'What is the difference between L1 and L2 regularization? What does each do to weights?',
+      a: '<strong>L1 (Lasso):</strong> adds $\\lambda \\sum |w_i|$ to cost. Drives some weights exactly to <strong>zero</strong> (sparsity, feature selection).<br><strong>L2 (Ridge/Weight Decay):</strong> adds $\\lambda \\sum w_i^2$ to cost. Drives weights toward <strong>small values</strong> but rarely to exactly zero. Produces smoother decision boundaries. L2 is more common in CNNs.'
+    },
+    {
+      q: 'Why does dropout work as regularization? How does inference differ from training?',
+      a: 'Dropout randomly disables neurons (prob $p$) during each training iteration, preventing co-adaptation and approximating an ensemble of many different sub-networks. <strong>At inference: all neurons are active</strong>, but weights are scaled by $(1-p)$ to compensate for the higher activity level. Never apply dropout during inference.'
+    },
+    {
+      q: 'What is the purpose of a 1x1 convolution?',
+      a: 'A 1x1 convolution (with $d_{\\text{in}}$ depth) computes a weighted sum across all input channels at each spatial position. With $d_{\\text{out}}$ filters, it <strong>changes the number of channels</strong> (up or down) without affecting spatial dimensions. Used in Inception modules to reduce channels before expensive 3x3/5x5 convolutions, and in ResNet bottleneck blocks.'
+    },
+    {
+      q: 'Why is accuracy misleading for imbalanced datasets? Give an example.',
+      a: 'Example: 9,990 samples in Class 0, 10 in Class 1. A naive model predicting everything as Class 0 achieves 99.9% accuracy but misses every Class 1 sample entirely. <strong>Use precision, recall, and F1 instead.</strong> For imbalanced data, PR curves are more informative than ROC curves because the ROC curve is less sensitive to class imbalance.'
+    },
+    {
+      q: 'Define precision, recall (TPR), and FPR. In what application is high recall critical?',
+      a: '$\\text{Precision} = TP/(TP+FP)$ (how many predicted positives are correct)<br>$\\text{Recall} = TP/(TP+FN)$ (how many actual positives are found)<br>$\\text{FPR} = FP/(FP+TN)$ (false alarm rate)<br><strong>High recall is critical in tumor detection</strong>: missing a real tumor is life-threatening. Lower threshold to capture more positives, accepting some false alarms.'
+    },
+    {
+      q: 'What is the difference between max pooling and average pooling? Which is more common?',
+      a: '<strong>Max pooling</strong> selects the maximum value in each window &mdash; preserves the strongest activation (dominant feature), sharpens responses. <strong>Average pooling</strong> computes the mean &mdash; smooths responses, preserves overall activation level. <strong>Max pooling is more common</strong> in classification CNNs. Both have no learnable parameters and operate independently per channel.'
+    },
+    {
+      q: 'What is the output volume shape after: input 125x125x3, Conv(3x3, 32 filters, same padding, stride 1), MaxPool(2x2, stride 2)?',
+      a: 'After Conv (same padding): $125 \\times 125 \\times 32$ (same padding preserves spatial dimensions, 32 filters give depth 32).<br>After MaxPool (2x2, stride 2): $\\lfloor 125/2 \\rfloor \\times \\lfloor 125/2 \\rfloor \\times 32 = 62 \\times 62 \\times 32$.'
+    },
+    {
+      q: 'What is the key difference between the ROC curve and PR curve? When should you use each?',
+      a: '<strong>ROC curve:</strong> plots TPR vs FPR. Baseline is diagonal (AUC=0.5). Less sensitive to class imbalance. Use for <strong>balanced datasets</strong>.<br><strong>PR curve:</strong> plots Precision vs Recall. Baseline depends on class ratio. More sensitive to class imbalance. Use for <strong>imbalanced datasets</strong> where the positive class is rare (e.g., medical detection, object detection). PR curves give a more honest picture of performance on the minority class.'
+    }
+  ]);
+</script>
+
+<!-- ===== TOOL 4: Weight Sharing Explainer ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('ws-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('weight-sharing-equations');
+  var statusEl = document.getElementById('ws-status');
+  var gridSize = 6, kernelSize = 3, stride = 1;
+  var outSize = gridSize - kernelSize + 1; // 4
+  var totalPositions = outSize * outSize; // 16
+  var pos = -1;
+  var running = false;
+
+  var inputData = [
+    [2,7,1,8,3,5],
+    [4,6,9,2,5,1],
+    [1,3,8,4,7,6],
+    [5,2,6,1,9,3],
+    [8,4,1,7,2,5],
+    [3,9,5,6,4,8]
+  ];
+  var wLabels = ['w_1','w_2','w_3','w_4','w_5','w_6','w_7','w_8','w_9'];
+
+  var cellSize = 36;
+  var inputX = 20, inputY = 30;
+  var filterX = 290, filterY = 30;
+  var outputX = 290, outputY = 170;
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var pr = pos >= 0 ? { r: Math.floor(pos / outSize), c: pos % outSize } : null;
+
+    // Title labels
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.fillText('Input (6x6)', inputX + cellSize * 3, inputY - 10);
+    ctx.fillText('Filter (3x3)', filterX + cellSize * 1.5, filterY - 10);
+    ctx.fillText('Output (4x4)', outputX + cellSize * 2, outputY - 10);
+
+    // Draw input grid
+    for (var r = 0; r < gridSize; r++) {
+      for (var c = 0; c < gridSize; c++) {
+        var x = inputX + c * cellSize;
+        var y = inputY + r * cellSize;
+        var highlight = pr && r >= pr.r && r < pr.r + kernelSize && c >= pr.c && c < pr.c + kernelSize;
+        ctx.fillStyle = highlight ? '#bbdefb' : '#fff';
+        ctx.fillRect(x, y, cellSize, cellSize);
+        ctx.strokeStyle = '#999';
+        ctx.strokeRect(x, y, cellSize, cellSize);
+        ctx.fillStyle = '#333';
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(inputData[r][c], x + cellSize / 2, y + cellSize / 2);
+      }
+    }
+
+    // Highlight border for kernel region on input
+    if (pr) {
+      ctx.strokeStyle = '#1565c0';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(inputX + pr.c * cellSize, inputY + pr.r * cellSize, kernelSize * cellSize, kernelSize * cellSize);
+      ctx.lineWidth = 1;
+    }
+
+    // Draw filter grid with w labels
+    for (var r = 0; r < kernelSize; r++) {
+      for (var c = 0; c < kernelSize; c++) {
+        var x = filterX + c * cellSize;
+        var y = filterY + r * cellSize;
+        ctx.fillStyle = '#e8f5e9';
+        ctx.fillRect(x, y, cellSize, cellSize);
+        ctx.strokeStyle = '#66bb6a';
+        ctx.strokeRect(x, y, cellSize, cellSize);
+        ctx.fillStyle = '#2e7d32';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('w' + (r * 3 + c + 1), x + cellSize / 2, y + cellSize / 2);
+      }
+    }
+
+    // Draw output grid
+    var outCellSize = 30;
+    for (var r = 0; r < outSize; r++) {
+      for (var c = 0; c < outSize; c++) {
+        var x = outputX + c * outCellSize;
+        var y = outputY + r * outCellSize;
+        var isCurrent = pr && r === pr.r && c === pr.c;
+        var isPast = pr && (r * outSize + c) < pos;
+        ctx.fillStyle = isCurrent ? '#ffcc80' : (isPast ? '#e0e0e0' : '#fff');
+        ctx.fillRect(x, y, outCellSize, outCellSize);
+        ctx.strokeStyle = isCurrent ? '#e65100' : '#999';
+        ctx.lineWidth = isCurrent ? 2 : 1;
+        ctx.strokeRect(x, y, outCellSize, outCellSize);
+        ctx.lineWidth = 1;
+        if (isCurrent || isPast) {
+          ctx.fillStyle = '#333';
+          ctx.font = '10px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          var idx = r * outSize + c;
+          var rr = Math.floor(idx / outSize), cc = idx % outSize;
+          ctx.fillText('o' + r + '' + c, x + outCellSize / 2, y + outCellSize / 2);
+        }
+      }
+    }
+
+    // Draw arrows from filter to input if active
+    if (pr) {
+      ctx.strokeStyle = 'rgba(21,101,192,0.3)';
+      ctx.setLineDash([3, 3]);
+      for (var r = 0; r < kernelSize; r++) {
+        for (var c = 0; c < kernelSize; c++) {
+          var fx = filterX + c * cellSize + cellSize / 2;
+          var fy = filterY + r * cellSize + cellSize / 2;
+          var ix = inputX + (pr.c + c) * cellSize + cellSize / 2;
+          var iy = inputY + (pr.r + r) * cellSize + cellSize / 2;
+          ctx.beginPath();
+          ctx.moveTo(fx, fy);
+          ctx.lineTo(ix, iy);
+          ctx.stroke();
+        }
+      }
+      ctx.setLineDash([]);
+    }
+  }
+
+  function updateEquations() {
+    var html = '';
+    if (pos < 0) {
+      html += '<p style="font-size:13px;">Press <strong>Step</strong> to move the 3x3 filter across the 6x6 input, one position at a time.</p>';
+      html += '<p style="font-size:13px;">The filter has 9 weights: $[w_1, w_2, \\ldots, w_9]$. These <strong>same 9 weights</strong> are reused at every position.</p>';
+    } else {
+      var r = Math.floor(pos / outSize), c = pos % outSize;
+      html += '<p style="font-size:13px;"><strong>Position (' + r + ', ' + c + '):</strong> same weights $[w_1, w_2, \\ldots, w_9]$ applied</p>';
+      // Show computation
+      var terms = [];
+      for (var dr = 0; dr < kernelSize; dr++) {
+        for (var dc = 0; dc < kernelSize; dc++) {
+          terms.push('w_{' + (dr * 3 + dc + 1) + '} \\cdot ' + inputData[r + dr][c + dc]);
+        }
+      }
+      html += '<p style="font-size:13px;">$$o_{' + r + ',' + c + '} = ' + terms.join(' + ') + '$$</p>';
+      html += '<p style="font-size:13px;color:#1565c0;"><strong>Position ' + (pos + 1) + ' of ' + totalPositions + '</strong> -- still the same 9 weights</p>';
+    }
+    if (pos >= 3 || pos === totalPositions - 1) {
+      html += '<table style="font-size:12px;margin-top:10px;"><tr><th></th><th>Convolution (weight sharing)</th><th>Fully Connected</th></tr>';
+      html += '<tr><td>Unique weights</td><td>$K^2 = 9$</td><td>$W_{\\text{in}}^2 \\times W_{\\text{out}}^2 = 36 \\times 16 = 576$</td></tr>';
+      html += '<tr><td>Reduction</td><td>--</td><td>$64\\times$ more parameters</td></tr></table>';
+      html += '<p style="font-size:13px;margin-top:8px;color:#555;"><em>Weight sharing enforces translation equivariance: the same pattern detector works everywhere in the image. A vertical edge detector finds vertical edges regardless of position.</em></p>';
+    }
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  function step() {
+    if (pos < totalPositions - 1) {
+      pos++;
+      statusEl.textContent = 'Position ' + (pos + 1) + ' of ' + totalPositions;
+      draw();
+      updateEquations();
+    }
+  }
+
+  function reset() {
+    pos = -1;
+    running = false;
+    statusEl.textContent = 'Position 0 of ' + totalPositions;
+    draw();
+    updateEquations();
+  }
+
+  document.getElementById('ws-step').addEventListener('click', function() { running = false; step(); });
+  document.getElementById('ws-reset').addEventListener('click', reset);
+  document.getElementById('ws-run').addEventListener('click', function() {
+    if (running) return;
+    running = true;
+    function tick() {
+      if (!running) return;
+      if (pos < totalPositions - 1) {
+        step();
+        setTimeout(tick, 400);
+      } else {
+        running = false;
+      }
+    }
+    tick();
+  });
+
+  draw();
+  updateEquations();
+})();
+</script>
+
+<!-- ===== TOOL 3: Pooling Operations Visualizer ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('pool-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('pooling-equations');
+  var inputGrid = [
+    [4,2,7,1,3,5],
+    [8,6,1,9,2,4],
+    [3,5,8,2,7,1],
+    [6,1,4,7,3,8],
+    [2,9,3,5,6,1],
+    [7,4,6,2,8,3]
+  ];
+  var W = 6;
+  var poolSizeEl = document.getElementById('pool-size');
+  var poolStrideEl = document.getElementById('pool-stride');
+  var poolTypeEl = document.getElementById('pool-type');
+  var pos = -1;
+  var outputValues = [];
+  var running = false;
+
+  function getK() { return parseInt(poolSizeEl.value); }
+  function getS() { return parseInt(poolStrideEl.value); }
+  function getOutSize() { return Math.floor((W - getK()) / getS()) + 1; }
+  function getTotalPositions() { var o = getOutSize(); return o * o; }
+  function isMax() { return poolTypeEl.value === 'max'; }
+
+  function computePool(r, c) {
+    var k = getK();
+    var vals = [];
+    for (var dr = 0; dr < k; dr++)
+      for (var dc = 0; dc < k; dc++)
+        vals.push(inputGrid[r + dr][c + dc]);
+    if (isMax()) return { vals: vals, result: Math.max.apply(null, vals) };
+    var sum = vals.reduce(function(a, b) { return a + b; }, 0);
+    return { vals: vals, result: parseFloat((sum / vals.length).toFixed(1)) };
+  }
+
+  var cellSize = 38;
+  var inputX = 20, inputY = 30;
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var k = getK(), s = getS(), outSize = getOutSize();
+    var pr = pos >= 0 ? { r: Math.floor(pos / outSize) * s, c: (pos % outSize) * s } : null;
+    var outR = pos >= 0 ? Math.floor(pos / outSize) : -1;
+    var outC = pos >= 0 ? pos % outSize : -1;
+
+    // Title
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.fillText('Input (' + W + 'x' + W + ')', inputX + cellSize * 3, inputY - 10);
+
+    // Draw input grid
+    for (var r = 0; r < W; r++) {
+      for (var c = 0; c < W; c++) {
+        var x = inputX + c * cellSize;
+        var y = inputY + r * cellSize;
+        var highlight = pr && r >= pr.r && r < pr.r + k && c >= pr.c && c < pr.c + k;
+        ctx.fillStyle = highlight ? (isMax() ? '#ffcdd2' : '#c8e6c9') : '#fff';
+        ctx.fillRect(x, y, cellSize, cellSize);
+        ctx.strokeStyle = '#999';
+        ctx.strokeRect(x, y, cellSize, cellSize);
+        ctx.fillStyle = '#333';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(inputGrid[r][c], x + cellSize / 2, y + cellSize / 2);
+      }
+    }
+
+    // Highlight border
+    if (pr) {
+      ctx.strokeStyle = isMax() ? '#c62828' : '#2e7d32';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(inputX + pr.c * cellSize, inputY + pr.r * cellSize, k * cellSize, k * cellSize);
+      ctx.lineWidth = 1;
+    }
+
+    // Draw output grid
+    var outX = inputX + W * cellSize + 60;
+    var outCellSize = 42;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.fillText('Output (' + outSize + 'x' + outSize + ')', outX + outCellSize * outSize / 2, inputY - 10);
+
+    for (var r = 0; r < outSize; r++) {
+      for (var c = 0; c < outSize; c++) {
+        var x = outX + c * outCellSize;
+        var y = inputY + r * outCellSize;
+        var idx = r * outSize + c;
+        var isCurrent = (r === outR && c === outC);
+        var isPast = idx < pos;
+        ctx.fillStyle = isCurrent ? (isMax() ? '#ffcdd2' : '#c8e6c9') : (isPast || (pos >= 0 && idx <= pos) ? '#e0e0e0' : '#fff');
+        ctx.fillRect(x, y, outCellSize, outCellSize);
+        ctx.strokeStyle = isCurrent ? (isMax() ? '#c62828' : '#2e7d32') : '#999';
+        ctx.lineWidth = isCurrent ? 2 : 1;
+        ctx.strokeRect(x, y, outCellSize, outCellSize);
+        ctx.lineWidth = 1;
+        if (idx <= pos && idx < outputValues.length) {
+          ctx.fillStyle = '#333';
+          ctx.font = '13px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(outputValues[idx], x + outCellSize / 2, y + outCellSize / 2);
+        }
+      }
+    }
+  }
+
+  function updateEquations() {
+    var k = getK(), s = getS(), outSize = getOutSize(), total = getTotalPositions();
+    var typeName = isMax() ? 'Max Pool' : 'Average Pool';
+    var html = '';
+    html += '<p style="font-size:13px;"><strong>Output size formula:</strong> $O = \\lfloor\\frac{W - K}{S}\\rfloor + 1$</p>';
+    html += '<p style="font-size:13px;">Input: $' + W + ' \\times ' + W + '$, Pool: $' + k + ' \\times ' + k + '$, Stride: ' + s + ' $\\Rightarrow$ Output: $' + outSize + ' \\times ' + outSize + '$</p>';
+
+    if (pos >= 0 && pos < total) {
+      var outR = Math.floor(pos / outSize), outC = pos % outSize;
+      var inR = outR * s, inC = outC * s;
+      var info = computePool(inR, inC);
+      var valsStr = '\\{' + info.vals.join(', ') + '\\}';
+      if (isMax()) {
+        html += '<p style="font-size:13px;">Window at $(' + inR + ', ' + inC + ')$: values = $' + valsStr + '$, <strong>max = ' + info.result + '</strong></p>';
+      } else {
+        html += '<p style="font-size:13px;">Window at $(' + inR + ', ' + inC + ')$: values = $' + valsStr + '$, <strong>average = ' + info.result + '</strong></p>';
+      }
+    }
+
+    if (pos >= total - 1 && pos >= 0) {
+      var reduction = Math.round((1 - (outSize * outSize) / (W * W)) * 100);
+      html += '<p style="font-size:13px;">Spatial reduction: $' + W + ' \\times ' + W + ' \\to ' + outSize + ' \\times ' + outSize + '$ (' + reduction + '% fewer values)</p>';
+    }
+
+    html += '<p style="font-size:13px;"><strong>Parameters: 0</strong> (pooling has no learnable parameters)</p>';
+    html += '<p style="font-size:12px;color:#555;"><em>Max pool keeps the strongest activation (feature present/absent). Avg pool keeps the average (smoother, preserves more info).</em></p>';
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  function step() {
+    var total = getTotalPositions();
+    if (pos < total - 1) {
+      pos++;
+      var outSize = getOutSize(), s = getS();
+      var outR = Math.floor(pos / outSize), outC = pos % outSize;
+      var info = computePool(outR * s, outC * s);
+      outputValues[pos] = info.result;
+      draw();
+      updateEquations();
+    }
+  }
+
+  function resetPool() {
+    pos = -1;
+    outputValues = [];
+    running = false;
+    draw();
+    updateEquations();
+  }
+
+  document.getElementById('pool-step').addEventListener('click', function() { running = false; step(); });
+  document.getElementById('pool-reset').addEventListener('click', resetPool);
+  document.getElementById('pool-run').addEventListener('click', function() {
+    if (running) return;
+    running = true;
+    function tick() {
+      if (!running) return;
+      if (pos < getTotalPositions() - 1) {
+        step();
+        setTimeout(tick, 300);
+      } else {
+        running = false;
+      }
+    }
+    tick();
+  });
+
+  poolTypeEl.addEventListener('change', resetPool);
+  poolSizeEl.addEventListener('change', resetPool);
+  poolStrideEl.addEventListener('change', resetPool);
+
+  draw();
+  updateEquations();
+})();
+</script>
+
+<!-- ===== TOOL 2: CNN Layer-by-Layer Builder ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('builder-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('cnn-builder-equations');
+  var tableEl = document.getElementById('builder-table');
+  var detailEl = document.getElementById('builder-detail');
+  var formEl = document.getElementById('builder-layer-form');
+
+  var layers = [];
+  var inputW, inputC;
+
+  function getInputW() { return parseInt(document.getElementById('builder-width').value); }
+  function getInputC() { return parseInt(document.getElementById('builder-channels').value); }
+
+  function computeShapes() {
+    var w = getInputW(), c = getInputC();
+    inputW = w; inputC = c;
+    var shapes = [{ w: w, h: w, c: c }];
+    var flat = false;
+    for (var i = 0; i < layers.length; i++) {
+      var prev = shapes[shapes.length - 1];
+      var L = layers[i];
+      var next;
+      if (L.type === 'conv') {
+        var o = Math.floor((prev.w - L.k + 2 * L.p) / L.s) + 1;
+        if (o < 1) o = 1;
+        next = { w: o, h: o, c: L.f };
+      } else if (L.type === 'maxpool' || L.type === 'avgpool') {
+        var o = Math.floor((prev.w - L.k) / L.s) + 1;
+        if (o < 1) o = 1;
+        next = { w: o, h: o, c: prev.c };
+      } else if (L.type === 'flatten') {
+        flat = true;
+        next = { w: prev.w * prev.h * prev.c, h: 1, c: 1, flat: true };
+      } else if (L.type === 'fc') {
+        next = { w: L.units, h: 1, c: 1, flat: true };
+      }
+      shapes.push(next);
+    }
+    return shapes;
+  }
+
+  function getParams(i) {
+    var shapes = computeShapes();
+    var L = layers[i];
+    var prevShape = shapes[i];
+    if (L.type === 'conv') {
+      return L.f * (L.k * L.k * prevShape.c + 1);
+    } else if (L.type === 'fc') {
+      return prevShape.w * L.units + L.units;
+    }
+    return 0;
+  }
+
+  function getReceptiveField(idx) {
+    // Compute receptive field up to layer idx
+    var rf = 1, stride = 1;
+    for (var i = 0; i <= idx; i++) {
+      var L = layers[i];
+      if (L.type === 'conv') {
+        rf = rf + (L.k - 1) * stride;
+        stride = stride * L.s;
+      } else if (L.type === 'maxpool' || L.type === 'avgpool') {
+        rf = rf + (L.k - 1) * stride;
+        stride = stride * L.s;
+      }
+    }
+    return rf;
+  }
+
+  function drawPipeline() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var shapes = computeShapes();
+    if (shapes.length < 2) {
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#888';
+      ctx.textAlign = 'center';
+      ctx.fillText('Add layers to build a CNN pipeline', canvas.width / 2, canvas.height / 2);
+      return;
+    }
+
+    var n = shapes.length;
+    var totalW = canvas.width - 40;
+    var boxW = Math.min(60, totalW / (n * 1.5));
+    var gap = (totalW - n * boxW) / Math.max(n - 1, 1);
+    var maxSpatial = Math.max.apply(null, shapes.map(function(s) { return s.w; }));
+    var maxChannels = Math.max.apply(null, shapes.map(function(s) { return s.flat ? 1 : s.c; }));
+
+    var colors = { input: '#e3f2fd', conv: '#c8e6c9', maxpool: '#ffcdd2', avgpool: '#fff9c4', flatten: '#e1bee7', fc: '#ffe0b2' };
+
+    for (var i = 0; i < n; i++) {
+      var s = shapes[i];
+      var x = 20 + i * (boxW + gap);
+      var layerType = i === 0 ? 'input' : layers[i - 1].type;
+      var color = colors[layerType] || '#e0e0e0';
+
+      if (s.flat) {
+        // Draw as a tall thin bar
+        var barH = Math.max(20, Math.min(120, s.w / maxSpatial * 120));
+        var barW = 12;
+        var cy = canvas.height / 2;
+        ctx.fillStyle = color;
+        ctx.fillRect(x + boxW / 2 - barW / 2, cy - barH / 2, barW, barH);
+        ctx.strokeStyle = '#666';
+        ctx.strokeRect(x + boxW / 2 - barW / 2, cy - barH / 2, barW, barH);
+        ctx.fillStyle = '#333';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(s.w, x + boxW / 2, cy + barH / 2 + 12);
+      } else {
+        // Draw 3D-ish box
+        var h = Math.max(20, s.w / maxSpatial * 100);
+        var d = Math.max(4, (s.c / maxChannels) * 25);
+        var cy = canvas.height / 2;
+        var bx = x, by = cy - h / 2;
+
+        // Front face
+        ctx.fillStyle = color;
+        ctx.fillRect(bx, by, boxW - d, h);
+        ctx.strokeStyle = '#666';
+        ctx.strokeRect(bx, by, boxW - d, h);
+
+        // Top face (parallelogram)
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + d, by - d);
+        ctx.lineTo(bx + boxW, by - d);
+        ctx.lineTo(bx + boxW - d, by);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.stroke();
+
+        // Right face (parallelogram)
+        ctx.beginPath();
+        ctx.moveTo(bx + boxW - d, by);
+        ctx.lineTo(bx + boxW, by - d);
+        ctx.lineTo(bx + boxW, by - d + h);
+        ctx.lineTo(bx + boxW - d, by + h);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = '#333';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(s.w + 'x' + s.h + 'x' + s.c, bx + (boxW - d) / 2, by + h + 14);
+      }
+
+      // Arrow to next
+      if (i < n - 1) {
+        var ax1 = x + boxW + 2;
+        var ax2 = x + boxW + gap - 2;
+        var ay = canvas.height / 2;
+        ctx.strokeStyle = '#999';
+        ctx.beginPath();
+        ctx.moveTo(ax1, ay);
+        ctx.lineTo(ax2, ay);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ax2, ay);
+        ctx.lineTo(ax2 - 5, ay - 3);
+        ctx.lineTo(ax2 - 5, ay + 3);
+        ctx.closePath();
+        ctx.fillStyle = '#999';
+        ctx.fill();
+      }
+
+      // Layer type label at top
+      if (i > 0) {
+        ctx.fillStyle = '#555';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        var lbl = layers[i - 1].type.toUpperCase();
+        if (layers[i - 1].type === 'conv') lbl = 'Conv';
+        else if (layers[i - 1].type === 'maxpool') lbl = 'MaxP';
+        else if (layers[i - 1].type === 'avgpool') lbl = 'AvgP';
+        else if (layers[i - 1].type === 'flatten') lbl = 'Flat';
+        else if (layers[i - 1].type === 'fc') lbl = 'FC';
+        ctx.fillText(lbl, x + boxW / 2, 14);
+      } else {
+        ctx.fillStyle = '#555';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Input', x + boxW / 2, 14);
+      }
+    }
+  }
+
+  function renderTable() {
+    if (layers.length === 0) {
+      tableEl.innerHTML = '<p style="font-size:12px;color:#888;">No layers added yet.</p>';
+      detailEl.style.display = 'none';
+      return;
+    }
+    var shapes = computeShapes();
+    var html = '<table style="font-size:12px;width:100%;border-collapse:collapse;">';
+    html += '<tr style="background:#f5f5f5;"><th style="padding:4px 6px;">#</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Config</th><th style="padding:4px 6px;">Input Shape</th><th style="padding:4px 6px;">Output Shape</th><th style="padding:4px 6px;">Parameters</th><th style="padding:4px 6px;">Receptive Field</th></tr>';
+    var totalParams = 0;
+    for (var i = 0; i < layers.length; i++) {
+      var L = layers[i];
+      var inp = shapes[i];
+      var out = shapes[i + 1];
+      var config = '';
+      if (L.type === 'conv') config = 'K=' + L.k + ',F=' + L.f + ',S=' + L.s + ',P=' + L.p;
+      else if (L.type === 'maxpool' || L.type === 'avgpool') config = L.k + 'x' + L.k + ',S=' + L.s;
+      else if (L.type === 'fc') config = 'units=' + L.units;
+      else config = '--';
+      var inpStr = inp.flat ? inp.w : inp.w + 'x' + inp.h + 'x' + inp.c;
+      var outStr = out.flat ? out.w : out.w + 'x' + out.h + 'x' + out.c;
+      var params = getParams(i);
+      totalParams += params;
+      var rf = getReceptiveField(i);
+      html += '<tr data-layer="' + i + '" style="cursor:' + (L.type === 'conv' ? 'pointer' : 'default') + ';' + (L.type === 'conv' ? 'background:#e8f5e9;' : '') + '">';
+      html += '<td style="padding:4px 6px;">' + (i + 1) + '</td>';
+      html += '<td style="padding:4px 6px;">' + L.type + '</td>';
+      html += '<td style="padding:4px 6px;">' + config + '</td>';
+      html += '<td style="padding:4px 6px;">' + inpStr + '</td>';
+      html += '<td style="padding:4px 6px;">' + outStr + '</td>';
+      html += '<td style="padding:4px 6px;">' + (params > 0 ? params.toLocaleString() : '0') + '</td>';
+      html += '<td style="padding:4px 6px;">' + rf + 'x' + rf + '</td>';
+      html += '</tr>';
+    }
+    html += '<tr style="background:#e3f2fd;font-weight:bold;"><td colspan="5" style="padding:4px 6px;">Total</td><td style="padding:4px 6px;">' + totalParams.toLocaleString() + '</td><td></td></tr>';
+    html += '</table>';
+    tableEl.innerHTML = html;
+
+    // Add click listeners for conv rows
+    var rows = tableEl.querySelectorAll('tr[data-layer]');
+    rows.forEach(function(row) {
+      row.addEventListener('click', function() {
+        var idx = parseInt(row.getAttribute('data-layer'));
+        showDetail(idx);
+      });
+    });
+  }
+
+  function showDetail(idx) {
+    var L = layers[idx];
+    if (L.type !== 'conv') { detailEl.style.display = 'none'; return; }
+    var shapes = computeShapes();
+    var prevShape = shapes[idx];
+    var outShape = shapes[idx + 1];
+    var uniqueWeights = L.f * (L.k * L.k * prevShape.c + 1);
+    var fcWeights = outShape.w * outShape.w * L.k * L.k * prevShape.c * L.f;
+
+    var html = '<p style="font-size:13px;margin:0 0 6px 0;"><strong>Conv Layer ' + (idx + 1) + ' Detail</strong></p>';
+    html += '<p style="font-size:13px;margin:2px 0;">This layer has $F = ' + L.f + '$ filters, each of size $' + L.k + ' \\times ' + L.k + ' \\times ' + prevShape.c + '$</p>';
+    html += '<p style="font-size:13px;margin:2px 0;">The SAME $' + L.k + ' \\times ' + L.k + ' \\times ' + prevShape.c + '$ filter weights are applied at every spatial position -- this is <strong>weight sharing</strong></p>';
+    html += '<p style="font-size:13px;margin:2px 0;">Unique weights: $F \\times (K \\times K \\times C_{\\text{in}} + 1) = ' + L.f + ' \\times (' + L.k + ' \\times ' + L.k + ' \\times ' + prevShape.c + ' + 1) = ' + uniqueWeights.toLocaleString() + '$</p>';
+    html += '<p style="font-size:13px;margin:2px 0;">Without weight sharing (fully connected): $O^2 \\times K^2 \\times C_{\\text{in}} \\times F = ' + outShape.w + '^2 \\times ' + L.k + '^2 \\times ' + prevShape.c + ' \\times ' + L.f + ' = ' + fcWeights.toLocaleString() + '$ weights</p>';
+
+    detailEl.innerHTML = html;
+    detailEl.style.display = 'block';
+    renderMath(detailEl);
+  }
+
+  function showForm(type) {
+    formEl.style.display = 'block';
+    var html = '';
+    if (type === 'conv') {
+      html += '<span style="font-size:12px;font-weight:bold;">Add Conv2D: </span>';
+      html += '<label style="font-size:12px;">K: <select id="form-k"><option value="3" selected>3</option><option value="5">5</option><option value="7">7</option></select></label> ';
+      html += '<label style="font-size:12px;">Filters: <select id="form-f"><option value="8">8</option><option value="16" selected>16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option></select></label> ';
+      html += '<label style="font-size:12px;">Stride: <select id="form-s"><option value="1" selected>1</option><option value="2">2</option></select></label> ';
+      html += '<label style="font-size:12px;">Padding: <select id="form-p"><option value="0">0</option><option value="1" selected>1</option></select></label> ';
+      html += '<button id="form-ok" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:8px;">Add</button>';
+      html += '<button id="form-cancel" style="border:1px solid #999;color:#999;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:4px;">Cancel</button>';
+    } else if (type === 'maxpool' || type === 'avgpool') {
+      html += '<span style="font-size:12px;font-weight:bold;">Add ' + (type === 'maxpool' ? 'MaxPool' : 'AvgPool') + ': </span>';
+      html += '<label style="font-size:12px;">Size: <select id="form-pk"><option value="2" selected>2</option><option value="3">3</option></select></label> ';
+      html += '<label style="font-size:12px;">Stride: <select id="form-ps"><option value="1">1</option><option value="2" selected>2</option></select></label> ';
+      html += '<button id="form-ok" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:8px;">Add</button>';
+      html += '<button id="form-cancel" style="border:1px solid #999;color:#999;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:4px;">Cancel</button>';
+    } else if (type === 'fc') {
+      html += '<span style="font-size:12px;font-weight:bold;">Add FC: </span>';
+      html += '<label style="font-size:12px;">Units: <select id="form-units"><option value="10">10</option><option value="64">64</option><option value="128" selected>128</option><option value="256">256</option><option value="512">512</option></select></label> ';
+      html += '<button id="form-ok" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:8px;">Add</button>';
+      html += '<button id="form-cancel" style="border:1px solid #999;color:#999;background:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;margin-left:4px;">Cancel</button>';
+    }
+    formEl.innerHTML = html;
+
+    document.getElementById('form-cancel').addEventListener('click', function() { formEl.style.display = 'none'; });
+    document.getElementById('form-ok').addEventListener('click', function() {
+      if (type === 'conv') {
+        layers.push({ type: 'conv', k: parseInt(document.getElementById('form-k').value), f: parseInt(document.getElementById('form-f').value), s: parseInt(document.getElementById('form-s').value), p: parseInt(document.getElementById('form-p').value) });
+      } else if (type === 'maxpool' || type === 'avgpool') {
+        layers.push({ type: type, k: parseInt(document.getElementById('form-pk').value), s: parseInt(document.getElementById('form-ps').value) });
+      } else if (type === 'fc') {
+        layers.push({ type: 'fc', units: parseInt(document.getElementById('form-units').value) });
+      }
+      formEl.style.display = 'none';
+      refresh();
+    });
+  }
+
+  function refresh() {
+    drawPipeline();
+    renderTable();
+    detailEl.style.display = 'none';
+  }
+
+  document.getElementById('builder-add-conv').addEventListener('click', function() { showForm('conv'); });
+  document.getElementById('builder-add-maxpool').addEventListener('click', function() { showForm('maxpool'); });
+  document.getElementById('builder-add-avgpool').addEventListener('click', function() { showForm('avgpool'); });
+  document.getElementById('builder-add-flatten').addEventListener('click', function() {
+    layers.push({ type: 'flatten' });
+    formEl.style.display = 'none';
+    refresh();
+  });
+  document.getElementById('builder-add-fc').addEventListener('click', function() { showForm('fc'); });
+  document.getElementById('builder-reset').addEventListener('click', function() {
+    layers = [];
+    formEl.style.display = 'none';
+    refresh();
+  });
+
+  var presets = {
+    lenet5: {
+      w: 32, c: 1,
+      layers: [
+        { type: 'conv', k: 5, f: 6, s: 1, p: 0 },
+        { type: 'avgpool', k: 2, s: 2 },
+        { type: 'conv', k: 5, f: 16, s: 1, p: 0 },
+        { type: 'avgpool', k: 2, s: 2 },
+        { type: 'flatten' },
+        { type: 'fc', units: 120 },
+        { type: 'fc', units: 84 },
+        { type: 'fc', units: 10 }
+      ]
+    },
+    simple: {
+      w: 28, c: 1,
+      layers: [
+        { type: 'conv', k: 3, f: 16, s: 1, p: 1 },
+        { type: 'maxpool', k: 2, s: 2 },
+        { type: 'conv', k: 3, f: 32, s: 1, p: 1 },
+        { type: 'maxpool', k: 2, s: 2 },
+        { type: 'flatten' },
+        { type: 'fc', units: 128 },
+        { type: 'fc', units: 10 }
+      ]
+    },
+    vgg: {
+      w: 32, c: 3,
+      layers: [
+        { type: 'conv', k: 3, f: 64, s: 1, p: 1 },
+        { type: 'conv', k: 3, f: 64, s: 1, p: 1 },
+        { type: 'maxpool', k: 2, s: 2 },
+        { type: 'conv', k: 3, f: 128, s: 1, p: 1 },
+        { type: 'conv', k: 3, f: 128, s: 1, p: 1 },
+        { type: 'maxpool', k: 2, s: 2 },
+        { type: 'flatten' },
+        { type: 'fc', units: 256 },
+        { type: 'fc', units: 10 }
+      ]
+    }
+  };
+
+  document.getElementById('builder-preset').addEventListener('change', function() {
+    var val = this.value;
+    if (!val) return;
+    var p = presets[val];
+    document.getElementById('builder-width').value = p.w;
+    document.getElementById('builder-channels').value = p.c;
+    layers = JSON.parse(JSON.stringify(p.layers));
+    formEl.style.display = 'none';
+    refresh();
+    this.value = '';
+  });
+
+  document.getElementById('builder-width').addEventListener('change', function() { refresh(); });
+  document.getElementById('builder-channels').addEventListener('change', function() { refresh(); });
+
+  refresh();
+})();
+</script>
+
+<!-- ===== TOOL 1: CNN Output Size Calculator ===== -->
+<script>
+(function() {
+  var canvas = document.getElementById('sc-canvas');
+  var ctx = canvas.getContext('2d');
+  var eqEl = document.getElementById('cnn-size-equations');
+
+  var kernelSizes = [1, 3, 5, 7];
+  var strideSizes = [1, 2, 3];
+  var paddingSizes = [0, 1, 2];
+
+  var cin = 1;
+
+  function getW() { return parseInt(document.getElementById('sc-w').value); }
+  function getK() { return kernelSizes[parseInt(document.getElementById('sc-k').value)]; }
+  function getS() { return strideSizes[parseInt(document.getElementById('sc-s').value)]; }
+  function getP() { return paddingSizes[parseInt(document.getElementById('sc-p').value)]; }
+  function getF() { return parseInt(document.getElementById('sc-f').value); }
+
+  function computeO() {
+    var W = getW(), K = getK(), S = getS(), P = getP();
+    return Math.floor((W - K + 2 * P) / S) + 1;
+  }
+
+  function updateLabels() {
+    document.getElementById('sc-w-val').textContent = getW();
+    document.getElementById('sc-k-val').textContent = getK();
+    document.getElementById('sc-s-val').textContent = getS();
+    document.getElementById('sc-p-val').textContent = getP();
+    document.getElementById('sc-f-val').textContent = getF();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var W = getW(), K = getK(), S = getS(), P = getP(), F = getF();
+    var O = computeO();
+    var WP = W + 2 * P; // padded input size
+
+    // Scale grids to fit
+    var maxCells = Math.max(WP, O);
+    var maxGridPx = 200;
+    var cellSize = Math.min(maxGridPx / maxCells, 20);
+    cellSize = Math.max(cellSize, 2);
+
+    var inputGridPx = WP * cellSize;
+    var outputGridPx = O * cellSize;
+
+    var inputX = 20, inputY = 40;
+    var outputX = inputX + inputGridPx + 60;
+
+    // Title
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.fillText('Input (padded: ' + WP + 'x' + WP + ')', inputX + inputGridPx / 2, inputY - 8);
+    ctx.fillText('Output (' + O + 'x' + O + ')', outputX + outputGridPx / 2, inputY - 8);
+
+    // Draw input grid
+    for (var r = 0; r < WP; r++) {
+      for (var c = 0; c < WP; c++) {
+        var x = inputX + c * cellSize;
+        var y = inputY + r * cellSize;
+        var isPad = (r < P || r >= W + P || c < P || c >= W + P);
+        var isKernel = (r < K && c < K);
+        ctx.fillStyle = isKernel ? '#bbdefb' : (isPad ? '#f5f5f5' : '#e8f5e9');
+        ctx.fillRect(x, y, cellSize, cellSize);
+        if (cellSize > 4) {
+          ctx.strokeStyle = isPad ? '#ddd' : '#bbb';
+          ctx.strokeRect(x, y, cellSize, cellSize);
+        }
+      }
+    }
+
+    // Kernel border
+    ctx.strokeStyle = '#1565c0';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(inputX, inputY, K * cellSize, K * cellSize);
+    ctx.lineWidth = 1;
+
+    // Stride arrows
+    if (cellSize > 4 && S > 0) {
+      ctx.strokeStyle = '#e65100';
+      ctx.fillStyle = '#e65100';
+      ctx.setLineDash([3, 2]);
+      // Horizontal arrow showing stride
+      var arrowY = inputY + K * cellSize + 8;
+      var arrowX1 = inputX + K * cellSize / 2;
+      var arrowX2 = arrowX1 + S * cellSize;
+      if (arrowX2 < inputX + inputGridPx) {
+        ctx.beginPath();
+        ctx.moveTo(arrowX1, arrowY);
+        ctx.lineTo(arrowX2, arrowY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(arrowX2, arrowY);
+        ctx.lineTo(arrowX2 - 4, arrowY - 3);
+        ctx.lineTo(arrowX2 - 4, arrowY + 3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('S=' + S, (arrowX1 + arrowX2) / 2, arrowY + 12);
+      }
+      ctx.setLineDash([]);
+    }
+
+    // Draw output grid
+    for (var r = 0; r < O; r++) {
+      for (var c = 0; c < O; c++) {
+        var x = outputX + c * cellSize;
+        var y = inputY + r * cellSize;
+        ctx.fillStyle = (r === 0 && c === 0) ? '#ffcc80' : '#e0e0e0';
+        ctx.fillRect(x, y, cellSize, cellSize);
+        if (cellSize > 4) {
+          ctx.strokeStyle = '#999';
+          ctx.strokeRect(x, y, cellSize, cellSize);
+        }
+      }
+    }
+
+    // Dimension labels
+    ctx.fillStyle = '#333';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(O + 'x' + O + 'x' + F, outputX + outputGridPx / 2, inputY + outputGridPx + 18);
+    ctx.fillText(W + 'x' + W + 'x' + cin, inputX + inputGridPx / 2, inputY + inputGridPx + 18);
+
+    // Legend
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    var ly = canvas.height - 20;
+    ctx.fillStyle = '#bbdefb';
+    ctx.fillRect(inputX, ly, 10, 10);
+    ctx.fillStyle = '#333';
+    ctx.fillText('Kernel', inputX + 14, ly + 9);
+    ctx.fillStyle = '#f5f5f5';
+    ctx.fillRect(inputX + 65, ly, 10, 10);
+    ctx.strokeStyle = '#ddd';
+    ctx.strokeRect(inputX + 65, ly, 10, 10);
+    ctx.fillStyle = '#333';
+    ctx.fillText('Padding', inputX + 79, ly + 9);
+    ctx.fillStyle = '#e8f5e9';
+    ctx.fillRect(inputX + 135, ly, 10, 10);
+    ctx.fillStyle = '#333';
+    ctx.fillText('Input', inputX + 149, ly + 9);
+  }
+
+  function updateEquations() {
+    var W = getW(), K = getK(), S = getS(), P = getP(), F = getF(), O = computeO();
+    var paramCount = (K * K * cin + 1) * F;
+
+    var html = '';
+    html += '<p style="font-size:13px;"><strong>Output size formula:</strong> $$O = \\lfloor\\frac{W - K + 2P}{S}\\rfloor + 1$$</p>';
+    html += '<p style="font-size:13px;"><strong>With values:</strong> $$O = \\lfloor\\frac{' + W + ' - ' + K + ' + 2 \\cdot ' + P + '}{' + S + '}\\rfloor + 1 = ' + O + '$$</p>';
+    html += '<p style="font-size:13px;">Input tensor shape: $' + W + ' \\times ' + W + ' \\times ' + cin + '$</p>';
+    html += '<p style="font-size:13px;">Filter shape: $K \\times K \\times C_{\\text{in}} = ' + K + ' \\times ' + K + ' \\times ' + cin + '$</p>';
+    html += '<p style="font-size:13px;">Output tensor shape: $O \\times O \\times F = ' + O + ' \\times ' + O + ' \\times ' + F + '$</p>';
+    html += '<p style="font-size:13px;"><strong>Parameter count:</strong> $(K \\times K \\times C_{\\text{in}} + 1) \\times F = (' + K + ' \\times ' + K + ' \\times ' + cin + ' + 1) \\times ' + F + ' = ' + paramCount.toLocaleString() + '$ <span style="color:#555;">(the +1 is the bias per filter)</span></p>';
+    html += '<p style="font-size:12px;color:#555;"><em>The filter ALWAYS spans the full input depth ($C_{\\text{in}}$). A $3 \\times 3$ filter on RGB is actually $3 \\times 3 \\times 3 = 27$ weights per filter.</em></p>';
+
+    if (O < 1) {
+      html += '<p style="font-size:13px;color:#c62828;"><strong>Warning:</strong> This configuration produces an invalid output size. The kernel is too large for the input with this padding and stride.</p>';
+    }
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  function update() {
+    updateLabels();
+    draw();
+    updateEquations();
+  }
+
+  // Channel toggle button
+  var cinBtn = document.getElementById('sc-cin-toggle');
+  cinBtn.addEventListener('click', function() {
+    cin = cin === 1 ? 3 : 1;
+    cinBtn.textContent = cin === 1 ? '1 (Grey)' : '3 (RGB)';
+    update();
+  });
+
+  // Slider events
+  ['sc-w', 'sc-k', 'sc-s', 'sc-p', 'sc-f'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', update);
+  });
+
+  update();
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>10. SLAM &amp; 3D Reconstruction — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">10. SLAM &amp; 3D Reconstruction</h1>
+    <p class="page-subtitle">KinectFusion, TSDF, ICP pose tracking, loop closure, back-projection, Marching Cubes</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#3d-challenges">1. 3D Data Capturing Challenges</a>
+      <a href="#slam-intro">2. SLAM: Simultaneous Localization and Mapping</a>
+      <a href="#slam-types">3. SLAM Types and Landmark Requirements</a>
+      <a href="#slam-pipeline">4. The Generic SLAM Pipeline</a>
+      <a href="#drift-loop-closure">5. Drift and Loop Closure</a>
+      <a href="#kinectfusion">6. KinectFusion Overview</a>
+      <a href="#tsdf">7. TSDF Voxel Grid Representation</a>
+      <a href="#back-projection">8. Back-Projection: Depth Pixels to 3D Points</a>
+      <a href="#icp">9. ICP Pose Tracking</a>
+      <a href="#pose-transform">10. Computing the Pose Transform</a>
+      <a href="#ransac-icp">11. RANSAC within ICP</a>
+      <a href="#tsdf-update">12. Updating the TSDF Model</a>
+      <a href="#raycasting">13. Rendering via Ray-Casting</a>
+      <a href="#marching-cubes">14. Marching Cubes</a>
+      <a class="toc-interactive" href="#kinectfusion-walkthrough">Interactive: KinectFusion Pipeline</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: 3D CHALLENGES ===== -->
+    <h2 class="section-heading" id="3d-challenges">1. 3D Data Capturing Challenges</h2>
+
+    <p>A single sensor frame captures only <strong>partial scene data</strong> — one viewpoint always leaves occlusions (objects behind other objects are invisible). Therefore the sensor must be carried around the scene — by hand, robot, or UAV — to capture the complete 3D structure.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/multi_view_3d_reconstruction.png" alt="Multiple camera viewpoints capturing a 3D scene">
+      <div class="figure-caption">A 3D scene must be observed from many viewpoints to obtain a complete reconstruction.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Registration Problem</h3>
+    <p>Each captured frame lives in its own local coordinate system. <strong>Registration</strong> transforms all frames into one common coordinate system (typically the coordinate system of the first frame). To do this, we need:</p>
+    <ol>
+      <li>The <strong>sensor pose</strong> (position + orientation) at every moment, described by the extrinsic matrix.</li>
+      <li><strong>Accurate timestamps</strong> for each sample.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/frame_to_frame_registration.png" alt="Frame-to-frame registration between consecutive scans">
+      <div class="figure-caption">Registration aligns frames from different sensor poses into a shared coordinate system.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/registered_multiple_scans.png" alt="Multiple registered 3D scans forming a coherent scene">
+      <div class="figure-caption">After registration, multiple scans combine into a single consistent 3D model.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key question</div>
+      <div>How do we find the sensor position and orientation at every moment in time? This is the fundamental problem that SLAM solves.</div>
+    </div>
+
+    <!-- ===== SECTION 2: SLAM ===== -->
+    <h2 class="section-heading" id="slam-intro">2. SLAM: Simultaneous Localization and Mapping</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — SLAM</div>
+      <div><strong>SLAM (Simultaneous Localization and Mapping)</strong>: Build a map of an environment <em>and</em> at the same time keep track of the sensor's location and orientation.</div>
+    </div>
+
+    <p>SLAM originated in <strong>robotics</strong> in the 1960s, primarily for sensor localization with 2D floor maps. When adapted to <strong>3D reconstruction</strong>, both localization AND mapping accuracy become critical — and typically there is no wheel odometry and no GPS data.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/slam_2d_map_with_trajectory.png" alt="SLAM robot building a 2D map while tracking its trajectory">
+      <div class="figure-caption">Classic SLAM in robotics: the robot simultaneously builds a 2D floor map (black) while estimating its own trajectory (red).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/slam_3d_reconstruction_result.png" alt="SLAM applied to 3D reconstruction showing a reconstructed corridor">
+      <div class="figure-caption">When SLAM is applied to 3D reconstruction, the result is a detailed 3D model of the scanned environment.</div>
+    </div>
+
+    <h3 class="subsection-heading">The SLAM Paradox (Chicken-and-Egg Problem)</h3>
+
+    <table>
+      <tr><th>Part</th><th>Description</th></tr>
+      <tr><td><strong>Mapping</strong></td><td>Building the 3D model of the environment</td></tr>
+      <tr><td><strong>Localization</strong></td><td>Determining where the sensor is in the map</td></tr>
+    </table>
+
+    <p>To build a map we must know our position; to determine our position we need a map. <strong>Solution:</strong> alternate and jointly optimize between the two steps. Start with a rough estimate from the first frame, then iteratively refine both map and pose.</p>
+
+    <!-- ===== SECTION 3: SLAM TYPES ===== -->
+    <h2 class="section-heading" id="slam-types">3. SLAM Types and Landmark Requirements</h2>
+
+    <table>
+      <tr><th>SLAM System</th><th>Sensor</th><th>Key Method</th></tr>
+      <tr><td>EKF SLAM</td><td>Mono camera</td><td>Extended Kalman Filter</td></tr>
+      <tr><td>ORB-SLAM</td><td>Mono / Stereo / Depth</td><td>Sparse ORB feature landmarks</td></tr>
+      <tr><td>RGBD SLAM</td><td>Depth sensor</td><td>SURF features as landmarks</td></tr>
+      <tr><td>DTAM</td><td>Mono camera</td><td>Dense depth from Structure-from-Motion</td></tr>
+      <tr><td>SLAM6D</td><td>LiDAR</td><td>ICP for tracking</td></tr>
+      <tr><td>RTAB-Map</td><td>Depth sensor</td><td>Popular, also available in ROS</td></tr>
+      <tr><td>COLMAP</td><td>Mono / Stereo</td><td>Recommended for mono/stereo sensors</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/feature_matching_landmarks.png" alt="Feature matching between two views showing landmarks connected by colored lines">
+      <div class="figure-caption">Feature matching across views: landmarks are detected (green circles) and matched between frames (colored lines). These correspondences drive SLAM localization.</div>
+    </div>
+
+    <h3 class="subsection-heading">Requirements for SLAM Landmarks</h3>
+    <ol>
+      <li><strong>Easily re-observable</strong> — can be detected again when revisiting the same area.</li>
+      <li><strong>Distinguishable</strong> — individual landmarks must be discriminative.</li>
+      <li><strong>Sufficient quantity</strong> — hundreds or thousands per image.</li>
+      <li><strong>Stationary</strong> — landmarks must not move (dynamic objects are problematic).</li>
+      <li><strong>Low computation cost</strong> — real-time performance required.</li>
+      <li><strong>Generality</strong> — work across various image types and conditions.</li>
+    </ol>
+
+    <!-- ===== SECTION 4: SLAM PIPELINE ===== -->
+    <h2 class="section-heading" id="slam-pipeline">4. The Generic SLAM Pipeline</h2>
+
+    <p>The SLAM processing loop consists of:</p>
+    <ol>
+      <li>Initialize coordinate system at the first scan.</li>
+      <li>Store first sample data into the 3D model.</li>
+      <li>Detect and create landmarks visible in the first scan.</li>
+      <li>
+        <strong>Main loop:</strong>
+        <ol type="a">
+          <li>Move the sensor; obtain the next scan.</li>
+          <li>Re-observe landmarks: find already-known landmarks in the new scan.</li>
+          <li>Compute change in position/orientation from landmark position changes.</li>
+          <li>Estimate current sensor pose.</li>
+          <li>Update the 3D model with current sample data.</li>
+          <li>Check for loop closure.</li>
+          <li>If loop closure detected: correct poses and model.</li>
+          <li>Repeat from (a) or finish.</li>
+        </ol>
+      </li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The SLAM pipeline is an <strong>online</strong> algorithm: the 3D model and pose estimates are updated incrementally as new frames arrive, not in a single batch at the end.</div>
+    </div>
+
+    <!-- ===== SECTION 5: DRIFT AND LOOP CLOSURE ===== -->
+    <h2 class="section-heading" id="drift-loop-closure">5. Drift and Loop Closure</h2>
+
+    <h3 class="subsection-heading">The Drift Problem</h3>
+    <p>Pose estimation error at each frame is <strong>unavoidable</strong> due to image noise/blur, insufficient or occluded landmarks, and less than 100% accuracy in finding pairwise correspondences. This error <strong>accumulates over time</strong>, causing drift: the estimated path diverges from the actual path, and newly captured data integrates into the model at incorrect locations.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/pose_estimation_drift.png" alt="Drift: estimated path diverging from actual path">
+      <div class="figure-caption">Drift in action: the estimated camera path (red) progressively deviates from the actual path (blue dashed).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/drift_effect_on_3d_model.png" alt="3D model distortion caused by drift">
+      <div class="figure-caption">The resulting 3D model becomes distorted when drift is not corrected — surfaces no longer align properly.</div>
+    </div>
+
+    <h3 class="subsection-heading">Loop Closure</h3>
+    <p><strong>Loop closure</strong> detects when the sensor revisits a previously seen scene (frame $Z$) and corrects accumulated drift.</p>
+
+    <ol>
+      <li>Correct the current sensor pose using the known pose of frame $Z$.</li>
+      <li><strong>Elastic trajectory correction</strong>: smoothly correct all intermediate poses from the current frame back to frame $Z$.</li>
+      <li>Re-update the 3D model with correctly positioned 3D data from the corrected poses.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/loop_closure_pose_graph.png" alt="Pose graph with loop closure connections">
+      <div class="figure-caption">A pose graph with loop closure constraints: when the sensor revisits a known location, connections (red) link the current pose back to the earlier pose, enabling correction.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/before_after_loop_closure.png" alt="Before and after loop closure comparison">
+      <div class="figure-caption">Before (left) vs. after (right) loop closure correction — the model becomes geometrically consistent.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/elastic_trajectory_correction.png" alt="Elastic trajectory correction on a floor plan">
+      <div class="figure-caption">Elastic correction: when a loop closure is detected, previous poses are smoothly adjusted along the trajectory.</div>
+    </div>
+
+    <h3 class="subsection-heading">Bundle Adjustment</h3>
+    <p><strong>Bundle adjustment</strong> jointly optimizes both the 3D map points and the camera poses, making them mutually consistent with observed sensor data. It minimizes the overall reprojection error across all frames and landmarks simultaneously.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Loop closure in practice: trajectory planning</div>
+      <div class="collapsible-body">
+        <p>Scanning trajectories must be carefully planned so that the sensor revisits previously seen scenes to enable loop closure detection. The Enigma project example demonstrates a planned scanning path through a building, ensuring the sensor revisits corridors for reliable loop closure.</p>
+        <div class="figure-container">
+          <img src="figures/mod10_slam/loop_closure_scanning_trajectory.png" alt="Loop closure scanning trajectory">
+          <div class="figure-caption">Enigma project: the scanning trajectory (green) was carefully planned to ensure corridor revisits for loop closure detection.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: KINECTFUSION ===== -->
+    <h2 class="section-heading" id="kinectfusion">6. KinectFusion Overview</h2>
+
+    <p><strong>KinectFusion</strong> is an RGB-D SLAM system for 3D reconstruction using a Microsoft Kinect or Asus xTion depth sensor. It has two interleaved components:</p>
+
+    <table>
+      <tr><th>Component</th><th>Description</th></tr>
+      <tr><td><strong>Mapping</strong></td><td>Build a 3D surface model from depth frames with estimated camera poses</td></tr>
+      <tr><td><strong>Localization</strong></td><td>Given a 3D model, estimate the current camera pose by aligning the current depth frame</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">KinectFusion Pipeline Steps</h3>
+    <ol>
+      <li>At the first Kinect frame, create a coordinate system (world origin = sensor origin of first frame).</li>
+      <li>Initialize a <strong>voxel grid</strong> (e.g., $3 \times 3 \times 3$ m, $256^3$ voxels, voxel size $\approx 1.2$ cm).</li>
+      <li>Back-project depth data into the voxel grid using <strong>TSDF</strong> representation.</li>
+      <li>Detect and store <strong>landmarks</strong> (vertices and normals from TSDF).</li>
+      <li>For each new frame: use <strong>ICP</strong> to align new depth data to the existing model.</li>
+      <li>Update the TSDF voxel grid with new depth data.</li>
+      <li>Repeat.</li>
+    </ol>
+
+    <div id="kinectfusion-walkthrough" class="interactive-container" data-title="Walkthrough — KinectFusion Pipeline"></div>
+
+    <h3 class="subsection-heading">Depth Sensor Specifications (Kinect / xTion)</h3>
+    <p>KinectFusion uses a <strong>structured light</strong> depth sensor with an IR pattern emitter, an IR sensor, and an RGB sensor. An internal ASIC generates depth data from IR sensor correlation against a known speckled light pattern, calibrated for 2048 depth planes.</p>
+
+    <table>
+      <tr><th>Parameter</th><th>Value</th></tr>
+      <tr><td>Resolution</td><td>640 &times; 480 depth image</td></tr>
+      <tr><td>Frame rate</td><td>30 fps</td></tr>
+      <tr><td>Pixel depth values</td><td>0 to 255 (maps to 0&ndash;329 depth units)</td></tr>
+      <tr><td>Maximum range</td><td>0.5&ndash;12 meters</td></tr>
+      <tr><td>Efficient (low noise) range</td><td>0.5&ndash;2.5 meters</td></tr>
+    </table>
+
+    <!-- ===== SECTION 7: TSDF ===== -->
+    <h2 class="section-heading" id="tsdf">7. TSDF Voxel Grid Representation</h2>
+
+    <p>The <strong>Truncated Signed Distance Function (TSDF)</strong> encodes 3D geometry as a scalar field over a voxel grid. For each voxel at position $g$:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — TSDF</div>
+      <div>
+        $$\text{tsdf}(g) = \begin{cases} (0, 1] & \text{outside the surface (between sensor and surface)} \\ 0 & \text{on the surface} \\ [-1, 0) & \text{inside the surface (behind surface)} \end{cases}$$
+      </div>
+    </div>
+
+    <p>Values transition from <strong>+1</strong> (outside/in front of surface) through <strong>0</strong> (on the surface) to <strong>-1</strong> (inside/behind surface). The function is <strong>truncated</strong> (clamped to $[-1, +1]$) within a narrow band $\delta$ around the surface. The <strong>zero-crossing</strong> (sign change from positive to negative) indicates the surface location.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/tsdf_definition_formula.png" alt="TSDF definition: positive outside, zero on surface, negative inside">
+      <div class="figure-caption">TSDF function definition: values range from +1 (outside) through 0 (on surface) to -1 (inside).</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/tsdf_distance_function_diagram.png" alt="TSDF along a viewing ray showing the truncation band delta">
+      <div class="figure-caption">TSDF along a viewing ray: the signed distance transitions from +1 to -1 across the surface, truncated within the band delta.</div>
+    </div>
+
+    <h3 class="subsection-heading">Voxel Grid Initialization</h3>
+    <div class="figure-container">
+      <img src="figures/mod10_slam/voxel_grid_diagram.png" alt="3D voxel grid diagram">
+      <div class="figure-caption">A voxel grid discretizes 3D space into a regular array of small cubic cells. Each voxel stores a TSDF value.</div>
+    </div>
+
+    <ul>
+      <li>At the first frame, initialize a cube of voxels in front of the sensor.</li>
+      <li>Example: $3 \times 3 \times 3$ m volume, $256^3$ voxels, each $\approx 1.2$ cm.</li>
+      <li>All voxel values initialized to $-1$.</li>
+    </ul>
+
+    <div class="collapsible">
+      <div class="collapsible-header">2D TSDF grid slice example</div>
+      <div class="collapsible-body">
+        <p>A 5&times;6 slice of a TSDF grid (columns left to right = moving away from sensor):</p>
+        <table>
+          <tr><td>-1</td><td>-1</td><td>0</td><td>1</td><td>1</td></tr>
+          <tr><td>-1</td><td>-1</td><td>-1</td><td>0</td><td>1</td></tr>
+          <tr><td>-1</td><td>-1</td><td>0</td><td>1</td><td>1</td></tr>
+          <tr><td>-1</td><td>0</td><td>1</td><td>1</td><td>1</td></tr>
+          <tr><td>-1</td><td>0</td><td>1</td><td>1</td><td>1</td></tr>
+          <tr><td>-1</td><td>-1</td><td>0</td><td>1</td><td>1</td></tr>
+        </table>
+        <p>The iso-surface (TSDF = 0 column) traces the 3D geometry surface.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 8: BACK-PROJECTION ===== -->
+    <h2 class="section-heading" id="back-projection">8. Back-Projection: Depth Pixels to 3D Points</h2>
+
+    <p>Each valid depth value $D(\mathbf{u})$ at pixel $\mathbf{u} = (x, y)$ provides a 3D point $\mathbf{v}$ in camera coordinates:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Back-Projection Equation</div>
+      <div>$$\mathbf{v}(x,y) = \begin{bmatrix} X \\ Y \\ Z \end{bmatrix} = d \cdot K^{-1} \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}$$</div>
+    </div>
+
+    <p>where $d$ = depth value at pixel $(x, y)$, $K$ = intrinsic matrix of the IR camera, $(x, y)$ = 2D pixel coordinates, $(X, Y, Z)$ = resulting 3D vertex in camera coordinates.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/perspective_projection_geometry.png" alt="Perspective projection geometry">
+      <div class="figure-caption">Perspective projection: 3D points project through the optical center onto the image plane. Back-projection reverses this process.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/depth_to_3d_vertex_equation.png" alt="Back-projection equation illustration">
+      <div class="figure-caption">The back-projection equation: a 2D depth pixel is transformed into a 3D vertex using the inverse intrinsic matrix scaled by depth.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Intrinsic Matrix $K$</h3>
+    <div class="definition-box">
+      <div class="box-label">Intrinsic Matrix</div>
+      <div>$$K = \begin{pmatrix} f_0 & 0 & p_0 \\ 0 & f_1 & p_1 \\ 0 & 0 & 1 \end{pmatrix}$$
+      where $f_0, f_1$ = focal lengths in pixels; $p_0, p_1$ = principal point (optical center in pixel coordinates).</div>
+    </div>
+
+    <table>
+      <tr><th>Direction</th><th>Equation</th><th>Purpose</th></tr>
+      <tr><td><strong>Projection</strong> (3D to 2D)</td><td>$\mathbf{u} = K \cdot \mathbf{v} / Z$</td><td>Projects a 3D point onto image plane</td></tr>
+      <tr><td><strong>Back-projection</strong> (2D to 3D)</td><td>$\mathbf{v} = d \cdot K^{-1} \cdot \tilde{\mathbf{u}}$</td><td>Lifts a depth pixel back to 3D space</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">General Case: Camera Not at Origin</h3>
+    <p>When the camera coordinate system is not aligned with the world coordinate system:</p>
+    <div class="math-block">$$\mathbf{v}(x,y) = d \cdot K^{-1} \cdot T_{g,k}^{-1} \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}$$</div>
+    <p>where $T_{g,k}$ is the extrinsic matrix (pose) of the camera at time $k$ relative to the global coordinate system $g$.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/depth_to_vertex_with_extrinsic.png" alt="General back-projection including extrinsic transformation">
+      <div class="figure-caption">General case: when the camera has moved, the extrinsic matrix inverse is included to transform depth pixels into world coordinates.</div>
+    </div>
+
+    <!-- ===== SECTION 9: ICP ===== -->
+    <h2 class="section-heading" id="icp">9. ICP Pose Tracking (Iterative Closest Point)</h2>
+
+    <p>When the sensor moves to a new position, we need to estimate its new pose $T_{w,k}$. ICP aligns the vertices of the new depth frame with the vertices of the previous frame (or the global 3D model).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/kinectfusion_pose_tracking.png" alt="KinectFusion pose tracking diagram">
+      <div class="figure-caption">Pose tracking problem: given the known previous pose $T_{w,k-1}$ and a new depth frame, estimate the current pose $T_{w,k}$ by aligning current vertices to the existing 3D model.</div>
+    </div>
+
+    <h3 class="subsection-heading">Key Observations</h3>
+    <ul>
+      <li>Every pixel of a depth frame is a 3D vertex in its own coordinate system.</li>
+      <li>At 30 fps, there is only <strong>small motion between consecutive frames</strong> (33 ms apart).</li>
+      <li>Small motion implies small distances between corresponding vertices of neighboring frames.</li>
+      <li>This makes point-based alignment feasible: <strong>closest points correspond</strong>.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/icp_point_cloud_alignment.png" alt="ICP alignment showing original and aligned point clouds">
+      <div class="figure-caption">ICP in action: the white mesh is the target point cloud, the red mesh is the source after one ICP iteration. The algorithm iteratively minimizes the distance between corresponding points.</div>
+    </div>
+
+    <h3 class="subsection-heading">Camera Pose: The Extrinsic Matrix</h3>
+    <div class="definition-box">
+      <div class="box-label">Extrinsic Matrix (Camera Pose)</div>
+      <div>$$T_{g,k} = \begin{bmatrix} R_{g,k} & \mathbf{t}_{g,k} \\ \mathbf{0}^T & 1 \end{bmatrix} \in \mathbb{R}^{4 \times 4}$$</div>
+    </div>
+    <p>where $R_{g,k} \in \mathbb{R}^{3 \times 3}$ is the rotation matrix and $\mathbf{t}_{g,k} \in \mathbb{R}^3$ is the translation vector at time $k$, both relative to the global frame $g$. A point $\mathbf{p}_k$ in camera coordinates transforms to world coordinates as $\mathbf{p}_g = T_{g,k} \cdot \mathbf{p}_k$.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">3D rotation matrices</div>
+      <div class="collapsible-body">
+        <p>Individual rotation matrices around each axis:</p>
+        <div class="math-block">$$R_X = \begin{pmatrix} 1 & 0 & 0 \\ 0 & \cos A & -\sin A \\ 0 & \sin A & \cos A \end{pmatrix}, \quad R_Y = \begin{pmatrix} \cos B & 0 & \sin B \\ 0 & 1 & 0 \\ -\sin B & 0 & \cos B \end{pmatrix}, \quad R_Z = \begin{pmatrix} \cos C & -\sin C & 0 \\ \sin C & \cos C & 0 \\ 0 & 0 & 1 \end{pmatrix}$$</div>
+        <p>Combined rotation: $R = R_Y \cdot R_Z \cdot R_X$ &mdash; 9 parameters determined by 3 angles $A$, $B$, $C$.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Landmarks in KinectFusion</h3>
+    <p>The TSDF voxel grid defines landmarks as:</p>
+    <ol>
+      <li><strong>Vertices</strong>: Grid cells with TSDF $\approx 0$ (on the surface).</li>
+      <li><strong>Iso-surfaces</strong>: Continuous surface between positive and negative TSDF values.</li>
+      <li><strong>Normals</strong>: Surface normal vectors computed via cross product of neighboring surface points:
+        $$\mathbf{n} = (\mathbf{v}_1 - \mathbf{v}_0) \times (\mathbf{v}_2 - \mathbf{v}_0)$$
+      </li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/surface_normals_vertex_map.png" alt="Surface normals on a vertex map">
+      <div class="figure-caption">Surface normals (blue arrows) computed at each vertex of the surface mesh. These normals serve as landmarks for ICP alignment.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/normal_map_pose_estimated.png" alt="Normal map after pose estimation">
+      <div class="figure-caption">After pose estimation, the normal map (colors encode surface orientation) confirms correct alignment of the new frame with the existing model.</div>
+    </div>
+
+    <!-- ===== SECTION 10: POSE TRANSFORM ===== -->
+    <h2 class="section-heading" id="pose-transform">10. Computing the Pose Transform (R, t)</h2>
+
+    <p>Given current-frame vertices $\{\mathbf{p}_i\}$ and previous-frame vertices $\{\mathbf{q}_i\}$, find $R$ and $\mathbf{t}$ that minimizes:</p>
+
+    <div class="math-block">$$E = \sum_{i=1}^{N} \|R \cdot \mathbf{q}_i + \mathbf{t} - \mathbf{p}_i\|^2$$</div>
+
+    <h3 class="subsection-heading">Centroid-Based Approach (3 point pairs)</h3>
+
+    <p><strong>Step 1: Compute centroids</strong></p>
+    <div class="math-block">$$\bar{\mathbf{p}} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{p}_i, \quad \bar{\mathbf{q}} = \frac{1}{N} \sum_{i=1}^{N} \mathbf{q}_i$$</div>
+
+    <p><strong>Theorem:</strong> If $(R, \mathbf{t})$ is optimal, then $\{\mathbf{p}_i\}$ and $\{R\mathbf{q}_i + \mathbf{t}\}$ share the same centroid.</p>
+
+    <p><strong>Step 2: Center the point sets</strong></p>
+    <div class="math-block">$$\mathbf{p}'_i = \mathbf{p}_i - \bar{\mathbf{p}}, \quad \mathbf{q}'_i = \mathbf{q}_i - \bar{\mathbf{q}}$$</div>
+
+    <p>After centering, $\mathbf{t}$ vanishes from the equations, allowing us to solve for $R$ independently.</p>
+
+    <p><strong>Step 3: Solve for $R$</strong> — using 3 point pairs: $\mathbf{p}'_i = R \cdot \mathbf{q}'_i$ gives $3 \times 3 = 9$ scalar equations for the 9 entries of $R$.</p>
+
+    <p><strong>Step 4: Recover $\mathbf{t}$</strong></p>
+    <div class="math-block">$$\mathbf{t} = \bar{\mathbf{p}} - R \cdot \bar{\mathbf{q}}$$</div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Direct approach: 4 point pairs (12 equations)</div>
+      <div class="collapsible-body">
+        <p>With 4 corresponding pairs, solve $\mathbf{p}_i = R \cdot \mathbf{q}_i + \mathbf{t}$ directly. Each pair gives 3 equations:</p>
+        <p>$4 \times 3 = 12$ equations for $9 + 3 = 12$ unknowns ($R$ and $\mathbf{t}$). The system is exactly determined.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 11: RANSAC ===== -->
+    <h2 class="section-heading" id="ransac-icp">11. RANSAC within ICP</h2>
+
+    <p>RANSAC (Random Sample Consensus) is used within ICP to find the best transformation while being robust to outliers (incorrectly matched point pairs).</p>
+
+    <ol>
+      <li>Find corresponding points by Euclidean distance between current frame and model vertices.</li>
+      <li>Select <strong>4 corresponding point pairs</strong> for the current RANSAC iteration.</li>
+      <li>Find rotation and translation $[R|\mathbf{t}]$ for these 4 samples.</li>
+      <li>Apply the found $[R|\mathbf{t}]$ to <strong>all</strong> point pairs.</li>
+      <li>Compute the total alignment error:
+        $$E = \sum_{i=1}^{N} \|R \cdot \mathbf{q}_i + \mathbf{t} - \mathbf{p}_i\|^2$$
+      </li>
+      <li>If error exceeds the threshold: select another 4 pairs, run another iteration.</li>
+      <li>Re-iterate until the error converges below the threshold. Best $[R|\mathbf{t}]$ (lowest error across all iterations) is the final result.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>RANSAC makes ICP robust to outlier correspondences. Only a random subset of 4 pairs is used to estimate the transform each iteration, so bad matches (outliers) are unlikely to dominate. The result is validated against all pairs to confirm it.</div>
+    </div>
+
+    <!-- ===== SECTION 12: TSDF UPDATE ===== -->
+    <h2 class="section-heading" id="tsdf-update">12. Updating the TSDF Model</h2>
+
+    <p>After finding the camera pose $T_{g,k}$ via ICP, the new depth frame is integrated into the TSDF voxel grid using a <strong>weighted average</strong>:</p>
+
+    <div class="definition-box">
+      <div class="box-label">TSDF Weighted Update Rule</div>
+      <div>
+        $$\text{tsdf}_{new}(g) = \frac{W_{old}(g) \cdot \text{tsdf}_{old}(g) + w_k \cdot \text{tsdf}_k(g)}{W_{old}(g) + w_k}$$
+        $$W_{new}(g) = W_{old}(g) + w_k$$
+      </div>
+    </div>
+
+    <p>Weighted averaging achieves noise reduction: each new observation refines the surface estimate. It allows incremental integration without storing all individual frames, and more observations of a voxel produce a more accurate surface location.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Color integration (RGB texturing)</div>
+      <div class="collapsible-body">
+        <p>Since each Kinect frame contains both depth and RGB data, the voxel grid can also store RGB values of valid depth pixels. RGB values are collected by weighted averaging, and these weighted RGB values are later used to <strong>texture the 3D model</strong>.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 13: RAYCASTING ===== -->
+    <h2 class="section-heading" id="raycasting">13. Rendering via Ray-Casting</h2>
+
+    <p>To render a view of the 3D model from any virtual camera position, ray-casting traverses the TSDF voxel grid:</p>
+
+    <ol>
+      <li>Define a virtual camera position and orientation.</li>
+      <li>For each pixel $(u, v)$ of the output image:</li>
+      <li>Cast a ray from the optical center through pixel $(u, v)$ towards the voxel grid.</li>
+      <li>Traverse voxels along the ray, reading their TSDF values.</li>
+      <li>Detect the first <strong>sign change</strong> in the TSDF (positive to negative) &mdash; this is the surface.</li>
+      <li>Record the depth $d$ (camera-to-surface distance) for that pixel.</li>
+      <li>After all pixels are processed, the depth values form the rendered depth image.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/tsdf_raycasting_diagram.png" alt="TSDF ray-casting diagram">
+      <div class="figure-caption">A 2D slice of the TSDF grid: the red line traces the zero-crossing (surface). The camera (right) casts rays to find surface intersections.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/tsdf_voxel_grid_3d.png" alt="3D TSDF voxel grid containing a reconstructed scene">
+      <div class="figure-caption">A 3D TSDF voxel grid containing a reconstructed scene. The surface is encoded as the zero-level set within the voxel volume.</div>
+    </div>
+
+    <!-- ===== SECTION 14: MARCHING CUBES ===== -->
+    <h2 class="section-heading" id="marching-cubes">14. Marching Cubes</h2>
+
+    <p><strong>Marching Cubes</strong> is an algorithm that extracts a triangular mesh (iso-surface) from a scalar field like TSDF.</p>
+
+    <h3 class="subsection-heading">2D Concept (Marching Squares)</h3>
+    <p>In 2D, each grid cell has corners that are either inside (negative TSDF) or outside (positive TSDF) the surface. The surface boundary passes between positive and negative grid points. The algorithm "marches" through each cell and determines the surface configuration based on the sign pattern of the corners.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/marching_squares_2d_concept.png" alt="2D surface reconstruction concept — marching squares">
+      <div class="figure-caption">Marching Squares in 2D: blue points are inside the surface (negative TSDF), red points are outside (positive TSDF). The surface boundary passes between them at the zero-crossing.</div>
+    </div>
+
+    <h3 class="subsection-heading">3D Marching Cubes</h3>
+    <p>Each cube has <strong>8 corners</strong>, each either inside or outside the surface. This gives $2^8 = 256$ possible configurations, which reduce to <strong>15 unique cases</strong> by symmetry.</p>
+
+    <p>For each cube in the voxel grid:</p>
+    <ol>
+      <li>Classify each of the 8 corners as inside ($-$) or outside ($+$) based on TSDF sign.</li>
+      <li>Look up the corresponding <strong>triangle configuration</strong> from a precomputed table.</li>
+      <li>Interpolate exact vertex positions along edges where the sign changes.</li>
+      <li>Output the triangles for that cube.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/marching_cubes_single_voxel.png" alt="Single marching cube with labeled vertices and edge midpoints">
+      <div class="figure-caption">A single marching cube with 8 corner vertices (v1&ndash;v8) and 12 edge midpoints (e1&ndash;e12). Triangle vertices are interpolated along edges where the sign changes.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/marching_cubes_15_cases.png" alt="The 15 canonical marching cubes configurations">
+      <div class="figure-caption">The 15 canonical Marching Cubes configurations. Black dots indicate corners inside the surface. Each configuration determines a specific set of triangles that approximate the iso-surface within that cube.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/stanford_bunny_mesh_result.png" alt="Stanford bunny triangle mesh from Marching Cubes">
+      <div class="figure-caption">The Stanford bunny: a classic example of a triangle mesh extracted from a scalar field using the Marching Cubes algorithm.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Marching Cubes converts an implicit surface representation (TSDF values at discrete voxels) into an explicit representation (triangle mesh) suitable for rendering, 3D printing, and further processing. The $256 \to 15$ reduction uses rotational symmetry and complementarity of inside/outside configurations.</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod10-slam-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod9b.html">&larr; 9B. Gaussian Splatting</a>
+      <a href="mod10-ae.html">10. Autoencoders &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod10-slam');</script>
+<script>
+  initWalkthrough('kinectfusion-walkthrough', [
+    {
+      tab: '1. Initialize',
+      title: 'Step 1: Initialize Coordinate System and Voxel Grid',
+      text: 'At the first Kinect frame, the sensor origin becomes the world coordinate system (WCS) origin. A 3D voxel grid is initialized in front of the sensor — for example, $3 \\times 3 \\times 3$ m with $256^3$ voxels, each approximately 1.2 cm in size. All voxel TSDF values are set to $-1$.',
+      visual: '<div class="figure-container"><img src="figures/mod10_slam/voxel_grid_diagram.png" alt="Voxel grid diagram"><div class="figure-caption">The voxel grid discretizes 3D space. All values start at -1 and are updated as depth data arrives.</div></div>',
+      insight: 'The voxel grid is the global 3D model container. Every depth frame from now on will be back-projected and merged into this grid using the estimated camera pose.'
+    },
+    {
+      tab: '2. Back-Project',
+      title: 'Step 2: Back-Project Depth Frame into 3D',
+      text: 'For each valid depth pixel $(x, y)$ with depth $d$, compute the 3D vertex using $\\mathbf{v} = d \\cdot K^{-1} [x, y, 1]^T$. This lifts the 2D depth image into a 3D vertex map (point cloud) in camera coordinates. Invalid (black) pixels are skipped.',
+      visual: '<div class="figure-container"><img src="figures/mod10_slam/perspective_projection_geometry.png" alt="Perspective projection geometry"><div class="figure-caption">Back-projection reverses the camera projection: depth pixels map to 3D points using the intrinsic matrix inverse.</div></div>',
+      insight: 'The intrinsic matrix $K$ encodes focal lengths and principal point. Its inverse $K^{-1}$ converts pixel coordinates to normalized camera rays, which are then scaled by the measured depth to get true 3D positions.'
+    },
+    {
+      tab: '3. TSDF Store',
+      title: 'Step 3: Store Depth Data into TSDF Grid',
+      text: 'For each voxel in the grid, compute its signed distance to the nearest surface observed in the depth frame. Truncate the value to $[-1, +1]$. Positive values mean the voxel is in front of the surface (outside); negative means behind (inside); zero means on the surface.',
+      visual: '<div class="figure-container"><img src="figures/mod10_slam/tsdf_distance_function_diagram.png" alt="TSDF along viewing ray"><div class="figure-caption">The TSDF transitions from +1 outside through 0 at the surface to -1 inside. The truncation band delta defines the update region.</div></div>',
+      insight: 'The zero-crossing of the TSDF defines the surface. By storing signed distances rather than raw depth, the system achieves sub-voxel precision and can average noise over multiple frames.'
+    },
+    {
+      tab: '4. ICP Align',
+      title: 'Step 4: ICP Pose Tracking',
+      text: 'For each new depth frame, estimate the current camera pose by aligning the new depth vertices to the existing 3D model vertices. ICP selects 4 vertex pairs, solves for $[R|t]$ minimizing sum of squared distances, then uses RANSAC to repeat with different samples until the alignment error converges.',
+      visual: '<div class="figure-container"><img src="figures/mod10_slam/icp_point_cloud_alignment.png" alt="ICP alignment"><div class="figure-caption">ICP iteratively aligns the source (current frame, red) to the target (existing model, white) by finding and minimizing point-to-point distances.</div></div>',
+      insight: 'ICP works because at 30 fps the camera moves very little between frames — so the closest point in the previous frame is almost always the correct correspondence. RANSAC makes it robust to the few outlier matches.'
+    },
+    {
+      tab: '5. TSDF Update',
+      title: 'Step 5: Fuse New Frame into TSDF Grid',
+      text: 'After finding pose $T_{g,k}$ via ICP, project the current depth data into the voxel grid and fuse using weighted averaging: $\\text{tsdf}_{\\text{new}} = (W_{\\text{old}} \\cdot \\text{tsdf}_{\\text{old}} + w_k \\cdot \\text{tsdf}_k) / (W_{\\text{old}} + w_k)$. Accumulated weight $W_{\\text{new}} = W_{\\text{old}} + w_k$.',
+      visual: '<div class="figure-container"><img src="figures/mod10_slam/tsdf_voxel_grid_3d.png" alt="3D TSDF voxel grid"><div class="figure-caption">After fusion, the TSDF grid is enriched with new surface observations. Multiple frames reduce noise and fill in occluded regions.</div></div>',
+      insight: 'Weighted averaging means more observations make the surface estimate more accurate. Voxels observed many times have high accumulated weight, making them resistant to noise from later frames.'
+    },
+    {
+      tab: '6. Render',
+      title: 'Step 6: Render and Extract Mesh',
+      text: 'To render: cast a ray from the virtual camera through each pixel, traverse voxels along the ray, find the first TSDF sign change (zero-crossing). To extract a mesh: use Marching Cubes — classify each cube\'s 8 corners as inside/outside, look up the triangle configuration (15 canonical cases), and interpolate triangle vertices on edges where sign changes.',
+      visual: '<div class="figure-container"><img src="figures/mod10_slam/stanford_bunny_mesh_result.png" alt="Stanford bunny mesh from Marching Cubes"><div class="figure-caption">Marching Cubes extracts a high-quality triangle mesh from the TSDF zero-level set. The result can be rendered, 3D-printed, or exported.</div></div>',
+      insight: 'Ray-casting and Marching Cubes are two different ways to use the TSDF. Ray-casting renders a view in real time during scanning. Marching Cubes produces a complete exportable mesh from the final TSDF volume.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod10-slam-flashcards', [
+    {
+      q: 'What is the fundamental paradox of SLAM, and how is it resolved?',
+      a: 'To build a map we must know our position; to determine our position we need a map (chicken-and-egg problem). It is resolved by <strong>alternating and jointly optimizing</strong>: start with a rough estimate from the first frame, then iteratively refine both the map and the sensor pose as new frames arrive.'
+    },
+    {
+      q: 'What does TSDF stand for? What do positive, zero, and negative TSDF values represent?',
+      a: '<strong>Truncated Signed Distance Function</strong>.<br><strong>Positive (0, 1]</strong>: voxel is outside the surface (between sensor and surface).<br><strong>Zero</strong>: voxel is on the surface.<br><strong>Negative [-1, 0)</strong>: voxel is inside (behind) the surface.<br>The surface is found at the <strong>zero-crossing</strong> — where the value changes sign.'
+    },
+    {
+      q: 'Write the back-projection equation. What does K^{-1} do?',
+      a: '$$\\mathbf{v}(x,y) = d \\cdot K^{-1} \\begin{bmatrix} x \\\\ y \\\\ 1 \\end{bmatrix}$$<br>$K$ encodes the camera\'s focal lengths $(f_0, f_1)$ and principal point $(p_0, p_1)$. $K^{-1}$ transforms pixel coordinates into normalized camera-space rays, which are then scaled by depth $d$ to get true 3D positions.'
+    },
+    {
+      q: 'Why does drift occur in SLAM, and what is the correction mechanism?',
+      a: 'Drift occurs because pose estimation errors accumulate over time — each frame has unavoidable error from image noise, occluded landmarks, and imperfect correspondences. <strong>Loop closure</strong> corrects it: when the sensor revisits a known location (frame Z), it corrects the current pose using Z\'s known pose, then applies <strong>elastic trajectory correction</strong> to all intermediate poses, and re-updates the 3D model.'
+    },
+    {
+      q: 'Describe the ICP algorithm as used in KinectFusion. What assumption makes it work?',
+      a: 'ICP: (1) Select vertex samples in current depth frame. (2) Match to nearest vertices in previous frame by Euclidean distance. (3) Compute rigid transform [R|t] from matched pairs. (4) Apply transform. (5) Compute alignment error. (6) Use RANSAC: re-sample and re-iterate until error converges.<br><br>Key assumption: <strong>small inter-frame motion</strong> (30 fps) means closest points are correct correspondences.'
+    },
+    {
+      q: 'How is the rotation R solved separately from translation t in ICP (centroid approach)?',
+      a: '(1) Compute centroids $\\bar{\\mathbf{p}}$ and $\\bar{\\mathbf{q}}$. (2) Subtract centroids to get centered sets — this makes $\\mathbf{t}$ vanish. (3) Solve $\\mathbf{p}\'_i = R \\mathbf{q}\'_i$ for 3 pairs (9 equations, 9 unknowns). (4) Recover $\\mathbf{t} = \\bar{\\mathbf{p}} - R \\cdot \\bar{\\mathbf{q}}$.'
+    },
+    {
+      q: 'How does the TSDF weighted update work? Why is weighted averaging used?',
+      a: '$$\\text{tsdf}_{new} = \\frac{W_{old} \\cdot \\text{tsdf}_{old} + w_k \\cdot \\text{tsdf}_k}{W_{old} + w_k}$$<br>Weighted averaging is used because it: (1) reduces noise naturally — more observations = more accurate surface estimate, (2) allows incremental integration without storing all frames, (3) naturally handles uncertainty in depth measurements.'
+    },
+    {
+      q: 'Explain the Marching Cubes algorithm. How many canonical configurations exist, and why?',
+      a: 'Marching Cubes extracts a triangle mesh from the TSDF. Each voxel cube has <strong>8 corners</strong>, each either inside ($-$) or outside ($+$). This gives $2^8 = 256$ configurations. By rotational symmetry and inside/outside complementarity, these reduce to <strong>15 canonical cases</strong>. For each cube, the algorithm looks up the triangle pattern, interpolates vertex positions on edges with sign changes, and outputs triangles.'
+    },
+    {
+      q: 'What are six requirements for landmarks used in SLAM?',
+      a: '<ol><li>Easily re-observable from different viewpoints</li><li>Distinguishable from each other (discriminative)</li><li>Sufficient quantity (hundreds to thousands)</li><li>Stationary (not moving objects)</li><li>Low computation cost (real-time)</li><li>Generality across image types</li></ol>'
+    },
+    {
+      q: 'Describe the ray-casting algorithm for rendering a depth image from a TSDF grid.',
+      a: '(1) Define virtual camera position/orientation. (2) For each pixel $(u,v)$, cast a ray from the optical center. (3) Traverse voxels along the ray. (4) Detect the first <strong>TSDF sign change</strong> (positive to negative) — this is the surface. (5) Record depth $d$ = camera-to-surface distance. (6) All pixel depths form the rendered depth image.'
+    },
+    {
+      q: 'What is bundle adjustment, and how does it differ from loop closure?',
+      a: '<strong>Loop closure</strong> corrects the current pose and smoothly adjusts previous poses when a revisited location is recognized.<br><strong>Bundle adjustment</strong> jointly optimizes <em>both</em> 3D map points and all camera poses simultaneously to minimize overall reprojection error. Bundle adjustment is a global optimization; loop closure is a specific constraint added when a place is revisited.'
+    },
+    {
+      q: 'With 4 corresponding point pairs in ICP, how many equations and unknowns are there when solving [R|t] directly?',
+      a: 'Each of the 4 pairs $\\mathbf{p}_i = R\\mathbf{q}_i + \\mathbf{t}$ gives 3 scalar equations (one per coordinate dimension).<br>$4 \\times 3 = \\mathbf{12}$ <strong>equations</strong>.<br>$R$ has 9 parameters $+$ $\\mathbf{t}$ has 3 parameters $= \\mathbf{12}$ <strong>unknowns</strong>.<br>The system is exactly determined.'
+    }
+  ]);
+</script>
+</body>
+</html>

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>13. Behaviour Analysis — 5LSH0</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">13. Behaviour Analysis</h1>
+    <p class="page-subtitle">Action recognition, optical flow, I3D, SlowFast, anomaly detection, autoencoders</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#definition">1. Problem Definition and Applications</a>
+      <a href="#action-recognition">2. Action Recognition</a>
+      <a href="#two-stream">3. Two-Stream Architecture</a>
+      <a href="#conv3d">4. 2D vs. 3D Convolutions</a>
+      <a href="#lstm-pipeline">5. CNN + LSTM for Video</a>
+      <a href="#anomaly-outlier">6. Outlier-Based Anomaly Detection</a>
+      <a href="#autoencoders">7. Autoencoders for Anomaly Detection</a>
+      <a href="#cae">8. Convolutional Autoencoders (CAEs)</a>
+      <a href="#i3d">9. I3D Architecture</a>
+      <a href="#mil">10. Multiple Instance Learning</a>
+      <a href="#slowfast">11. SlowFast Architecture</a>
+      <a href="#crowd">12. Crowd Behaviour Analysis</a>
+      <a class="toc-interactive" href="#i3d-walkthrough">Interactive: I3D Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: DEFINITION ===== -->
+    <h2 class="section-heading" id="definition">1. Problem Definition and Applications</h2>
+
+    <p>Behaviour analysis in computer vision aims to <strong>extract high-level semantic behavior information from a scene</strong>, typically from video. It goes beyond detecting <em>what objects are present</em> to understanding <em>what those objects are doing</em>.</p>
+
+    <h3 class="subsection-heading">Why It Is Needed</h3>
+    <ul>
+      <li><strong>Increased video data availability:</strong> Surveillance cameras, dashcams, and smartphones generate far more video than humans can analyze. The volume is growing faster than the workforce that can monitor it.</li>
+      <li><strong>Automation requirement:</strong> Security monitoring, traffic management, and sports analytics all require automatic behavior interpretation.</li>
+      <li><strong>Context-dependence:</strong> The same motion can mean different things depending on scene context (running at a track vs. running from a crime scene).</li>
+    </ul>
+
+    <table>
+      <tr><th>Application</th><th>Description</th></tr>
+      <tr><td><strong>Surveillance</strong></td><td>Monitoring public or private spaces for security threats</td></tr>
+      <tr><td><strong>Anomaly detection</strong></td><td>Identifying unusual or suspicious events (abandoned bags, erratic behavior)</td></tr>
+      <tr><td><strong>Violence detection</strong></td><td>Detecting fighting, assault, or violent actions automatically</td></tr>
+      <tr><td><strong>Traffic monitoring</strong></td><td>Analyzing vehicle and pedestrian flow, detecting violations</td></tr>
+      <tr><td><strong>Video content analysis</strong></td><td>Scanning uploaded videos for illegal content (used by video platforms and law enforcement)</td></tr>
+      <tr><td><strong>Sports event detection</strong></td><td>Automatically detecting goals, fouls, and other events</td></tr>
+      <tr><td><strong>Crowd analysis</strong></td><td>Panic detection, crowd counting, anomalous flow detection</td></tr>
+    </table>
+
+    <!-- ===== SECTION 2: ACTION RECOGNITION ===== -->
+    <h2 class="section-heading" id="action-recognition">2. Action Recognition</h2>
+
+    <p>Action/activity recognition determines the activity a person is doing. In the supervised variant this is a <strong>classification problem</strong> where the set of possible actions is pre-defined (e.g., walking, running, jumping).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/pose_estimation_skeleton.png" alt="Pose estimation skeleton overlay">
+      <div class="figure-caption">Pose estimation skeleton overlay used for action recognition: colored skeleton drawn on the body to classify the activity.</div>
+    </div>
+
+    <h3 class="subsection-heading">Still Images vs. Video</h3>
+    <table>
+      <tr><th>Input</th><th>Difficulty</th><th>Approach</th></tr>
+      <tr><td><strong>Still images</strong></td><td>Relatively simple classification problem</td><td>Standard CNNs; single-frame appearance features</td></tr>
+      <tr><td><strong>Video</strong></td><td>Added temporal dimension makes problem harder</td><td>3D CNNs, RNN/LSTM, two-stream architectures</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Feature extraction is the most important part of action recognition, especially for videos. Temporal information — how the scene changes over time — carries crucial information that single-frame analysis cannot capture.</div>
+    </div>
+
+    <!-- ===== SECTION 3: TWO STREAM ===== -->
+    <h2 class="section-heading" id="two-stream">3. Two-Stream Architecture</h2>
+
+    <p>The two-stream architecture handles video by splitting spatial and temporal processing into two parallel CNN pathways:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/two_stream_convnet_architecture.png" alt="Two-stream ConvNet architecture">
+      <div class="figure-caption">Two-stream ConvNet: spatial stream (single RGB frame) and temporal stream (multi-frame optical flow) processed in parallel, scores fused for final prediction.</div>
+    </div>
+
+    <table>
+      <tr><th>Stream</th><th>Input</th><th>Captures</th></tr>
+      <tr><td><strong>Spatial stream</strong></td><td>Single RGB frame</td><td>Appearance: what objects look like, scene context, body pose</td></tr>
+      <tr><td><strong>Temporal stream</strong></td><td>Multi-frame optical flow</td><td>Motion: how objects are moving</td></tr>
+    </table>
+
+    <p>Optical flow (a simplified approach to handling the temporal dimension) transforms the 3D video into 2D motion history by collapsing the temporal dimension into flow fields. The spatial and temporal class scores are then <strong>fused</strong> (e.g., by averaging or learned weighting) to produce the final action prediction.</p>
+
+    <!-- ===== SECTION 4: 2D vs 3D CONVOLUTION ===== -->
+    <h2 class="section-heading" id="conv3d">4. 2D vs. 3D Convolutions</h2>
+
+    <div class="figure-container">
+      <img src="figures/mod13/2d_vs_3d_convolution.png" alt="2D vs 3D convolution comparison">
+      <div class="figure-caption">Comparison of 2D convolution (on image and multiple channels) vs. 3D convolution (on volume and multiple channels).</div>
+    </div>
+
+    <table>
+      <tr><th>Property</th><th>2D Convolution on video</th><th>3D Convolution on video</th></tr>
+      <tr><td>Kernel shape</td><td>$k \times k$ (spatial only)</td><td>$k \times k \times d$ (spatial + temporal)</td></tr>
+      <tr><td>Sliding dimensions</td><td>Height, width only</td><td>Height, width, AND time</td></tr>
+      <tr><td>Output</td><td>2D feature map per frame</td><td>3D feature volume</td></tr>
+      <tr><td>Temporal modeling</td><td>Treats frames independently</td><td>Learns spatiotemporal features jointly</td></tr>
+    </table>
+
+    <div class="definition-box">
+      <div class="box-label">3D Convolution on Video</div>
+      <div>$$\text{Output}(i,j,t) = \sum_{m}\sum_{n}\sum_{\tau} \text{Input}(i+m, j+n, t+\tau) \cdot \text{Kernel}(m,n,\tau)$$
+      The temporal extent $d$ of the 3D kernel determines how many consecutive frames are jointly processed. 3D CNNs learn spatiotemporal features that 2D CNNs applied frame-by-frame cannot capture.</div>
+    </div>
+
+    <!-- ===== SECTION 5: CNN+LSTM ===== -->
+    <h2 class="section-heading" id="lstm-pipeline">5. CNN + LSTM for Long-Term Temporal Dependencies</h2>
+
+    <p>3D CNNs have trouble with <strong>long-term temporal dependencies</strong> (e.g., understanding that a high jump involves a run-up, jump, and landing spread over many seconds). The CNN + LSTM pipeline addresses this:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/lstm_activity_recognition_pipeline.png" alt="CNN + LSTM pipeline">
+      <div class="figure-caption">CNN + LSTM pipeline: per-frame CNN features fed sequentially into an LSTM, averaged for final classification.</div>
+    </div>
+
+    <ol>
+      <li><strong>CNN:</strong> Extracts a feature vector from each individual frame.</li>
+      <li><strong>LSTM:</strong> Processes the sequence of per-frame feature vectors, maintaining a hidden state that accumulates temporal information.</li>
+      <li><strong>Average:</strong> LSTM outputs are averaged to produce a single clip-level feature vector.</li>
+      <li><strong>Classification:</strong> The clip-level feature is classified into an action category.</li>
+    </ol>
+
+    <table>
+      <tr><th>Sequence Model</th><th>Key Property</th></tr>
+      <tr><td><strong>RNN</strong></td><td>Basic recurrent model; suffers from vanishing/exploding gradients for long sequences</td></tr>
+      <tr><td><strong>GRU</strong></td><td>Uses update and reset gates; simpler than LSTM; good for moderate-length sequences</td></tr>
+      <tr><td><strong>LSTM</strong></td><td>Input, output, and forget gates; excels at <strong>long-term dependencies</strong></td></tr>
+    </table>
+
+    <!-- ===== SECTION 6: ANOMALY OUTLIER ===== -->
+    <h2 class="section-heading" id="anomaly-outlier">6. Outlier-Based Anomaly Detection</h2>
+
+    <p>Detecting specific anomalies with supervised classifiers is possible but requires enumerating all possible anomalies. Real-world anomalies are too diverse for this. The better approach: <strong>model the normal and detect deviations</strong>.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/outlier_detection_clustering.png" alt="Outlier detection in feature space">
+      <div class="figure-caption">Outlier detection: normal training data (purple) forms clusters in feature space. New test points near clusters are normal (green); points far from clusters are anomalies (red).</div>
+    </div>
+
+    <ol>
+      <li><strong>Training:</strong> Represent events as points in high-dimensional feature space. Model what "normal" looks like using only normal training data.</li>
+      <li><strong>Testing:</strong> Evaluate model mismatch — events far from the learned normal distribution are declared anomalies.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>It is impossible to enumerate all possible anomalies, but normal patterns can be well-characterized. Training only on normal data allows detection of <em>any</em> deviation from normality, including anomalies never seen before.</div>
+    </div>
+
+    <!-- ===== SECTION 7: AUTOENCODERS ===== -->
+    <h2 class="section-heading" id="autoencoders">7. Autoencoders for Anomaly Detection</h2>
+
+    <p>An autoencoder is a neural network trained to reconstruct its input from a compressed bottleneck. Trained only on normal data, it learns to reconstruct normal patterns well — and fails on anomalies.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/autoencoder_bottleneck_architecture.png" alt="Autoencoder bottleneck architecture">
+      <div class="figure-caption">Stacked autoencoder: input is compressed to a bottleneck latent code, then reconstructed. MSE loss between input and reconstruction drives training.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">MSE Reconstruction Loss</div>
+      <div>$$\text{MSE Loss}: \quad l(x, y) = \frac{1}{N} \sum_{n} (x_n - y_n)^2$$
+      where $x$ is the original input and $y$ is the reconstruction. Anomaly detection: high loss = anomaly.</div>
+    </div>
+
+    <h3 class="subsection-heading">How Autoencoders Detect Anomalies</h3>
+    <ol>
+      <li>Train the autoencoder on <strong>only normal data</strong>. Minimize reconstruction error on normal patterns.</li>
+      <li>During testing, compare the reconstructed version with the original input.</li>
+      <li>If the reconstructed version <strong>differs greatly</strong> from the input (high MSE), the input is anomalous — the autoencoder cannot reconstruct something it never saw during training.</li>
+    </ol>
+
+    <h3 class="subsection-heading">Denoising Autoencoders</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod13/denoising_autoencoder_mnist.png" alt="Denoising autoencoder">
+      <div class="figure-caption">Denoising autoencoder: MNIST digits with noise added (left), fed through the encoder-decoder, producing clean reconstructions (right). Loss is computed against the original clean image.</div>
+    </div>
+
+    <p>A denoising autoencoder adds noise to the input before encoding, but computes the loss against the <strong>original clean image</strong>. This forces the network to learn robust representations of the underlying clean signal. During anomaly detection, the model improves on normal examples over training but produces high loss on unseen outliers.</p>
+
+    <h3 class="subsection-heading">Four Autoencoder Hyperparameters</h3>
+    <table>
+      <tr><th>Hyperparameter</th><th>Description</th></tr>
+      <tr><td><strong>Code size</strong></td><td>Number of nodes in the bottleneck layer; smaller = more compression</td></tr>
+      <tr><td><strong>Number of layers</strong></td><td>Depth of encoder and decoder</td></tr>
+      <tr><td><strong>Nodes per layer</strong></td><td>Decreases through encoder; increases symmetrically through decoder</td></tr>
+      <tr><td><strong>Loss function</strong></td><td>Typically MSE loss</td></tr>
+    </table>
+
+    <!-- ===== SECTION 8: CAE ===== -->
+    <h2 class="section-heading" id="cae">8. Convolutional Autoencoders (CAEs)</h2>
+
+    <p>State-of-the-art anomaly detection uses <strong>Convolutional Autoencoders</strong> — much better than fully-connected autoencoders for image/video data.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/convolutional_autoencoder_architecture.png" alt="Convolutional autoencoder architecture">
+      <div class="figure-caption">CAE architecture: convolutional + pooling encoder layers compress input (e.g., 10x227x227 frames) to a latent representation; deconvolutional + unpooling decoder layers reconstruct the original dimensions.</div>
+    </div>
+
+    <h3 class="subsection-heading">Pooling and Unpooling</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod13/maxpooling_unpooling_operations.png" alt="Max-pooling and unpooling">
+      <div class="figure-caption">Max-pooling (encoder): selects maximum per local region, reduces spatial size, stores max locations. Unpooling (decoder): places values back at stored max locations; zeros elsewhere.</div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod13/pooling_unpooling_conv_deconv_comparison.png" alt="Pooling vs unpooling, convolution vs deconvolution">
+      <div class="figure-caption">Summary: pooling reduces spatial size; unpooling restores it using stored locations. Convolution extracts features (many-to-one); deconvolution reconstructs (one-to-many).</div>
+    </div>
+
+    <h3 class="subsection-heading">Transposed Convolution (Deconvolution)</h3>
+    <p>The deconvolution (transposed convolution) layer recovers spatial dimensions in the decoder:</p>
+    <ul>
+      <li><strong>Convolution:</strong> maps a larger input region to a smaller output (many-to-one). Reduces spatial dimensions.</li>
+      <li><strong>Deconvolution:</strong> maps a smaller input to a larger output (one-to-many). Increases spatial dimensions.</li>
+    </ul>
+
+    <div class="figure-container">
+      <img src="figures/mod13/transposed_convolution_steps.png" alt="Transposed convolution steps">
+      <div class="figure-caption">Transposed convolution step-by-step: each input value multiplied by the kernel and stamped into a larger output region, with overlapping regions summed.</div>
+    </div>
+
+    <!-- ===== SECTION 9: I3D ===== -->
+    <h2 class="section-heading" id="i3d">9. I3D Architecture</h2>
+
+    <p>I3D (Inflated 3D ConvNet) is one of the most important architectures for video feature extraction. It converts successful 2D image classification networks into 3D video understanding networks through "inflation."</p>
+
+    <h3 class="subsection-heading">Inflation: From 2D to 3D Filters</h3>
+    <p>Take a 2D convolutional filter of size $k \times k$ (pre-trained on ImageNet). Repeat its weights $N$ times along the temporal dimension to create a $k \times k \times N$ 3D filter. Divide all weights by $N$ to preserve activation magnitudes.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/i3d_two_stream_architecture.png" alt="I3D two-stream architecture">
+      <div class="figure-caption">I3D two-stream architecture: RGB images and optical flow each processed by a 3D ConvNet independently, dense layers fuse predictions.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">I3D Two-Stream Design</div>
+      <div>
+        <ul>
+          <li><strong>RGB stream:</strong> Processes raw video frames through 3D CNN to capture appearance + motion jointly.</li>
+          <li><strong>Optical flow stream:</strong> Processes pre-computed optical flow fields through a separate 3D CNN to capture motion explicitly.</li>
+          <li><strong>Fusion:</strong> Both stream predictions are combined for the final action classification.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">3D Inception Module</h3>
+    <p>I3D uses Inception-style modules that allow the network to grow <strong>wider instead of deeper</strong>. Parallel branches with different filter sizes are concatenated, capturing features at multiple scales simultaneously:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/i3d_detailed_architecture_inception.png" alt="I3D detailed architecture with inception modules">
+      <div class="figure-caption">Detailed I3D architecture: series of 3D convolutions and pooling layers with growing receptive fields, punctuated by 3D inception modules. Receptive field shown at each stage ($T \times W \times H$).</div>
+    </div>
+
+    <h3 class="subsection-heading">Receptive Field in I3D</h3>
+    <p>The receptive field (RF) is the region in the input contributing to one output feature. For 3D video CNNs, the RF has three dimensions: temporal $T$, width $W$, height $H$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Asymmetric pooling strides</div>
+      <div>I3D uses pooling strides like (1,2,2) — subsampling spatial dimensions without subsampling time. This carefully controls how the temporal and spatial receptive fields grow. If the temporal RF grows too fast, it merges features from different objects across frames. If too slow, the network misses scene dynamics.</div>
+    </div>
+
+    <h3 class="subsection-heading">Kinetics Dataset Progress</h3>
+    <table>
+      <tr><th>Model</th><th>Year</th><th>Kinetics Top-1 Accuracy</th></tr>
+      <tr><td>TSN</td><td>Jul 2016</td><td>~73%</td></tr>
+      <tr><td>I3D + NL</td><td>Jan 2018</td><td>~78%</td></tr>
+      <tr><td>SlowFast 16x8 (ResNet-101 + NL)</td><td>Jan 2019</td><td>~80%</td></tr>
+      <tr><td>OmniSource irCSN-152</td><td>~2020</td><td>~84%</td></tr>
+      <tr><td>CoVeR (JFT-3B)</td><td>Jan 2022</td><td>~88%</td></tr>
+      <tr><td>UniFormerV2-L</td><td>Jan 2023</td><td>~90%</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <img src="figures/mod13/kinetics_accuracy_timeline.png" alt="Kinetics accuracy timeline">
+      <div class="figure-caption">Progress on Kinetics dataset: top-1 accuracy improved from ~73% (TSN, 2016) to ~90% (UniFormerV2-L, 2023) over 7 years.</div>
+    </div>
+
+    <!-- ===== SECTION 10: MIL ===== -->
+    <h2 class="section-heading" id="mil">10. Multiple Instance Learning (MIL) for Anomaly Detection</h2>
+
+    <p>MIL is a weakly supervised learning paradigm suited for video anomaly detection where only video-level labels are available (not frame-level).</p>
+
+    <div class="definition-box">
+      <div class="box-label">MIL Key Concept</div>
+      <div>
+        <ul>
+          <li>A <strong>bag</strong> is a video; an <strong>instance</strong> is a temporal segment of that video.</li>
+          <li>A bag is labeled <strong>negative</strong> if ALL instances are negative (all segments are normal).</li>
+          <li>A bag is labeled <strong>positive</strong> if <strong>at least one</strong> instance is positive (at least one segment is anomalous).</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">MIL Pipeline for UCF Crime Dataset</h3>
+    <p>The UCF Crime dataset contains 1,900 videos, 128 hours total, 13 anomaly classes (Accident, Burglary, Fighting, Robbery, Shooting, etc.).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/mil_anomaly_detection_pipeline.png" alt="MIL anomaly detection pipeline">
+      <div class="figure-caption">MIL pipeline: each video divided into 32 temporal segments (instances in a bag); C3D features extracted per segment; anomaly scores assigned; MIL ranking loss trained on score differences between positive and negative bags.</div>
+    </div>
+
+    <ol>
+      <li>Divide each video into <strong>32 temporal segments</strong> (bag instances).</li>
+      <li>Extract features from each segment using a pre-trained 3D ConvNet (C3D/I3D), producing 4096-dim feature vectors.</li>
+      <li>A fully connected network assigns an <strong>anomaly score</strong> to each segment.</li>
+      <li>Train with a <strong>MIL ranking loss</strong>: the maximum score in the positive bag must exceed the maximum score in the negative bag.</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod13/throwing_action_detection_pipeline.png" alt="Throwing action detection pipeline">
+      <div class="figure-caption">Throwing action detection: multiple backbone feature extractors (C3D, I3D, MFNet) combined with MIL ranking loss to detect throwing events in traffic surveillance.</div>
+    </div>
+
+    <!-- ===== SECTION 11: SLOWFAST ===== -->
+    <h2 class="section-heading" id="slowfast">11. SlowFast Architecture</h2>
+
+    <p>The SlowFast network is designed based on the observation that video frames typically contain both <strong>static areas</strong> (which do not change) and <strong>dynamic areas</strong> (which indicate important ongoing events). Two parallel pathways handle each type:</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/slowfast_network_architecture.png" alt="SlowFast network architecture">
+      <div class="figure-caption">SlowFast network: slow pathway (low frame rate, high channel count) captures spatial semantics; fast pathway (high frame rate, low channel count) captures motion. Lateral connections fuse pathways.</div>
+    </div>
+
+    <table>
+      <tr><th>Pathway</th><th>Frame Rate</th><th>Channel Capacity</th><th>Purpose</th></tr>
+      <tr><td><strong>Slow pathway</strong></td><td>Low (few frames)</td><td>High ($C$ channels)</td><td>Capture spatial semantics, appearance, scene context</td></tr>
+      <tr><td><strong>Fast pathway</strong></td><td>High (many frames)</td><td>Low ($\beta C$, $\beta \ll 1$)</td><td>Capture motion at fine temporal resolution</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Design rationale</div>
+      <div>Fine temporal processing does not need rich spatial detail. The fast pathway can be lightweight (few channels) because it only needs to capture motion patterns, not detailed appearance. Lateral connections fuse motion information from the fast pathway into the rich spatial representation of the slow pathway.</div>
+    </div>
+
+    <h3 class="subsection-heading">Density-Guided Label Smoothing</h3>
+    <p>Video segments at action boundaries contain multiple action types. Assigning the dominant class as a hard label gives misleading gradient signals. Density-guided label smoothing assigns <strong>target probabilities proportional to how densely each class appears</strong> in the segment:</p>
+    <p>Example: a segment that is 70% "texting" and 30% "phone call" gets smoothed label [0.7, 0.3] rather than hard label [1, 0]. This is critical for strict temporal localization (the distracted driver task requires &plusmn;1 second accuracy).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/label_smoothing_diagram.png" alt="Label smoothing diagram">
+      <div class="figure-caption">Density-guided label smoothing: multi-label and single-label segments mapped to smoothed probability distributions for more accurate boundary localization.</div>
+    </div>
+
+    <!-- ===== SECTION 12: CROWD ===== -->
+    <h2 class="section-heading" id="crowd">12. Crowd Behaviour Analysis</h2>
+
+    <h3 class="subsection-heading">Crowd Density Estimation: Multi-Column CNN</h3>
+    <p>This architecture combines deep and shallow CNNs to generate a <strong>crowd density map</strong>:</p>
+    <ul>
+      <li><strong>Deep network path:</strong> VGG-like (3&times;3 convolutions, max pooling) — recognizes high-level semantic cues (heads, torsos) for nearby subjects.</li>
+      <li><strong>Shallow network path:</strong> Wide filters (5&times;5, average pooling) — detects low-level features (blobs, edges) for distant subjects that appear small.</li>
+    </ul>
+    <p>Both paths are concatenated, passed through a 1&times;1 convolution, and interpolated to produce the density map. The <strong>estimated count = sum of all density map pixel values</strong>.</p>
+
+    <div class="figure-container">
+      <img src="figures/mod13/crowd_counting_network.png" alt="Crowd counting multi-column CNN">
+      <div class="figure-caption">Multi-column CNN for crowd density estimation: deep network for nearby subjects and shallow network for distant subjects, combined to produce a density map; count = sum of density values.</div>
+    </div>
+
+    <h3 class="subsection-heading">Crowd Anomaly Detection: Kalman + K-Means</h3>
+
+    <div class="figure-container">
+      <img src="figures/mod13/crowd_behavior_analysis_pipeline.png" alt="Crowd behavior analysis pipeline">
+      <div class="figure-caption">Crowd anomaly detection pipeline: real-time tracking, state estimation (Kalman filter), local feature extraction, global feature via k-means, anomaly declaration by distance threshold.</div>
+    </div>
+
+    <ol>
+      <li><strong>Real-time tracking:</strong> Detect and track each pedestrian in the scene.</li>
+      <li><strong>State estimation (Kalman filter):</strong> Estimate each person's position and velocity over time.</li>
+      <li><strong>Local features:</strong> For each person, concatenate their state (position + velocity) over a temporal window.</li>
+      <li><strong>Global feature (k-means):</strong> Apply k-means to all local features. The <strong>largest cluster</strong> = the global (dominant normal) motion pattern.</li>
+      <li><strong>Anomaly detection:</strong> If a person's local feature is too far (by some distance metric) from the global feature, declare an anomaly (e.g., walking against the crowd flow).</li>
+    </ol>
+
+    <div class="figure-container">
+      <img src="figures/mod13/crowd_anomaly_features.png" alt="Crowd anomaly features">
+      <div class="figure-caption">Crowd anomaly detection: local features (individual motion arrows), global features (dominant flow direction), and detected anomalies (pedestrians deviating from dominant pattern).</div>
+    </div>
+
+    <!-- ===== I3D WALKTHROUGH ===== -->
+    <h2 class="section-heading" id="i3d-walkthrough-section">Interactive: I3D and Anomaly Detection Walkthrough</h2>
+    <div id="i3d-walkthrough" class="interactive-container" data-title="Walkthrough — I3D Feature Extraction and Anomaly Detection"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod13-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod12.html">&larr; 12. Data Analysis</a>
+      <span></span>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod13');</script>
+<script>
+  initWalkthrough('i3d-walkthrough', [
+    {
+      tab: '1. Two-Stream',
+      title: 'Step 1: Two-Stream Input Processing',
+      text: 'I3D processes video through two parallel streams: an RGB stream (raw video frames) and an optical flow stream (pre-computed motion fields). Both streams use 3D convolutional networks. The idea is that RGB captures appearance while optical flow captures motion explicitly -- together they provide complementary information.',
+      visual: '<div class="figure-container"><img src="figures/mod13/i3d_two_stream_architecture.png" alt="I3D two streams"><div class="figure-caption">I3D two-stream: RGB images (top) and optical flow (bottom) each processed by a 3D ConvNet, fused for final predictions.</div></div>',
+      insight: 'The inflation trick is what makes I3D special: instead of training from scratch, 2D ImageNet-trained filters are "inflated" by repeating weights N times along the temporal dimension then dividing by N. This bootstraps 3D learning from powerful 2D pre-training.'
+    },
+    {
+      tab: '2. Inflation',
+      title: 'Step 2: Inflating 2D Filters to 3D',
+      text: 'Take a 2D filter of size $k \\times k$ trained on ImageNet. Repeat its weight values $N$ times along the temporal dimension to get a $k \\times k \\times N$ 3D filter. Divide all weights by $N$ to preserve activation magnitudes. The resulting 3D filter starts with good feature representations inherited from 2D training.',
+      visual: '',
+      insight: 'This is transfer learning in 3D. A model that can recognize textures and shapes in still images can now also recognize how those textures and shapes move over time. The temporal dimension adds motion understanding on top of existing spatial understanding.'
+    },
+    {
+      tab: '3. Inception',
+      title: 'Step 3: 3D Inception Modules',
+      text: 'I3D uses inception modules that process the same input through multiple parallel branches: $1 \\times 1 \\times 1$ conv, $1 \\times 1 \\times 1$ then $3 \\times 3 \\times 3$ conv, $1 \\times 1 \\times 1$ then another $3 \\times 3 \\times 3$ conv, and $3 \\times 3 \\times 3$ max-pool. All branch outputs are concatenated. The $1 \\times 1 \\times 1$ convolutions reduce channels to keep computation manageable.',
+      visual: '<div class="figure-container"><img src="figures/mod13/i3d_detailed_architecture_inception.png" alt="I3D detailed architecture"><div class="figure-caption">Detailed I3D architecture showing the growth of the receptive field at each stage and the structure of the 3D inception module.</div></div>',
+      insight: 'Growing wider (multiple filter sizes in parallel) rather than only deeper lets the network capture features at multiple temporal and spatial scales simultaneously within a single layer, without exploding depth or computation.'
+    },
+    {
+      tab: '4. CAE Anomaly',
+      title: 'Step 4: Autoencoder-Based Anomaly Detection',
+      text: 'After extracting I3D features, a Convolutional Autoencoder (CAE) is trained only on normal video sequences. The CAE compresses input frames to a latent space and reconstructs them. For normal events, reconstruction error is low. For anomalous events the autoencoder fails to reconstruct patterns it never saw, producing high MSE loss.',
+      visual: '<div class="figure-container"><img src="figures/mod13/anomaly_detection_score_demo.png" alt="Anomaly detection score demo"><div class="figure-caption">Traffic surveillance anomaly detection: anomaly score over time (blue) vs. ground truth anomaly periods (red shading). High scores indicate detected anomalies.</div></div>',
+      insight: 'The key advantage: you never need to define what an anomaly looks like. You only need normal data for training. Anything that deviates significantly from the learned normal patterns -- no matter how unusual -- will produce high reconstruction error.'
+    },
+    {
+      tab: '5. MIL',
+      title: 'Step 5: Multiple Instance Learning',
+      text: 'For weakly-labeled data (video-level anomaly labels only), MIL treats each video as a bag of 32 temporal segment instances. Positive bags (anomalous videos) contain at least one anomalous segment; negative bags (normal videos) have all normal segments. A ranking loss ensures the highest anomaly score in a positive bag exceeds the highest score in the negative bag.',
+      visual: '',
+      insight: 'MIL is a clever middle ground between fully supervised (need frame-level labels -- expensive to annotate) and fully unsupervised (no labels at all). Video-level labels are much cheaper to obtain, yet still provide useful signal about which videos contain anomalies.'
+    }
+  ]);
+</script>
+<script>
+  initFlashcards('mod13-flashcards', [
+    {
+      q: 'Describe the two-stream architecture for action recognition. What does each stream process?',
+      a: 'The two-stream architecture has two parallel CNN pathways: (1) <strong>Spatial stream</strong> — processes a single RGB frame to capture appearance (what objects look like, scene context, body pose). (2) <strong>Temporal stream</strong> — processes multi-frame optical flow to capture motion (how objects are moving). Both streams use CNNs (e.g., BN-Inception) independently; their class scores are fused for the final action prediction.'
+    },
+    {
+      q: 'Explain the difference between 2D and 3D convolutions for video analysis.',
+      a: 'A <strong>2D convolution</strong> applies a $k \\times k$ kernel that slides across height and width only; treating each frame independently, it cannot model temporal relationships. A <strong>3D convolution</strong> applies a $k \\times k \\times d$ kernel that slides across height, width, AND time ($d$ frames); it learns spatiotemporal features that capture both spatial patterns and motion simultaneously. Formula: $\\text{Output}(i,j,t) = \\sum_{m,n,\\tau} \\text{Input}(i+m, j+n, t+\\tau) \\cdot \\text{Kernel}(m,n,\\tau)$.'
+    },
+    {
+      q: 'What is I3D and how does it "inflate" 2D filters to 3D?',
+      a: 'I3D (Inflated 3D ConvNet) converts 2D image classification networks into 3D video networks. Inflation: take a $k \\times k$ filter pre-trained on ImageNet, repeat its weights $N$ times along the temporal dimension to get a $k \\times k \\times N$ 3D filter, then divide all weights by $N$ to preserve activation magnitudes. This bootstraps 3D learning from powerful 2D features. I3D uses a two-stream setup (RGB + optical flow) with 3D inception modules.'
+    },
+    {
+      q: 'Explain how autoencoders detect anomalies. Why are they trained only on normal data?',
+      a: '(1) The autoencoder is trained on only normal data, minimizing $l(x,y) = \\frac{1}{N}\\sum_n (x_n - y_n)^2$. (2) It learns to efficiently reconstruct normal patterns. (3) During testing, anomalous inputs produce <strong>high reconstruction error</strong> because the autoencoder never learned to represent such patterns. Training only on normal data is essential because anomalies are rare, diverse, and unpredictable — it is impossible to enumerate all anomaly types, but normality can be well-characterized.'
+    },
+    {
+      q: 'What is a Convolutional Autoencoder (CAE)? Explain pooling/unpooling and convolution/deconvolution.',
+      a: 'A CAE uses convolutional layers instead of FC layers — much better for image/video data. <strong>Encoder:</strong> conv layers (feature extraction) + max-pooling (spatial downsampling, stores max locations). <strong>Decoder:</strong> unpooling (restores size using stored max locations, fills zeros elsewhere) + transposed convolution (increases spatial dimensions, one-to-many). Four hyperparameters: code size, number of layers, nodes per layer, loss function (MSE).'
+    },
+    {
+      q: 'Describe the SlowFast architecture and its two pathways.',
+      a: '<strong>Slow pathway:</strong> low frame rate, high channel capacity ($C$ channels) — captures spatial semantics (appearance, scene context). <strong>Fast pathway:</strong> high frame rate, low channel capacity ($\\beta C$, $\\beta \\ll 1$) — captures motion at fine temporal resolution. Lateral connections fuse motion information from fast into slow. Rationale: fine temporal processing does not need rich spatial detail; separating the two lets each pathway specialize efficiently.'
+    },
+    {
+      q: 'What is Multiple Instance Learning (MIL) and how is it applied to anomaly detection?',
+      a: 'MIL is weakly supervised learning with labeled bags of instances. A bag is <strong>positive</strong> if at least one instance is positive (anomalous); <strong>negative</strong> if all instances are normal. For video anomaly detection: each video is a bag divided into 32 temporal segments (instances). Anomaly videos are positive bags; normal videos are negative bags. Features from each segment (via C3D/I3D) are scored; a ranking loss ensures the highest anomaly score in the positive bag exceeds that in the negative bag. Requires only video-level labels, not frame-level annotations.'
+    },
+    {
+      q: 'Why are LSTMs preferred over standard RNNs for action recognition in long videos?',
+      a: 'Standard RNNs suffer from the <strong>vanishing gradient problem</strong>: gradients shrink exponentially through time, making it nearly impossible to learn dependencies across long sequences. LSTMs use gating mechanisms (input, forget, and output gates) that can selectively remember or forget information over long periods. This allows LSTMs to capture long-term dependencies (e.g., a "high jump" involves a run-up, jump, and landing spread across many seconds) that standard RNNs cannot reliably model.'
+    },
+    {
+      q: 'Explain density-guided label smoothing. Why is it needed for distracted driver detection?',
+      a: 'Video segments at action boundaries often contain more than one action type. Assigning the dominant class as a hard label (e.g., 100% "texting") gives misleading gradient signals at boundaries. Density-guided label smoothing assigns target probabilities proportional to class density in the segment (e.g., [0.7 texting, 0.3 phone call]). This is critical for distracted driver detection because localization accuracy requires the predicted start/end times to be within <strong>&plusmn;1 second</strong> of ground truth — the model must accurately identify action boundaries, not just their middles.'
+    },
+    {
+      q: 'How does the crowd density estimation multi-column CNN work? How is count obtained?',
+      a: 'Two parallel paths handle different distances: (1) <strong>Deep network</strong> (VGG-like, $3 \\times 3$ conv + max pool) — recognizes high-level semantic cues (heads, torsos) for nearby subjects. (2) <strong>Shallow network</strong> ($5 \\times 5$ conv + avg pool) — detects low-level features (blobs, edges) for distant subjects that appear small. Both outputs are concatenated, passed through a $1 \\times 1$ conv (merge features), and interpolated to produce a density map. <strong>Count = sum of all pixel values in the density map.</strong>'
+    },
+    {
+      q: 'What is the receptive field in a CNN, and why is it critical for 3D video convolutions?',
+      a: 'The receptive field (RF) is the size of the input region contributing to one output feature; it increases as layers are stacked. For 3D video CNNs, the RF has three dimensions: temporal $T$, width $W$, height $H$. If the temporal RF grows <strong>too fast</strong> relative to space, it merges edges from different objects across frames, breaking early feature detection. If <strong>too slow</strong>, the network misses scene dynamics. I3D uses asymmetric pooling strides (e.g., 1,2,2) to subsample spatial dimensions without subsampling time, controlling temporal vs. spatial RF growth independently.'
+    },
+    {
+      q: 'How does crowd anomaly detection using Kalman filtering and k-means clustering work?',
+      a: '(1) Real-time tracking detects and tracks each pedestrian. (2) Kalman filtering estimates each person\'s position and velocity over time. (3) Local features = concatenation of a person\'s state (position + velocity) over a temporal window. (4) K-means clustering applied to all local features; the <strong>largest cluster = the global feature</strong> (dominant normal motion). (5) A person is declared anomalous if their local feature\'s distance from the global feature exceeds a threshold — e.g., walking against the crowd flow.'
+    }
+  ]);
+</script>
+</body>
+</html>
