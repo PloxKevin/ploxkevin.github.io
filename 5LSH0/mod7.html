@@ -31,8 +31,10 @@
       <a href="#extrinsic">7. Extrinsic Parameters</a>
       <a href="#full-matrix">8. Full Camera Matrix</a>
       <a href="#calibration">9. Camera Calibration</a>
-      <a href="#homography">10. Homography</a>
+      <a href="#back-projection">10. Back-Projection (2D to 3D)</a>
+      <a href="#homography">11. Homography</a>
       <a class="toc-interactive" href="#intrinsic-builder">Interactive: Intrinsic Matrix Builder</a>
+      <a class="toc-interactive" href="#backprojection-interactive">Interactive: Back-Projection Tool</a>
       <a class="toc-interactive" href="#rotation-explorer">Interactive: Rotation Explorer</a>
       <a class="toc-interactive" href="#projection-interactive">Interactive: Full Projection Pipeline</a>
       <a class="toc-interactive" href="#homography-interactive">Interactive: Homography Visualizer</a>
@@ -472,8 +474,138 @@
       <div class="figure-caption">Camera calibration model: the principal point $pp$, optical center, and image plane are all determined from the calibration process.</div>
     </div>
 
-    <!-- ===== SECTION 10: HOMOGRAPHY ===== -->
-    <h2 class="section-heading" id="homography">10. Homography</h2>
+    <!-- ===== SECTION 10: BACK-PROJECTION ===== -->
+    <h2 class="section-heading" id="back-projection">10. Back-Projection (2D to 3D)</h2>
+
+    <p>Forward projection maps a 3D point to a 2D pixel, but what about the reverse? Given a pixel coordinate, can we recover the original 3D point? This <strong>back-projection</strong> problem is fundamental to 3D reconstruction, point cloud generation, and SLAM.</p>
+
+    <h3 class="subsection-heading">The Problem</h3>
+    <p>Forward projection <em>loses depth</em>: infinitely many 3D points along the same ray through the optical center all map to the same pixel. To recover the 3D position, we need the <strong>depth value</strong> $d$ from an external source (depth sensor, stereo matching, LiDAR, structured light, etc.).</p>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/perspective_projection_geometry.png" alt="Perspective projection geometry showing the ray from camera through pixel">
+      <div class="figure-caption">Perspective projection geometry: all 3D points along a ray through the optical center project to the same pixel. Depth is the missing information.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Back-Projection Equation</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Back-Projection Equation</div>
+      <div>
+        Given a pixel $(u, v)$ and depth $d$, the 3D point in <strong>camera coordinates</strong> is:
+        $$\mathbf{p}_{cam} = d \cdot K^{-1} \begin{pmatrix} u \\ v \\ 1 \end{pmatrix}$$
+        To obtain the point in <strong>world coordinates</strong>, apply the inverse extrinsic transform:
+        $$\mathbf{p}_{world} = R^T(\mathbf{p}_{cam} - \mathbf{t})$$
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <img src="figures/mod10_slam/depth_to_3d_vertex_equation.png" alt="Depth to 3D vertex back-projection equation">
+      <div class="figure-caption">Back-projection: combining a pixel coordinate with depth to recover the 3D point. Each pixel and its depth yield one vertex in the reconstructed point cloud.</div>
+    </div>
+
+    <h3 class="subsection-heading">Step-by-Step Derivation</h3>
+    <p>Back-projection is derived by inverting the forward projection equation step by step.</p>
+
+    <p><strong>Step 1:</strong> Start from the forward projection equation:</p>
+    <div class="math-block">$$s \begin{pmatrix} u \\ v \\ 1 \end{pmatrix} = K[R|\mathbf{t}]\mathbf{p}_w \quad \text{where } s = Z_c \text{ (depth in camera frame)}$$</div>
+
+    <p><strong>Step 2:</strong> For camera coordinates only (set $R = I$, $\mathbf{t} = \mathbf{0}$):</p>
+    <div class="math-block">$$s \begin{pmatrix} u \\ v \\ 1 \end{pmatrix} = K \begin{pmatrix} X_c \\ Y_c \\ Z_c \end{pmatrix}$$</div>
+
+    <p><strong>Step 3:</strong> Left-multiply both sides by $K^{-1}$:</p>
+    <div class="math-block">$$\begin{pmatrix} X_c \\ Y_c \\ Z_c \end{pmatrix} = s \cdot K^{-1} \begin{pmatrix} u \\ v \\ 1 \end{pmatrix}$$</div>
+
+    <p><strong>Step 4:</strong> Since $s = Z_c = d$ (the depth), substitute:</p>
+    <div class="math-block">$$\mathbf{p}_{cam} = d \cdot K^{-1} \begin{pmatrix} u \\ v \\ 1 \end{pmatrix}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Geometric intuition</div>
+      <div>$K^{-1}$ converts a pixel coordinate $(u, v, 1)^T$ into a <strong>normalized ray direction</strong> in camera space. Multiplying by the depth $d$ scales this unit ray to reach the actual 3D point. The ray direction is independent of depth -- changing $d$ moves the point along the <em>same</em> ray.</div>
+    </div>
+
+    <h3 class="subsection-heading">What $K^{-1}$ Actually Computes</h3>
+    <p>For the standard intrinsic matrix $K$ (with zero skew), the inverse has a simple closed form:</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation of $K^{-1}$</div>
+      <div class="collapsible-body">
+        <p>Starting from $K = \begin{pmatrix} f_x & 0 & u_0 \\ 0 & f_y & v_0 \\ 0 & 0 & 1 \end{pmatrix}$, we seek $K^{-1}$ such that $K K^{-1} = I$.</p>
+        <p>Since $K$ is upper triangular, its inverse is also upper triangular. Working row by row:</p>
+        <ul>
+          <li>Row 3: the last row of $K^{-1}$ must be $(0, 0, 1)$</li>
+          <li>Row 2: $f_y \cdot (K^{-1})_{22} = 1 \Rightarrow (K^{-1})_{22} = 1/f_y$, and $f_y \cdot (K^{-1})_{23} + v_0 \cdot 1 = 0 \Rightarrow (K^{-1})_{23} = -v_0/f_y$</li>
+          <li>Row 1: $f_x \cdot (K^{-1})_{11} = 1 \Rightarrow (K^{-1})_{11} = 1/f_x$, and $f_x \cdot (K^{-1})_{13} + u_0 \cdot 1 = 0 \Rightarrow (K^{-1})_{13} = -u_0/f_x$</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Inverse Intrinsic Matrix $K^{-1}$</div>
+      <div>
+        $$K^{-1} = \begin{pmatrix} 1/f_x & 0 & -u_0/f_x \\ 0 & 1/f_y & -v_0/f_y \\ 0 & 0 & 1 \end{pmatrix}$$
+      </div>
+    </div>
+
+    <p>Applying $K^{-1}$ to a homogeneous pixel coordinate expands to:</p>
+    <div class="math-block">$$K^{-1} \begin{pmatrix} u \\ v \\ 1 \end{pmatrix} = \begin{pmatrix} (u - u_0)/f_x \\ (v - v_0)/f_y \\ 1 \end{pmatrix}$$</div>
+
+    <p>So the full back-projection computes:</p>
+    <div class="math-block">$$X_c = d \cdot \frac{u - u_0}{f_x}, \qquad Y_c = d \cdot \frac{v - v_0}{f_y}, \qquad Z_c = d$$</div>
+
+    <p>Each step has a clear geometric meaning:</p>
+    <ol>
+      <li><strong>Subtract the principal point</strong> $(u - u_0, v - v_0)$: center the pixel coordinates at the optical axis</li>
+      <li><strong>Divide by focal length</strong> $(\cdot / f_x, \cdot / f_y)$: convert from pixel units to physical (normalized) units</li>
+      <li><strong>Multiply by depth</strong> $(\cdot \times d)$: scale the normalized ray to reach the actual 3D point</li>
+    </ol>
+
+    <h3 class="subsection-heading">Forward Projection vs. Back-Projection</h3>
+
+    <table>
+      <tr><th></th><th>Forward Projection</th><th>Back-Projection</th></tr>
+      <tr><td><strong>Direction</strong></td><td>3D &rarr; 2D</td><td>2D + depth &rarr; 3D</td></tr>
+      <tr><td><strong>Equation</strong></td><td>$\mathbf{u} = K \cdot \mathbf{p}_{cam} / Z_c$</td><td>$\mathbf{p}_{cam} = d \cdot K^{-1} \cdot \tilde{\mathbf{u}}$</td></tr>
+      <tr><td><strong>Information lost</strong></td><td>Depth</td><td>None (depth provided)</td></tr>
+      <tr><td><strong>Requires</strong></td><td>$K$, $[R|\mathbf{t}]$</td><td>$K^{-1}$, depth sensor, ($R^T$, $\mathbf{t}$ for world coords)</td></tr>
+      <tr><td><strong>Applications</strong></td><td>Rendering, AR overlays</td><td>3D reconstruction, point clouds, SLAM</td></tr>
+    </table>
+
+    <!-- ===== INTERACTIVE: BACK-PROJECTION TOOL ===== -->
+    <div class="interactive-container" id="backprojection-interactive">
+      <div class="interactive-label">Interactive Tool -- Back-Projection Visualizer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Click on the image plane (left) to place a pixel. Adjust intrinsic parameters and depth to see the back-projected 3D point (right). The equation panel shows every computation step and verifies the round-trip.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:6px;">Intrinsic Parameters</div>
+          <div class="slider-control"><label><span>$f_x$</span> <span id="bp-fx-val">500</span></label><input type="range" id="bp-fx" min="200" max="800" value="500" step="1"></div>
+          <div class="slider-control"><label><span>$f_y$</span> <span id="bp-fy-val">500</span></label><input type="range" id="bp-fy" min="200" max="800" value="500" step="1"></div>
+          <div class="slider-control"><label><span>$u_0$</span> <span id="bp-u0-val">320</span></label><input type="range" id="bp-u0" min="200" max="440" value="320" step="1"></div>
+          <div class="slider-control"><label><span>$v_0$</span> <span id="bp-v0-val">240</span></label><input type="range" id="bp-v0" min="160" max="320" value="240" step="1"></div>
+        </div>
+        <div style="flex:1;min-width:200px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:6px;">Depth</div>
+          <div class="slider-control"><label><span>$d$</span> <span id="bp-d-val">5.0</span></label><input type="range" id="bp-d" min="0.5" max="20" value="5" step="0.1"></div>
+          <div style="margin-top:8px;">
+            <button id="bp-clear-btn" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Clear Points</button>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div style="flex:0 0 auto;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Image Plane (click to place pixel)</div>
+          <canvas id="bp-canvas-2d" width="350" height="350" style="border:1px solid #ddd;background:#fff;display:block;cursor:crosshair;"></canvas>
+        </div>
+        <div style="flex:0 0 auto;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">3D Camera View (drag to orbit)</div>
+          <canvas id="bp-canvas-3d" width="350" height="350" style="border:1px solid #ddd;background:#f8f8f8;display:block;"></canvas>
+        </div>
+      </div>
+      <div id="backprojection-equations" style="font-size:13px;margin-top:14px;overflow-x:auto;"></div>
+    </div>
+
+    <!-- ===== SECTION 11: HOMOGRAPHY ===== -->
+    <h2 class="section-heading" id="homography">11. Homography</h2>
 
     <p>When all scene points lie on a plane (e.g., the ground plane with $Z = 0$), the projection matrix simplifies to a <strong>homography</strong> — a $3 \times 3$ projective transformation.</p>
 
@@ -1269,6 +1401,325 @@ function orbitProject3D(x, y, z, azimuth, elevation, distance) {
     update();
   });
 
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: BACK-PROJECTION TOOL ===== -->
+<script>
+(function() {
+  var canvas2d = document.getElementById('bp-canvas-2d');
+  var canvas3d = document.getElementById('bp-canvas-3d');
+  var ctx2 = canvas2d.getContext('2d');
+  var ctx3 = canvas3d.getContext('2d');
+  var eqEl = document.getElementById('backprojection-equations');
+
+  var imgW = 640, imgH = 480;
+  var points = []; // array of {u, v}
+  var maxPoints = 5;
+  var selectedIdx = 0;
+
+  function gv(id) { return parseFloat(document.getElementById(id).value); }
+  function sv(id, v) { document.getElementById(id).textContent = v; }
+  function fmt(v) { return v.toFixed(3); }
+  function fmt1(v) { return v.toFixed(1); }
+  function fmt2(v) { return v.toFixed(2); }
+
+  // Default point
+  points.push({u: 400, v: 200});
+
+  var bpViewDist = 12;
+  var orbit3d = addOrbitControls(canvas3d, function() { draw3D(); }, 0.6, 0.35);
+
+  // Click handler for 2D canvas
+  canvas2d.addEventListener('click', function(e) {
+    var rect = canvas2d.getBoundingClientRect();
+    var cx = e.clientX - rect.left;
+    var cy = e.clientY - rect.top;
+    var scaleX = canvas2d.width / rect.width;
+    var scaleY = canvas2d.height / rect.height;
+    cx *= scaleX;
+    cy *= scaleY;
+    // Convert canvas coords to pixel coords
+    var margin = 10;
+    var imgScale = Math.min((canvas2d.width - 2 * margin) / imgW, (canvas2d.height - 2 * margin) / imgH);
+    var imgOx = margin + (canvas2d.width - 2 * margin - imgW * imgScale) / 2;
+    var imgOy = margin + (canvas2d.height - 2 * margin - imgH * imgScale) / 2;
+    var u = (cx - imgOx) / imgScale;
+    var v = (cy - imgOy) / imgScale;
+    if (u < 0 || u > imgW || v < 0 || v > imgH) return;
+    u = Math.round(u);
+    v = Math.round(v);
+    if (points.length >= maxPoints) {
+      // Replace the selected point
+      points[selectedIdx] = {u: u, v: v};
+    } else {
+      points.push({u: u, v: v});
+      selectedIdx = points.length - 1;
+    }
+    update();
+  });
+
+  // Clear button
+  document.getElementById('bp-clear-btn').addEventListener('click', function() {
+    points = [];
+    selectedIdx = 0;
+    update();
+  });
+
+  // Slider listeners
+  ['bp-fx','bp-fy','bp-u0','bp-v0','bp-d'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', update);
+  });
+
+  var ptColors = ['#e53935','#1565c0','#43a047','#ff6f00','#7b1fa2'];
+
+  function proj3(x, y, z) {
+    var p = orbitProject3D(x, y, z, orbit3d.getAzimuth(), orbit3d.getElevation(), bpViewDist);
+    var sc = 22;
+    return [canvas3d.width / 2 + p.x * sc, canvas3d.height / 2 + p.y * sc, p.scale];
+  }
+
+  function draw2D() {
+    var w = canvas2d.width, h = canvas2d.height;
+    ctx2.clearRect(0, 0, w, h);
+    var fx = gv('bp-fx'), fy = gv('bp-fy'), u0 = gv('bp-u0'), v0 = gv('bp-v0');
+
+    var margin = 10;
+    var imgScale = Math.min((w - 2 * margin) / imgW, (h - 2 * margin) / imgH);
+    var imgOx = margin + (w - 2 * margin - imgW * imgScale) / 2;
+    var imgOy = margin + (h - 2 * margin - imgH * imgScale) / 2;
+
+    // Image boundary
+    ctx2.strokeStyle = '#333';
+    ctx2.lineWidth = 1.5;
+    ctx2.strokeRect(imgOx, imgOy, imgW * imgScale, imgH * imgScale);
+
+    // Grid lines
+    ctx2.strokeStyle = '#eee';
+    ctx2.lineWidth = 0.5;
+    for (var gx = 0; gx <= imgW; gx += 80) {
+      var x = imgOx + gx * imgScale;
+      ctx2.beginPath(); ctx2.moveTo(x, imgOy); ctx2.lineTo(x, imgOy + imgH * imgScale); ctx2.stroke();
+    }
+    for (var gy = 0; gy <= imgH; gy += 80) {
+      var y = imgOy + gy * imgScale;
+      ctx2.beginPath(); ctx2.moveTo(imgOx, y); ctx2.lineTo(imgOx + imgW * imgScale, y); ctx2.stroke();
+    }
+
+    // Corner labels
+    ctx2.fillStyle = '#888';
+    ctx2.font = '9px sans-serif';
+    ctx2.fillText('(0,0)', imgOx + 2, imgOy - 2);
+    ctx2.fillText('(' + imgW + ',' + imgH + ')', imgOx + imgW * imgScale - 38, imgOy + imgH * imgScale + 11);
+    ctx2.fillText('640x480 px', imgOx + imgW * imgScale / 2 - 22, imgOy - 2);
+
+    // Principal point crosshair
+    var ppx = imgOx + u0 * imgScale, ppy = imgOy + v0 * imgScale;
+    ctx2.strokeStyle = '#aaa';
+    ctx2.lineWidth = 1;
+    ctx2.setLineDash([3, 3]);
+    ctx2.beginPath(); ctx2.moveTo(ppx, imgOy); ctx2.lineTo(ppx, imgOy + imgH * imgScale); ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(imgOx, ppy); ctx2.lineTo(imgOx + imgW * imgScale, ppy); ctx2.stroke();
+    ctx2.setLineDash([]);
+    ctx2.strokeStyle = '#e53935';
+    ctx2.lineWidth = 2;
+    ctx2.beginPath(); ctx2.moveTo(ppx - 8, ppy); ctx2.lineTo(ppx + 8, ppy); ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(ppx, ppy - 8); ctx2.lineTo(ppx, ppy + 8); ctx2.stroke();
+    ctx2.fillStyle = '#e53935';
+    ctx2.font = '9px sans-serif';
+    ctx2.fillText('pp(' + u0 + ',' + v0 + ')', ppx + 6, ppy - 6);
+
+    // Draw placed points
+    points.forEach(function(pt, i) {
+      var px = imgOx + pt.u * imgScale;
+      var py = imgOy + pt.v * imgScale;
+      ctx2.fillStyle = ptColors[i % ptColors.length];
+      ctx2.beginPath(); ctx2.arc(px, py, i === selectedIdx ? 6 : 4, 0, 2 * Math.PI); ctx2.fill();
+      if (i === selectedIdx) {
+        ctx2.strokeStyle = ptColors[i % ptColors.length];
+        ctx2.lineWidth = 2;
+        ctx2.beginPath(); ctx2.arc(px, py, 9, 0, 2 * Math.PI); ctx2.stroke();
+      }
+      ctx2.fillStyle = ptColors[i % ptColors.length];
+      ctx2.font = '10px sans-serif';
+      ctx2.fillText('(' + pt.u + ', ' + pt.v + ')', px + 8, py - 4);
+    });
+
+    if (points.length === 0) {
+      ctx2.fillStyle = '#aaa';
+      ctx2.font = '13px sans-serif';
+      ctx2.fillText('Click to place a pixel', w / 2 - 52, h / 2);
+    }
+  }
+
+  function draw3D() {
+    var w = canvas3d.width, h = canvas3d.height;
+    ctx3.clearRect(0, 0, w, h);
+    var fx = gv('bp-fx'), fy = gv('bp-fy'), u0 = gv('bp-u0'), v0 = gv('bp-v0');
+    var d = gv('bp-d');
+
+    // Draw world axes
+    var axColors = ['#e53935','#43a047','#1e88e5'];
+    var axLabels = ['Xc','Yc','Zc'];
+    var axLen = 3;
+    var orig = proj3(0, 0, 0);
+    [[axLen,0,0],[0,axLen,0],[0,0,axLen]].forEach(function(a, i) {
+      var p = proj3(a[0], a[1], a[2]);
+      ctx3.strokeStyle = axColors[i]; ctx3.lineWidth = 2;
+      ctx3.beginPath(); ctx3.moveTo(orig[0], orig[1]); ctx3.lineTo(p[0], p[1]); ctx3.stroke();
+      ctx3.fillStyle = axColors[i]; ctx3.font = 'bold 11px sans-serif';
+      ctx3.fillText(axLabels[i], p[0] + 3, p[1] - 3);
+    });
+
+    // Draw camera frustum at origin
+    var frustSize = 0.8;
+    var frustDepth = 1.2;
+    var frustCorners = [
+      [frustSize, frustSize, frustDepth],
+      [-frustSize, frustSize, frustDepth],
+      [-frustSize, -frustSize, frustDepth],
+      [frustSize, -frustSize, frustDepth]
+    ];
+    ctx3.strokeStyle = '#1565c0'; ctx3.lineWidth = 1.5;
+    frustCorners.forEach(function(fc) {
+      var fp = proj3(fc[0], fc[1], fc[2]);
+      ctx3.beginPath(); ctx3.moveTo(orig[0], orig[1]); ctx3.lineTo(fp[0], fp[1]); ctx3.stroke();
+    });
+    for (var fi = 0; fi < 4; fi++) {
+      var fp0 = proj3(frustCorners[fi][0], frustCorners[fi][1], frustCorners[fi][2]);
+      var fp1 = proj3(frustCorners[(fi+1)%4][0], frustCorners[(fi+1)%4][1], frustCorners[(fi+1)%4][2]);
+      ctx3.beginPath(); ctx3.moveTo(fp0[0], fp0[1]); ctx3.lineTo(fp1[0], fp1[1]); ctx3.stroke();
+    }
+    ctx3.fillStyle = '#1565c0'; ctx3.font = '10px sans-serif';
+    ctx3.fillText('Camera', orig[0] + 4, orig[1] - 8);
+
+    // Draw rays and 3D points for each placed pixel
+    points.forEach(function(pt, i) {
+      var rayX = (pt.u - u0) / fx;
+      var rayY = (pt.v - v0) / fy;
+      var rayZ = 1;
+
+      // Normalize for drawing the ray line
+      var rayLen = Math.sqrt(rayX * rayX + rayY * rayY + rayZ * rayZ);
+
+      // 3D point at depth d
+      var px3d = d * rayX;
+      var py3d = d * rayY;
+      var pz3d = d;
+
+      // Draw dashed ray extending beyond the point
+      var maxExtend = Math.max(d * 1.3, 5);
+      var extX = maxExtend * rayX;
+      var extY = maxExtend * rayY;
+      var extZ = maxExtend;
+      var pOrig = proj3(0, 0, 0);
+      var pExt = proj3(extX, extY, extZ);
+
+      ctx3.strokeStyle = ptColors[i % ptColors.length];
+      ctx3.lineWidth = 1;
+      ctx3.setLineDash([4, 4]);
+      ctx3.beginPath(); ctx3.moveTo(pOrig[0], pOrig[1]); ctx3.lineTo(pExt[0], pExt[1]); ctx3.stroke();
+      ctx3.setLineDash([]);
+
+      // Draw the 3D point as a large dot
+      var pPt = proj3(px3d, py3d, pz3d);
+      ctx3.fillStyle = ptColors[i % ptColors.length];
+      ctx3.beginPath(); ctx3.arc(pPt[0], pPt[1], i === selectedIdx ? 7 : 5, 0, 2 * Math.PI); ctx3.fill();
+      ctx3.font = '9px sans-serif';
+      ctx3.fillText('(' + fmt1(px3d) + ', ' + fmt1(py3d) + ', ' + fmt1(pz3d) + ')', pPt[0] + 8, pPt[1] - 6);
+    });
+
+    ctx3.fillStyle = '#aaa'; ctx3.font = '9px sans-serif';
+    ctx3.fillText('Drag to orbit', w - 72, 14);
+    ctx3.fillStyle = '#888'; ctx3.font = '10px sans-serif';
+    ctx3.fillText('Camera coordinate frame', 6, h - 6);
+  }
+
+  function updateEquations() {
+    var fx = gv('bp-fx'), fy = gv('bp-fy'), u0 = gv('bp-u0'), v0 = gv('bp-v0');
+    var d = gv('bp-d');
+
+    sv('bp-fx-val', fx); sv('bp-fy-val', fy);
+    sv('bp-u0-val', u0); sv('bp-v0-val', v0);
+    sv('bp-d-val', fmt1(d));
+
+    var html = '';
+
+    if (points.length === 0) {
+      html += '<p style="color:#888;font-style:italic;">Click on the image plane to place a pixel and see the back-projection computation.</p>';
+      eqEl.innerHTML = html;
+      return;
+    }
+
+    var pt = points[selectedIdx];
+    var u = pt.u, v = pt.v;
+
+    // 1. Show clicked pixel and depth
+    html += '<p style="font-weight:600;color:#1565c0;">1. Input: Pixel and Depth</p>';
+    html += '<p style="font-size:12px;">Pixel: $(u, v) = (' + u + ', ' + v + ')$, Depth: $d = ' + fmt1(d) + '$</p>';
+
+    // 2. K matrix
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:10px;">2. Intrinsic Matrix $K$ and its Inverse</p>';
+    html += '$$K = \\begin{pmatrix} ' + fx + ' & 0 & ' + u0 + ' \\\\ 0 & ' + fy + ' & ' + v0 + ' \\\\ 0 & 0 & 1 \\end{pmatrix}$$';
+
+    // 3. K^{-1}
+    var ki00 = 1 / fx, ki02 = -u0 / fx;
+    var ki11 = 1 / fy, ki12 = -v0 / fy;
+    html += '$$K^{-1} = \\begin{pmatrix} 1/f_x & 0 & -u_0/f_x \\\\ 0 & 1/f_y & -v_0/f_y \\\\ 0 & 0 & 1 \\end{pmatrix} = \\begin{pmatrix} ' + fmt(ki00) + ' & 0 & ' + fmt(ki02) + ' \\\\ 0 & ' + fmt(ki11) + ' & ' + fmt(ki12) + ' \\\\ 0 & 0 & 1 \\end{pmatrix}$$';
+
+    // 4. Step-by-step computation
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:10px;">3. Normalized Ray Direction</p>';
+    var rayX = (u - u0) / fx;
+    var rayY = (v - v0) / fy;
+    html += '$$K^{-1} \\begin{pmatrix} u \\\\ v \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} (u - u_0)/f_x \\\\ (v - v_0)/f_y \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} (' + u + ' - ' + u0 + ')/' + fx + ' \\\\ (' + v + ' - ' + v0 + ')/' + fy + ' \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} ' + fmt(rayX) + ' \\\\ ' + fmt(rayY) + ' \\\\ 1 \\end{pmatrix}$$';
+
+    // 5. Scale by depth
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:10px;">4. Back-Projected 3D Point</p>';
+    var px3d = d * rayX;
+    var py3d = d * rayY;
+    var pz3d = d;
+    html += '$$\\mathbf{p}_{cam} = d \\times \\text{ray} = ' + fmt1(d) + ' \\times \\begin{pmatrix} ' + fmt(rayX) + ' \\\\ ' + fmt(rayY) + ' \\\\ 1 \\end{pmatrix} = \\begin{pmatrix} ' + fmt2(px3d) + ' \\\\ ' + fmt2(py3d) + ' \\\\ ' + fmt2(pz3d) + ' \\end{pmatrix}$$';
+
+    // Insight about ray
+    html += '<div class="insight-box" style="margin-top:8px;"><div class="box-label">Key insight</div><div style="font-size:12px;">The normalized ray direction $(' + fmt(rayX) + ',\\; ' + fmt(rayY) + ',\\; 1)^T$ is independent of depth -- changing depth moves the point along the SAME ray. This is why depth is the missing information in projection.</div></div>';
+
+    // 6. Round-trip verification
+    html += '<p style="font-weight:600;color:#1565c0;margin-top:10px;">5. Verification (Round-Trip)</p>';
+    html += '<p style="font-size:12px;">Project the recovered 3D point back to 2D to verify:</p>';
+    var uPrime = fx * px3d / pz3d + u0;
+    var vPrime = fy * py3d / pz3d + v0;
+    html += '$$u\' = f_x \\cdot X_c / Z_c + u_0 = ' + fx + ' \\times ' + fmt2(px3d) + ' / ' + fmt2(pz3d) + ' + ' + u0 + ' = ' + fmt2(uPrime) + '$$';
+    html += '$$v\' = f_y \\cdot Y_c / Z_c + v_0 = ' + fy + ' \\times ' + fmt2(py3d) + ' / ' + fmt2(pz3d) + ' + ' + v0 + ' = ' + fmt2(vPrime) + '$$';
+    html += '<p style="font-size:12px;color:#43a047;font-weight:600;">$(u\', v\') = (' + fmt2(uPrime) + ',\\; ' + fmt2(vPrime) + ') = (u, v)$ -- round trip is exact.</p>';
+
+    // Show all points summary if multiple
+    if (points.length > 1) {
+      html += '<p style="font-weight:600;color:#1565c0;margin-top:10px;">Point Cloud Summary</p>';
+      html += '<table style="font-size:12px;width:100%;"><tr><th>#</th><th>Pixel $(u,v)$</th><th>3D Point $(X_c, Y_c, Z_c)$</th></tr>';
+      points.forEach(function(pt2, i) {
+        var rX = (pt2.u - u0) / fx;
+        var rY = (pt2.v - v0) / fy;
+        var p3x = d * rX, p3y = d * rY, p3z = d;
+        var color = ptColors[i % ptColors.length];
+        var bold = i === selectedIdx ? 'font-weight:600;' : '';
+        html += '<tr style="color:' + color + ';' + bold + '"><td>' + (i+1) + '</td><td>$(' + pt2.u + ', ' + pt2.v + ')$</td><td>$(' + fmt2(p3x) + ', ' + fmt2(p3y) + ', ' + fmt2(p3z) + ')$</td></tr>';
+      });
+      html += '</table>';
+    }
+
+    eqEl.innerHTML = html;
+    renderMath(eqEl);
+  }
+
+  function update() {
+    draw2D();
+    draw3D();
+    updateEquations();
+  }
+
+  // Initialize collapsibles added in the back-projection section
+  initCollapsibles();
   update();
 })();
 </script>

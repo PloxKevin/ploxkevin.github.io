@@ -43,7 +43,7 @@ const MODULES = [
     modules: [
       { id: 'mod7', num: '7', title: 'Camera Model', file: 'mod7.html',
         sections: [
-          {name:'Pinhole Model',id:'pinhole'},{name:'Projective Geometry',id:'projective-geometry'},{name:'Vanishing Points',id:'vanishing-points'},{name:'Homogeneous Coordinates',id:'homogeneous'},{name:'Projection Matrix',id:'projection-matrix'},{name:'Intrinsic Parameters',id:'intrinsic'},{name:'Extrinsic Parameters',id:'extrinsic'},{name:'Full Camera Matrix',id:'full-matrix'},{name:'Calibration',id:'calibration'},{name:'Homography',id:'homography'}
+          {name:'Pinhole Model',id:'pinhole'},{name:'Projective Geometry',id:'projective-geometry'},{name:'Vanishing Points',id:'vanishing-points'},{name:'Homogeneous Coordinates',id:'homogeneous'},{name:'Projection Matrix',id:'projection-matrix'},{name:'Intrinsic Parameters',id:'intrinsic'},{name:'Extrinsic Parameters',id:'extrinsic'},{name:'Full Camera Matrix',id:'full-matrix'},{name:'Calibration',id:'calibration'},{name:'Back-Projection',id:'back-projection'},{name:'Homography',id:'homography'}
         ] },
       { id: 'mod8', num: '8', title: '3D Sensors & Depth Sensing', file: 'mod8.html',
         sections: [
