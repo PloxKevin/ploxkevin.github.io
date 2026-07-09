@@ -286,10 +286,10 @@ t = open('routekaart.html', encoding='utf-8').read()
 assert t.count('stroke-dasharray=\"7 5\"') == 2, 'need exactly 2 flexibele stations'
 assert t.count('<a href=') >= 10, 'station+table links'
 assert 'PTA-onderdelen met * kunnen' in t, 'footnote'
-assert 'data-maand=\"\"' in t and t.count('data-maand') == 6, '6 month slots'
+assert 'data-maand=\"\"' in t and t.count('data-maand') == 7, '7 month slots (6 live + 1 in the teacher template comment)'
 assert 'overgangsversie' in t, 'version note'
 maanden = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december']
-assert not any(m in t.lower() for m in maanden), 'no month labels allowed'
+assert not any(re.search(r'\b' + m + r'\b', t.lower()) for m in maanden), 'no month labels allowed (word-boundary check; Domein/inlevermaand are fine)'
 assert 'voorjaar 2028' in t
 print('OK: structure checks pass')"
 ```
