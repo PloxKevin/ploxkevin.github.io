@@ -9,7 +9,7 @@
 ## Context
 
 The Routekaart is a Dutch VMBO-TL natuurkunde curriculum site: `index.html` plus 9 domain
-pages (`k4`–`k12`), `formulas`, `skills`, `exam`, `learning_hierarchy` — 15 pages sharing
+pages (`k4`–`k12`), `formulas`, `skills`, `exam`, `learning_hierarchy` — 14 pages sharing
 one `style.css`. Problems: the 2020 gradient-card look is dated; every page says
 "Schooljaar 2025-2026"; every page loads the **compromised `polyfill.io` CDN** (domain
 began serving malware in 2024 — must be removed regardless of styling); white text sits on
@@ -39,16 +39,17 @@ All values become CSS custom properties in the rewritten `style.css`, taken from
 
 - **Type:** Space Grotesk (Google Fonts, 400/500/700, `display=swap`, preconnect) as the
   single UI voice; Space Mono (400/700) only for formulas. Fallback `Arial, Helvetica,
-  sans-serif`. Scale: h1 40px/1.1 w400, h2 32px, h3 28px (all `#111`, weight 400), body
-  16px / **fixed 21px line-height** / 0.09px letter-spacing, small 13px/17px, eyebrow
-  16px uppercase w700.
+  sans-serif`. Scale (site-adapted, smaller than the DDOTT foundry source): h1 40px/1.1
+  w400, h2 24px, h3 18px (all `#111`, weight 400), body 16px / **fixed 21px line-height**
+  / 0.09px letter-spacing, small 13px/17px, eyebrow 13px uppercase w700.
 - **Surfaces:** `border-radius: 0` everywhere; 1px `#ddd` borders; shadow only
   `0 1px 2px rgba(17,17,17,.06)`. No gradients anywhere.
 - **Links:** marker-highlight chips — `background:#ecedef; padding:1px 4px; color:#111`
   on white surfaces (inverted: white chip on the gray page field), background fades on
   hover over `0.3s ease-out`. Nav links `#686868 → #111`.
-- **Buttons:** flat orange, **black** label (7.37:1), `13px/35px`, height 40px,
-  padding `0 15px`, radius 0, `all .15s ease-in-out`. Focus ring
+- **Buttons:** flat orange, **black** label (7.37:1), `13px/35px`, height 37px
+  (35px line-height + 2×1px border), padding `0 15px`, radius 0,
+  `all .15s ease-in-out`. Focus ring
   `0 0 0 3px rgb(255 107 23 / 28%)`.
 - **Never white text on orange** (2.85:1 — fails). Light theme only; no dark mode
   (faithful to source; document/print ethos). Motion budget: hover transitions only.
@@ -59,7 +60,7 @@ All values become CSS custom properties in the rewritten `style.css`, taken from
 
 - **Layout:** narrow centered document column, `max-width: 800px`, on the full-bleed
   gray field. White topbar and footer bars sized to the column.
-- **Shared chrome on all 15 pages:**
+- **Shared chrome on all 14 pages:**
   - Topbar: site name (`#111`, w500) left; right: `Formules · Vaardigheden · Examen`
     (13px). Subpages get a `← Routekaart` chip instead of/next to the nav.
   - Footer: `VMBO-TL Natuurkunde Curriculum 2026–2027` | `Gemaakt voor Agora`.
@@ -84,15 +85,16 @@ All values become CSS custom properties in the rewritten `style.css`, taken from
   button + a chip link back to the kaart.
 - **Support pages:** `formulas.html` — formula cards in Space Mono; `skills.html`,
   `exam.html` — standard document treatment; `learning_hierarchy.html` — the rainbow
-  pyramid becomes a typographic level list (numbered white rows, level number bold
-  `#111`, description muted; size/indentation gradation, no colors).
+  pyramid becomes a typographic level list: uniform white rows differentiated by left
+  border (orange for the CE top level, ink for the middle levels, muted for the
+  voorkennis base), no rainbow colors.
 - **Emoji are stripped** from headings/cards sitewide (🧠🛠️📐📝⚠️ etc.).
 - **Anchor IDs are preserved** (`k9.html#deel1`, `#deel2`, `skills.html#po3`) so existing
   deep links keep working.
 
 ## Content updates (2026–2027)
 
-- Replace every `2025-2026` with `2026-2027` (all 15 pages: header/eyebrow + footers).
+- Replace every `2025-2026` with `2026-2027` (all 14 pages: header/eyebrow + footers).
 - CE references: "mei 2027" (index banner, exam.html).
 - **Verification step (blocking, during implementation):** fetch examenblad.nl for
   **nask1 GL/TL 2027** — CE datum (tijdvak 1), tijdsduur, toegestane hulpmiddelen,
@@ -124,7 +126,7 @@ All values become CSS custom properties in the rewritten `style.css`, taken from
 
 ## Verification
 
-- `python -m http.server` in `Routekaart/`; click through all 15 pages.
+- `python -m http.server` in `Routekaart/`; click through all 14 pages.
 - `grep -rn "2025-2026\|polyfill" Routekaart/ --include="*.html" --include="*.css"` → zero hits.
 - Internal link check: every `href` target file/anchor exists (scripted grep pass).
 - MathJax renders on the retained math pages (browser check).

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restyle all 15 pages of the VMBO-TL natuurkunde Routekaart in the DDOTT clean-brutalist document style, bump the schooljaar to 2026–2027 with the verified CE date, and remove the compromised polyfill.io script.
+**Goal:** Restyle all 14 pages of the VMBO-TL natuurkunde Routekaart in the DDOTT clean-brutalist document style, bump the schooljaar to 2026–2027 with the verified CE date, and remove the compromised polyfill.io script.
 
 **Architecture:** One rewritten shared `style.css` (DDOTT tokens as CSS custom properties) restyles existing class names; `index.html` is rewritten wholesale; the 13 subpages get a mechanical chrome swap (head/nav/header/footer) via a Python transform script plus targeted manual edits. Static HTML/CSS only — no build step, no JS framework (MathJax stays on the 8 pages that use TeX).
 
@@ -849,4 +849,4 @@ rm -f ~/Dropbox/Agora/Routekaart/main.aux ~/Dropbox/Agora/Routekaart/main.log ~/
 - **Spec coverage:** tokens/type/links/buttons → Task 2; index restructure + legend removal + CE banner → Task 3; subpage chrome, emoji strip, year bump, polyfill removal, MathJax scoping, anchors → Task 4; verified exam facts → Task 5; pyramid → Task 6; verification battery + review gate → Task 7; Agora mirror + push gate → Task 8; artifacts + gitignore → Task 1.
 - **Placeholders:** none — every step carries exact code/commands (`<scratchpad>` expands to the session scratchpad path in Global Constraints).
 - **Type consistency:** class names in Task 2 CSS match Task 3 HTML and Task 4 script output (`topbar`, `topbar-nav`, `chip`, `eyebrow`, `domain-list/row/code/name/tag`, `exam-banner`, `bottom-nav`, `btn`, `back-link`, `section-label`, `note-muted`, `hierarchy-level`).
-- **Known intentional deviations:** exact CE date shown on index banner (spec said "mei 2027"; verified date is stronger and spec-compliant in intent).
+- **Known intentional deviations:** exact CE date shown on index banner (spec said "mei 2027"; verified date is stronger and spec-compliant in intent). Post-review additions (2026-07-09, final whole-branch review): type scale adapted down from the DDOTT foundry source (h2 24px, h3 18px, eyebrow 13px vs the spec's original 32/28/16px prose — spec updated to match shipped values); button box height 37px (35px line-height + 2×1px border); leerpiramide gradation expressed via left-border color rather than size/indentation (spec updated).
