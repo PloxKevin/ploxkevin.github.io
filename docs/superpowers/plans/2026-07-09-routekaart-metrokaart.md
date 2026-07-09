@@ -503,7 +503,7 @@ New:
 ```bash
 cd ~/Dropbox/ploxkevin.github.io/Routekaart
 grep -c "OND[0-9]" *.html; echo "expect no output above (grep exits 1)"
-grep -l "cohort 2026–2028" k7.html k10.html k11.html k12.html skills.html exam.html | wc -l
+grep -il "cohort 2026–2028" k7.html k10.html k11.html k12.html skills.html exam.html | wc -l
 grep -c "routekaart.html" exam.html
 ```
 Expected: OND grep silent (exit 1); `6`; `1`.
