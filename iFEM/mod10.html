@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>10. Adjoints &amp; Differentiable FEM — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">10. Adjoints &amp; Differentiable FEM</h1>
+    <p class="page-subtitle">PDE-constrained least squares, the discrete adjoint method, tangent vs adjoint sensitivities, unrolled vs implicit differentiation, differentiable FEM solvers, contact and the quality of gradients</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#from-one-shot-to-gradients">1. From One-Shot Least Squares to Gradient-Based Inversion</a>
+      <a href="#adjoint-method">2. The Adjoint Method: One Extra Solve for the Whole Gradient</a>
+      <a href="#adjoint-worked-example">3. Worked Example: Recovering a Stiffness Profile in a 1D Bar</a>
+      <a href="#gradient-routes">4. Five Routes to the Same Gradient</a>
+      <a href="#differentiable-fem">5. Differentiable FEM: Autodiff Meets the Stiffness Matrix</a>
+      <a href="#dynamics-contact-gradients">6. Dynamics, Contact, and the Quality of Gradients</a>
+      <a href="#practical-recipes">7. Practical Recipes for a Soft Tactile Skin</a>
+      <a class="toc-interactive" href="#adjoint-walkthrough">Interactive: Deriving the Discrete Adjoint</a>
+      <a class="toc-interactive" href="#bar-inverter">Interactive: Adjoint Bar Inverter</a>
+      <a class="toc-interactive" href="#gradient-lab">Interactive: Gradient-Routes Laboratory</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1 ===== -->
+    <h2 class="section-heading" id="from-one-shot-to-gradients">1. From One-Shot Least Squares to Gradient-Based Inversion</h2>
+
+    <p>Everything inverted so far in this guide was inverted <em>once</em>. Tessler&ndash;Spangler shape sensing (Modules 4&ndash;6) and Tikhonov-regularized force reconstruction (Module 8) share a structural gift: the unknowns enter the observation model <strong>linearly</strong> &mdash; small-strain kinematics hold, superposition holds &mdash; so the least-squares functional is quadratic, the normal equations are assembled and solved one time, and the matrix can even be prefactorized offline. No iterations. No gradients. That gift is exactly what this module gives up.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Recover parameters $\mathbf{p}$ (a modulus map, a contact traction, a geometry) from measurements $\mathbf{d}$ when the predicted response $\mathbf{u}(\mathbf{p})$ is defined only <em>implicitly</em>, through an equilibrium residual:
+      <div class="math-block">$$\min_{\mathbf{p}} \; J(\mathbf{p}) = \tfrac{1}{2}\,\lVert \mathbf{S}\,\mathbf{u}(\mathbf{p}) - \mathbf{d} \rVert^2 + \alpha\,\Phi(\mathbf{p}) \quad \text{s.t.} \quad \mathbf{R}\big(\mathbf{u}(\mathbf{p}),\mathbf{p}\big) = \mathbf{0}$$</div>
+      In the guide's observation model $y = \mathcal{H}(u, p, f, X_0) + b + \eta$: the response $u$ is partially measured through $\mathbf{S}$, and the unknown has moved <em>inside</em> the forward operator. Iterative optimization needs $\nabla_{\mathbf{p}} J$; this module is a menu of ways to get it &mdash; cheaply, exactly, or automatically.</div>
+    </div>
+
+    <table>
+      <tr><th></th><th>In this module</th></tr>
+      <tr><td><strong>Measured</strong></td><td>Displacements or strains at $m$ points &mdash; for a vision-based tactile skin, the camera-tracked marker displacement field $\mathbf{d}$</td></tr>
+      <tr><td><strong>Unknown</strong></td><td>$n_p$ parameters $\mathbf{p}$ inside the forward model: distributed contact traction, a modulus map $E(\mathbf{x})$ of the elastomer, or the skin geometry</td></tr>
+      <tr><td><strong>Assumed known</strong></td><td>Mesh, boundary conditions, constitutive <em>form</em>, load (when material is unknown) or material (when load is unknown) &mdash; whatever is not in $\mathbf{p}$</td></tr>
+      <tr><td><strong>Unobservable</strong></td><td>Parameters with zero sensitivity &mdash; regions the forward strain or the sensor set never illuminates (Section 3 makes this exact)</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Three Ways Linearity Dies</h3>
+
+    <p>Three inverse-problem families break the one-shot structure:</p>
+
+    <ol>
+      <li><strong>Material identification.</strong> $E(\mathbf{x})$ enters the stiffness matrix, so $\mathbf{u}(\mathbf{p}) = \mathbf{K}(\mathbf{p})^{-1}\mathbf{f}$ depends nonlinearly on $\mathbf{p}$ <em>even for linear elasticity</em>. Module 7's FEMU already met this; here we make its gradient affordable.</li>
+      <li><strong>Large-deformation hyperelasticity.</strong> A silicone tactile skin routinely sees 10&ndash;50% strain. Superposition fails; equilibrium $\mathbf{R}(\mathbf{u},\mathbf{p})=\mathbf{0}$ is nonlinear in $\mathbf{u}$ itself, and every objective evaluation is a Newton solve.</li>
+      <li><strong>Unknown geometry or contact.</strong> The shape of an inclusion, the location of a contact patch &mdash; parameters that move nodes or switch constraint sets.</li>
+    </ol>
+
+    <p>All three become <em>nonlinear least squares with a PDE constraint</em>. The optimizer (Gauss&ndash;Newton, L-BFGS &mdash; Module 3's machinery) is standard; the entire game is the gradient. The naive route, finite differences, perturbs one parameter at a time:</p>
+
+    <div class="math-block">$$\text{cost of } \nabla_{\mathbf{p}} J: \quad \underbrace{(n_p+1)\,C_{\text{solve}}}_{\text{finite differences}} \quad \text{vs.} \quad \underbrace{2\,C_{\text{solve}}}_{\text{adjoint}}$$</div>
+
+    <p>For a modulus map with $n_p = 10^4$ elements, finite differences means ten thousand FEM solves <em>per gradient evaluation</em>, with accuracy capped near $\sqrt{\varepsilon_{\text{mach}}}$ for one-sided differences. The adjoint method delivers the same gradient &mdash; exactly, for the discrete objective &mdash; at the price of <strong>two</strong> solves, independent of $n_p$. The routes on the menu:</p>
+
+    <ul>
+      <li><strong>(a) Finite differences</strong> &mdash; $(n_p+1)$ full FEM solves per gradient; step-size dilemma; Section 4.</li>
+      <li><strong>(b) Direct (tangent) sensitivities</strong> &mdash; one linearized solve per parameter; wins when $n_p$ is small and outputs many; Section 2.</li>
+      <li><strong>(c) The adjoint method</strong> &mdash; exactly two solves per gradient regardless of $n_p$; Sections 2&ndash;3.</li>
+      <li><strong>(d) Algorithmic differentiation of the entire FEM code</strong> &mdash; differentiable simulation, by unrolling the solver or by implicit differentiation at the fixed point; automates the tedious $\partial \mathbf{R}/\partial \mathbf{p}$ terms; Sections 4&ndash;5.</li>
+    </ul>
+
+    <p>Two further families &mdash; physics-informed neural networks, which fold the PDE into a training loss and make unknown coefficients trainable, and neural operators, which amortize inversion over an offline dataset so each new inversion costs milliseconds &mdash; are <strong>deliberately not covered here</strong>. They are learning methods with their own failure modes (optimization pathologies, out-of-distribution brittleness) and their own economics (offline training bills), and they get the full treatment in <a href="mod11.html">Module 11: Learning-Enhanced Inversion</a>. Everything in <em>this</em> module runs on the physics model you already trust, with no training data.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Terminology collision — two things called "inverse FEM"</div>
+      <div>"iFEM" in the shape-sensing literature (Modules 4&ndash;6) is the Tessler&ndash;Spangler least-squares variational method: a <em>one-shot linear reconstruction</em> that needs no gradients, no material model, no iterations. The gradient-based, PDE-constrained inversion of this module is a <strong>different animal</strong> that happens to share the name. Conflating them wrecks every comparison: one is a fixed linear map applied at frame rate, the other is an optimization loop whose per-iteration cost is a full FEM solve. When you read "inverse FEM" in a paper, check which one is meant before comparing numbers.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 780 408" style="width:100%;max-width:780px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="tr-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#777"/></marker>
+          <marker id="tr-arrp" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#7b1fa2"/></marker>
+        </defs>
+        <!-- forward model box -->
+        <rect x="18" y="150" width="182" height="86" rx="6" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="1.6"/>
+        <text x="109" y="172" font-size="12.5" font-weight="700" fill="#4a148c" font-family="sans-serif" text-anchor="middle">Forward FEM</text>
+        <text x="109" y="192" font-size="12" fill="#333" font-family="sans-serif" text-anchor="middle">R(u, p) = 0  &#8594;  u(p)</text>
+        <text x="109" y="212" font-size="12" fill="#333" font-family="sans-serif" text-anchor="middle">J = &#189;&#8214;Su &#8722; d&#8214;&#178;</text>
+        <text x="109" y="229" font-size="10.5" fill="#888" font-family="sans-serif" text-anchor="middle">one solve = C_solve</text>
+        <!-- target box -->
+        <rect x="650" y="160" width="112" height="64" rx="6" fill="#ede7f6" stroke="#7b1fa2" stroke-width="2"/>
+        <text x="706" y="188" font-size="15" font-weight="700" fill="#4a148c" font-family="sans-serif" text-anchor="middle">dJ/dp</text>
+        <text x="706" y="208" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="middle">same numbers, four bills</text>
+        <!-- fan lines -->
+        <path d="M200 165 C 250 120, 260 62, 292 52" fill="none" stroke="#bbb" stroke-width="1.3"/>
+        <path d="M200 182 C 245 160, 258 138, 292 132" fill="none" stroke="#bbb" stroke-width="1.3"/>
+        <path d="M200 205 C 245 212, 258 216, 292 218" fill="none" stroke="#7b1fa2" stroke-width="1.8"/>
+        <path d="M200 222 C 250 265, 260 300, 292 308" fill="none" stroke="#bbb" stroke-width="1.3"/>
+        <!-- Route A: finite differences -->
+        <text x="296" y="32" font-size="11.5" font-weight="700" fill="#555" font-family="sans-serif">A &mdash; finite differences</text>
+        <rect x="296" y="40" width="66" height="24" rx="3" fill="#fafafa" stroke="#999"/><text x="329" y="56" font-size="10" fill="#333" font-family="sans-serif" text-anchor="middle">J(p+he&#8321;)</text>
+        <rect x="368" y="40" width="66" height="24" rx="3" fill="#fafafa" stroke="#999"/><text x="401" y="56" font-size="10" fill="#333" font-family="sans-serif" text-anchor="middle">J(p+he&#8322;)</text>
+        <rect x="440" y="40" width="30" height="24" rx="3" fill="#fafafa" stroke="#999"/><text x="455" y="56" font-size="10" fill="#333" font-family="sans-serif" text-anchor="middle">&#8230;</text>
+        <rect x="476" y="40" width="74" height="24" rx="3" fill="#fafafa" stroke="#999"/><text x="513" y="56" font-size="10" fill="#333" font-family="sans-serif" text-anchor="middle">J(p+he&#8345;&#8346;)</text>
+        <text x="296" y="80" font-size="10.5" fill="#c62828" font-family="sans-serif">(n&#8346;+1) &#215; C_solve &nbsp;&middot;&nbsp; O(h) error &mdash; step-size dilemma</text>
+        <line x1="552" y1="52" x2="668" y2="160" stroke="#999" stroke-width="1.2" marker-end="url(#tr-arr)"/>
+        <!-- Route B: direct -->
+        <text x="296" y="112" font-size="11.5" font-weight="700" fill="#555" font-family="sans-serif">B &mdash; direct (tangent) sensitivities</text>
+        <rect x="296" y="120" width="254" height="26" rx="3" fill="#fafafa" stroke="#999"/>
+        <text x="423" y="137" font-size="10.5" fill="#333" font-family="sans-serif" text-anchor="middle">(&#8706;R/&#8706;u) (du/dp&#7522;) = &#8722;&#8706;R/&#8706;p&#7522;,&nbsp; i = 1&#8230;n&#8346;</text>
+        <text x="296" y="162" font-size="10.5" fill="#666" font-family="sans-serif">1 forward + n&#8346; linearized solves &middot; exact &middot; wins if n&#8346; small</text>
+        <line x1="552" y1="133" x2="662" y2="172" stroke="#999" stroke-width="1.2" marker-end="url(#tr-arr)"/>
+        <!-- Route C: adjoint -->
+        <text x="296" y="196" font-size="11.5" font-weight="700" fill="#7b1fa2" font-family="sans-serif">C &mdash; adjoint (this module's workhorse)</text>
+        <rect x="296" y="204" width="254" height="26" rx="3" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="1.8"/>
+        <text x="423" y="221" font-size="10.5" fill="#4a148c" font-family="sans-serif" text-anchor="middle">(&#8706;R/&#8706;u)&#7488; &#955; = &#8722;(&#8706;J/&#8706;u)&#7488; &nbsp;&#8594;&nbsp; dJ/dp = &#8706;J/&#8706;p + &#955;&#7488;&#8706;R/&#8706;p</text>
+        <text x="296" y="246" font-size="10.5" font-weight="600" fill="#7b1fa2" font-family="sans-serif">2 &#215; C_solve &middot; exact &middot; independent of n&#8346;</text>
+        <line x1="552" y1="217" x2="650" y2="196" stroke="#7b1fa2" stroke-width="1.8" marker-end="url(#tr-arrp)"/>
+        <!-- Route D: AD -->
+        <text x="296" y="280" font-size="11.5" font-weight="700" fill="#555" font-family="sans-serif">D &mdash; algorithmic differentiation of the solver</text>
+        <rect x="296" y="288" width="120" height="40" rx="3" fill="#fafafa" stroke="#999"/>
+        <text x="356" y="303" font-size="10" fill="#333" font-family="sans-serif" text-anchor="middle">unroll iterations</text>
+        <text x="356" y="317" font-size="9.5" fill="#c62828" font-family="sans-serif" text-anchor="middle">tape O(iters) &middot; uncoverged iterate</text>
+        <rect x="428" y="288" width="122" height="40" rx="3" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="1.6"/>
+        <text x="489" y="303" font-size="10" fill="#4a148c" font-family="sans-serif" text-anchor="middle">implicit at fixed point</text>
+        <text x="489" y="317" font-size="9.5" fill="#7b1fa2" font-family="sans-serif" text-anchor="middle">= adjoint &middot; O(1) memory</text>
+        <line x1="552" y1="308" x2="666" y2="218" stroke="#999" stroke-width="1.2" marker-end="url(#tr-arr)"/>
+        <!-- bottom strip -->
+        <rect x="18" y="356" width="744" height="34" rx="4" fill="#fafafa" stroke="#e0e0e0"/>
+        <text x="390" y="377" font-size="12" font-weight="600" fill="#4a148c" font-family="sans-serif" text-anchor="middle">the adjoint method IS reverse-mode automatic differentiation, applied at the level of the equations</text>
+      </svg>
+      <div class="figure-caption">Four routes from one forward model to the same gradient. Finite differences pays per parameter; direct sensitivities pay per parameter but exactly; the adjoint pays one forward solve plus one linear adjoint solve, independent of the parameter count; algorithmic differentiation automates the adjoint &mdash; if you differentiate implicitly at the fixed point rather than through the solver iterations.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">The module's honest thesis</div>
+      <div>Differentiability does <strong>not</strong> repair ill-posedness. An exact gradient descends the <em>same</em> ill-posed landscape a finite-difference gradient stumbles down: noise amplification, null-space non-uniqueness, and zero-sensitivity regions all persist. The regularization theory of Module 3 applies verbatim to every method on this page &mdash; $\alpha\,\Phi(\mathbf{p})$ stays in the objective, and experiment design (load cases, sensor placement) stays mandatory. Gradients change what is <em>computable</em>, not what is <em>identifiable</em>.</div>
+    </div>
+
+    <!-- ===== SECTION 2 ===== -->
+    <h2 class="section-heading" id="adjoint-method">2. The Adjoint Method: One Extra Solve for the Whole Gradient</h2>
+
+    <p>We derive the adjoint <strong>discrete-first</strong>: differentiate the assembled residual, not the continuous PDE. The discrete route produces gradients that are exactly consistent with the discrete objective your optimizer actually sees &mdash; a property whose absence causes real line-search failures (see the collapsible below).</p>
+
+    <h3 class="subsection-heading">Setup and the Matrix Nobody Should Form</h3>
+
+    <p>The state $\mathbf{u} \in \mathbb{R}^{n_u}$ solves $\mathbf{R}(\mathbf{u},\mathbf{p})=\mathbf{0}$; the objective is $J(\mathbf{u},\mathbf{p})$. The total derivative along the constraint manifold is</p>
+
+    <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}\mathbf{p}} = \frac{\partial J}{\partial \mathbf{p}} + \frac{\partial J}{\partial \mathbf{u}}\,\frac{\mathrm{d}\mathbf{u}}{\mathrm{d}\mathbf{p}}$$</div>
+
+    <p>Differentiating the constraint $\mathbf{R}(\mathbf{u}(\mathbf{p}),\mathbf{p})=\mathbf{0}$ gives $\dfrac{\partial \mathbf{R}}{\partial \mathbf{u}}\dfrac{\mathrm{d}\mathbf{u}}{\mathrm{d}\mathbf{p}} = -\dfrac{\partial \mathbf{R}}{\partial \mathbf{p}}$, so</p>
+
+    <div class="math-block">$$\frac{\mathrm{d}\mathbf{u}}{\mathrm{d}\mathbf{p}} = -\left(\frac{\partial \mathbf{R}}{\partial \mathbf{u}}\right)^{\!-1}\frac{\partial \mathbf{R}}{\partial \mathbf{p}}$$</div>
+
+    <p>This is an $n_u \times n_p$ dense matrix &mdash; every state's sensitivity to every parameter. For a tactile-skin mesh with $n_u \sim 10^5$ and a modulus map $n_p \sim 10^4$, that is $10^9$ entries obtained through $n_p$ linear solves. Nobody should ever form it. Yet it sits inside the gradient:</p>
+
+    <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}\mathbf{p}} = \frac{\partial J}{\partial \mathbf{p}} \;-\; \underbrace{\frac{\partial J}{\partial \mathbf{u}}\left(\frac{\partial \mathbf{R}}{\partial \mathbf{u}}\right)^{\!-1}}_{\text{a } 1 \times n_u \text{ row!}}\;\frac{\partial \mathbf{R}}{\partial \mathbf{p}}$$</div>
+
+    <h3 class="subsection-heading">The Associativity Trick</h3>
+
+    <p>The whole adjoint method is a choice of parenthesization. Group the product from the <em>left</em>: $\frac{\partial J}{\partial \mathbf{u}}$ is $1 \times n_u$, so $\frac{\partial J}{\partial \mathbf{u}} \big(\frac{\partial \mathbf{R}}{\partial \mathbf{u}}\big)^{-1}$ is a single row vector &mdash; one linear solve with the <em>transposed</em> Jacobian. Name it: define the adjoint state $\boldsymbol{\lambda}$ by the adjoint equation, and the gradient collapses:</p>
+
+    <div class="definition-box">
+      <div class="box-label">The Discrete Adjoint Method (KEY EQUATIONS)</div>
+      <div>
+        <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}\mathbf{p}} = \frac{\partial J}{\partial \mathbf{p}} + \boldsymbol{\lambda}^{\mathsf{T}}\,\frac{\partial \mathbf{R}}{\partial \mathbf{p}}, \qquad \left(\frac{\partial \mathbf{R}}{\partial \mathbf{u}}\right)^{\!\mathsf{T}} \boldsymbol{\lambda} = -\left(\frac{\partial J}{\partial \mathbf{u}}\right)^{\!\mathsf{T}}$$</div>
+        Recipe: (1) solve the forward problem $\mathbf{R}(\mathbf{u},\mathbf{p})=\mathbf{0}$ &mdash; possibly nonlinear; (2) solve <em>one linear</em> adjoint system with the transposed Jacobian; (3) assemble the gradient by cheap products $\boldsymbol{\lambda}^{\mathsf{T}}(\partial\mathbf{R}/\partial p_i)$, one per parameter. Total: <strong>one forward solve + one linear solve, independent of $n_p$</strong>.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Specialization to Linear FEM</h3>
+
+    <p>Take $J = \tfrac12\lVert\mathbf{S}\mathbf{u}-\mathbf{d}\rVert^2$ and $\mathbf{R} = \mathbf{K}(\mathbf{p})\,\mathbf{u} - \mathbf{f}$. Then $\partial\mathbf{R}/\partial\mathbf{u} = \mathbf{K}$, $\partial J/\partial\mathbf{u} = (\mathbf{S}\mathbf{u}-\mathbf{d})^{\mathsf{T}}\mathbf{S}$, and (with $\mathbf{f}$ independent of $\mathbf{p}$) $\partial\mathbf{R}/\partial p_i = (\partial\mathbf{K}/\partial p_i)\,\mathbf{u}$:</p>
+
+    <div class="math-block">$$\mathbf{K}(\mathbf{p})\,\mathbf{u} = \mathbf{f}, \qquad \mathbf{K}^{\mathsf{T}}\boldsymbol{\lambda} = -\mathbf{S}^{\mathsf{T}}\big(\mathbf{S}\mathbf{u}-\mathbf{d}\big), \qquad \frac{\mathrm{d}J}{\mathrm{d}p_i} = \boldsymbol{\lambda}^{\mathsf{T}}\,\frac{\partial \mathbf{K}}{\partial p_i}\,\mathbf{u}$$</div>
+
+    <p>Read the adjoint load: it is the <strong>measurement residual, injected back at the sensor locations</strong>. The adjoint field $\boldsymbol{\lambda}$ is the displacement of the same structure under that fictitious residual load &mdash; a physical picture the worked example of Section 3 exploits elementwise.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why symmetric $\mathbf{K}$ makes the adjoint nearly free</div>
+      <div>Self-adjoint elasticity gives $\mathbf{K}^{\mathsf{T}} = \mathbf{K}$: the Cholesky factorization computed for the forward solve is <em>reused</em>, and the adjoint solve is a single back-substitution. The marginal cost of the entire gradient over the plain objective evaluation is then essentially zero. This is also a trap: because $\mathbf{K}^{\mathsf{T}}=\mathbf{K}$, sloppy code that "forgets" the transpose silently works &mdash; and the habit breaks the day you meet a non-self-adjoint operator (advection, dynamics with damping, follower loads). Always <em>derive</em> with the transpose explicit, even when you then optimize it away.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">An adjoint is a gradient mechanism, not a regularizer</div>
+      <div>A surprisingly common misreading: "adjoint inversion" is sometimes glossed as if it were a regularized variant of least squares. It is not. The adjoint machinery computes $\nabla_{\mathbf{p}} J$ &mdash; nothing more. It adds no damping, no prior, no filtering; if $J$ lacks $\alpha\Phi(\mathbf{p})$, the adjoint faithfully hands you the gradient of an unregularized, ill-posed misfit, and the optimizer will happily march into the noise-fitting regime. Regularization is a modeling decision made in $J$; the adjoint just differentiates whatever you wrote down. Never write "adjoint $\approx$ regularized LS".</div>
+    </div>
+
+    <h3 class="subsection-heading">Tangent Mode: the Other Direction</h3>
+
+    <p>The direct (tangent, forward) sensitivity method solves $\big(\partial\mathbf{R}/\partial\mathbf{u}\big)\,\mathrm{d}\mathbf{u}/\mathrm{d}p_i = -\partial\mathbf{R}/\partial p_i$ once per parameter: $n_p$ linearized solves, each reusing the factorization. It is the right choice when $n_p$ is <em>small</em> and the outputs are <em>many</em> (a handful of hyperelastic constants, sensitivities of a full field wanted). The adjoint wins for the inverse-problem shape &mdash; many parameters, one scalar misfit. The two modes are exactly the forward and reverse modes of automatic differentiation, decided at the level of linear algebra.</p>
+
+    <h3 class="subsection-heading">Two Framings You Must Connect</h3>
+
+    <p><strong>Framing 1: the adjoint is reverse-mode AD at the equation level.</strong> Reverse-mode automatic differentiation propagates one cotangent backward through a computation; the adjoint method does precisely this, but treats "solve $\mathbf{R}=\mathbf{0}$" as a single primitive whose backward rule is the transposed linear solve. In geophysics this is the <em>adjoint-state method</em>, standard in seismic full-waveform inversion where $n_p \sim 10^6$ or more makes every alternative unthinkable (Plessix 2006). In elasticity imaging &mdash; recovering a material-property distribution from measured displacement fields &mdash; the same construction is the workhorse (Oberai, Gokhale &amp; Feij&oacute;o 2003), and Section 3's tactile-skin bar is its smallest instance.</p>
+
+    <p><strong>Framing 2: discretize-then-optimize vs optimize-then-discretize.</strong> We differentiated the <em>discrete</em> residual (discretize-then-optimize). The alternative derives the continuous adjoint PDE first and discretizes it afterwards. The distinction sounds academic and is not:</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Discretize-then-optimize vs optimize-then-discretize — why line searches care</div>
+      <div class="collapsible-body">
+        <p><strong>Discretize-then-optimize (DTO):</strong> differentiate the assembled residual $\mathbf{R}$ and the discrete $J$. The resulting gradient is <em>exactly</em> the gradient of the number your optimizer computes &mdash; consistent to solver tolerance, by construction. This is what the discrete derivation above produces and what autodiff of a FEM code produces.</p>
+        <p><strong>Optimize-then-discretize (OTD):</strong> derive the adjoint PDE of the continuous problem, then discretize it &mdash; possibly with a different mesh, quadrature, or stabilization than the forward problem. The result approximates the continuous gradient but is generally <em>not</em> the gradient of the discrete objective. The mismatch is $O(h^k)$ &mdash; small, but a line search does not know that: it compares actual $J$ values against a predicted descent rate from an inconsistent direction, and near convergence (where the true gradient is small) the inconsistency dominates, and the search stalls mysteriously at step lengths of $10^{-8}$.</p>
+        <p>Consistency is restored only with <em>compatible discretizations</em> of the forward and adjoint problems. Practical rule: if you hand-derive a continuous adjoint, verify it against finite differences of the discrete objective before trusting it inside an optimizer; if the check plateaus at $10^{-3}$ instead of $10^{-7}$, you have an OTD inconsistency (or a loose solver &mdash; Section 4 shows how to tell them apart).</p>
+      </div>
+    </div>
+
+    <p><strong>Foreshadow for dynamics:</strong> for time-dependent problems the adjoint marches <em>backward</em> in time, consuming stored (or checkpointed) forward states in reverse order. That storage bill and its checkpointing remedy are Section 6's problem.</p>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="adjoint-walkthrough" class="interactive-container" data-title="Walkthrough — Deriving the Discrete Adjoint"></div>
+
+    <!-- ===== SECTION 3 ===== -->
+    <h2 class="section-heading" id="adjoint-worked-example">3. Worked Example: Recovering a Stiffness Profile in a 1D Bar</h2>
+
+    <p>Everything above in eight unknowns. A bar of length $L=1$ and area $A$, fixed at $x=0$, carries an axial load $F$ at $x=1$, discretized into $N=8$ two-node elements with per-element moduli $E_e$ &mdash; the unknowns, $n_p = 8$. You measure displacements $d_i$ at a subset $\mathcal{M}$ of nodes and minimize $J = \tfrac12\sum_{i\in\mathcal{M}}(u_i - d_i)^2$.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 128" style="width:100%;max-width:700px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="we-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#c62828"/></marker>
+          <pattern id="we-wall" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#888" stroke-width="2"/></pattern>
+        </defs>
+        <rect x="30" y="28" width="14" height="64" fill="url(#we-wall)" stroke="#555"/>
+        <g font-family="sans-serif">
+          <rect x="44" y="44" width="70" height="32" fill="#e1bee7" stroke="#7b1fa2"/><text x="79" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8321;</text>
+          <rect x="114" y="44" width="70" height="32" fill="#ce93d8" stroke="#7b1fa2"/><text x="149" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8322;</text>
+          <rect x="184" y="44" width="70" height="32" fill="#e1bee7" stroke="#7b1fa2"/><text x="219" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8323;</text>
+          <rect x="254" y="44" width="70" height="32" fill="#ba68c8" stroke="#7b1fa2"/><text x="289" y="64" font-size="11" text-anchor="middle" fill="#fff">E&#8324;</text>
+          <rect x="324" y="44" width="70" height="32" fill="#e1bee7" stroke="#7b1fa2"/><text x="359" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8325;</text>
+          <rect x="394" y="44" width="70" height="32" fill="#ce93d8" stroke="#7b1fa2"/><text x="429" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8326;</text>
+          <rect x="464" y="44" width="70" height="32" fill="#e1bee7" stroke="#7b1fa2"/><text x="499" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8327;</text>
+          <rect x="534" y="44" width="70" height="32" fill="#ce93d8" stroke="#7b1fa2"/><text x="569" y="64" font-size="11" text-anchor="middle" fill="#4a148c">E&#8328;</text>
+          <line x1="604" y1="60" x2="656" y2="60" stroke="#c62828" stroke-width="2.5" marker-end="url(#we-arr)"/>
+          <text x="662" y="64" font-size="12" font-weight="700" fill="#c62828">F</text>
+          <circle cx="114" cy="88" r="4" fill="#1565c0"/><circle cx="184" cy="88" r="4" fill="#1565c0"/><circle cx="254" cy="88" r="4" fill="#1565c0"/><circle cx="324" cy="88" r="4" fill="#1565c0"/><circle cx="394" cy="88" r="4" fill="#1565c0"/>
+          <text x="254" y="110" font-size="10.5" fill="#1565c0" text-anchor="middle">displacement sensors d&#7522; at nodes 1&#8230;M (here M = 5)</text>
+          <text x="79" y="30" font-size="10.5" fill="#888">node 0 fixed</text>
+          <text x="560" y="30" font-size="10.5" fill="#888">nodes 6&#8211;8: unsensed</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The worked example: an 8-element bar with unknown per-element moduli, end load $F$, and displacement sensors on a subset of nodes. Elements to the right of the last sensor will turn out to be exactly invisible.</div>
+    </div>
+
+    <p>The element stiffness and its parameter derivative &mdash; the only ingredients the adjoint recipe needs beyond the solver:</p>
+
+    <div class="math-block">$$\mathbf{k}_e = \frac{E_e A}{L_e}\begin{bmatrix} 1 &amp; -1 \\ -1 &amp; 1 \end{bmatrix}, \qquad \frac{\partial \mathbf{k}_e}{\partial E_e} = \frac{A}{L_e}\begin{bmatrix} 1 &amp; -1 \\ -1 &amp; 1 \end{bmatrix}$$</div>
+
+    <p>$\mathbf{K}$ is tridiagonal; the forward solve is the Thomas algorithm. The three steps:</p>
+
+    <ol>
+      <li><strong>Forward:</strong> solve $\mathbf{K}\mathbf{u} = \mathbf{f}$.</li>
+      <li><strong>Adjoint:</strong> solve $\mathbf{K}\boldsymbol{\lambda} = -\mathbf{S}^{\mathsf{T}}(\mathbf{S}\mathbf{u}-\mathbf{d})$ &mdash; $\mathbf{K}$ symmetric, so same solver, same factorization.</li>
+      <li><strong>Assemble:</strong> $\partial\mathbf{K}/\partial E_e$ is the $E$-independent element matrix scattered into global position, so the gradient collapses to a per-element formula:</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Per-Element Gradient = Forward Strain &times; Adjoint Strain</div>
+      <div>
+        <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}E_e} = \frac{A}{L_e}\,\big(u_2^e - u_1^e\big)\big(\lambda_2^e - \lambda_1^e\big) = A\,L_e\;\varepsilon_e[\mathbf{u}]\;\varepsilon_e[\boldsymbol{\lambda}]$$</div>
+        The sensitivity of the misfit to an element's stiffness is the <strong>product of the forward strain and the adjoint strain</strong> in that element &mdash; the discrete version of the sensitivity-kernel picture standard in adjoint seismology (Plessix 2006): the forward field says where the load works, the adjoint field says where the sensors look, and only their overlap is identifiable.</div>
+    </div>
+
+    <h3 class="subsection-heading">Identifiability, Read Directly Off the Gradient</h3>
+
+    <p>Under an end load, $u_k$ depends only on the elements between the support and node $k$. Equivalently: the adjoint bar is loaded only at sensor nodes, so elements to the right of the last sensor carry <em>zero adjoint strain</em> &mdash; their gradient is <strong>exactly zero</strong>, not small. No optimizer, no learning rate, no number of iterations can move them; they are unidentifiable, full stop. Likewise any element with near-zero <em>forward</em> strain is invisible regardless of sensing. The remedies are experimental, not algorithmic: multiple load cases, sensors spanning the domain, and Tikhonov regularization on $\log E$ to fill the null space with a prior.</p>
+
+    <h3 class="subsection-heading">Numerical Hygiene, Shown with Numbers</h3>
+
+    <ul>
+      <li><strong>Positivity:</strong> parameterize $E_e = \exp(\theta_e)$ and descend in $\theta$. A plain gradient step on raw $E$ can drive a modulus negative and make $\mathbf{K}$ indefinite &mdash; the solver then fails in ways that look like optimizer bugs.</li>
+      <li><strong>Verify the adjoint against central finite differences</strong> $\big(J(E_e+h) - J(E_e-h)\big)/(2h)$, sweeping $h$ over decades. The FD error curve is V-shaped &mdash; truncation error falls as $h^2$, round-off rises as $h$ shrinks &mdash; and at the bottom the match should reach relative error $\sim 10^{-6}$&ndash;$10^{-8}$ <em>when the solver tolerance is tight</em>. A loose forward solve caps the achievable agreement: the check plateaus at the solver tolerance, and no amount of $h$-tuning fixes it.</li>
+    </ul>
+
+    <p>Both phenomena &mdash; the exactly-zero gradients and the V-curve &mdash; are live in the two interactives below.</p>
+
+    <!-- ===== INTERACTIVE: ADJOINT BAR INVERTER ===== -->
+    <div class="interactive-container" id="bar-inverter">
+      <div class="interactive-label">Interactive Tool — Adjoint Bar Inverter</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Run the full inversion on the 8-element bar: each gradient-descent step costs one forward + one adjoint solve. Watch the per-element gradient equal the product of forward and adjoint strain, watch unsensed elements never move (hatched), and use noise + $\alpha$ to replay the bias&ndash;variance trade-off of Module 3 in miniature. Hover an element for its live numbers.</p>
+      <div class="slider-group">
+        <div class="slider-control"><label><span>Sensors $M$</span> <span id="bi-m-val">5</span></label><input type="range" id="bi-m" min="1" max="8" value="5" step="1"></div>
+        <div class="slider-control"><label><span>Pattern</span></label>
+          <select id="bi-pattern" style="width:100%;font-size:12px;padding:3px;">
+            <option value="left" selected>first M nodes (leaves a blind tail)</option>
+            <option value="spread">M nodes spread to the tip</option>
+          </select>
+        </div>
+        <div class="slider-control"><label><span>Noise $\sigma$ (% of max $u$)</span> <span id="bi-noise-val">1.0</span></label><input type="range" id="bi-noise" min="0" max="5" value="1" step="0.25"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label><span>$\log_{10}\alpha$ (Tikhonov on $\log E$)</span> <span id="bi-alpha-val">&minus;4</span></label><input type="range" id="bi-alpha" min="-6" max="0" value="-4" step="0.25"></div>
+        <div class="slider-control"><label><span>Step size $\eta$</span> <span id="bi-eta-val">8</span></label><input type="range" id="bi-eta" min="1" max="30" value="8" step="1"></div>
+        <div class="slider-control" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
+          <button id="bi-play" style="border:1px solid #7b1fa2;color:#fff;background:#7b1fa2;padding:6px 16px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;">&#9654; Play</button>
+          <button id="bi-step" style="border:1px solid #7b1fa2;color:#7b1fa2;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Step</button>
+          <button id="bi-reset" style="border:1px solid #999;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Reset $\hat{E}$</button>
+          <button id="bi-rand" style="border:1px solid #999;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">New truth + noise</button>
+        </div>
+      </div>
+      <svg id="bi-svg" viewBox="0 0 700 560" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;"></svg>
+      <div id="bi-counter" style="font-size:12.5px;margin-top:8px;color:#333;"></div>
+      <div id="bi-hover" style="font-size:12.5px;margin-top:4px;min-height:20px;color:#4a148c;"></div>
+      <div id="bi-readout" style="font-size:13px;margin-top:6px;"></div>
+    </div>
+
+    <!-- ===== SECTION 4 ===== -->
+    <h2 class="section-heading" id="gradient-routes">4. Five Routes to the Same Gradient</h2>
+
+    <p>Every route below converges (in exact arithmetic, at a converged forward solve) to the <em>same vector</em> $\nabla_{\mathbf{p}}J$. What differs is the bill: how many solves, how much memory, and how the answer degrades when the forward solve is not actually converged. Choosing a route is an engineering decision, not a mathematical one &mdash; and the two "automatic" routes are <em>not</em> interchangeable, which is the single most common confusion in differentiable simulation.</p>
+
+    <table>
+      <tr><th>Route</th><th>Cost per gradient</th><th>Exactness</th><th>Memory</th><th>Breaks down when</th></tr>
+      <tr><td><strong>FD one-sided</strong></td><td>$(n_p+1)\,C_{\text{solve}}$</td><td>$O(h)$ truncation; best $\sim\sqrt{\varepsilon_{\text{mach}}}$</td><td>$O(n_u)$</td><td>$h$ ill-chosen; $n_p$ large; $J$ noisy or loosely solved</td></tr>
+      <tr><td><strong>FD central</strong></td><td>$2 n_p\,C_{\text{solve}}$</td><td>$O(h^2)$; $h^\star \sim \sqrt[3]{\varepsilon_{\text{mach}}}\,|p_i|$</td><td>$O(n_u)$</td><td>same, at double the price</td></tr>
+      <tr><td><strong>Direct (tangent)</strong></td><td>1 forward + $n_p$ linearized solves (factorization reused)</td><td>exact to solver tolerance</td><td>$O(n_u)$</td><td>$n_p$ large</td></tr>
+      <tr><td><strong>Adjoint</strong></td><td>1 forward + 1 transposed linear solve</td><td>exact to solver tolerance</td><td>$O(n_u)$ static</td><td>you must code $\partial\mathbf{R}/\partial\mathbf{p}$ and the transpose by hand</td></tr>
+      <tr><td><strong>AD — unrolled</strong></td><td>1 forward, backprop through <em>every</em> solver iteration</td><td>gradient of the <em>unconverged iterate</em>, not of the solution</td><td>$O(\text{iters}\cdot n_u)$ tape</td><td>many iterations; tape memory; iterate far from converged</td></tr>
+      <tr><td><strong>AD — implicit</strong></td><td>1 forward + 1 adjoint solve (registered as the solver's VJP)</td><td>exact for the converged discrete solution</td><td>$O(n_u)$</td><td>$\mathbf{R}\neq\mathbf{0}$ at the "solution" — loose tolerance corrupts it</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — unrolled and implicit differentiation are different algorithms</div>
+      <div>Both are "autodiff of the solver", and papers say "differentiable FEM" for either. <strong>Unrolling</strong> records every Newton/CG iteration on the tape and differentiates the iteration <em>path</em>: memory grows with iteration count, and the result is the exact gradient of whatever the iterate happens to be after $k$ steps &mdash; which is the wrong object if $k$ was too small. <strong>Implicit differentiation</strong> ignores the path entirely and differentiates the fixed-point <em>condition</em> $\mathbf{R}(\mathbf{u}^*,\mathbf{p})=\mathbf{0}$: memory is independent of iteration count and the gradient is exact for the converged solution &mdash; but meaningless if the solve never converged. Same marketing term, different memory bills, different failure modes. Section 5 gives the implicit route its proper form.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Tighten the solve before blaming the math</div>
+      <div>Implicit differentiation (and the adjoint, which is its hand-written form) assumes $\mathbf{R}(\mathbf{u}^*,\mathbf{p})=\mathbf{0}$ holds <em>exactly</em>. If the forward solve stops at tolerance $10^{-4}$, the gradient inherits an error of that order &mdash; and your finite-difference verification will plateau at $\sim 10^{-4}$ no matter how cleverly you choose $h$. The diagnostic is free: if the V-curve bottoms out early and flat, the limit is the solver, not the adjoint code. Unconverged solves give unreliable gradients on <em>every</em> route: FD differentiates solver noise, unrolling differentiates a wrong iterate, implicit differentiation differentiates a violated identity.</div>
+    </div>
+
+    <p>The laboratory below runs all five routes on the Section 3 bar &mdash; same data, same unknowns &mdash; and puts the bills side by side. The two panels at the bottom hold the module's two cautionary plots: the FD step-size V-curve (with a loose-solver toggle), and the kink that a contact active-set change leaves in an otherwise smooth objective.</p>
+
+    <!-- ===== INTERACTIVE: GRADIENT-ROUTES LABORATORY ===== -->
+    <div class="interactive-container" id="gradient-lab">
+      <div class="interactive-label">Interactive Tool — Gradient-Routes Laboratory</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">One inverse problem, five gradient algorithms. Pick a route and compare its per-element gradient (orange) against the exact discrete gradient (purple), with the running cost meter. Then stress it: loosen the forward solve, shrink the unrolling budget, or push the bar tip into a contact stop and watch the objective grow a kink.</p>
+      <div class="slider-group">
+        <div class="slider-control" style="flex:1.4;"><label><span>Gradient route</span></label>
+          <select id="gl-route" style="width:100%;font-size:12px;padding:3px;">
+            <option value="fd1">Finite differences — one-sided</option>
+            <option value="fd2">Finite differences — central</option>
+            <option value="direct">Direct (tangent) sensitivities</option>
+            <option value="adjoint" selected>Adjoint</option>
+            <option value="unrolled">AD — unrolled solver iterations</option>
+            <option value="implicit">AD — implicit (custom VJP = adjoint)</option>
+          </select>
+        </div>
+        <div class="slider-control"><label><span>FD step $\log_{10} h$</span> <span id="gl-h-val">&minus;6</span></label><input type="range" id="gl-h" min="-12" max="-1" value="-6" step="0.5"></div>
+        <div class="slider-control"><label><span>Unroll iterations $k$</span> <span id="gl-k-val">150</span></label><input type="range" id="gl-k" min="10" max="600" value="150" step="10"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label><span>Sensors $M$ (nodes 1&hellip;M)</span> <span id="gl-m-val">5</span></label><input type="range" id="gl-m" min="1" max="8" value="5" step="1"></div>
+        <div class="slider-control"><label><span>Noise $\sigma$ (%)</span> <span id="gl-noise-val">1.0</span></label><input type="range" id="gl-noise" min="0" max="5" value="1" step="0.25"></div>
+        <div class="slider-control"><label><span>Contact gap $g$</span> <span id="gl-gap-val">1.00</span></label><input type="range" id="gl-gap" min="0.8" max="1.3" value="1" step="0.01"></div>
+        <div class="slider-control" style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="gl-loose"> loose forward solve</label>
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="gl-contact"> contact stop at tip</label>
+          <button id="gl-rand" style="border:1px solid #999;color:#555;background:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;">New truth + noise</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;">
+        <div style="flex:1 1 420px;min-width:300px;">
+          <svg id="gl-svg-bar" viewBox="0 0 430 96" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;width:100%;margin-bottom:10px;"></svg>
+          <svg id="gl-svg-grad" viewBox="0 0 430 220" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;width:100%;"></svg>
+        </div>
+        <div id="gl-panel" style="flex:1 1 240px;min-width:240px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;">
+        <div style="flex:1 1 320px;min-width:280px;">
+          <div style="font-size:11px;color:#888;margin-bottom:2px;">FD verification V-curve (element $e = \min(3, M)$)</div>
+          <svg id="gl-svg-vc" viewBox="0 0 340 230" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;width:100%;"></svg>
+        </div>
+        <div style="flex:1 1 320px;min-width:280px;">
+          <div style="font-size:11px;color:#888;margin-bottom:2px;">Objective sweep $J(s)$, $\mathbf{E} = s\,\hat{\mathbf{E}}$ — the contact kink</div>
+          <svg id="gl-svg-kink" viewBox="0 0 340 230" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;width:100%;"></svg>
+        </div>
+      </div>
+      <div id="gl-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 5 ===== -->
+    <h2 class="section-heading" id="differentiable-fem">5. Differentiable FEM: Autodiff Meets the Stiffness Matrix</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Differentiable Simulator</div>
+      <div>A simulator that exposes gradients of its outputs with respect to <em>any</em> of its inputs &mdash; material parameters, loads, nodal coordinates (shape), initial conditions &mdash; so the whole simulation can sit inside a gradient-based optimization or learning loop as if it were one differentiable function.</div>
+    </div>
+
+    <p>Section 2 built the adjoint by hand. Differentiable FEM is the industrialization of the same mathematics: let automatic differentiation assemble the derivative terms, and reserve your own effort for the one decision that matters &mdash; <em>how</em> the solve is differentiated. The two strategies from Section 4, now in their proper form:</p>
+
+    <h3 class="subsection-heading">Strategy 1 — Unrolling</h3>
+
+    <p>Record every operation of every Newton or CG iteration on the autodiff tape and backpropagate through the lot. Correct in the limit, but memory grows with iteration count, and what you differentiate is the $k$-th iterate &mdash; an object that changes when the iteration count changes. For stiff problems needing hundreds of iterations, the tape is the dominant memory cost of the whole pipeline.</p>
+
+    <h3 class="subsection-heading">Strategy 2 — Implicit Differentiation at the Fixed Point</h3>
+
+    <p>Apply the implicit function theorem to the converged equilibrium:</p>
+
+    <div class="math-block">$$\mathbf{R}(\mathbf{u}^*,\mathbf{p}) = \mathbf{0} \;\Longrightarrow\; \frac{\mathrm{d}\mathbf{u}^*}{\mathrm{d}\mathbf{p}} = -\left(\frac{\partial \mathbf{R}}{\partial \mathbf{u}}\right)^{\!-1}\frac{\partial \mathbf{R}}{\partial \mathbf{p}}\;\Bigg|_{\mathbf{u}^*}$$</div>
+
+    <p>In reverse mode, the vector&ndash;Jacobian product the framework actually needs is exactly Section 2's adjoint solve with the transposed tangent stiffness:</p>
+
+    <div class="math-block">$$\mathbf{v}^{\mathsf{T}}\,\frac{\mathrm{d}\mathbf{u}^*}{\mathrm{d}\mathbf{p}} = -\boldsymbol{\lambda}^{\mathsf{T}}\,\frac{\partial \mathbf{R}}{\partial \mathbf{p}}, \qquad \left(\frac{\partial \mathbf{R}}{\partial \mathbf{u}}\right)^{\!\mathsf{T}}\boldsymbol{\lambda} = \mathbf{v} \quad \text{(VJP = adjoint solve)}$$</div>
+
+    <p>Memory is independent of how many iterations the forward solve took, and the gradient is exact for the converged discrete solution. In JAX this is the <code>custom_vjp</code> pattern: register the adjoint solve as the backward rule of the solver call, and the tape never sees the iterations. The circle closes: <strong>differentiable FEM done right is the adjoint method, automated</strong>.</p>
+
+    <div class="insight-box">
+      <div class="box-label">What autodiff actually buys you</div>
+      <div>Not the adjoint equation &mdash; that is three lines of linear algebra. What autodiff automates is $\partial\mathbf{R}/\partial\mathbf{p}$: the derivative of the assembled residual with respect to <em>any</em> parameterization &mdash; a heterogeneous material field, shape derivatives via nodal coordinates, load parameters &mdash; the part that is genuinely tedious and error-prone by hand (every constitutive branch, every quadrature loop). Change the parameterization and the gradient machinery follows for free; a hand-written adjoint would need a new $\partial\mathbf{R}/\partial\mathbf{p}$ derivation each time.</div>
+    </div>
+
+    <h3 class="subsection-heading">Ecosystem Landmarks (verified numbers only)</h3>
+
+    <ul>
+      <li><strong>DiffTaichi</strong> (Hu et al., ICLR 2020): source-code-transformation AD inside a physics DSL. Across 10 differentiable simulators, their differentiable elastic-object simulator is 4.2&times; shorter than the hand-engineered CUDA reference, runs as fast, and is 188&times; faster than a TensorFlow implementation; controllers optimize in tens of gradient iterations.</li>
+      <li><strong>DiffPD</strong> (Du et al., ACM TOG 2021): differentiates implicit-Euler projective dynamics and <em>reuses the prefactorized Cholesky decomposition</em> of the PD global matrix in the backward pass &mdash; the "symmetric $\mathbf{K}$ makes the adjoint nearly free" insight, scaled up to soft-body dynamics. Reported 4&ndash;19&times; speedup over Newton-based differentiable-simulator baselines; applications in system identification, trajectory optimization, and closed-loop soft-robot control.</li>
+      <li><strong>JAX-FEM</strong> (Xue et al., Computer Physics Communications 2023): open-source differentiable GPU-accelerated 3D FEM where "inverse problems are solved in a fully automatic manner without the need to manually derive sensitivities." On a 3D tensile problem with 7.7 million DOF it reports ~10&times; GPU acceleration over a commercial FEM code, and demonstrates topology optimization of nonlinear materials.</li>
+      <li><strong>NVIDIA Warp</strong> (open-source): JIT-compiles Python kernels for CPU/GPU; kernels are differentiable and interoperate with PyTorch, JAX, and Paddle &mdash; the infrastructure layer for custom differentiable physics.</li>
+    </ul>
+
+    <p>The idea has since reached the two communities this guide cares about. On the engineering-structures side, Wang et al. (CMAME 2025) present a differentiable finite element method with Galerkin discretization aimed at fast and accurate inverse analysis of multidimensional heterogeneous structures &mdash; differentiable FEM as a general inverse-analysis tool rather than a graphics technique. On the soft-robotics side, Zhong et al. (IEEE RA-L 2025) build an end-to-end modeling framework for pneumatic soft robots on differentiable FEM &mdash; the same solver family, pointed at exactly the compliant-body regime a tactile skin lives in.</p>
+
+    <!-- ===== SECTION 6 ===== -->
+    <h2 class="section-heading" id="dynamics-contact-gradients">6. Dynamics, Contact, and the Quality of Gradients</h2>
+
+    <p>Static inversion needs one adjoint solve. Dynamic and contact-rich problems &mdash; a finger sliding across a tactile skin, a soft gripper closing &mdash; raise two genuinely new issues: where do the backward pass's states come from, and can the gradient be trusted near non-smooth events?</p>
+
+    <h3 class="subsection-heading">Memory: the Backward March</h3>
+
+    <p>The time-dependent adjoint marches <strong>backward</strong> from the final time, and at step $t$ it needs the forward state $\mathbf{u}_t$ &mdash; which the forward pass computed long ago. Storing all $T$ steps costs $\mathcal{O}(T\,n_u)$; checkpointing trades recomputation for memory: store every $k$-th state, recompute each segment on demand during the backward sweep.</p>
+
+    <div class="math-block">$$\text{memory: } \mathcal{O}(T\,n_u) \;\xrightarrow{\text{checkpoint every } k} \; \mathcal{O}\big(\tfrac{T}{k}\,n_u\big) + \text{recompute } \mathcal{O}(k) \text{ steps per segment}$$</div>
+
+    <h3 class="subsection-heading">Gradient Quality: Contact Is the Hard Part</h3>
+
+    <p>Contact and friction are non-smooth physics. Penalty-based contact replaces the complementarity condition with stiff but differentiable forces; complementarity/LCP formulations are more faithful but only piecewise-smooth. Either way, contact make/break events and stick&ndash;slip transitions make the state trajectory non-smooth <em>in the parameters</em>: gradients near events can be discontinuous, biased, or high-variance. This trade-off &mdash; between versatility, computational speed, and <strong>gradient accuracy</strong> &mdash; is exactly the axis along which the IEEE Access review of differentiable simulators (Newbury et al. 2024) organizes the field's design decisions: soft/penalty contact models give smoother, cheaper, less accurate gradients; harder contact models give more faithful physics with worse-behaved derivatives. A related structural non-smoothness: remeshing or any change of active constraint set swaps the discrete unknowns mid-optimization, so a "gradient" taken across such an event compares objectives defined on different discrete systems &mdash; it is not a derivative of anything.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Piecewise-smooth is not a bug in your code</div>
+      <div>The kink panel in the laboratory above shows the mechanism at toy scale: when the bar tip meets the stop, the active set changes, the slope of $\mathbf{u}(s)$ changes, and $J(s)$ has a corner &mdash; the gradient jumps. On each side of the event the adjoint gradient is exact; <em>at</em> the event it does not exist, and a finite-difference stencil that straddles the event returns garbage that no step size fixes. In a full simulator these events are dense in time (every marker of a tactile skin makes and breaks contact), so dynamic gradients are best treated as noisy estimates of a piecewise object &mdash; a named accuracy trade-off in the differentiable-simulator literature (Newbury et al. 2024), not a defect of your implementation.</div>
+    </div>
+
+    <h3 class="subsection-heading">Case Study: DiffTactile</h3>
+
+    <p>DiffTactile (Si et al., ICLR 2024) is a physics-based differentiable tactile simulator for contact-rich robotic manipulation &mdash; and a template for this guide's readers. It models the sensing elastomer with an FEM-based soft-body model, uses a penalty-based contact model, and adds a pixel-based neural module to infer the sensor's optical response to contact. Its gradients serve two distinct masters: optimizing tactile-assisted grasping and manipulation skills, and <em>refining the simulator's physical properties against real-world data</em> &mdash; gradient-based system identification that narrows the sim-to-real gap. That second use is the pattern to steal for a lab-built vision-based skin: calibrate the simulated elastomer against real indentation data by gradient descent, and only then trust the simulator's gradients for force inversion and design.</p>
+
+    <h3 class="subsection-heading">Practical Guidance for Dynamic Gradients</h3>
+
+    <ul>
+      <li>Keep time steps <strong>implicit</strong> &mdash; stability under stiff penalty forces, and the implicit solve is exactly what implicit differentiation wants.</li>
+      <li><strong>Average or smooth losses over windows</strong> rather than pointwise states near contact events; a windowed loss integrates over the kink instead of sitting on it.</li>
+      <li><strong>Validate dynamic gradients by finite differences on short horizons</strong> before trusting long rollouts &mdash; the V-curve discipline of Section 3, applied per time-window.</li>
+    </ul>
+
+    <!-- ===== SECTION 7 ===== -->
+    <h2 class="section-heading" id="practical-recipes">7. Practical Recipes for a Soft Tactile Skin</h2>
+
+    <p>The decision procedure, for the reader whose measurements are camera-observed marker displacements on a silicone skin and whose unknowns are a contact traction, a modulus map, or the skin geometry.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 780 330" style="width:100%;max-width:780px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="pl-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#666"/></marker>
+          <marker id="pl-arrp" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#7b1fa2"/></marker>
+        </defs>
+        <!-- inset: classical path -->
+        <rect x="18" y="12" width="744" height="44" rx="4" fill="#fafafa" stroke="#e0e0e0"/>
+        <text x="30" y="30" font-size="11" font-weight="700" fill="#00838f" font-family="sans-serif">CLASSICAL ROUTE (Modules 4&#8211;8):</text>
+        <text x="30" y="47" font-size="11" fill="#555" font-family="sans-serif">linear observation model + Tikhonov &#8594; one-shot solve &mdash; valid only while small strain / superposition holds</text>
+        <line x1="530" y1="34" x2="740" y2="34" stroke="#00838f" stroke-width="1.6" marker-end="url(#pl-arr)"/>
+        <!-- Stage 1: camera + skin -->
+        <g font-family="sans-serif">
+          <rect x="24" y="110" width="140" height="88" rx="6" fill="#fff" stroke="#555" stroke-width="1.3"/>
+          <path d="M64 126 h28 l6 -7 h20 l6 7 h10 v20 h-70 z" fill="#eceff1" stroke="#555"/>
+          <circle cx="99" cy="137" r="6" fill="#fff" stroke="#555" stroke-width="1.5"/>
+          <rect x="38" y="162" width="112" height="18" fill="#e1bee7" stroke="#7b1fa2"/>
+          <circle cx="52" cy="171" r="2.4" fill="#4a148c"/><circle cx="72" cy="171" r="2.4" fill="#4a148c"/><circle cx="92" cy="171" r="2.4" fill="#4a148c"/><circle cx="112" cy="171" r="2.4" fill="#4a148c"/><circle cx="132" cy="171" r="2.4" fill="#4a148c"/>
+          <rect x="38" y="180" width="112" height="7" fill="#90a4ae"/>
+          <text x="94" y="212" font-size="11" text-anchor="middle" fill="#333">camera + markers</text>
+          <text x="94" y="226" font-size="10.5" text-anchor="middle" fill="#666">measured field d</text>
+          <line x1="164" y1="152" x2="216" y2="152" stroke="#666" stroke-width="1.4" marker-end="url(#pl-arr)"/>
+          <!-- Stage 2: diff FEM -->
+          <rect x="220" y="106" width="180" height="92" rx="6" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="1.6"/>
+          <text x="310" y="128" font-size="11.5" font-weight="700" fill="#4a148c" text-anchor="middle">differentiable FEM</text>
+          <text x="310" y="146" font-size="10.5" fill="#333" text-anchor="middle">hyperelastic elastomer,</text>
+          <text x="310" y="161" font-size="10.5" fill="#333" text-anchor="middle">mesh, BCs</text>
+          <text x="310" y="182" font-size="10.5" fill="#4a148c" text-anchor="middle">R(u, p) = 0 &#8594; u(p)</text>
+          <line x1="310" y1="268" x2="310" y2="202" stroke="#c62828" stroke-width="1.6" marker-end="url(#pl-arr)"/>
+          <rect x="228" y="270" width="164" height="40" rx="5" fill="#fff" stroke="#c62828" stroke-width="1.3"/>
+          <text x="310" y="286" font-size="10.5" fill="#c62828" text-anchor="middle" font-weight="600">parameters p</text>
+          <text x="310" y="301" font-size="10" fill="#666" text-anchor="middle">contact traction / modulus map / geometry</text>
+          <line x1="400" y1="152" x2="452" y2="152" stroke="#666" stroke-width="1.4" marker-end="url(#pl-arr)"/>
+          <!-- Stage 3 -->
+          <rect x="456" y="126" width="110" height="52" rx="6" fill="#fff" stroke="#555" stroke-width="1.3"/>
+          <text x="511" y="149" font-size="11.5" fill="#333" text-anchor="middle">sample at markers</text>
+          <text x="511" y="166" font-size="11.5" font-weight="600" fill="#333" text-anchor="middle">S u(p)</text>
+          <line x1="566" y1="152" x2="618" y2="152" stroke="#666" stroke-width="1.4" marker-end="url(#pl-arr)"/>
+          <!-- Stage 4 -->
+          <circle cx="668" cy="152" r="44" fill="#fff8f0" stroke="#e67e22" stroke-width="1.6"/>
+          <text x="668" y="147" font-size="11" fill="#333" text-anchor="middle">J = &#189;&#8214;Su&#8722;d&#8214;&#178;</text>
+          <text x="668" y="163" font-size="11" fill="#333" text-anchor="middle">+ &#945;&#934;(p)</text>
+          <!-- reverse adjoint arrow -->
+          <path d="M652 194 C 600 262, 460 268, 400 288" fill="none" stroke="#7b1fa2" stroke-width="3" marker-end="url(#pl-arrp)"/>
+          <text x="540" y="252" font-size="11.5" font-weight="700" fill="#7b1fa2" text-anchor="middle">adjoint / VJP: (&#8706;R/&#8706;u)&#7488;&#955; &mdash; one linear solve</text>
+          <text x="540" y="268" font-size="10.5" fill="#7b1fa2" text-anchor="middle">gradient step on p, iterate</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The gradient-based inversion loop for a vision-based tactile skin, with the classical one-shot route shown above it for contrast. The reverse arrow is the whole module: one adjoint solve per iteration prices the full parameter gradient.</div>
+    </div>
+
+    <ol>
+      <li><strong>Establish the linear baseline first.</strong> Classical iFEM / Tikhonov reconstruction from the earlier modules is the sanity check every fancy method must beat. If the linear regime genuinely holds, stop there &mdash; nothing below is faster than a prefactorized one-shot solve.</li>
+      <li><strong>In the nonlinear regime, move to differentiable FEM or a hand adjoint.</strong> Silicone at 10&ndash;50% strain with $E$ of tens to hundreds of kPa is hyperelastic territory. Nondimensionalize (kPa, mm) so all quantities are $O(1)$ before optimizing anything.</li>
+      <li><strong>Always verify gradients.</strong> Central differences on a handful of parameters, $h$ swept over decades, V-shaped error curve, minimum relative error $\sim 10^{-6}$&ndash;$10^{-8}$:
+        <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}p_i}\bigg|_{\text{FD}} = \frac{J(p_i+h)-J(p_i-h)}{2h} + \mathcal{O}(h^2), \qquad h^{\star} \sim \sqrt[3]{\varepsilon_{\text{mach}}}\,|p_i|$$</div>
+        If the curve bottoms out early, your solver tolerance &mdash; not the adjoint &mdash; is the limit; implicit differentiation assumes $\mathbf{R}=\mathbf{0}$ holds, so tighten the forward solve before blaming the math.</li>
+      <li><strong>Parameterize for positivity.</strong> $E = \exp(\theta)$ or softplus; a plain gradient step on raw $E$ can produce a negative modulus and an indefinite $\mathbf{K}$.</li>
+      <li><strong>Regularize deliberately.</strong> Tikhonov on the log-field for smooth modulus maps, total variation for inclusions and defects, and multiple load cases (different indentation sites) to shrink the null space &mdash; recall the exactly-zero gradients of Section 3:
+        <div class="math-block">$$E(\mathbf{x}) = \exp\big(\theta(\mathbf{x})\big), \qquad \Phi(\theta) = \alpha_1 \lVert \nabla \theta \rVert_2^2 \;\;\text{or}\;\; \alpha_2 \lVert \nabla \theta \rVert_1 \;\;\text{(TV)}$$</div></li>
+      <li><strong>Optimizer:</strong> L-BFGS with strong-Wolfe line search for smooth deterministic losses; Adam only when the loss is stochastic (minibatched loads or frames).</li>
+      <li><strong>System identification first, inversion second.</strong> Calibrate the elastomer parameters against controlled real indentation data by gradient descent &mdash; the DiffTactile pattern (Si et al. 2024) &mdash; before trusting simulator gradients for force inversion or for optimizing skin geometry and marker layout.</li>
+      <li><strong>If you need real-time inference, or the physics is partly unknown,</strong> the answer is not on this page: amortized neural operators and per-instance physics-informed training are Module 11's subject, where they are weighed honestly against the adjoint loop built here &mdash; which remains the certifying fallback that checks any learned answer against the actual physics.</li>
+    </ol>
+
+    <table>
+      <tr><th>Tool</th><th>What it is</th><th>Differentiation strategy</th></tr>
+      <tr><td><strong>JAX-FEM</strong></td><td>Open-source differentiable 3D FEM (Xue et al. 2023); automatic sensitivities, inverse design, topology optimization of nonlinear materials</td><td>implicit / custom VJP in JAX</td></tr>
+      <tr><td><strong>DiffTaichi / Taichi</strong></td><td>High-performance physics DSL with built-in AD (Hu et al. 2020); custom kernels</td><td>source-code transformation</td></tr>
+      <tr><td><strong>NVIDIA Warp</strong></td><td>Differentiable JIT-compiled Python GPU kernels; PyTorch/JAX/Paddle interop</td><td>kernel-level AD</td></tr>
+      <tr><td><strong>DiffPD</strong></td><td>Soft-body projective dynamics with fast implicit-integration gradients (Du et al. 2021)</td><td>adjoint with prefactorized Cholesky</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Closing the module</div>
+      <div>Gradients change what is <em>computable</em>, not what is <em>identifiable</em>. The adjoint made a million-parameter gradient cost two solves; it did not add one bit of information to the data. Regularization and experiment design &mdash; load cases, sensor placement, the priors of Module 3 &mdash; remain the backbone of every inversion this module's machinery accelerates.</div>
+    </div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod10-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Plessix, R.-E. (2006). <em>A review of the adjoint-state method for computing the gradient of a functional with geophysical applications</em>. Geophysical Journal International. doi:10.1111/j.1365-246X.2006.02978.x</li>
+      <li>Oberai, Assad A.; Gokhale, Nachiket H.; Feij&oacute;o, Gonzalo R. (2003). <em>Solution of inverse problems in elasticity imaging using the adjoint method</em>. Inverse Problems 19(2), pp. 297&ndash;313. doi:10.1088/0266-5611/19/2/304</li>
+      <li>Hu, Y.; Anderson, L.; Li, T.-M.; Sun, Q.; Carr, N.; Ragan-Kelley, J.; Durand, F. (2020). <em>DiffTaichi: Differentiable Programming for Physical Simulation</em>. ICLR 2020.</li>
+      <li>Du, T.; Wu, K.; Ma, P.; Wah, S.; Spielberg, A.; Rus, D.; Matusik, W. (2021). <em>DiffPD: Differentiable Projective Dynamics</em>. ACM Transactions on Graphics.</li>
+      <li>Xue, Tianju; Liao, Shuheng; Gan, Zhengtao; Park, Chanwook; Xie, Xiaoyu; Liu, Wing Kam; Cao, Jian (2023). <em>JAX-FEM: A differentiable GPU-accelerated 3D finite element solver for automatic inverse design and mechanistic data science</em>. Computer Physics Communications 291, 108802. doi:10.1016/j.cpc.2023.108802</li>
+      <li>Wang, Xi; Yin, Zhen-Yu; Wu, Wei; Zhu, He-Hua (2025). <em>Differentiable finite element method with Galerkin discretization for fast and accurate inverse analysis of multidimensional heterogeneous engineering structures</em>. Computer Methods in Applied Mechanics and Engineering 437, 117755. doi:10.1016/j.cma.2025.117755</li>
+      <li>Zhong, Shaohong; Yao, Yao; Maiolino, Perla; Posner, Ingmar (2025). <em>An End-to-End Framework for Modeling Pneumatic Soft Robots Based on Differentiable Finite Element Methods</em>. IEEE Robotics and Automation Letters 10(12), pp. 13003&ndash;13010. doi:10.1109/LRA.2025.3625507</li>
+      <li>Si, Z.; Zhang, G.; Ben, Q.; Romero, B.; Xian, Z.; Liu, C.; Gan, C. (2024). <em>DIFFTACTILE: A Physics-based Differentiable Tactile Simulator for Contact-rich Robotic Manipulation</em>. ICLR 2024.</li>
+      <li>Newbury, R.; Collins, J.; He, K.; Pan, J.; Posner, I.; Howard, D.; Cosgun, A. (2024). <em>A Review of Differentiable Simulators</em>. IEEE Access.</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod9.html">&larr; 9. Reference Configuration &amp; Prestress</a>
+      <a href="mod11.html">11. Learning-Enhanced Inversion &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod10');</script>
+
+<!-- ===== SCRIPT: ADJOINT BAR INVERTER ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  var F = 1; // tip load; A=1, L_e=1/8 so A/L_e = 8 and k_e = 8 E_e
+
+  function randn() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function buildK(E) {
+    var dg = [], off = [], j;
+    for (j = 0; j < 8; j++) dg.push(8 * E[j] + (j < 7 ? 8 * E[j + 1] : 0));
+    for (j = 0; j < 7; j++) off.push(-8 * E[j + 1]);
+    return { dg: dg, off: off };
+  }
+  function triSolve(dg, off, rhs) {
+    var n = 8, cp = [], dp = [], i, m;
+    cp[0] = off[0] / dg[0]; dp[0] = rhs[0] / dg[0];
+    for (i = 1; i < n; i++) {
+      m = dg[i] - off[i - 1] * cp[i - 1];
+      cp[i] = (i < n - 1) ? off[i] / m : 0;
+      dp[i] = (rhs[i] - off[i - 1] * dp[i - 1]) / m;
+    }
+    var x = new Array(n); x[n - 1] = dp[n - 1];
+    for (i = n - 2; i >= 0; i--) x[i] = dp[i] - cp[i] * x[i + 1];
+    return x;
+  }
+  function solveFwd(E) { var K = buildK(E); return triSolve(K.dg, K.off, [0, 0, 0, 0, 0, 0, 0, F]); }
+
+  // --- state ---
+  var Etrue = [], z = [], theta = [0, 0, 0, 0, 0, 0, 0, 0];
+  var M = 5, pattern = 'left', noisePct = 1.0, logAlpha = -4, eta = 8;
+  var it = 0, playing = false, timer = null, diverged = false;
+  var d = [];
+
+  function newTruth() {
+    Etrue = []; z = [];
+    for (var e = 0; e < 8; e++) {
+      Etrue.push(Math.min(1.8, Math.max(0.5, 1 + 0.35 * randn())));
+      z.push(randn());
+    }
+  }
+  function sensorIdx() {
+    var s = [], i;
+    if (pattern === 'left') { for (i = 0; i < M; i++) s.push(i); }
+    else {
+      var seen = {};
+      for (i = 0; i < M; i++) { var idx = Math.round((i + 1) * 8 / M) - 1; if (!seen[idx]) { seen[idx] = 1; s.push(idx); } }
+    }
+    return s;
+  }
+  function makeData() {
+    var uT = solveFwd(Etrue), maxu = 0, i;
+    for (i = 0; i < 8; i++) maxu = Math.max(maxu, Math.abs(uT[i]));
+    d = [];
+    for (i = 0; i < 8; i++) d.push(uT[i] + (noisePct / 100) * maxu * z[i]);
+  }
+
+  function compute() {
+    var E = theta.map(Math.exp);
+    var u = solveFwd(E);
+    var sens = sensorIdx(), i, e;
+    var r8 = [0, 0, 0, 0, 0, 0, 0, 0], J = 0;
+    for (i = 0; i < sens.length; i++) { var k = sens[i]; r8[k] = u[k] - d[k]; J += 0.5 * r8[k] * r8[k]; }
+    var K = buildK(E);
+    var lam = triSolve(K.dg, K.off, r8.map(function(v) { return -v; }));
+    var gE = [], epsU = [], epsL = [];
+    for (e = 0; e < 8; e++) {
+      var du = u[e] - (e > 0 ? u[e - 1] : 0);
+      var dl = lam[e] - (e > 0 ? lam[e - 1] : 0);
+      gE.push(8 * du * dl);
+      epsU.push(du * 8); epsL.push(dl * 8); // strain = du / L_e = 8 du
+    }
+    var alpha = Math.pow(10, logAlpha);
+    var gPhi = [], Phi = 0;
+    for (e = 0; e < 8; e++) {
+      var g = 0;
+      if (e > 0) g += (theta[e] - theta[e - 1]);
+      if (e < 7) g -= (theta[e + 1] - theta[e]);
+      gPhi.push(g);
+      if (e < 7) Phi += 0.5 * Math.pow(theta[e + 1] - theta[e], 2);
+    }
+    var last = Math.max.apply(null, sens);
+    return { E: E, u: u, lam: lam, gE: gE, epsU: epsU, epsL: epsL, J: J, Phi: Phi, alpha: alpha,
+             gTheta: gE.map(function(v, j) { return E[j] * v + alpha * gPhi[j]; }),
+             sens: sens, last: last };
+  }
+
+  function stepOnce() {
+    var c = compute();
+    for (var e = 0; e < 8; e++) theta[e] -= eta * c.gTheta[e];
+    it++;
+    var c2 = compute();
+    if (!isFinite(c2.J) || c2.J > 1e4) { diverged = true; setPlaying(false); }
+    return c2;
+  }
+
+  // --- drawing ---
+  function cmap(E) { // 0.4..2.0 -> light->dark purple
+    var t = Math.min(1, Math.max(0, (E - 0.4) / 1.6));
+    var a = [243, 229, 245], b = [74, 20, 140], c = [];
+    for (var i = 0; i < 3; i++) c.push(Math.round(a[i] + t * (b[i] - a[i])));
+    return 'rgb(' + c.join(',') + ')';
+  }
+  function fm(x, dgt) { return (x === 0 ? '0' : Math.abs(x) < 0.001 || Math.abs(x) >= 1e4 ? x.toExponential(dgt === undefined ? 2 : dgt) : x.toFixed(dgt === undefined ? 3 : dgt)); }
+
+  function draw() {
+    var c = compute();
+    var s = '';
+    s += '<defs><pattern id="bi-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#9e9e9e" stroke-width="2"/></pattern>';
+    s += '<pattern id="bi-wall" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#888" stroke-width="2"/></pattern>';
+    s += '<marker id="bi-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#c62828"/></marker></defs>';
+    var x0 = 46, wEl = 71, e, x;
+    // ---- Panel A: bar strip ----
+    s += '<text x="20" y="18" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">CURRENT ESTIMATE  (hatched = beyond last sensor: gradient exactly zero)</text>';
+    s += '<rect x="28" y="28" width="14" height="48" fill="url(#bi-wall)" stroke="#555"/>';
+    for (e = 0; e < 8; e++) {
+      x = x0 + e * wEl;
+      s += '<g data-el="' + e + '" style="cursor:pointer;">';
+      s += '<rect x="' + x + '" y="34" width="' + wEl + '" height="36" fill="' + cmap(c.E[e]) + '" stroke="#7b1fa2" stroke-width="1"/>';
+      if (e > c.last) s += '<rect x="' + x + '" y="34" width="' + wEl + '" height="36" fill="url(#bi-hatch)" opacity="0.65"/>';
+      s += '<text x="' + (x + wEl / 2) + '" y="56" font-size="10" text-anchor="middle" fill="' + (c.E[e] > 1.2 ? '#fff' : '#4a148c') + '" font-family="sans-serif">E&#770;=' + c.E[e].toFixed(2) + '</text>';
+      s += '</g>';
+    }
+    s += '<line x1="' + (x0 + 8 * wEl) + '" y1="52" x2="' + (x0 + 8 * wEl + 34) + '" y2="52" stroke="#c62828" stroke-width="2.5" marker-end="url(#bi-arr)"/>';
+    s += '<text x="' + (x0 + 8 * wEl + 18) + '" y="44" font-size="11" font-weight="700" fill="#c62828" font-family="sans-serif">F</text>';
+    var sens = c.sens;
+    for (var i = 0; i < sens.length; i++) {
+      var nx = x0 + (sens[i] + 1) * wEl;
+      s += '<circle cx="' + nx + '" cy="78" r="4" fill="#1565c0"/>';
+    }
+    s += '<text x="' + x0 + '" y="93" font-size="10" fill="#1565c0" font-family="sans-serif">&#9679; displacement sensors</text>';
+    // ---- Panel B: E profile ----
+    var yB0 = 122, yBh = 118, yB1 = yB0 + yBh; // maps E in 0..2.2
+    function yE(E) { return yB1 - (E / 2.2) * yBh; }
+    s += '<text x="20" y="' + (yB0 - 6) + '" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">MODULUS PROFILE &mdash; estimate (bars) vs hidden truth (black steps)</text>';
+    s += '<line x1="' + x0 + '" y1="' + yB1 + '" x2="' + (x0 + 8 * wEl) + '" y2="' + yB1 + '" stroke="#999"/>';
+    s += '<line x1="' + x0 + '" y1="' + yB0 + '" x2="' + x0 + '" y2="' + yB1 + '" stroke="#999"/>';
+    s += '<text x="' + (x0 - 6) + '" y="' + (yE(1) + 4) + '" font-size="9.5" fill="#888" text-anchor="end" font-family="sans-serif">1</text>';
+    s += '<line x1="' + x0 + '" y1="' + yE(1) + '" x2="' + (x0 + 8 * wEl) + '" y2="' + yE(1) + '" stroke="#eee"/>';
+    s += '<text x="' + (x0 - 6) + '" y="' + (yE(2) + 4) + '" font-size="9.5" fill="#888" text-anchor="end" font-family="sans-serif">2</text>';
+    for (e = 0; e < 8; e++) {
+      x = x0 + e * wEl;
+      var yv = yE(c.E[e]);
+      s += '<g data-el="' + e + '" style="cursor:pointer;">';
+      s += '<rect x="' + (x + 12) + '" y="' + yv + '" width="' + (wEl - 24) + '" height="' + (yB1 - yv) + '" fill="' + (e > c.last ? '#e0e0e0' : '#ce93d8') + '" stroke="' + (e > c.last ? '#9e9e9e' : '#7b1fa2') + '"/>';
+      s += '</g>';
+      var yt = yE(Etrue[e]);
+      s += '<line x1="' + (x + 4) + '" y1="' + yt + '" x2="' + (x + wEl - 4) + '" y2="' + yt + '" stroke="#222" stroke-width="2"/>';
+    }
+    // ---- Panel C: gradient ----
+    var yC0 = 278, yCh = 108, yCz = yC0 + yCh / 2;
+    var gmax = 1e-12;
+    for (e = 0; e < 8; e++) gmax = Math.max(gmax, Math.abs(c.gE[e]));
+    s += '<text x="20" y="' + (yC0 - 8) + '" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">PER-ELEMENT GRADIENT  dJ/dE&#8337; = A L&#8337; &#949;&#8337;[u] &#949;&#8337;[&#955;]</text>';
+    s += '<line x1="' + x0 + '" y1="' + yCz + '" x2="' + (x0 + 8 * wEl) + '" y2="' + yCz + '" stroke="#999"/>';
+    for (e = 0; e < 8; e++) {
+      x = x0 + e * wEl;
+      var h = (c.gE[e] / gmax) * (yCh / 2 - 4);
+      s += '<g data-el="' + e + '" style="cursor:pointer;">';
+      if (Math.abs(h) < 0.5 && e > c.last) {
+        s += '<rect x="' + (x + 16) + '" y="' + (yCz - 1) + '" width="' + (wEl - 32) + '" height="2" fill="url(#bi-hatch)" stroke="#9e9e9e"/>';
+        s += '<text x="' + (x + wEl / 2) + '" y="' + (yCz - 8) + '" font-size="9" text-anchor="middle" fill="#9e9e9e" font-family="sans-serif">0 exactly</text>';
+      } else {
+        s += '<rect x="' + (x + 16) + '" y="' + (h > 0 ? yCz - h : yCz) + '" width="' + (wEl - 32) + '" height="' + Math.max(0.8, Math.abs(h)) + '" fill="#7b1fa2" opacity="0.85"/>';
+      }
+      s += '</g>';
+    }
+    // ---- Panel D: strain pairs ----
+    var yD0 = 428, yDh = 108, yDz = yD0 + yDh / 2;
+    var umax = 1e-12, lmax = 1e-12;
+    for (e = 0; e < 8; e++) { umax = Math.max(umax, Math.abs(c.epsU[e])); lmax = Math.max(lmax, Math.abs(c.epsL[e])); }
+    s += '<text x="20" y="' + (yD0 - 8) + '" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">FORWARD STRAIN <tspan fill="#1565c0">&#949;[u]</tspan> AND ADJOINT STRAIN <tspan fill="#e67e22">&#949;[&#955;]</tspan> &mdash; the gradient is their product</text>';
+    s += '<line x1="' + x0 + '" y1="' + yDz + '" x2="' + (x0 + 8 * wEl) + '" y2="' + yDz + '" stroke="#999"/>';
+    for (e = 0; e < 8; e++) {
+      x = x0 + e * wEl;
+      var hu = (c.epsU[e] / umax) * (yDh / 2 - 4);
+      var hl = (c.epsL[e] / lmax) * (yDh / 2 - 4);
+      s += '<g data-el="' + e + '" style="cursor:pointer;">';
+      s += '<rect x="' + (x + 12) + '" y="' + (hu > 0 ? yDz - hu : yDz) + '" width="' + (wEl / 2 - 16) + '" height="' + Math.max(0.8, Math.abs(hu)) + '" fill="#1565c0" opacity="0.8"/>';
+      s += '<rect x="' + (x + wEl / 2 + 4) + '" y="' + (hl > 0 ? yDz - hl : yDz) + '" width="' + (wEl / 2 - 16) + '" height="' + Math.max(0.8, Math.abs(hl)) + '" fill="#e67e22" opacity="0.8"/>';
+      s += '</g>';
+      s += '<text x="' + (x + wEl / 2) + '" y="' + (yD0 + yDh + 14) + '" font-size="9.5" text-anchor="middle" fill="#888" font-family="sans-serif">e' + (e + 1) + '</text>';
+    }
+    el('bi-svg').innerHTML = s;
+
+    // counter
+    var fdSolves = 9 * it, adjSolves = 2 * it;
+    el('bi-counter').innerHTML = '<strong>iteration ' + it + '</strong> &nbsp;&middot;&nbsp; misfit J = ' + fm(c.J) +
+      ' &nbsp;&middot;&nbsp; solves used: <span style="color:#7b1fa2;font-weight:700;">' + adjSolves + '</span> (adjoint: 2/iter)' +
+      ' vs <span style="color:#c62828;">' + fdSolves + '</span> if finite differences (9/iter)' +
+      ' &nbsp;&middot;&nbsp; identifiable: ' + (c.last + 1) + '/8 elements' +
+      (diverged ? ' &nbsp; <span style="color:#c62828;font-weight:700;">DIVERGED — step size too large; reset and reduce &#951;</span>' : '');
+    return c;
+  }
+
+  var lastC = null;
+  function refresh() { lastC = draw(); }
+
+  // hover via delegation
+  el('bi-svg').addEventListener('mousemove', function(ev) {
+    var t = ev.target, g = null;
+    while (t && t !== this) { if (t.getAttribute && t.getAttribute('data-el') !== null) { g = t; break; } t = t.parentNode; }
+    if (!g || !lastC) { return; }
+    var e = parseInt(g.getAttribute('data-el'));
+    var c = lastC;
+    var du = c.u[e] - (e > 0 ? c.u[e - 1] : 0);
+    var dl = c.lam[e] - (e > 0 ? c.lam[e - 1] : 0);
+    el('bi-hover').innerHTML = 'element ' + (e + 1) + ':&nbsp; dJ/dE = (A/L)(&#916;u)(&#916;&#955;) = 8 &times; (' + fm(du) + ') &times; (' + fm(dl) + ') = <strong>' + fm(c.gE[e]) + '</strong>' +
+      (e > c.last ? ' &nbsp;&mdash; beyond the last sensor: &#916;&#955; = 0, unidentifiable' : '');
+  });
+  el('bi-svg').addEventListener('mouseleave', function() { el('bi-hover').innerHTML = ''; });
+
+  function renderReadout() {
+    var ro = el('bi-readout');
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\theta \\leftarrow \\theta - \\eta\\,\\nabla_\\theta\\Big[\\tfrac12\\lVert \\mathbf{S}\\mathbf{u}(e^\\theta)-\\mathbf{d}\\rVert^2 + \\alpha\\,\\tfrac12\\lVert \\mathbf{D}\\theta\\rVert^2\\Big], \\qquad \\eta = ' + eta + ',\\; \\alpha = 10^{' + logAlpha.toFixed(2).replace(/\.00$/, '') + '}$$</div>' +
+      '<div style="font-size:12.5px;color:#555;">Each step: one forward solve $\\mathbf{K}\\mathbf{u}=\\mathbf{f}$, one adjoint solve $\\mathbf{K}\\boldsymbol{\\lambda}=-\\mathbf{S}^{\\mathsf{T}}(\\mathbf{S}\\mathbf{u}-\\mathbf{d})$, then the per-element product formula. With noise on and $\\alpha \\to 0$ the recovered profile oscillates; raising $\\alpha$ smooths it toward the mean — Module 3\'s bias&ndash;variance trade-off in eight parameters.</div>';
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+
+  function setPlaying(p) {
+    playing = p;
+    el('bi-play').innerHTML = p ? '&#10074;&#10074; Pause' : '&#9654; Play';
+    if (p) { timer = setInterval(function() { stepOnce(); refresh(); }, 66); }
+    else if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  el('bi-play').addEventListener('click', function() { if (diverged) return; setPlaying(!playing); });
+  el('bi-step').addEventListener('click', function() { if (!diverged) { stepOnce(); refresh(); } });
+  el('bi-reset').addEventListener('click', function() { theta = [0, 0, 0, 0, 0, 0, 0, 0]; it = 0; diverged = false; refresh(); });
+  el('bi-rand').addEventListener('click', function() { newTruth(); makeData(); theta = [0, 0, 0, 0, 0, 0, 0, 0]; it = 0; diverged = false; refresh(); });
+
+  el('bi-m').addEventListener('input', function() { M = parseInt(this.value); el('bi-m-val').textContent = M; makeData(); refresh(); });
+  el('bi-pattern').addEventListener('change', function() { pattern = this.value; makeData(); refresh(); });
+  el('bi-noise').addEventListener('input', function() { noisePct = parseFloat(this.value); el('bi-noise-val').textContent = noisePct.toFixed(1); makeData(); refresh(); });
+  el('bi-alpha').addEventListener('input', function() { logAlpha = parseFloat(this.value); el('bi-alpha-val').innerHTML = (logAlpha < 0 ? '&minus;' : '') + Math.abs(logAlpha).toFixed(2); renderReadout(); refresh(); });
+  el('bi-eta').addEventListener('input', function() { eta = parseInt(this.value); el('bi-eta-val').textContent = eta; renderReadout(); refresh(); });
+
+  newTruth(); makeData();
+  function boot() { refresh(); renderReadout(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+
+<!-- ===== SCRIPT: GRADIENT-ROUTES LABORATORY ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  var F = 1, KC = 40, LOOSE_ITERS = 250;
+
+  function randn() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function buildK(E, extraTip) {
+    var dg = [], off = [], j;
+    for (j = 0; j < 8; j++) dg.push(8 * E[j] + (j < 7 ? 8 * E[j + 1] : 0));
+    dg[7] += (extraTip || 0);
+    for (j = 0; j < 7; j++) off.push(-8 * E[j + 1]);
+    return { dg: dg, off: off };
+  }
+  function triSolve(K, rhs) {
+    var dg = K.dg, off = K.off, n = 8, cp = [], dp = [], i, m;
+    cp[0] = off[0] / dg[0]; dp[0] = rhs[0] / dg[0];
+    for (i = 1; i < n; i++) {
+      m = dg[i] - off[i - 1] * cp[i - 1];
+      cp[i] = (i < n - 1) ? off[i] / m : 0;
+      dp[i] = (rhs[i] - off[i - 1] * dp[i - 1]) / m;
+    }
+    var x = new Array(n); x[n - 1] = dp[n - 1];
+    for (i = n - 2; i >= 0; i--) x[i] = dp[i] - cp[i] * x[i + 1];
+    return x;
+  }
+  function matvec(K, u) {
+    var r = [], i;
+    for (i = 0; i < 8; i++) r.push(K.dg[i] * u[i] + (i > 0 ? K.off[i - 1] * u[i - 1] : 0) + (i < 7 ? K.off[i] * u[i + 1] : 0));
+    return r;
+  }
+  function jacobi(K, rhs, iters) {
+    var u = [0, 0, 0, 0, 0, 0, 0, 0], m, i;
+    for (m = 0; m < iters; m++) {
+      var Ku = matvec(K, u), un = [];
+      for (i = 0; i < 8; i++) un.push(u[i] + (rhs[i] - Ku[i]) / K.dg[i]);
+      u = un;
+    }
+    return u;
+  }
+  function resNorm(K, u, rhs) {
+    var Ku = matvec(K, u), s = 0, s2 = 0, i;
+    for (i = 0; i < 8; i++) { s += Math.pow(rhs[i] - Ku[i], 2); s2 += rhs[i] * rhs[i]; }
+    return Math.sqrt(s) / Math.max(1e-30, Math.sqrt(s2));
+  }
+
+  // --- state ---
+  var route = 'adjoint', logh = -6, kUnroll = 150, M = 5, noisePct = 1.0, loose = false, contact = false, gap = 1.0;
+  var Etrue = [], z = [], Eest = [1, 1, 1, 1, 1, 1, 1, 1], d = [];
+
+  function newTruth() {
+    Etrue = []; z = [];
+    for (var e = 0; e < 8; e++) {
+      Etrue.push(Math.min(1.8, Math.max(0.5, 1 + 0.35 * randn())));
+      z.push(randn());
+    }
+  }
+  function makeData() {
+    var uT = triSolve(buildK(Etrue, 0), [0, 0, 0, 0, 0, 0, 0, F]);
+    var maxu = 0, i;
+    for (i = 0; i < 8; i++) maxu = Math.max(maxu, Math.abs(uT[i]));
+    d = [];
+    for (i = 0; i < 8; i++) d.push(uT[i] + (noisePct / 100) * maxu * z[i]);
+  }
+
+  // forward solve honoring contact; returns {u, active, K, rhs}
+  function fwdTight(E) {
+    var K0 = buildK(E, 0), f0 = [0, 0, 0, 0, 0, 0, 0, F];
+    var u0 = triSolve(K0, f0);
+    if (!contact || u0[7] <= gap) return { u: u0, active: false, K: K0, rhs: f0 };
+    var K1 = buildK(E, KC), f1 = [0, 0, 0, 0, 0, 0, 0, F + KC * gap];
+    return { u: triSolve(K1, f1), active: true, K: K1, rhs: f1 };
+  }
+  // policy solver: loose only when contact off
+  function fwdPolicy(E) {
+    if (loose && !contact) {
+      var K = buildK(E, 0), f = [0, 0, 0, 0, 0, 0, 0, F];
+      var u = jacobi(K, f, LOOSE_ITERS);
+      return { u: u, active: false, K: K, rhs: f };
+    }
+    return fwdTight(E);
+  }
+  function Jof(u) {
+    var J = 0, i;
+    for (i = 0; i < M; i++) J += 0.5 * Math.pow(u[i] - d[i], 2);
+    return J;
+  }
+  function resid8(u) {
+    var r = [0, 0, 0, 0, 0, 0, 0, 0], i;
+    for (i = 0; i < M; i++) r[i] = u[i] - d[i];
+    return r;
+  }
+  function gradFrom(u, lam) {
+    var g = [], e;
+    for (e = 0; e < 8; e++) {
+      var du = u[e] - (e > 0 ? u[e - 1] : 0);
+      var dl = lam[e] - (e > 0 ? lam[e - 1] : 0);
+      g.push(8 * du * dl);
+    }
+    return g;
+  }
+  function gradExact(E) { // tight, honors contact
+    var fw = fwdTight(E);
+    var r = resid8(fw.u);
+    var lam = triSolve(fw.K, r.map(function(v) { return -v; }));
+    return { g: gradFrom(fw.u, lam), fw: fw };
+  }
+  function dKu(E, u, e) { // (dK/dE_e) u as a vector
+    var p = [0, 0, 0, 0, 0, 0, 0, 0];
+    var a = e - 1, b = e;
+    var ua = a >= 0 ? u[a] : 0;
+    if (a >= 0) p[a] += 8 * (ua - u[b]);
+    p[b] += 8 * (u[b] - ua);
+    return p;
+  }
+  function gradDirect(E) {
+    var fw = fwdPolicy(E), r = resid8(fw.u), g = [], e, i;
+    for (e = 0; e < 8; e++) {
+      var p = dKu(E, fw.u, e);
+      var due = triSolve(fw.K, p.map(function(v) { return -v; }));
+      var s = 0;
+      for (i = 0; i < M; i++) s += r[i] * due[i];
+      g.push(s);
+    }
+    return { g: g, fw: fw };
+  }
+  function gradAdjointPolicy(E) {
+    var fw = fwdPolicy(E), r = resid8(fw.u);
+    var lam = triSolve(fw.K, r.map(function(v) { return -v; }));
+    return { g: gradFrom(fw.u, lam), fw: fw };
+  }
+  function gradFD(E, central, hRel) {
+    var g = [], e;
+    var J0 = Jof(fwdPolicy(E).u);
+    for (e = 0; e < 8; e++) {
+      var h = hRel * Math.abs(E[e]);
+      var Ep = E.slice(); Ep[e] += h;
+      var Jp = Jof(fwdPolicy(Ep).u);
+      if (central) {
+        var Em = E.slice(); Em[e] -= h;
+        var Jm = Jof(fwdPolicy(Em).u);
+        g.push((Jp - Jm) / (2 * h));
+      } else {
+        g.push((Jp - J0) / h);
+      }
+    }
+    return g;
+  }
+  function gradUnrolled(E, k) {
+    // active set fixed from tight solve; forward-mode through k Jacobi iterations
+    var tight = fwdTight(E);
+    var extra = tight.active ? KC : 0;
+    var rhs = tight.active ? [0, 0, 0, 0, 0, 0, 0, F + KC * gap] : [0, 0, 0, 0, 0, 0, 0, F];
+    var K = buildK(E, extra);
+    var u = [0, 0, 0, 0, 0, 0, 0, 0];
+    var dU = [], e, i, m;
+    for (e = 0; e < 8; e++) dU.push([0, 0, 0, 0, 0, 0, 0, 0]);
+    // parameter derivatives of dg and off
+    function ddg(e, i) { return 8 * ((e === i ? 1 : 0) + (i < 7 && e === i + 1 ? 1 : 0)); }
+    function doff(e, i) { return -8 * (e === i + 1 ? 1 : 0); }
+    for (m = 0; m < k; m++) {
+      var Ku = matvec(K, u);
+      var dUn = [];
+      for (e = 0; e < 8; e++) {
+        var row = [];
+        for (i = 0; i < 8; i++) {
+          var dKu_ei = ddg(e, i) * u[i] + K.dg[i] * dU[e][i]
+            + (i > 0 ? doff(e, i - 1) * u[i - 1] + K.off[i - 1] * dU[e][i - 1] : 0)
+            + (i < 7 ? doff(e, i) * u[i + 1] + K.off[i] * dU[e][i + 1] : 0);
+          row.push(dU[e][i] - dKu_ei / K.dg[i] - (rhs[i] - Ku[i]) * ddg(e, i) / (K.dg[i] * K.dg[i]));
+        }
+        dUn.push(row);
+      }
+      var un = [];
+      for (i = 0; i < 8; i++) un.push(u[i] + (rhs[i] - Ku[i]) / K.dg[i]);
+      u = un; dU = dUn;
+    }
+    var r = resid8(u), g = [];
+    for (e = 0; e < 8; e++) {
+      var s = 0;
+      for (i = 0; i < M; i++) s += r[i] * dU[e][i];
+      g.push(s);
+    }
+    return { g: g, u: u, K: K, rhs: rhs };
+  }
+
+  // small symmetric eigensolver (Jacobi rotations) for conditioning
+  function eigSym(Ain) {
+    var n = Ain.length, A = [], i, j;
+    for (i = 0; i < n; i++) A.push(Ain[i].slice());
+    for (var sweep = 0; sweep < 60; sweep++) {
+      var off = 0;
+      for (i = 0; i < n - 1; i++) for (j = i + 1; j < n; j++) off += A[i][j] * A[i][j];
+      if (off < 1e-30) break;
+      for (i = 0; i < n - 1; i++) for (j = i + 1; j < n; j++) {
+        if (Math.abs(A[i][j]) < 1e-22) continue;
+        var th = 0.5 * Math.atan2(2 * A[i][j], A[i][i] - A[j][j]);
+        var c = Math.cos(th), s = Math.sin(th), k;
+        for (k = 0; k < n; k++) {
+          var aik = A[i][k], ajk = A[j][k];
+          A[i][k] = c * aik + s * ajk; A[j][k] = -s * aik + c * ajk;
+        }
+        for (k = 0; k < n; k++) {
+          var aki = A[k][i], akj = A[k][j];
+          A[k][i] = c * aki + s * akj; A[k][j] = -s * aki + c * akj;
+        }
+      }
+    }
+    var ev = [];
+    for (i = 0; i < n; i++) ev.push(A[i][i]);
+    return ev;
+  }
+
+  function fmtExp(x) {
+    if (!isFinite(x)) return '&#8734;';
+    var e = Math.floor(Math.log10(Math.abs(x)));
+    var mant = x / Math.pow(10, e);
+    return mant.toFixed(1) + '&times;10<sup>' + e + '</sup>';
+  }
+  function fm(x, dgt) { return (Math.abs(x) < 0.001 || Math.abs(x) >= 1e4) && x !== 0 ? x.toExponential(dgt === undefined ? 2 : dgt) : x.toFixed(dgt === undefined ? 3 : dgt); }
+
+  // ---------- main update ----------
+  function update() {
+    var ex = gradExact(Eest);
+    var gex = ex.g;
+    var routeRes = null, costHtml = '', memHtml = '', solverRes = null, tapeFloats = 0;
+    var hRel = Math.pow(10, logh);
+
+    if (route === 'fd1') { routeRes = gradFD(Eest, false, hRel); costHtml = '9 forward solves'; }
+    else if (route === 'fd2') { routeRes = gradFD(Eest, true, hRel); costHtml = '16 forward solves'; }
+    else if (route === 'direct') { var dr = gradDirect(Eest); routeRes = dr.g; solverRes = resNorm(dr.fw.K, dr.fw.u, dr.fw.rhs); costHtml = '1 forward + 8 tangent solves (factorization reused)'; }
+    else if (route === 'adjoint' || route === 'implicit') {
+      var ad = gradAdjointPolicy(Eest); routeRes = ad.g; solverRes = resNorm(ad.fw.K, ad.fw.u, ad.fw.rhs);
+      costHtml = '1 forward + 1 adjoint solve' + (route === 'implicit' ? ' (registered as the solver’s custom VJP)' : '');
+    }
+    else { var ur = gradUnrolled(Eest, kUnroll); routeRes = ur.g; solverRes = resNorm(ur.K, ur.u, ur.rhs); tapeFloats = kUnroll * 8; costHtml = '1 forward (' + kUnroll + ' Jacobi iterations), backprop through all of them'; memHtml = 'tape: ' + kUnroll + ' &times; 8 states = ' + tapeFloats + ' floats'; }
+
+    if (route === 'fd1' || route === 'fd2') {
+      var uP = fwdPolicy(Eest); solverRes = resNorm(uP.K, uP.u, uP.rhs);
+    }
+
+    var gmaxAbs = 1e-14, e;
+    for (e = 0; e < 8; e++) gmaxAbs = Math.max(gmaxAbs, Math.abs(gex[e]));
+    var relErr = 0;
+    for (e = 0; e < 8; e++) relErr = Math.max(relErr, Math.abs(routeRes[e] - gex[e]) / gmaxAbs);
+
+    var active = ex.fw.active;
+    var lastId = M - 1; // identifiable elements: idx 0..M-1
+
+    // ---- bar strip ----
+    var s = '<defs><pattern id="gl-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#9e9e9e" stroke-width="2"/></pattern>';
+    s += '<pattern id="gl-wall" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#888" stroke-width="2"/></pattern>';
+    s += '<marker id="gl-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#c62828"/></marker></defs>';
+    var x0 = 32, wEl = 42;
+    s += '<rect x="16" y="26" width="12" height="40" fill="url(#gl-wall)" stroke="#555"/>';
+    for (e = 0; e < 8; e++) {
+      var x = x0 + e * wEl;
+      s += '<rect x="' + x + '" y="30" width="' + wEl + '" height="32" fill="#e1bee7" stroke="#7b1fa2"/>';
+      if (e > lastId) s += '<rect x="' + x + '" y="30" width="' + wEl + '" height="32" fill="url(#gl-hatch)" opacity="0.65"/>';
+      s += '<text x="' + (x + wEl / 2) + '" y="50" font-size="9.5" text-anchor="middle" fill="#4a148c" font-family="sans-serif">E' + (e + 1) + '</text>';
+    }
+    for (var i = 0; i < M; i++) s += '<circle cx="' + (x0 + (i + 1) * wEl) + '" cy="70" r="3.4" fill="#1565c0"/>';
+    s += '<line x1="' + (x0 + 8 * wEl + 2) + '" y1="46" x2="' + (x0 + 8 * wEl + 24) + '" y2="46" stroke="#c62828" stroke-width="2.2" marker-end="url(#gl-arr)"/>';
+    if (contact) {
+      var xs = x0 + 8 * wEl + 30;
+      s += '<path d="M' + xs + ' 24 h8 v44 h-8" fill="none" stroke="#333" stroke-width="2.5"/>';
+      s += '<text x="' + xs + '" y="88" font-size="9.5" fill="#333" font-family="sans-serif" text-anchor="middle">stop, gap g</text>';
+      s += '<text x="' + (x0 + 4 * wEl) + '" y="88" font-size="10" fill="' + (active ? '#c62828' : '#2e7d32') + '" font-family="sans-serif">contact ' + (active ? 'ACTIVE (augmented K)' : 'inactive') + '</text>';
+    } else {
+      s += '<text x="' + x0 + '" y="88" font-size="10" fill="#1565c0" font-family="sans-serif">&#9679; sensors at nodes 1&#8230;' + M + '</text>';
+    }
+    el('gl-svg-bar').innerHTML = s;
+
+    // ---- gradient chart ----
+    var gAll = 1e-14;
+    for (e = 0; e < 8; e++) gAll = Math.max(gAll, Math.abs(gex[e]), Math.abs(routeRes[e]));
+    var yz = 118, half = 86;
+    s = '<text x="14" y="18" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">dJ/dE&#8337; &mdash; <tspan fill="#7b1fa2">exact discrete gradient</tspan> vs <tspan fill="#e67e22">selected route</tspan></text>';
+    s += '<line x1="' + x0 + '" y1="' + yz + '" x2="' + (x0 + 8 * wEl + 20) + '" y2="' + yz + '" stroke="#999"/>';
+    for (e = 0; e < 8; e++) {
+      var xg = x0 + e * wEl;
+      var hex = (gex[e] / gAll) * half;
+      var hrt = (routeRes[e] / gAll) * half;
+      s += '<rect x="' + (xg + 5) + '" y="' + (hex > 0 ? yz - hex : yz) + '" width="13" height="' + Math.max(0.8, Math.abs(hex)) + '" fill="#7b1fa2" opacity="0.85"/>';
+      s += '<rect x="' + (xg + 22) + '" y="' + (hrt > 0 ? yz - hrt : yz) + '" width="13" height="' + Math.max(0.8, Math.abs(hrt)) + '" fill="none" stroke="#e67e22" stroke-width="2"/>';
+      s += '<text x="' + (xg + wEl / 2) + '" y="216" font-size="9.5" text-anchor="middle" fill="#888" font-family="sans-serif">e' + (e + 1) + '</text>';
+      if (e > lastId) s += '<text x="' + (xg + wEl / 2) + '" y="' + (yz - 6) + '" font-size="8.5" text-anchor="middle" fill="#9e9e9e" font-family="sans-serif">0</text>';
+    }
+    el('gl-svg-grad').innerHTML = s;
+
+    // ---- V-curve ----
+    drawVCurve();
+
+    // ---- kink chart ----
+    drawKink();
+
+    // ---- persistent panel ----
+    var colV = relErr < 1e-6 ? '#2e7d32' : relErr < 1e-2 ? '#b36118' : '#c62828';
+    var convOK = !(loose && !contact) && route !== 'unrolled';
+    var convStr;
+    if (route === 'unrolled') convStr = '<span style="color:#b36118;">iterate after k = ' + kUnroll + ' Jacobi steps, &#8214;r&#8214;/&#8214;f&#8214; = ' + fm(solverRes, 1) + '</span>';
+    else if (loose && !contact) convStr = '<span style="color:#c62828;">NO &mdash; loose Jacobi(' + LOOSE_ITERS + '), &#8214;r&#8214;/&#8214;f&#8214; = ' + fm(solverRes, 1) + '</span>';
+    else convStr = '<span style="color:#2e7d32;">yes (direct factorization)</span>';
+    // conditioning of identifiable Gauss-Newton block
+    var sensCols = [];
+    var fwT = fwdTight(Eest);
+    for (e = 0; e <= lastId; e++) {
+      var p = dKu(Eest, fwT.u, e);
+      var due = triSolve(fwT.K, p.map(function(v) { return -v; }));
+      var col = [];
+      for (i = 0; i < M; i++) col.push(due[i]);
+      sensCols.push(col);
+    }
+    var nId = sensCols.length, G = [];
+    for (var a = 0; a < nId; a++) {
+      var row = [];
+      for (var b = 0; b < nId; b++) {
+        var sdot = 0;
+        for (i = 0; i < M; i++) sdot += sensCols[a][i] * sensCols[b][i];
+        row.push(sdot);
+      }
+      G.push(row);
+    }
+    var ev = eigSym(G), evMax = 0, evMin = Infinity;
+    for (i = 0; i < ev.length; i++) { evMax = Math.max(evMax, ev[i]); evMin = Math.min(evMin, ev[i]); }
+    var kappa = evMin > 1e-300 ? Math.sqrt(evMax / Math.max(evMin, 1e-300)) : Infinity;
+
+    el('gl-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the solver sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + M + ' nodal displacements (nodes 1&#8230;' + M + '), noise ' + noisePct.toFixed(2) + '% of max u</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> 8 element moduli E&#8337; (evaluated at the uniform guess E&#8337; = 1)</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' +
+      '<li>linear elasticity, 1-D bar, geometry/BC/load known</li>' +
+      '<li>' + (contact ? 'penalty stop at tip: gap g = ' + gap.toFixed(2) + ', k&#7580; known' : 'no contact in the model') + '</li>' +
+      '<li>noise white, uncorrelated</li>' +
+      '<li>forward solve converged: ' + convStr + '</li></ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank / identifiability:</strong> sensitivity rank = ' + Math.min(M, 8) + ' of 8; elements e &gt; ' + M + ' have <em>exactly zero</em> gradient<br><strong>cond. of Gauss&ndash;Newton block:</strong> &#954;<sup>1/2</sup>(S&#7488;S) = ' + fmtExp(kappa) + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation vs exact gradient:</strong><br>max rel. deviation: <span style="color:' + colV + ';font-weight:700;">' + (relErr < 1e-14 ? '&lt; 10&#8315;&#185;&#8308; (exact)' : relErr.toExponential(1)) + '</span></div>' +
+      '<div style="font-size:11px;font-weight:700;color:#4a148c;border-top:1px solid #ddd;padding-top:6px;">the reference is the discrete adjoint at a tight solve &mdash; 2 solves, any n&#8346;</div>';
+
+    // ---- readout ----
+    var ro = el('gl-readout');
+    var costTex = { fd1: '(n_p+1)\\,C_{\\text{solve}} = 9\\,C_{\\text{solve}}', fd2: '2n_p\\,C_{\\text{solve}} = 16\\,C_{\\text{solve}}',
+      direct: 'C_{\\text{solve}} + n_p\\,C_{\\text{lin}}', adjoint: '2\\,C_{\\text{solve}}', implicit: '2\\,C_{\\text{solve}}',
+      unrolled: 'C_{\\text{solve}} + C_{\\text{tape}},\\;\\; \\text{memory } \\mathcal{O}(k\\,n_u)' }[route];
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\text{cost of this gradient: } ' + costTex + '$$</div>' +
+      '<div style="font-size:12.5px;color:#555;"><strong>' + costHtml + '</strong>' + (memHtml ? ' &middot; ' + memHtml : '') +
+      (route === 'unrolled' ? ' &mdash; the gradient you get is the exact gradient <em>of the k-th iterate</em>, which is only the gradient you want once the iterate has converged.' : '') +
+      ((route === 'fd1' || route === 'fd2') && loose ? ' &mdash; with the loose solver, no step size h rescues the check: the V-curve floor is the solver tolerance.' : '') + '</div>';
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+
+  function drawVCurve() {
+    var ec = Math.min(3, M) - 1; // 0-based element for the check
+    var gex = gradExact(Eest).g;
+    var gref = Math.abs(gex[ec]) > 1e-300 ? gex[ec] : 1e-300;
+    var pts1 = [], pts2 = [];
+    var J0 = Jof(fwdPolicy(Eest).u);
+    for (var lh = -12; lh <= -1.01 || Math.abs(lh + 1) < 1e-9; lh += 0.5) {
+      var h = Math.pow(10, lh) * Math.abs(Eest[ec]);
+      var Ep = Eest.slice(); Ep[ec] += h;
+      var Em = Eest.slice(); Em[ec] -= h;
+      var Jp = Jof(fwdPolicy(Ep).u), Jm = Jof(fwdPolicy(Em).u);
+      var g1 = (Jp - J0) / h, g2 = (Jp - Jm) / (2 * h);
+      pts1.push([lh, Math.abs((g1 - gref) / gref)]);
+      pts2.push([lh, Math.abs((g2 - gref) / gref)]);
+      if (lh >= -1) break;
+    }
+    var px0 = 44, px1 = 326, py0 = 16, py1 = 192;
+    function X(lh) { return px0 + (lh + 12) / 11 * (px1 - px0); }
+    function Y(err) {
+      var le = Math.log10(Math.max(1e-12, Math.min(1e2, err)));
+      return py1 - (le + 12) / 14 * (py1 - py0);
+    }
+    var s = '<rect x="' + px0 + '" y="' + py0 + '" width="' + (px1 - px0) + '" height="' + (py1 - py0) + '" fill="none" stroke="#ddd"/>';
+    for (var yl = -12; yl <= 2; yl += 2) {
+      s += '<line x1="' + px0 + '" y1="' + Y(Math.pow(10, yl)) + '" x2="' + px1 + '" y2="' + Y(Math.pow(10, yl)) + '" stroke="#f2f2f2"/>';
+      s += '<text x="' + (px0 - 4) + '" y="' + (Y(Math.pow(10, yl)) + 3) + '" font-size="8.5" fill="#999" text-anchor="end" font-family="sans-serif">1e' + yl + '</text>';
+    }
+    for (var xl = -12; xl <= -1; xl += 2) {
+      s += '<text x="' + X(xl) + '" y="' + (py1 + 12) + '" font-size="8.5" fill="#999" text-anchor="middle" font-family="sans-serif">1e' + xl + '</text>';
+    }
+    s += '<text x="' + ((px0 + px1) / 2) + '" y="' + (py1 + 26) + '" font-size="9.5" fill="#666" text-anchor="middle" font-family="sans-serif">step size h (relative)</text>';
+    s += '<text x="12" y="' + ((py0 + py1) / 2) + '" font-size="9.5" fill="#666" text-anchor="middle" font-family="sans-serif" transform="rotate(-90 12 ' + ((py0 + py1) / 2) + ')">rel. gradient error</text>';
+    function poly(pts, col) {
+      var str = '<polyline fill="none" stroke="' + col + '" stroke-width="1.8" points="';
+      for (var i = 0; i < pts.length; i++) str += X(pts[i][0]).toFixed(1) + ',' + Y(pts[i][1]).toFixed(1) + ' ';
+      return str + '"/>';
+    }
+    s += poly(pts1, '#e67e22') + poly(pts2, '#7b1fa2');
+    s += '<line x1="' + X(logh) + '" y1="' + py0 + '" x2="' + X(logh) + '" y2="' + py1 + '" stroke="#c62828" stroke-width="1" stroke-dasharray="4,3"/>';
+    s += '<text x="' + (px0 + 6) + '" y="' + (py0 + 12) + '" font-size="9.5" fill="#e67e22" font-family="sans-serif">one-sided</text>';
+    s += '<text x="' + (px0 + 6) + '" y="' + (py0 + 24) + '" font-size="9.5" fill="#7b1fa2" font-family="sans-serif">central</text>';
+    s += '<text x="' + (px1 - 6) + '" y="' + (py0 + 12) + '" font-size="9" fill="#c62828" font-family="sans-serif" text-anchor="end">' + ((loose && !contact) ? 'floor = solver tolerance, not machine &#949;' : 'V-shape: truncation vs round-off') + '</text>';
+    el('gl-svg-vc').innerHTML = s;
+  }
+
+  function drawKink() {
+    var n = 71, s0 = 0.7, s1 = 1.4, Js = [], dJs = [], acts = [], i, e;
+    for (i = 0; i < n; i++) {
+      var sc = s0 + (s1 - s0) * i / (n - 1);
+      var E = Eest.map(function(v) { return sc * v; });
+      var fw = fwdTight(E);
+      var r = resid8(fw.u);
+      var J = Jof(fw.u);
+      var lam = triSolve(fw.K, r.map(function(v) { return -v; }));
+      var g = gradFrom(fw.u, lam);
+      var dJds = 0;
+      for (e = 0; e < 8; e++) dJds += g[e] * Eest[e];
+      Js.push(J); dJs.push(dJds); acts.push(fw.active);
+    }
+    var px0 = 44, px1 = 326, py0 = 16, py1 = 192;
+    function X(i) { return px0 + i / (n - 1) * (px1 - px0); }
+    var Jmin = Math.min.apply(null, Js), Jmax = Math.max.apply(null, Js);
+    var Dmax = 1e-12;
+    for (i = 0; i < n; i++) Dmax = Math.max(Dmax, Math.abs(dJs[i]));
+    function YJ(v) { return py1 - (v - Jmin) / Math.max(1e-12, Jmax - Jmin) * (py1 - py0 - 10) - 5; }
+    function YD(v) { return (py0 + py1) / 2 - (v / Dmax) * (py1 - py0) / 2.6; }
+    var s = '<rect x="' + px0 + '" y="' + py0 + '" width="' + (px1 - px0) + '" height="' + (py1 - py0) + '" fill="none" stroke="#ddd"/>';
+    var evIdx = -1;
+    for (i = 1; i < n; i++) if (acts[i] !== acts[i - 1]) { evIdx = i; break; }
+    if (evIdx > 0) {
+      s += '<line x1="' + X(evIdx - 0.5) + '" y1="' + py0 + '" x2="' + X(evIdx - 0.5) + '" y2="' + py1 + '" stroke="#c62828" stroke-width="1.2" stroke-dasharray="5,3"/>';
+      s += '<text x="' + X(evIdx - 0.5) + '" y="' + (py0 - 3) + '" font-size="9" fill="#c62828" font-family="sans-serif" text-anchor="middle">active-set change</text>';
+    }
+    function poly(vals, Yfn, col, w) {
+      var str = '<polyline fill="none" stroke="' + col + '" stroke-width="' + w + '" points="';
+      for (var j = 0; j < n; j++) str += X(j).toFixed(1) + ',' + Yfn(vals[j]).toFixed(1) + ' ';
+      return str + '"/>';
+    }
+    s += poly(Js, YJ, '#7b1fa2', 2);
+    s += poly(dJs, YD, '#e67e22', 1.6);
+    s += '<text x="' + (px0 + 6) + '" y="' + (py0 + 12) + '" font-size="9.5" fill="#7b1fa2" font-family="sans-serif">J(s)</text>';
+    s += '<text x="' + (px0 + 6) + '" y="' + (py0 + 24) + '" font-size="9.5" fill="#e67e22" font-family="sans-serif">dJ/ds (adjoint, per branch)</text>';
+    for (var xt = 0.7; xt <= 1.41; xt += 0.1) {
+      var xi = (xt - s0) / (s1 - s0) * (n - 1);
+      s += '<text x="' + X(xi) + '" y="' + (py1 + 12) + '" font-size="8.5" fill="#999" text-anchor="middle" font-family="sans-serif">' + xt.toFixed(1) + '</text>';
+    }
+    s += '<text x="' + ((px0 + px1) / 2) + '" y="' + (py1 + 26) + '" font-size="9.5" fill="#666" text-anchor="middle" font-family="sans-serif">stiffness scale s' + (contact ? ' — corner in J, jump in dJ/ds at the event' : ' — smooth without contact') + '</text>';
+    el('gl-svg-kink').innerHTML = s;
+  }
+
+  // ---- listeners ----
+  function syncEnables() {
+    var isFD = (route === 'fd1' || route === 'fd2');
+    el('gl-h').disabled = !isFD;
+    el('gl-h').parentNode.style.opacity = isFD ? 1 : 0.45;
+    el('gl-k').disabled = (route !== 'unrolled');
+    el('gl-k').parentNode.style.opacity = (route === 'unrolled') ? 1 : 0.45;
+    el('gl-loose').disabled = contact;
+    el('gl-gap').disabled = !contact;
+    el('gl-gap').parentNode.style.opacity = contact ? 1 : 0.45;
+  }
+  el('gl-route').addEventListener('change', function() { route = this.value; syncEnables(); update(); });
+  el('gl-h').addEventListener('input', function() { logh = parseFloat(this.value); el('gl-h-val').innerHTML = '&minus;' + Math.abs(logh).toFixed(1).replace(/\.0$/, ''); update(); });
+  el('gl-k').addEventListener('input', function() { kUnroll = parseInt(this.value); el('gl-k-val').textContent = kUnroll; update(); });
+  el('gl-m').addEventListener('input', function() { M = parseInt(this.value); el('gl-m-val').textContent = M; update(); });
+  el('gl-noise').addEventListener('input', function() { noisePct = parseFloat(this.value); el('gl-noise-val').textContent = noisePct.toFixed(1); makeData(); update(); });
+  el('gl-gap').addEventListener('input', function() { gap = parseFloat(this.value); el('gl-gap-val').textContent = gap.toFixed(2); update(); });
+  el('gl-loose').addEventListener('change', function() { loose = this.checked; update(); });
+  el('gl-contact').addEventListener('change', function() { contact = this.checked; if (contact) { loose = false; el('gl-loose').checked = false; } syncEnables(); update(); });
+  el('gl-rand').addEventListener('click', function() { newTruth(); makeData(); update(); });
+
+  newTruth(); makeData();
+  function boot() { syncEnables(); update(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+initWalkthrough('adjoint-walkthrough', [
+  {
+    tab: '1. Objective',
+    title: 'A misfit constrained by equilibrium',
+    text: 'We want $\\nabla_{\\mathbf{p}} J$ for $J(\\mathbf{u},\\mathbf{p}) = \\tfrac12\\lVert\\mathbf{S}\\mathbf{u}-\\mathbf{d}\\rVert^2 + \\alpha\\Phi(\\mathbf{p})$, where $\\mathbf{u}$ is not free: it must satisfy the discretized equilibrium $\\mathbf{R}(\\mathbf{u},\\mathbf{p})=\\mathbf{0}$. Every admissible $\\mathbf{p}$ drags its own $\\mathbf{u}(\\mathbf{p})$ along, so $J$ is really a function of $\\mathbf{p}$ alone — through the solver.',
+    insight: 'The constraint is not an obstacle; it is the definition of the forward model. Differentiating "through" it is the entire problem.'
+  },
+  {
+    tab: '2. Chain rule',
+    title: 'The matrix nobody should form',
+    text: 'The chain rule gives $\\mathrm{d}J/\\mathrm{d}\\mathbf{p} = \\partial J/\\partial\\mathbf{p} + (\\partial J/\\partial\\mathbf{u})(\\mathrm{d}\\mathbf{u}/\\mathrm{d}\\mathbf{p})$, and differentiating the constraint yields $\\mathrm{d}\\mathbf{u}/\\mathrm{d}\\mathbf{p} = -(\\partial\\mathbf{R}/\\partial\\mathbf{u})^{-1}(\\partial\\mathbf{R}/\\partial\\mathbf{p})$ — an $n_u \\times n_p$ dense block costing $n_p$ linear solves.',
+    visual: '<svg viewBox="0 0 560 120" style="width:100%;max-width:560px;background:#fff;border:1px solid #eee;border-radius:4px;"><g font-family="sans-serif"><rect x="20" y="20" width="80" height="80" fill="#fafafa" stroke="#999"/><text x="60" y="64" font-size="11" text-anchor="middle" fill="#333">(&#8706;R/&#8706;u)&#8315;&#185;</text><text x="60" y="112" font-size="9" text-anchor="middle" fill="#888">n&#8345; &#215; n&#8345;</text><text x="112" y="64" font-size="14" fill="#333">&#215;</text><rect x="126" y="20" width="46" height="80" fill="#fafafa" stroke="#999"/><text x="149" y="64" font-size="11" text-anchor="middle" fill="#333">&#8706;R/&#8706;p</text><text x="149" y="112" font-size="9" text-anchor="middle" fill="#888">n&#8345; &#215; n&#8346;</text><text x="186" y="64" font-size="14" fill="#333">=</text><rect x="202" y="20" width="46" height="80" fill="#fbe9e7" stroke="#c62828"/><text x="225" y="58" font-size="11" text-anchor="middle" fill="#c62828">du/dp</text><text x="225" y="74" font-size="9" text-anchor="middle" fill="#c62828">dense!</text><text x="330" y="52" font-size="11.5" fill="#c62828" font-weight="700">n&#8346; linear solves,</text><text x="330" y="70" font-size="11.5" fill="#c62828" font-weight="700">n&#8345; &#215; n&#8346; storage — never form it</text></g></svg>'
+  },
+  {
+    tab: '3. Regroup',
+    title: 'Associativity: multiply from the left first',
+    text: 'The gradient contains $(\\partial J/\\partial\\mathbf{u})\\,(\\partial\\mathbf{R}/\\partial\\mathbf{u})^{-1}\\,(\\partial\\mathbf{R}/\\partial\\mathbf{p})$. Matrix products are associative: group the first two factors. $(\\partial J/\\partial\\mathbf{u})$ is $1 \\times n_u$, so the grouped product is a single row vector — obtained from ONE linear solve with the transposed Jacobian. Name its transpose $\\boldsymbol{\\lambda}$.',
+    visual: '<svg viewBox="0 0 560 120" style="width:100%;max-width:560px;background:#fff;border:1px solid #eee;border-radius:4px;"><g font-family="sans-serif"><rect x="20" y="44" width="80" height="14" fill="#f3e5f5" stroke="#7b1fa2"/><text x="60" y="38" font-size="10" text-anchor="middle" fill="#7b1fa2">&#8706;J/&#8706;u (1 &#215; n&#8345;)</text><text x="112" y="56" font-size="14" fill="#333">&#215;</text><rect x="126" y="20" width="64" height="64" fill="#fafafa" stroke="#999"/><text x="158" y="56" font-size="10" text-anchor="middle" fill="#333">(&#8706;R/&#8706;u)&#8315;&#185;</text><path d="M20 66 L190 66 L190 94 L20 94 Z" fill="none" stroke="#7b1fa2" stroke-width="1.6" stroke-dasharray="5,3"/><text x="105" y="110" font-size="10.5" fill="#7b1fa2" font-weight="700">group this first = &#955;&#7488; (one transposed solve)</text><text x="204" y="56" font-size="14" fill="#333">&#215;</text><rect x="218" y="20" width="42" height="64" fill="#fafafa" stroke="#999"/><text x="239" y="56" font-size="10" text-anchor="middle" fill="#333">&#8706;R/&#8706;p</text><text x="290" y="50" font-size="12" fill="#2e7d32" font-weight="700">= row &#215; matrix:</text><text x="290" y="68" font-size="12" fill="#2e7d32" font-weight="700">cheap products, no dense block</text></g></svg>',
+    insight: 'The adjoint method is a parenthesization. Reverse-mode AD makes exactly the same choice, one operation at a time.'
+  },
+  {
+    tab: '4. Adjoint solve',
+    title: 'Two equations, two solves',
+    text: 'Define $(\\partial\\mathbf{R}/\\partial\\mathbf{u})^{\\mathsf{T}}\\boldsymbol{\\lambda} = -(\\partial J/\\partial\\mathbf{u})^{\\mathsf{T}}$. Then $\\mathrm{d}J/\\mathrm{d}\\mathbf{p} = \\partial J/\\partial\\mathbf{p} + \\boldsymbol{\\lambda}^{\\mathsf{T}}(\\partial\\mathbf{R}/\\partial\\mathbf{p})$. Total bill: one forward solve (possibly nonlinear) plus one LINEAR solve with the transposed Jacobian — independent of $n_p$. The transpose is structural: keep it explicit even when symmetry later makes it invisible.',
+    insight: 'Cost scales with the number of objectives (one), not the number of parameters. That asymmetry is why the inverse-problem shape — many parameters, scalar misfit — belongs to the adjoint.'
+  },
+  {
+    tab: '5. Linear FEM',
+    title: 'Specialize: K u = f',
+    text: 'With $J=\\tfrac12\\lVert\\mathbf{S}\\mathbf{u}-\\mathbf{d}\\rVert^2$ and $\\mathbf{R}=\\mathbf{K}(\\mathbf{p})\\mathbf{u}-\\mathbf{f}$: the adjoint equation is $\\mathbf{K}^{\\mathsf{T}}\\boldsymbol{\\lambda} = -\\mathbf{S}^{\\mathsf{T}}(\\mathbf{S}\\mathbf{u}-\\mathbf{d})$ — the residual injected at the sensors — and the gradient components are $\\mathrm{d}J/\\mathrm{d}p_i = \\boldsymbol{\\lambda}^{\\mathsf{T}}(\\partial\\mathbf{K}/\\partial p_i)\\mathbf{u}$. For symmetric $\\mathbf{K}$, the forward Cholesky factorization is reused and the adjoint is one extra back-substitution.',
+    visual: '<svg viewBox="0 0 560 96" style="width:100%;max-width:560px;background:#fff;border:1px solid #eee;border-radius:4px;"><g font-family="sans-serif" font-size="10.5"><rect x="16" y="26" width="118" height="40" rx="5" fill="#f3e5f5" stroke="#7b1fa2"/><text x="75" y="44" text-anchor="middle" fill="#4a148c">forward:</text><text x="75" y="58" text-anchor="middle" fill="#4a148c">K u = f (factorize)</text><path d="M138 46 h30" stroke="#666" stroke-width="1.3"/><rect x="172" y="26" width="130" height="40" rx="5" fill="#f3e5f5" stroke="#7b1fa2"/><text x="237" y="44" text-anchor="middle" fill="#4a148c">adjoint:</text><text x="237" y="58" text-anchor="middle" fill="#4a148c">K&#7488;&#955; = &#8722;S&#7488;(Su&#8722;d)</text><path d="M306 46 h30" stroke="#666" stroke-width="1.3"/><rect x="340" y="26" width="204" height="40" rx="5" fill="#fff8f0" stroke="#e67e22"/><text x="442" y="44" text-anchor="middle" fill="#b36118">assemble: dJ/dp&#7522; = &#955;&#7488;(&#8706;K/&#8706;p&#7522;)u</text><text x="442" y="58" text-anchor="middle" fill="#b36118">cheap sparse products, all i at once</text></g></svg>'
+  },
+  {
+    tab: '6. = Reverse AD',
+    title: 'Same trick, two vocabularies',
+    text: 'Differentiating the discrete residual (discretize-then-optimize) gives gradients exactly consistent with the discrete objective — what autodiff of a FEM code computes when the solver is differentiated implicitly at its fixed point. Deriving the continuous adjoint PDE first (optimize-then-discretize) can be inconsistent with the discrete $J$ and stall line searches unless the discretizations are compatible. For time-dependent problems, the adjoint marches BACKWARD in time and needs stored or checkpointed forward states.',
+    insight: 'One idea, three names: adjoint-state method (geophysics), discrete adjoint (PDE-constrained optimization), reverse-mode AD with a custom VJP (machine learning). Learn to see through the vocabulary.'
+  }
+]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+initFlashcards('mod10-flashcards', [
+  {
+    q: 'What is the cost of one gradient evaluation via the adjoint method versus finite differences, for $n_p$ parameters?',
+    a: 'Adjoint: one forward solve plus ONE linear adjoint solve with the transposed Jacobian — independent of $n_p$. Finite differences: $(n_p+1)$ full forward solves, with accuracy limited by step-size choice.'
+  },
+  {
+    q: 'Write the discrete adjoint system for $J=\\tfrac12\\lVert\\mathbf{S}\\mathbf{u}-\\mathbf{d}\\rVert^2$ with constraint $\\mathbf{K}(\\mathbf{p})\\mathbf{u}=\\mathbf{f}$, and the resulting gradient.',
+    a: '$\\mathbf{K}^{\\mathsf{T}}\\boldsymbol{\\lambda}=-\\mathbf{S}^{\\mathsf{T}}(\\mathbf{S}\\mathbf{u}-\\mathbf{d})$, then $\\dfrac{\\mathrm{d}J}{\\mathrm{d}p_i}=\\boldsymbol{\\lambda}^{\\mathsf{T}}\\dfrac{\\partial\\mathbf{K}}{\\partial p_i}\\,\\mathbf{u}$ (with $\\mathbf{f}$ independent of $\\mathbf{p}$).'
+  },
+  {
+    q: 'In the 1D bar example, what is $\\mathrm{d}J/\\mathrm{d}E_e$ and what does it mean physically?',
+    a: '$\\mathrm{d}J/\\mathrm{d}E_e = A\\,L_e\\,\\varepsilon_e[\\mathbf{u}]\\,\\varepsilon_e[\\boldsymbol{\\lambda}]$ — the product of forward strain and adjoint strain in the element. Zero forward strain or zero adjoint strain (e.g., element beyond the last sensor) makes the modulus locally unidentifiable.'
+  },
+  {
+    q: 'Why does a symmetric stiffness matrix make the adjoint solve nearly free?',
+    a: 'Self-adjoint problem: $\\mathbf{K}^{\\mathsf{T}}=\\mathbf{K}$, so the Cholesky factorization from the forward solve is reused; the adjoint is one extra back-substitution. For non-self-adjoint operators (advection, dynamics, follower loads) the transpose genuinely matters.'
+  },
+  {
+    q: 'State the implicit-function-theorem shortcut used by differentiable FEM instead of backpropagating through solver iterations.',
+    a: 'At the converged state, $\\mathbf{R}(\\mathbf{u}^*,\\mathbf{p})=\\mathbf{0}$ gives $\\mathrm{d}\\mathbf{u}^*/\\mathrm{d}\\mathbf{p}=-(\\partial\\mathbf{R}/\\partial\\mathbf{u})^{-1}\\partial\\mathbf{R}/\\partial\\mathbf{p}$; the reverse-mode VJP is one adjoint solve with $(\\partial\\mathbf{R}/\\partial\\mathbf{u})^{\\mathsf{T}}$ — exact for the discrete solution, memory independent of iteration count.'
+  },
+  {
+    q: 'What is DiffPD\'s key trick and reported speedup?',
+    a: 'It differentiates implicit-Euler projective dynamics and reuses the prefactorized Cholesky decomposition of the PD global matrix in the backward pass — 4–19× faster than Newton-method-based differentiable-simulator baselines (Du et al., ACM TOG 2021).'
+  },
+  {
+    q: 'Unrolled vs implicit differentiation of a FEM solver: name the two differences that matter.',
+    a: 'Memory: unrolling stores the tape of every iteration, $\\mathcal{O}(\\text{iters}\\cdot n_u)$; implicit differentiation needs $\\mathcal{O}(n_u)$ regardless. Correctness: unrolling returns the exact gradient of the $k$-th ITERATE (wrong object if unconverged); implicit differentiation returns the exact gradient of the converged solution (meaningless if $\\mathbf{R}\\neq\\mathbf{0}$). They are not interchangeable.'
+  },
+  {
+    q: 'Discretize-then-optimize vs optimize-then-discretize: which is consistent with the discrete objective, and why do line searches care?',
+    a: 'Discretize-then-optimize differentiates the discrete residual, so its gradient is exactly the gradient of the objective the optimizer evaluates. Optimize-then-discretize discretizes the continuous adjoint PDE and can be inconsistent with the discrete $J$; near convergence the inconsistency dominates the small true gradient and line searches stall. Consistency requires compatible discretizations.'
+  },
+  {
+    q: 'Why are gradients through contact problematic even in a bug-free differentiable simulator?',
+    a: 'Contact is non-smooth physics: penalty models are stiff but smooth surrogates, complementarity/LCP models are only piecewise-smooth, and make/break or stick–slip events make the trajectory non-smooth in the parameters — gradients near events can be discontinuous, biased, or high-variance. Versatility vs speed vs gradient accuracy is the organizing trade-off of the differentiable-simulator literature (Newbury et al. 2024).'
+  },
+  {
+    q: 'Your central-difference gradient check bottoms out at $10^{-3}$ instead of $10^{-7}$. First suspect?',
+    a: 'Solver tolerance, not the adjoint code. Implicit differentiation assumes $\\mathbf{R}(\\mathbf{u}^*,\\mathbf{p})=\\mathbf{0}$ exactly; a loose forward solve caps the achievable FD agreement at roughly the solver tolerance, and the V-curve floor goes flat. Tighten the forward solve before debugging the math ($h^\\star \\sim \\sqrt[3]{\\varepsilon_{\\text{mach}}}\\,|p_i|$ for central differences).'
+  }
+]);
+</script>
+
+</body>
+</html>

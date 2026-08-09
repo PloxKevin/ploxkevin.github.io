@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9. Reference Configuration &amp; Prestress — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">9. Reference Configuration &amp; Prestress</h1>
+    <p class="page-subtitle">The unknown reference configuration, inverse motion and Shield duality, the Eshelby stress, Govindjee&ndash;Mihalic inverse elastostatic finite elements, Sellier fixed-point unloading with relaxation and continuation, MULF prestressing, load-free vs stress-free, joint nonuniqueness of geometry and material</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#reference-configuration-unknown">1. The Configuration You Never Measured</a>
+      <a href="#finite-kinematics-refresher">2. Finite Kinematics, Just In Time</a>
+      <a href="#four-configurations">3. Four Configurations, Not Two</a>
+      <a href="#shield-duality-and-eshelby-stress">4. Shield Duality and the Eshelby Stress</a>
+      <a href="#inverse-elastostatic-finite-elements">5. Inverse Elastostatic Finite Elements</a>
+      <a href="#fixed-point-iteration-and-acceleration">6. Fixed-Point Unloading: Relaxation, Acceleration, Continuation</a>
+      <a href="#prestressing-mulf">7. Prestressing Instead of Un-Deforming</a>
+      <a href="#uniqueness-conditioning-static-determinacy">8. Uniqueness, Conditioning, and Static Determinacy</a>
+      <a href="#practice-and-pitfalls">9. Practice: Choosing a Method, and the Pitfalls That Bite</a>
+      <a href="#applications-and-frontier">10. Applications and the 2023&ndash;2026 Frontier</a>
+      <a class="toc-interactive" href="#unloading-lab">Interactive: Unloaded-Shape Laboratory</a>
+      <a class="toc-interactive" href="#identifiability-explorer">Interactive: Joint Identifiability Explorer</a>
+      <a class="toc-interactive" href="#unloading-walkthrough">Interactive: Unloading a Patient-Specific Aorta</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1 ===== -->
+    <h2 class="section-heading" id="reference-configuration-unknown">1. The Configuration You Never Measured</h2>
+
+    <p>Every equation in finite-strain continuum mechanics is written from a reference configuration $\mathcal{B}_0$. Strain is measured from it, the strain-energy function is a function of the gradient taken with respect to it, and the element shape functions are defined on it. In most real problems you never observe it.</p>
+
+    <p>A CT scan of an aorta is taken at roughly 80&nbsp;mmHg diastolic pressure, so the segmented mesh is already stretched. A turbine blade is designed for its hot, spun-up shape, but the machinist needs the cold shape. A silicone tactile skin is designed for the shape it should hold on the sensor body under gravity and membrane pretension, but the mold must be cut for the un-sagged shape. In all three cases the <em>deformed</em> geometry is data and the <em>reference</em> geometry is the unknown.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given the deformed configuration $\mathcal{B}$ of a hyperelastic body &mdash; imaged, scanned, or specified by design &mdash; together with the loads acting on it and its constitutive law $W$, find the reference configuration $\mathcal{B}_0$ from which it came, and the stress it currently carries. In the guide's observation model $y = \mathcal{H}(u, p, f, X_0) + b + \eta$, the material parameters $p$ and the loads $f$ are assumed known, the deformed geometry is the measurement, and the unknown is $X_0$ itself.</div>
+    </div>
+
+    <table>
+      <tr><th></th><th>In this module</th></tr>
+      <tr><td><strong>Measured</strong></td><td>The deformed surface or volume mesh $\mathcal{B}$ &mdash; segmented from CT/MRI, scanned, or given as a design target. Carries voxel-scale geometric noise.</td></tr>
+      <tr><td><strong>Unknown</strong></td><td>The reference configuration $\mathcal{B}_0$, equivalently the material coordinates $\mathbf{X}(\mathbf{x})$ of every point of $\mathcal{B}$ &mdash; or, in the prestressing route, a prestretch field $\mathbf{F}_{\text{pre}}(\mathbf{x})$ on $\mathcal{B}$.</td></tr>
+      <tr><td><strong>Assumed known</strong></td><td>The constitutive law $W$ and its parameters, the loads (pressure level, body force), the boundary conditions, and &mdash; for anisotropic tissue &mdash; the fibre architecture.</td></tr>
+      <tr><td><strong>Unobservable</strong></td><td>Residual stress in the unloaded state (&sect;3); the split between stiffness and reference geometry from a single loaded state (&sect;8); any reference configuration reachable through a different branch of a multi-valued forward map (&sect;8).</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">The Cost of Pretending the Image Is Stress-Free</h3>
+
+    <p>This is not a refinement. Ramella et al. (2024) ran TAVI and TEVAR device-deployment simulations with and without arterial pre-stress recovered by an inverse elastostatic solve, and compared. Neglecting pre-stress <strong>underestimates the contact pressure by 48% and 55%, the aorta stresses by 162% and 157%, and the aorta strains by 77% and 21%</strong>, for the TAVI and TEVAR models respectively. Treating the imaged geometry as stress-free is a first-order modelling error.</p>
+
+    <h3 class="subsection-heading">Three Problems Sharing One Forward Operator</h3>
+
+    <p>The whole module hangs on keeping three distinct inverse problems apart. They share the forward operator and differ only in which slot of it is unknown.</p>
+
+    <div class="math-block">$$\begin{aligned}\text{forward:}\quad & (\mathcal{B}_0,\; W,\; \text{loads}) \;\longmapsto\; \boldsymbol{\varphi},\ \mathcal{B}\\[2pt] \text{inverse motion:}\quad & (\mathcal{B},\; W,\; \text{loads}) \;\longmapsto\; \boldsymbol{\varphi}^{-1},\ \mathcal{B}_0\\[2pt] \text{prestressing:}\quad & (\mathcal{B},\; W,\; \text{loads}) \;\longmapsto\; \mathbf{F}_{\text{pre}}\ \text{on}\ \mathcal{B}\\[2pt] \text{elastography:}\quad & (\mathcal{B}_0,\; \mathbf{u}^{\text{meas}},\; \text{loads}) \;\longmapsto\; W\ \text{or}\ \mu(\mathbf{x})\end{aligned}$$</div>
+
+    <p>Sections 4&ndash;6 and 8&ndash;10 treat the inverse motion problem; Section 7 treats prestressing. The fourth line &mdash; the unknown is a <em>material field</em>, not a configuration &mdash; is a different inverse family and has its own module.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Pointer &mdash; elastography lives in Module 7</div>
+      <div>Distributed-parameter material identification (recover $\mu(\mathbf{x})$ from a measured displacement field) is the canonical subject of Module 7, and this module does not re-derive it. Three results from there you will need when Section 8 discusses nonuniqueness: the adjoint method delivers the full gradient of the misfit for one forward plus one adjoint solve, at a cost <em>independent of the number of parameters</em> (Oberai, Gokhale &amp; Feij&oacute;o, 2003) &mdash; the mechanics of which are Module 10's subject; the direct reconstruction has <strong>no unique solution</strong> unless stiffness is known a priori on a sufficient portion of the boundary, and identical strain fields follow from different modulus distributions under displacement boundary conditions (Barbone &amp; Bamber, 2002); and with $N$ independent measured displacement fields the residual freedom is two arbitrary <em>functions</em> at $N=1$, at most four arbitrary <em>constants</em> at $N=2$, and one constant at $N=4$ (Barbone &amp; Gokhale, 2004). Doyley (2012) surveys the model-based family. The structural lesson transfers directly: a raw strain image is not a modulus image, and an unloaded geometry recovered from one loaded state is not an identified material model.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 780 430" style="width:100%;max-width:780px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="m9-arrR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#00838f"/></marker>
+          <marker id="m9-arrL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#c62828"/></marker>
+          <marker id="m9-arrP" markerWidth="7" markerHeight="7" refX="6" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#7b1fa2"/></marker>
+        </defs>
+        <!-- reference blob -->
+        <path d="M60,120 C60,80 100,60 140,66 C180,72 205,96 202,132 C199,168 170,190 132,188 C94,186 60,160 60,120 Z"
+              fill="#fafafa" stroke="#c62828" stroke-width="2" stroke-dasharray="7,5"/>
+        <text x="131" y="128" font-size="34" fill="#c62828" opacity="0.28" text-anchor="middle" font-family="sans-serif" font-weight="700">?</text>
+        <text x="131" y="212" font-size="12.5" fill="#c62828" text-anchor="middle" font-family="sans-serif" font-weight="700">$\mathcal{B}_0$ &mdash; reference</text>
+        <text x="131" y="228" font-size="11" fill="#777" text-anchor="middle" font-family="sans-serif">unloaded, never imaged</text>
+        <!-- current blob -->
+        <path d="M520,118 C520,64 578,36 636,46 C694,56 728,92 723,144 C718,196 674,226 618,222 C562,218 520,172 520,118 Z"
+              fill="#e0f2f1" stroke="#00838f" stroke-width="2.4"/>
+        <text x="621" y="240" font-size="12.5" fill="#00838f" text-anchor="middle" font-family="sans-serif" font-weight="700">$\mathcal{B}$ &mdash; current</text>
+        <text x="621" y="256" font-size="11" fill="#777" text-anchor="middle" font-family="sans-serif">imaged / measured / designed</text>
+        <!-- pressure arrows -->
+        <line x1="621" y1="16" x2="621" y2="42" stroke="#7b1fa2" stroke-width="2" marker-end="url(#m9-arrP)"/>
+        <line x1="545" y1="60" x2="562" y2="76" stroke="#7b1fa2" stroke-width="2" marker-end="url(#m9-arrP)"/>
+        <line x1="706" y1="60" x2="690" y2="76" stroke="#7b1fa2" stroke-width="2" marker-end="url(#m9-arrP)"/>
+        <line x1="545" y1="200" x2="562" y2="185" stroke="#7b1fa2" stroke-width="2" marker-end="url(#m9-arrP)"/>
+        <line x1="700" y1="205" x2="684" y2="190" stroke="#7b1fa2" stroke-width="2" marker-end="url(#m9-arrP)"/>
+        <text x="750" y="120" font-size="11.5" fill="#7b1fa2" font-family="sans-serif" font-weight="700">$p$</text>
+        <!-- arrows between -->
+        <path d="M215,108 C300,74 420,74 505,102" fill="none" stroke="#00838f" stroke-width="2.4" marker-end="url(#m9-arrR)"/>
+        <text x="360" y="76" font-size="12.5" fill="#00838f" text-anchor="middle" font-family="sans-serif" font-weight="700">$\boldsymbol{\varphi}$,&nbsp;&nbsp;$\mathbf{F} = \partial\mathbf{x}/\partial\mathbf{X}$</text>
+        <path d="M505,168 C420,198 300,198 215,168" fill="none" stroke="#c62828" stroke-width="2.4" marker-end="url(#m9-arrL)"/>
+        <text x="360" y="218" font-size="12.5" fill="#c62828" text-anchor="middle" font-family="sans-serif" font-weight="700">$\boldsymbol{\Phi} = \boldsymbol{\varphi}^{-1}$,&nbsp;&nbsp;$\mathbf{f} = \partial\mathbf{X}/\partial\mathbf{x} = \mathbf{F}^{-1}$</text>
+        <!-- legend table -->
+        <line x1="30" y1="272" x2="750" y2="272" stroke="#ddd" stroke-width="1"/>
+        <text x="30" y="292" font-size="11" fill="#888" font-family="sans-serif" font-weight="700">PROBLEM</text>
+        <text x="300" y="292" font-size="11" fill="#2e7d32" font-family="sans-serif" font-weight="700">GIVEN</text>
+        <text x="560" y="292" font-size="11" fill="#c62828" font-family="sans-serif" font-weight="700">UNKNOWN</text>
+        <text x="30" y="313" font-size="11.5" fill="#333" font-family="sans-serif">1. Forward</text>
+        <text x="300" y="313" font-size="11.5" fill="#2e7d32" font-family="sans-serif">$\mathcal{B}_0$, $W$, loads</text>
+        <text x="560" y="313" font-size="11.5" fill="#c62828" font-family="sans-serif">$\boldsymbol{\varphi}$, $\mathcal{B}$</text>
+        <text x="30" y="335" font-size="11.5" fill="#333" font-family="sans-serif" font-weight="700">2. Inverse motion (&sect;4&ndash;6)</text>
+        <text x="300" y="335" font-size="11.5" fill="#2e7d32" font-family="sans-serif">$\mathcal{B}$, $W$, loads</text>
+        <text x="560" y="335" font-size="11.5" fill="#c62828" font-family="sans-serif" font-weight="700">$\boldsymbol{\varphi}^{-1}$, $\mathcal{B}_0$</text>
+        <text x="30" y="357" font-size="11.5" fill="#333" font-family="sans-serif" font-weight="700">3. Prestressing / MULF (&sect;7)</text>
+        <text x="300" y="357" font-size="11.5" fill="#2e7d32" font-family="sans-serif">$\mathcal{B}$, $W$, loads</text>
+        <text x="560" y="357" font-size="11.5" fill="#c62828" font-family="sans-serif" font-weight="700">$\mathbf{F}_{\text{pre}}$ on $\mathcal{B}$ (shape fixed)</text>
+        <text x="30" y="379" font-size="11.5" fill="#999" font-family="sans-serif">4. Elastography &rarr; Module 7</text>
+        <text x="300" y="379" font-size="11.5" fill="#8aa88c" font-family="sans-serif">$\mathcal{B}_0$, $\mathbf{u}^{\text{meas}}$, loads</text>
+        <text x="560" y="379" font-size="11.5" fill="#c99" font-family="sans-serif">$W$ or $\mu(\mathbf{x})$</text>
+        <rect x="424" y="394" width="326" height="30" rx="4" fill="#fdf7ee" stroke="#e0d5c2"/>
+        <text x="436" y="413" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">NB: &ldquo;iFEM&rdquo; in the SHM literature = shape sensing from surface strain &mdash; a different unknown.</text>
+      </svg>
+      <div class="figure-caption">The organising picture. One forward operator, four inverse families distinguished only by which slot is unknown. The reference configuration carries a question mark because in the problems of this module it is never observed &mdash; only the current configuration is.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Warning &mdash; two unrelated things called &ldquo;inverse FEM&rdquo;</div>
+      <div>In the structural-health-monitoring and aerospace literature, <strong>iFEM</strong> means the Tessler&ndash;Spangler inverse Finite Element Method for <em>shape sensing from discrete surface strain gauges</em> (Modules 4&ndash;6): geometry and material are known, the unknown is the displacement field. This module's inverse FEM is inverse elastostatics: the displacement data are complete, and the unknown is the reference geometry. Search for &ldquo;inverse finite element method&rdquo; and you will get plate, shell, hull and riser shape-sensing papers, not Govindjee&ndash;Mihalic. The two families are not variants of each other; they do not even share an unknown. Say this out loud once, or your own literature search will mislead you for a week.</div>
+    </div>
+
+    <!-- ===== SECTION 2 ===== -->
+    <h2 class="section-heading" id="finite-kinematics-refresher">2. Finite Kinematics, Just In Time</h2>
+
+    <p>Modules 1&ndash;6 could live comfortably in small strain. This one cannot: the entire problem is that a 15% stretch makes the reference and current configurations genuinely different domains. Here is the minimum kinematic apparatus, stated in the two dual descriptions you will need.</p>
+
+    <p>The motion $\boldsymbol{\varphi}: \mathcal{B}_0 \to \mathcal{B}$ maps material points $\mathbf{X}$ to spatial points $\mathbf{x} = \boldsymbol{\varphi}(\mathbf{X})$. Its gradient is the deformation gradient $\mathbf{F}$, and $J = \det\mathbf{F} > 0$ is the volume ratio. If $\boldsymbol{\varphi}$ is a diffeomorphism it has an inverse motion $\boldsymbol{\Phi} = \boldsymbol{\varphi}^{-1}: \mathcal{B}\to\mathcal{B}_0$, $\mathbf{X} = \boldsymbol{\Phi}(\mathbf{x})$, whose gradient is the <strong>inverse deformation gradient</strong> $\mathbf{f}$.</p>
+
+    <div class="math-block">$$\mathbf{F} = \frac{\partial \boldsymbol{\varphi}}{\partial \mathbf{X}},\qquad \mathbf{f} = \frac{\partial \boldsymbol{\Phi}}{\partial \mathbf{x}} = \mathbf{F}^{-1},\qquad \det\mathbf{f} = J^{-1}$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">The inverse motion problem</div>
+      <div>The spatial domain $\mathcal{B}$ is given. Find the field $\mathbf{X}(\mathbf{x})$ defined on it. Nothing about the physics changes &mdash; only which of the two fields, $\mathbf{x}(\mathbf{X})$ or $\mathbf{X}(\mathbf{x})$, is data.</div>
+    </div>
+
+    <p>Stresses: the Cauchy stress $\boldsymbol{\sigma}$ acts on the current area, the first Piola&ndash;Kirchhoff stress $\mathbf{P}$ on the reference area, and for a hyperelastic material $\mathbf{P}$ is the derivative of the strain energy with respect to $\mathbf{F}$.</p>
+
+    <div class="math-block">$$\mathbf{P} = \frac{\partial W}{\partial \mathbf{F}} = J\boldsymbol{\sigma}\mathbf{F}^{-T},\qquad \boldsymbol{\sigma} = J^{-1}\mathbf{P}\mathbf{F}^{T} = J^{-1}\frac{\partial W}{\partial \mathbf{F}}\mathbf{F}^{T}$$</div>
+
+    <p>Equilibrium can be written referentially or spatially. The two statements are equivalent when both configurations are known; when $\mathcal{B}_0$ is unknown only one of them is usable, because only one integrates over a domain you actually have.</p>
+
+    <div class="math-block">$$\operatorname{Div}\mathbf{P} + \rho_0\mathbf{B} = \mathbf{0}\ \ \text{on }\mathcal{B}_0, \qquad \operatorname{div}\boldsymbol{\sigma} + \rho\,\mathbf{b} = \mathbf{0}\ \ \text{on }\mathcal{B}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; write equilibrium on the domain you know</div>
+      <div>The spatial form $\operatorname{div}\boldsymbol{\sigma} + \rho\mathbf{b} = \mathbf{0}$ is the one that survives when $\mathcal{B}_0$ is unknown, because every integral in its weak form is taken over $\mathcal{B}$ &mdash; the measured domain. That single observation is the whole of Section 5's finite element method. It is also why the load side gets <em>easier</em>, not harder: the surface on which the pressure acts is known before the solve starts.</div>
+    </div>
+
+    <h3 class="subsection-heading">Nanson's Formula, and Why Tractions Are Not Portable</h3>
+
+    <p>Areas transform between configurations by Nanson's formula, which relates an oriented reference area element to its spatial image:</p>
+
+    <div class="math-block">$$\mathrm{d}a\,\mathbf{n} = J\,\mathbf{F}^{-T}\,\mathrm{d}A\,\mathbf{N}$$</div>
+
+    <p>This is bookkeeping until you try to move a load between configurations, at which point it becomes the difference between two <em>different problems</em>. A pressure $\bar{\mathbf{t}} = -p\,\mathbf{n}$ specified on the current surface is not the same boundary condition as a dead traction of magnitude $p$ specified on the reference surface: as the body deforms the first changes both its direction and the area it acts on, and the second does neither. Pulling a traction back or pushing it forward without applying Nanson's transformation silently replaces your boundary-value problem with a neighbouring one whose solution is a different reference configuration.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; careless traction pull-back changes the inverse problem</div>
+      <div>In the forward problem a sloppy traction transformation costs you accuracy. In the inverse problem it costs you the answer: the recovered $\mathcal{B}_0$ is <em>defined</em> as the configuration that maps to $\mathcal{B}$ under the given loads, so mis-specifying the loads returns a confidently converged, wrong geometry. Decide explicitly, and write down, whether each load is a pressure on the current surface, a dead traction on the reference surface, or a total force; state it in the method section; and check that whatever route you use &mdash; direct inverse solve or fixed-point loop &mdash; applies the same one. Shield's theorem (&sect;4) holds only for loads transformed by Nanson's rule.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Trick That Does Not Work</h3>
+
+    <p>The most common intuition about this whole subject is: <em>apply $-p$ to the CT geometry and call the result the unloaded shape.</em> It is exact in linear elasticity, where superposition holds and geometry is not part of the operator. In finite strain it is wrong for two independent reasons.</p>
+
+    <ul>
+      <li><strong>The tangent is configuration-dependent.</strong> The stiffness that resists deflation at the imaged state is not the stiffness that resists inflation at the true reference state. Deflate by $-p$, then re-inflate the result by $+p$, and you do not get the imaged geometry back.</li>
+      <li><strong>Pressure is a follower load.</strong> Its direction is normal to the <em>current</em> surface and the area it acts on changes with deformation &mdash; exactly the bookkeeping Nanson's formula does and the naive backward-load trick ignores.</li>
+    </ul>
+
+    <p>Resist the urge to attach a headline error percentage to this. The size of the deflate-then-reinflate error depends on the material model, the stretch level and the wall geometry, and no single number is defensible across cases. The Unloaded-Shape Laboratory below computes it for an incompressible neo-Hookean thick-walled tube, so you can watch the error grow as you soften the wall or raise the pressure, instead of taking a figure on trust.</p>
+
+    <!-- ===== SECTION 3 ===== -->
+    <h2 class="section-heading" id="four-configurations">3. Four Configurations, Not Two</h2>
+
+    <p>The literature routinely calls the output of an unloading algorithm &ldquo;the stress-free reference configuration&rdquo;. For a rubber part that is fine. For an artery or a ventricle it is false, and the falsehood matters. There are four distinct configurations in play and you should be able to name which one a paper &mdash; or your own code &mdash; is talking about.</p>
+
+    <table>
+      <tr><th>Configuration</th><th>External load</th><th>Internal stress</th><th>How you get it</th></tr>
+      <tr><td><strong>Loaded / imaged</strong></td><td>$p \ne 0$</td><td>$\boldsymbol{\sigma} \ne 0$</td><td>Measured. The data.</td></tr>
+      <tr><td><strong>Load-free (&ldquo;unloaded&rdquo;)</strong></td><td>$p = 0$</td><td>$\boldsymbol{\sigma} \ne 0$ in general</td><td>Inverse elastostatics (&sect;5) or fixed-point unloading (&sect;6).</td></tr>
+      <tr><td><strong>Residually stressed</strong></td><td>$p = 0$</td><td>$\boldsymbol{\sigma} \ne 0$, self-equilibrated</td><td>Same object as the row above, viewed through its stress field.</td></tr>
+      <tr><td><strong>Stress-free</strong></td><td>&mdash;</td><td>$\boldsymbol{\sigma} = 0$ pointwise</td><td>Cut the body until it relaxes. Generally <em>not a single connected configuration</em>.</td></tr>
+    </table>
+
+    <p>The classical demonstration is the arterial ring: cut a load-free arterial ring radially and it springs open into a sector. The opening angle is a direct measurement of the residual stress that was locked into the closed, load-free ring. Nothing in the inverse motion problem recovers it: an inverse elastostatic solve returns the configuration that is in equilibrium with <strong>zero external load</strong>, and that configuration still carries whatever self-equilibrated stress field the body was built with.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; load-free is not stress-free</div>
+      <div>Inverse elastostatics answers &ldquo;what shape is in equilibrium with zero external load?&rdquo; It does not answer &ldquo;what shape has zero stress?&rdquo; Residual stress is an <em>additional, separate unknown</em>, parameterised in the classical treatment by an opening angle. If you repeat the phrase &ldquo;stress-free reference configuration&rdquo; from a paper's title, flag in your own text that the method does not deliver stress-freeness. The Unloaded-Shape Laboratory lets you switch a nonzero opening angle on and watch the load-free tube acquire a compressive-inner / tensile-outer residual hoop stress while its <em>shape</em> stays perfectly ordinary.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 760 250" style="width:100%;max-width:760px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="m9-arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#555"/></marker>
+        </defs>
+        <!-- loaded -->
+        <circle cx="110" cy="112" r="66" fill="#e0f2f1" stroke="#00838f" stroke-width="2.4"/>
+        <circle cx="110" cy="112" r="47" fill="#fff" stroke="#00838f" stroke-width="2.4"/>
+        <line x1="110" y1="80" x2="110" y2="68" stroke="#7b1fa2" stroke-width="2"/>
+        <line x1="88" y1="88" x2="79" y2="79" stroke="#7b1fa2" stroke-width="2"/>
+        <line x1="132" y1="88" x2="141" y2="79" stroke="#7b1fa2" stroke-width="2"/>
+        <line x1="88" y1="136" x2="79" y2="145" stroke="#7b1fa2" stroke-width="2"/>
+        <line x1="132" y1="136" x2="141" y2="145" stroke="#7b1fa2" stroke-width="2"/>
+        <text x="110" y="200" font-size="12" fill="#00838f" text-anchor="middle" font-family="sans-serif" font-weight="700">LOADED (imaged)</text>
+        <text x="110" y="217" font-size="10.5" fill="#666" text-anchor="middle" font-family="sans-serif">$p \ne 0$, $\boldsymbol{\sigma} \ne 0$</text>
+        <text x="110" y="233" font-size="10.5" fill="#2e7d32" text-anchor="middle" font-family="sans-serif" font-weight="700">DATA</text>
+        <!-- arrow -->
+        <line x1="196" y1="112" x2="248" y2="112" stroke="#555" stroke-width="1.6" marker-end="url(#m9-arr2)"/>
+        <text x="222" y="102" font-size="10" fill="#555" text-anchor="middle" font-family="sans-serif">remove $p$</text>
+        <text x="222" y="127" font-size="9.5" fill="#c62828" text-anchor="middle" font-family="sans-serif">&sect;5&ndash;6</text>
+        <!-- unloaded -->
+        <circle cx="340" cy="112" r="57" fill="#fdeaea" stroke="#c62828" stroke-width="2.4" stroke-dasharray="6,4"/>
+        <circle cx="340" cy="112" r="36" fill="#fff" stroke="#c62828" stroke-width="2.4" stroke-dasharray="6,4"/>
+        <text x="340" y="200" font-size="12" fill="#c62828" text-anchor="middle" font-family="sans-serif" font-weight="700">LOAD-FREE</text>
+        <text x="340" y="217" font-size="10.5" fill="#666" text-anchor="middle" font-family="sans-serif">$p = 0$, $\boldsymbol{\sigma} \ne 0$</text>
+        <text x="340" y="233" font-size="10.5" fill="#c62828" text-anchor="middle" font-family="sans-serif" font-weight="700">what the method returns</text>
+        <!-- residual stress annotation -->
+        <text x="340" y="60" font-size="10" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif">residual stress still inside</text>
+        <text x="322" y="116" font-size="9" fill="#7b1fa2" font-family="sans-serif">&minus;</text>
+        <text x="362" y="116" font-size="9" fill="#7b1fa2" font-family="sans-serif">+</text>
+        <!-- arrow -->
+        <line x1="405" y1="112" x2="457" y2="112" stroke="#555" stroke-width="1.6" marker-end="url(#m9-arr2)"/>
+        <text x="431" y="102" font-size="10" fill="#555" text-anchor="middle" font-family="sans-serif">cut it</text>
+        <text x="431" y="127" font-size="9.5" fill="#999" text-anchor="middle" font-family="sans-serif">not recovered</text>
+        <!-- open sector -->
+        <path d="M 545 66 A 62 62 0 1 1 519 152 L 538 138 A 40 40 0 1 0 559 84 Z" fill="#f3e8f7" stroke="#7b1fa2" stroke-width="2.2"/>
+        <text x="575" y="200" font-size="12" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif" font-weight="700">STRESS-FREE</text>
+        <text x="575" y="217" font-size="10.5" fill="#666" text-anchor="middle" font-family="sans-serif">$\boldsymbol{\sigma} = 0$, opening angle $\Theta_0$</text>
+        <text x="575" y="233" font-size="10.5" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif" font-weight="700">a separate unknown</text>
+        <path d="M 545 66 A 62 62 0 0 0 519 152" fill="none" stroke="#7b1fa2" stroke-width="0" />
+        <text x="533" y="112" font-size="10" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif">$\Theta_0$</text>
+        <!-- caution box -->
+        <rect x="646" y="72" width="104" height="82" rx="5" fill="#fdf7ee" stroke="#e0d5c2"/>
+        <text x="656" y="90" font-size="9.5" fill="#8a6d3b" font-family="sans-serif">Papers often</text>
+        <text x="656" y="103" font-size="9.5" fill="#8a6d3b" font-family="sans-serif">call the middle</text>
+        <text x="656" y="116" font-size="9.5" fill="#8a6d3b" font-family="sans-serif">one &ldquo;stress-free&rdquo;.</text>
+        <text x="656" y="132" font-size="9.5" fill="#8a6d3b" font-family="sans-serif" font-weight="700">It is not.</text>
+      </svg>
+      <div class="figure-caption">The configuration ladder. Unloading algorithms take you from the left box to the middle box. Getting to the right box requires cutting the specimen &mdash; and the stress-free state of a residually stressed organ is generally not one connected configuration at all.</div>
+    </div>
+
+    <!-- ===== SECTION 4 ===== -->
+    <h2 class="section-heading" id="shield-duality-and-eshelby-stress">4. Shield Duality and the Eshelby Stress</h2>
+
+    <p>The structural insight behind everything that follows is a duality identity of Shield (1967). It says that the inverse motion is not a new kind of object requiring new kinematics &mdash; its stored energy is that of an ordinary hyperelastic material with a <em>dual energy</em> $W^{*}$. What Shield's identity does <em>not</em> hand you is the loaded boundary-value problem: as we are about to see, the loads must be imposed in the spatial configuration, and taking that step is Govindjee &amp; Mihalic's contribution rather than a corollary of the energy identity.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Shield's inverse deformation theorem (1967)</div>
+      <div>If $\boldsymbol{\varphi}$ is an equilibrium deformation of a hyperelastic body with strain energy $W(\mathbf{F})$ under given loads, then the inverse motion $\boldsymbol{\Phi} = \boldsymbol{\varphi}^{-1}$ is an equilibrium deformation of the <strong>dual material</strong> with strain energy $W^{*}(\mathbf{f}) = \det(\mathbf{f})\,W(\mathbf{f}^{-1})$, $\mathbf{f} = \mathbf{F}^{-1}$, under loads transformed by Nanson's rule.</div>
+    </div>
+
+    <p>The dual energy is not an exotic construction. It is the ordinary strain energy measured <em>per unit current volume</em> instead of per unit reference volume, re-expressed in the inverse gradient. Change variables in the total stored energy:</p>
+
+    <div class="math-block">$$\int_{\mathcal{B}_0} W\,\mathrm{d}V = \int_{\mathcal{B}} J^{-1}W\,\mathrm{d}v = \int_{\mathcal{B}} \det(\mathbf{f})\,W\!\left(\mathbf{f}^{-1}\right)\mathrm{d}v$$</div>
+
+    <p>So the stored energy has a clean representation on the known domain $\mathcal{B}$. The tempting next move — append the usual external-work terms, written against the spatial positions, and call the result a potential — is a trap worth walking into deliberately, because it fails for an instructive reason:</p>
+
+    <div class="math-block">$$\Pi[\boldsymbol{\Phi}] \;\overset{?}{=}\; \int_{\mathcal{B}} \det(\mathbf{f})\,W\!\left(\mathbf{f}^{-1}\right)\mathrm{d}v \;-\; \underbrace{\int_{\mathcal{B}}\rho\,\mathbf{b}\cdot\mathbf{x}\,\mathrm{d}v \;-\; \int_{\partial\mathcal{B}_t}\bar{\mathbf{t}}\cdot\mathbf{x}\,\mathrm{d}a}_{\text{contains no }\boldsymbol{\Phi}}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — why that functional cannot be right</div>
+      <div>On $\mathcal{B}$ the spatial coordinate $\mathbf{x}$ is the <em>independent variable</em>; the unknown field is $\boldsymbol{\Phi}:\mathbf{x}\mapsto\mathbf{X}$. Both external terms above are therefore constants under $\delta\boldsymbol{\Phi}$ and contribute nothing to the Euler&ndash;Lagrange equations: the "loaded" potential is load-independent, and stationarity would return the same reference configuration whether the body carries $200$ mmHg or nothing at all. Writing the loads against $\mathbf{X}$ instead does not rescue it either &mdash; that is a different physical problem (dead loading in the reference configuration), not the one you measured.</div>
+    </div>
+
+    <p>The formulation that does work imposes equilibrium directly in the <strong>spatial weak form</strong> and treats $\boldsymbol{\Phi}$ as the unknown. For every admissible virtual displacement $\delta\mathbf{u}$ on the known deformed body:</p>
+
+    <div class="math-block">$$\mathcal{R}(\boldsymbol{\Phi};\delta\mathbf{u}) \;=\; \int_{\mathcal{B}} \boldsymbol{\sigma}(\boldsymbol{\Phi})\!:\!\nabla_{\!\mathbf{x}}\,\delta\mathbf{u}\;\mathrm{d}v \;-\; \int_{\mathcal{B}} \rho\,\mathbf{b}\cdot\delta\mathbf{u}\,\mathrm{d}v \;-\; \int_{\partial\mathcal{B}_t} \bar{\mathbf{t}}\cdot\delta\mathbf{u}\,\mathrm{d}a \;=\; 0$$</div>
+
+    <p>Here the loads are prescribed on the deformed configuration — where they physically act and where you actually measured them — and the Cauchy stress is evaluated from the inverse deformation gradient, $\mathbf{F} = \mathbf{f}^{-1}$ with $\mathbf{f} = \nabla_{\!\mathbf{x}}\boldsymbol{\Phi}$, through $\boldsymbol{\sigma} = J^{-1}\mathbf{P}\mathbf{F}^{\mathsf T}$. Now $\boldsymbol{\Phi}$ appears in the internal term and the loads survive into the residual. This is the route Govindjee &amp; Mihalic take, and they are explicit that the classical Eshelby / conservation-law machinery is inadequate for exactly this data — prescribed deformed geometry with prescribed Cauchy tractions.</p>
+
+    <h3 class="subsection-heading">The Stress Conjugate to $\mathbf{f}$</h3>
+
+    <p>Differentiate $W^{*}$ and a familiar object falls out. Every transpose matters here, so the derivation is worth doing in full rather than quoting.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Full derivation: $\partial W^{*}/\partial\mathbf{f}$ and the Eshelby tensor</div>
+      <div class="collapsible-body">
+        <p>Two variational identities do all the work:</p>
+        <div class="math-block">$$\delta(\det\mathbf{f}) = \det(\mathbf{f})\,\mathbf{f}^{-T}\!:\!\delta\mathbf{f} = J^{-1}\mathbf{F}^{T}\!:\!\delta\mathbf{f}, \qquad \delta\!\left(\mathbf{f}^{-1}\right) = -\mathbf{F}\,\delta\mathbf{f}\,\mathbf{F}$$</div>
+        <p>The first is Jacobi's formula with $\mathbf{f}^{-T} = \mathbf{F}^{T}$ and $\det\mathbf{f} = J^{-1}$. The second is the variation of a matrix inverse, $\delta(\mathbf{A}^{-1}) = -\mathbf{A}^{-1}\delta\mathbf{A}\,\mathbf{A}^{-1}$, with $\mathbf{A} = \mathbf{f}$ and $\mathbf{f}^{-1} = \mathbf{F}$.</p>
+        <p>Now vary $W^{*}(\mathbf{f}) = \det(\mathbf{f})W(\mathbf{f}^{-1})$ by the product rule. The first term gives</p>
+        <div class="math-block">$$\delta(\det\mathbf{f})\,W = J^{-1}W\,\mathbf{F}^{T}\!:\!\delta\mathbf{f}$$</div>
+        <p>The second term uses $\partial W/\partial \mathbf{F} = \mathbf{P}$:</p>
+        <div class="math-block">$$\det(\mathbf{f})\,\mathbf{P}\!:\!\delta\!\left(\mathbf{f}^{-1}\right) = -J^{-1}\,\mathbf{P}\!:\!\left(\mathbf{F}\,\delta\mathbf{f}\,\mathbf{F}\right) = -J^{-1}\left(\mathbf{F}^{T}\mathbf{P}\mathbf{F}^{T}\right)\!:\!\delta\mathbf{f}$$</div>
+        <p>The last step is the index identity $P_{iA}F_{iB}F_{jA} = (\mathbf{F}^{T}\mathbf{P}\mathbf{F}^{T})_{Bj}$ &mdash; write both sides out once and you will never doubt it again. Adding the two terms:</p>
+        <div class="math-block">$$\delta W^{*} = J^{-1}\!\left[W\mathbf{F}^{T} - \mathbf{F}^{T}\mathbf{P}\mathbf{F}^{T}\right]\!:\!\delta\mathbf{f} = J^{-1}\!\left[W\mathbf{I} - \mathbf{F}^{T}\mathbf{P}\right]\mathbf{F}^{T}\!:\!\delta\mathbf{f}$$</div>
+        <p>The bracket is the Eshelby energy&ndash;momentum tensor.</p>
+      </div>
+    </div>
+
+    <div class="math-block">$$\frac{\partial W^{*}}{\partial \mathbf{f}} \;=\; J^{-1}\left[\,W\mathbf{I} - \mathbf{F}^{T}\mathbf{P}\,\right]\mathbf{F}^{T} \;=\; J^{-1}\,\boldsymbol{\Sigma}\,\mathbf{F}^{T}, \qquad \boldsymbol{\Sigma} \;=\; W\mathbf{I} - \mathbf{F}^{T}\frac{\partial W}{\partial\mathbf{F}}$$</div>
+
+    <p>$\boldsymbol{\Sigma}$ is the <strong>Eshelby energy&ndash;momentum tensor</strong>, also called the configurational stress. It is the natural stress measure of the inverse problem for exactly the reason its name suggests: it is conjugate to changes in <em>material</em> position rather than spatial position, and material position is what you are solving for.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; get the Eshelby tensor exactly right</div>
+      <div>The referential Eshelby stress is $\boldsymbol{\Sigma} = W\mathbf{I} - \mathbf{F}^{T}\mathbf{P}$. It is <em>not</em> $W\mathbf{I} - \boldsymbol{\sigma}$ and <em>not</em> $W\mathbf{I} - \mathbf{P}\mathbf{F}^{T}$; and the conjugate stress is $J^{-1}\boldsymbol{\Sigma}\mathbf{F}^{T}$, with the $\mathbf{F}^{T}$ on the right. Transpose and push-forward errors here are endemic, because $\mathbf{f}$ is a two-point tensor whose legs live in different configurations, so a wrong transpose still type-checks dimensionally. Do not conflate $\boldsymbol{\Sigma}$ with the Mandel stress either &mdash; different object, different conjugate pairing.</div>
+    </div>
+
+    <h3 class="subsection-heading">Two Consequences, One Good and One Bad</h3>
+
+    <p><strong>Implementation.</strong> An existing nonlinear finite element code gets a long way toward inverse elastostatics by swapping the constitutive routine for $W^{*}$ and reinterpreting the nodal unknowns as material coordinates: the element technology, the Newton loop and the assembly all survive. What does not come for free is the loading side. The residual and tangent must be assembled over the <em>known deformed</em> body with the tractions applied there, so a code that integrates loads over the reference configuration — as most do — needs its load and integration-domain handling rewritten too, not just its material model. Section 5 walks through what that costs.</p>
+
+    <p><strong>Well-posedness.</strong> Polyconvexity and coercivity of $W$ do <em>not</em> transfer to $W^{*}$. The dual material can violate ellipticity, so the existence of a minimiser for the inverse problem is not inherited from the forward problem.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; Shield duality is an identity, not a well-posedness theorem</div>
+      <div>Shield's theorem relates equilibrium states. It says nothing about existence, uniqueness or stability of the inverse problem, and $W$ polyconvex does not imply $W^{*}(\mathbf{f}) = \det(\mathbf{f})W(\mathbf{f}^{-1})$ polyconvex or elliptic. An impeccably well-posed forward problem can have an inverse problem with no minimiser. In practice this does not announce itself with a visible pathology &mdash; it shows up as Newton refusing to converge, which you will be tempted to blame on your mesh.</div>
+    </div>
+
+    <!-- ===== SECTION 5 ===== -->
+    <h2 class="section-heading" id="inverse-elastostatic-finite-elements">5. Inverse Elastostatic Finite Elements</h2>
+
+    <p>Govindjee &amp; Mihalic (1996) turned Shield's identity into a finite element method. The recipe is short, and every step is a re-labelling of something you already have.</p>
+
+    <ol>
+      <li><strong>Mesh the known deformed body $\mathcal{B}$.</strong> The node positions $\mathbf{x}_A$ are data. They never move.</li>
+      <li><strong>The unknowns are the material coordinates $\mathbf{X}_A$ of those fixed spatial nodes.</strong> Interpolate them with the same shape functions, now written as functions of $\mathbf{x}$.</li>
+      <li><strong>Enforce spatial equilibrium weakly on $\mathcal{B}$</strong>, with the Cauchy stress evaluated from $\mathbf{f}^h$.</li>
+      <li><strong>Solve the nonlinear algebraic system by Newton&ndash;Raphson.</strong> It costs one nonlinear solve, comparable to a single forward analysis.</li>
+    </ol>
+
+    <div class="math-block">$$\mathbf{X}^{h}(\mathbf{x}) = \sum_{A} N_A(\mathbf{x})\,\mathbf{X}_A, \qquad \mathbf{f}^{h} = \sum_{A} \mathbf{X}_A \otimes \nabla N_A(\mathbf{x}), \qquad \mathbf{F} = \left(\mathbf{f}^{h}\right)^{-1}, \quad J = \frac{1}{\det\mathbf{f}^{h}}$$</div>
+
+    <div class="math-block">$$\int_{\mathcal{B}} \boldsymbol{\sigma}\!\left(\mathbf{f}^{h}\right) : \operatorname{grad}\boldsymbol{\eta}\;\mathrm{d}v \;=\; \int_{\mathcal{B}} \rho\,\mathbf{b}\cdot\boldsymbol{\eta}\;\mathrm{d}v \;+\; \int_{\partial\mathcal{B}_t} \bar{\mathbf{t}}\cdot\boldsymbol{\eta}\;\mathrm{d}a$$</div>
+
+    <div class="math-block">$$\mathbf{r}_A(\mathbf{X}) = \int_{\mathcal{B}} \boldsymbol{\sigma}\,\nabla N_A\,\mathrm{d}v \;-\; \mathbf{f}^{\text{ext}}_A = \mathbf{0}, \qquad \mathbf{K}_{AB} = \frac{\partial \mathbf{r}_A}{\partial \mathbf{X}_B}$$</div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 780 420" style="width:100%;max-width:780px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="m9-arrN" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e67e22"/></marker>
+          <marker id="m9-arrG" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#bbb"/></marker>
+        </defs>
+        <!-- TOP: forward -->
+        <text x="24" y="22" font-size="12.5" font-weight="700" fill="#555" font-family="sans-serif">FORWARD FE</text>
+        <!-- faint deformed overlay -->
+        <path d="M300,40 C300,26 340,20 372,28 C404,36 418,60 412,84 C406,108 372,120 340,116 C308,112 300,84 300,40 Z" fill="#f7f7f7" stroke="#ddd" stroke-width="1.5"/>
+        <!-- reference mesh (dashed) -->
+        <g stroke="#c62828" stroke-width="1.4" fill="none" stroke-dasharray="5,3">
+          <rect x="70" y="40" width="52" height="40"/><rect x="122" y="40" width="52" height="40"/><rect x="174" y="40" width="52" height="40"/>
+          <rect x="70" y="80" width="52" height="40"/><rect x="122" y="80" width="52" height="40"/><rect x="174" y="80" width="52" height="40"/>
+        </g>
+        <g fill="#c62828">
+          <circle cx="70" cy="40" r="3"/><circle cx="122" cy="40" r="3"/><circle cx="174" cy="40" r="3"/><circle cx="226" cy="40" r="3"/>
+          <circle cx="70" cy="80" r="3"/><circle cx="122" cy="80" r="3"/><circle cx="174" cy="80" r="3"/><circle cx="226" cy="80" r="3"/>
+          <circle cx="70" cy="120" r="3"/><circle cx="122" cy="120" r="3"/><circle cx="174" cy="120" r="3"/><circle cx="226" cy="120" r="3"/>
+        </g>
+        <text x="60" y="34" font-size="10.5" fill="#c62828" font-family="sans-serif">$\mathbf{X}_A$</text>
+        <line x1="232" y1="42" x2="296" y2="40" stroke="#e67e22" stroke-width="1.6" marker-end="url(#m9-arrN)"/>
+        <line x1="232" y1="82" x2="298" y2="76" stroke="#e67e22" stroke-width="1.6" marker-end="url(#m9-arrN)"/>
+        <line x1="232" y1="120" x2="300" y2="110" stroke="#e67e22" stroke-width="1.6" marker-end="url(#m9-arrN)"/>
+        <text x="264" y="140" font-size="10.5" fill="#e67e22" font-family="sans-serif" text-anchor="middle">nodes move</text>
+        <rect x="440" y="38" width="316" height="86" rx="5" fill="#fdf7ee" stroke="#e0d5c2"/>
+        <text x="452" y="58" font-size="11" fill="#8a6d3b" font-family="sans-serif">Unknowns: spatial positions $\mathbf{x}_A$; $\mathbf{X}$ is data.</text>
+        <text x="452" y="78" font-size="11" fill="#8a6d3b" font-family="sans-serif">Pressure is a FOLLOWER load &mdash; direction and area</text>
+        <text x="452" y="94" font-size="11" fill="#8a6d3b" font-family="sans-serif">change during the solve; load-stiffness term in $\mathbf{K}$.</text>
+        <text x="452" y="114" font-size="11" fill="#8a6d3b" font-family="sans-serif">Integrals over the (known) reference domain.</text>
+        <line x1="24" y1="160" x2="756" y2="160" stroke="#ddd"/>
+        <!-- BOTTOM: inverse -->
+        <text x="24" y="188" font-size="12.5" font-weight="700" fill="#00838f" font-family="sans-serif">INVERSE ELASTOSTATIC FE</text>
+        <!-- ghost reference -->
+        <path d="M300,236 C300,224 330,218 356,224 C382,230 392,250 388,270 C384,290 356,300 330,296 C304,292 300,270 300,236 Z" fill="none" stroke="#c62828" stroke-width="1.4" stroke-dasharray="5,3"/>
+        <text x="344" y="316" font-size="10" fill="#c62828" font-family="sans-serif" text-anchor="middle">$\mathcal{B}_0$ implied by $\mathbf{X}_A$</text>
+        <!-- deformed mesh, solid, pinned -->
+        <g stroke="#00838f" stroke-width="1.6" fill="#e0f2f1">
+          <rect x="70" y="210" width="60" height="46"/><rect x="130" y="210" width="60" height="46"/><rect x="190" y="210" width="60" height="46"/>
+          <rect x="70" y="256" width="60" height="46"/><rect x="130" y="256" width="60" height="46"/><rect x="190" y="256" width="60" height="46"/>
+        </g>
+        <g fill="#00838f">
+          <rect x="67" y="207" width="6" height="6"/><rect x="127" y="207" width="6" height="6"/><rect x="187" y="207" width="6" height="6"/><rect x="247" y="207" width="6" height="6"/>
+          <rect x="67" y="253" width="6" height="6"/><rect x="127" y="253" width="6" height="6"/><rect x="187" y="253" width="6" height="6"/><rect x="247" y="253" width="6" height="6"/>
+          <rect x="67" y="299" width="6" height="6"/><rect x="127" y="299" width="6" height="6"/><rect x="187" y="299" width="6" height="6"/><rect x="247" y="299" width="6" height="6"/>
+        </g>
+        <text x="86" y="203" font-size="10.5" fill="#c62828" font-family="sans-serif">$\mathbf{X}_A = ?$</text>
+        <text x="160" y="326" font-size="10.5" fill="#00838f" font-family="sans-serif" text-anchor="middle">mesh stays put at the imaged $\mathbf{x}_A$</text>
+        <line x1="258" y1="232" x2="296" y2="240" stroke="#bbb" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#m9-arrG)"/>
+        <line x1="258" y1="278" x2="296" y2="274" stroke="#bbb" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#m9-arrG)"/>
+        <!-- pressure arrows on known surface -->
+        <line x1="60" y1="196" x2="60" y2="206" stroke="#7b1fa2" stroke-width="1.8"/>
+        <line x1="45" y1="240" x2="62" y2="240" stroke="#7b1fa2" stroke-width="1.8"/>
+        <line x1="45" y1="290" x2="62" y2="290" stroke="#7b1fa2" stroke-width="1.8"/>
+        <text x="34" y="340" font-size="10" fill="#7b1fa2" font-family="sans-serif">$\bar{\mathbf{t}} = -p\,\mathbf{n}$ known</text>
+        <rect x="440" y="196" width="316" height="106" rx="5" fill="#e0f2f1" stroke="#00838f"/>
+        <text x="452" y="216" font-size="11" fill="#00695c" font-family="sans-serif">Unknowns: material coordinates $\mathbf{X}_A$.</text>
+        <text x="452" y="238" font-size="11" fill="#00695c" font-family="sans-serif">$\mathbf{f}^h = \sum_A \mathbf{X}_A \otimes \nabla N_A$,&nbsp; $\mathbf{F} = (\mathbf{f}^h)^{-1}$,&nbsp; $J = 1/\det\mathbf{f}^h$</text>
+        <text x="452" y="262" font-size="11" fill="#00695c" font-family="sans-serif" font-weight="700">Pressure is a DEAD load &mdash; the surface is known,</text>
+        <text x="452" y="278" font-size="11" fill="#00695c" font-family="sans-serif" font-weight="700">so no follower term, no load stiffness.</text>
+        <text x="452" y="296" font-size="11" fill="#00695c" font-family="sans-serif">Integrals over the (known) deformed domain.</text>
+        <rect x="24" y="356" width="732" height="46" rx="5" fill="#fafafa" stroke="#e0e0e0"/>
+        <text x="40" y="376" font-size="11.5" fill="#333" font-family="sans-serif" font-weight="700">Cost: ONE nonlinear solve.</text>
+        <text x="40" y="393" font-size="11" fill="#666" font-family="sans-serif">Newton iterates inside it &mdash; that is a different level of iteration from the outer loop of &sect;6, and conflating the two misrepresents the trade-off badly.</text>
+      </svg>
+      <div class="figure-caption">Why the inverse formulation is not the forward one run backwards. The mesh is drawn on the body you actually have; the nodal unknowns are relabelled from spatial to material coordinates; and the load that was the awkward part of the forward problem becomes the easy part.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the pressure load becomes trivial</div>
+      <div>In the inverse formulation the loaded surface <em>is</em> the known deformed surface. A pressure load $\bar{\mathbf{t}} = -p\,\mathbf{n}$ is therefore fully specified before the solve begins: it is a dead load, and the follower-load nonlinearity and pressure load-stiffness term simply do not appear in $\mathbf{K}$. This is a genuine structural advantage over every method that works by repeated forward solves &mdash; in those, the pressure genuinely follows the deforming surface, every iteration. The converse of the trap is the one people actually fall into: forgetting that pressure <em>is</em> a follower load inside every forward solve of a Sellier loop (&sect;6), and applying it to the fixed target surface instead of the current iterate's deformed surface, which converges neatly to the wrong fixed point.</div>
+    </div>
+
+    <h3 class="subsection-heading">Boundary Conditions</h3>
+
+    <p>Essential boundary conditions are imposed on $\mathbf{X}$: &ldquo;this node's material coordinate equals this value&rdquo;. This is how you anchor the reference configuration's otherwise free rigid-body and translation modes &mdash; the reference geometry is only determined up to a rigid motion unless you pin it. In vascular work the vessel outlets are typically fixed in space; Ramella et al. (2024) fixed all outlets in their aortic models.</p>
+
+    <h3 class="subsection-heading">Quasi-Incompressibility, and Locking That Does Not Care Which Way You Solve</h3>
+
+    <p>Nearly all soft materials of interest are close to incompressible, $\nu \to 0.5$. In the inverse formulation the constraint reads $\det\mathbf{f} = 1$, which is exactly as stiff a constraint as $J = 1$ &mdash; it is the same constraint. A purely displacement-type inverse element locks exactly as its forward counterpart does. Govindjee &amp; Mihalic wrote a second paper (1998) for precisely this case; use a mixed $\mathbf{X}$&ndash;$p$ or $\bar{\mathbf{F}}$-type formulation with the standard volumetric&ndash;isochoric split.</p>
+
+    <div class="math-block">$$W^{*}(\mathbf{f}) = \det(\mathbf{f})\left[\;\bar{W}\!\left(\bar{\mathbf{F}}\right) + U(J)\;\right], \qquad J = \left(\det\mathbf{f}\right)^{-1}, \quad \bar{\mathbf{F}} = J^{-1/3}\mathbf{F}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; &ldquo;the mesh doesn't move, so it can't lock&rdquo;</div>
+      <div>Locking is not about nodes moving; it is about the element's ability to represent an isochoric deformation field with the interpolation it has. $\det\mathbf{f} = 1$ constrains the discrete field the same way $J = 1$ does. If you would not use a plain displacement element for a forward incompressible problem, do not use its inverse twin either.</div>
+    </div>
+
+    <h3 class="subsection-heading">Anisotropy, and Where the Fibres Live</h3>
+
+    <p>Fachinotti, Cardona &amp; Jetteur (2008) formulate the inverse design problem for large-deformation anisotropic hyperelasticity. Their formulation expresses equilibrium on the distorted (known, deformed) configuration while keeping a standard constitutive library written in the usual undistorted-configuration measures, so that &mdash; in their words &mdash; &ldquo;the modifications to a standard finite elements code are limited to the routines for the computation of the finite element internal forces and tangent matrix.&rdquo; That is a strong practical statement: the inverse capability is an element-level change, not a solver rewrite. An inverse-elastostatic capability also ships in commercial FE (ANSYS Mechanical), which is how Ramella et al. (2024) used it.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; anisotropy bookkeeping</div>
+      <div>Fibre directions, collagen orientations and any structure tensor are defined in the reference configuration &mdash; the one you are solving for. If you take a fibre field from an image or an atlas, decide explicitly whether it is a <em>material</em> direction (which must be pulled back with $\mathbf{f}$) or a <em>spatial</em> one. Treating an imaged fibre field as though it already lived in the reference configuration silently changes the constitutive response, and the resulting error is invisible in the residual: the solve converges, to the wrong body.</div>
+    </div>
+
+    <!-- ===== SECTION 6 ===== -->
+    <h2 class="section-heading" id="fixed-point-iteration-and-acceleration">6. Fixed-Point Unloading: Relaxation, Acceleration, Continuation</h2>
+
+    <p>Suppose you cannot modify the constitutive kernel of your solver &mdash; commercial code, contact, complex multiphysics, a validated pipeline you are not allowed to touch. You can still recover the reference configuration using only <em>forward</em> solves. Sellier (2011) proposed the fixed-point scheme now used widely in cardiovascular and cardiac mechanics.</p>
+
+    <div class="definition-box">
+      <div class="box-label">The Sellier iteration</div>
+      <div>Let $\mathbf{x}^{*}$ be the measured deformed nodal positions. Initialise $\mathbf{X}_0 = \mathbf{x}^{*}$. At iteration $k$: (i) run a <strong>forward</strong> analysis using $\mathbf{X}_k$ as the reference mesh under the true loads, obtaining deformed positions $\mathbf{x}_k$; (ii) form the residual $\mathbf{R}_k = \mathbf{x}_k - \mathbf{x}^{*}$; (iii) update $\mathbf{X}_{k+1} = \mathbf{X}_k - \alpha_k\,\mathbf{R}_k$. Stop when $\max\lVert\mathbf{R}_k\rVert < \varepsilon$. The sought reference configuration is precisely the fixed point of $\mathbf{G}(\mathbf{X}) = \mathbf{X} - \alpha\left(\boldsymbol{\varphi}_{\mathbf{X}}(\mathbf{X}) - \mathbf{x}^{*}\right)$.</div>
+    </div>
+
+    <div class="math-block">$$\mathbf{R}_k = \mathbf{x}_k - \mathbf{x}^{*}, \qquad \mathbf{x}_k = \boldsymbol{\varphi}_{\mathbf{X}_k}\!\left(\mathbf{X}_k\right), \qquad \mathbf{X}_{k+1} = \mathbf{X}_k - \alpha_k\,\mathbf{R}_k$$</div>
+
+    <p>Because this is a Picard iteration, its asymptotic behaviour is governed by the contraction factor of the update map:</p>
+
+    <div class="math-block">$$\left\lVert \mathbf{X}_{k+1} - \mathbf{X}^{\star} \right\rVert \;\le\; L\,\left\lVert \mathbf{X}_{k} - \mathbf{X}^{\star} \right\rVert, \qquad L = \left\lVert \mathbf{I} - \alpha\,\frac{\partial \mathbf{R}}{\partial \mathbf{X}} \right\rVert$$</div>
+
+    <p>Everything that follows in this section is an attempt to keep $L$ below one without knowing $\partial\mathbf{R}/\partial\mathbf{X}$.</p>
+
+    <h3 class="subsection-heading">Relaxation: $\alpha = 1$ Is a Choice, Not a Law</h3>
+
+    <p>Sellier fixed $\alpha = 1$. Rausch, Genet &amp; Humphrey (2017) showed that $\alpha = 1$ is <strong>not necessarily the best choice</strong>, that the optimal $\alpha$ is problem dependent (they observe optima in the range 0.6&ndash;1.1) and not predictable a priori. Their fix is Aitken's $\Delta^2$ dynamic relaxation, which makes convergence almost independent of the initial $\alpha$; they validated it on four cases &mdash; a murine venous thrombus, a healthy mouse aortic segment, an ovine anterior mitral valve leaflet, and a murine aortic dissection with intramural thrombus.</p>
+
+    <div class="math-block">$$\alpha_k \;=\; -\,\alpha_{k-1}\,\frac{\mathbf{R}_{k-1}\cdot\left(\mathbf{R}_k - \mathbf{R}_{k-1}\right)}{\left(\mathbf{R}_k - \mathbf{R}_{k-1}\right)\cdot\left(\mathbf{R}_k - \mathbf{R}_{k-1}\right)}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; the iteration is not automatically convergent</div>
+      <div>Presenting Sellier's iteration with $\alpha = 1$ as unconditionally convergent is a genuine error, not a simplification. Rausch et al. (2017) explicitly showed the optimum is problem-dependent and unpredictable a priori; Marx et al. (2022) documented that even the Aitken-augmented approach <em>still diverged</em> for some of their left-ventricular models. Aitken $\Delta^{2}$, Armijo damping and Anderson acceleration are corrections to a real failure mode, not decorations on a method that works anyway. The laboratory below lets you drive a configuration into divergence and then rescue it.</div>
+    </div>
+
+    <h3 class="subsection-heading">Line Search and Anderson Acceleration</h3>
+
+    <p>Marx et al. (2022) added an <strong>Armijo line search</strong> that damps unfavourable search directions. They report that for some of their LV models the Aitken-augmented approach still diverged, whereas their algorithm was robust for <em>all</em> cases. On a 19-patient left-ventricular cohort (12 aortic-valve-stenosis, 7 aortic-coarctation) with a reduced Holzapfel&ndash;Ogden model it converged within 10 iterations for all constitutive laws, taking 10.85&ndash;74.18 min per case for unloading plus parameter fitting against 6.31&ndash;24.50 min for the corresponding validation inflation &mdash; roughly a small multiple of a single forward solve &mdash; on meshes up to 1.5 M elements, with joint identification of passive parameters.</p>
+
+    <p>Barnafi, Petras &amp; Gerardo-Giorda (2024) apply <strong>Anderson acceleration</strong> to the same fixed point, reporting a reduction in the number of iterations of up to <strong>80%</strong>, and extend the reference-configuration problem to fully nonlinear poroelasticity. That paper also identifies an inconsistency in primal formulations caused by second-order derivatives of the displacement in the nonlinear mass-conservation equations, resolved with mixed formulations.</p>
+
+    <h3 class="subsection-heading">Load Continuation</h3>
+
+    <p>There is a third knob that costs nothing to try and is not a research contribution in any of the papers above &mdash; it is ordinary nonlinear-solver practice, and it is worth naming because it rescues cases that no relaxation parameter will. Instead of solving the unloading problem at the full load in one go, solve a sequence of problems at $p_1 < p_2 < \dots < p_N = p$, each one starting from the previous answer. Every sub-problem has the same target $\mathbf{x}^{*}$; only the load level changes. At $p \to 0$ the answer is $\mathbf{X} = \mathbf{x}^{*}$, so the first sub-problem starts essentially at its own solution, and each subsequent one starts inside the basin of attraction of the next. Continuation does not change the contraction factor at the solution &mdash; it changes whether your iterate ever gets close enough for that contraction factor to matter.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 780 500" style="width:100%;max-width:780px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="m9-fl" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#555"/></marker>
+        </defs>
+        <rect x="60" y="14" width="200" height="34" rx="4" fill="#e0f2f1" stroke="#00838f" stroke-width="1.6"/>
+        <text x="160" y="36" font-size="12" fill="#00695c" text-anchor="middle" font-family="sans-serif" font-weight="700">Imaged geometry $\mathbf{x}^{*}$</text>
+        <line x1="160" y1="48" x2="160" y2="72" stroke="#555" stroke-width="1.5" marker-end="url(#m9-fl)"/>
+        <rect x="60" y="76" width="200" height="32" rx="4" fill="#fafafa" stroke="#bbb"/>
+        <text x="160" y="97" font-size="11.5" fill="#333" text-anchor="middle" font-family="sans-serif">Initialise $\mathbf{X}_0 = \mathbf{x}^{*}$</text>
+        <line x1="160" y1="108" x2="160" y2="132" stroke="#555" stroke-width="1.5" marker-end="url(#m9-fl)"/>
+        <rect x="40" y="136" width="240" height="46" rx="4" fill="#fff3e0" stroke="#e67e22" stroke-width="1.8"/>
+        <text x="160" y="155" font-size="11.5" fill="#8a5000" text-anchor="middle" font-family="sans-serif" font-weight="700">FORWARD FE solve</text>
+        <text x="160" y="172" font-size="11" fill="#8a5000" text-anchor="middle" font-family="sans-serif">reference $\mathbf{X}_k$, true loads $\to \mathbf{x}_k$</text>
+        <path d="M284,159 L336,159" fill="none" stroke="#e67e22" stroke-width="1.3" stroke-dasharray="4,3"/>
+        <rect x="338" y="132" width="252" height="54" rx="4" fill="#fdf7ee" stroke="#e0d5c2"/>
+        <text x="350" y="150" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">Pressure IS a follower load here &mdash; re-apply it</text>
+        <text x="350" y="165" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">normal to the CURRENT iterate's deformed surface,</text>
+        <text x="350" y="180" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">not to the fixed target.</text>
+        <line x1="160" y1="182" x2="160" y2="206" stroke="#555" stroke-width="1.5" marker-end="url(#m9-fl)"/>
+        <rect x="60" y="210" width="200" height="32" rx="4" fill="#fafafa" stroke="#bbb"/>
+        <text x="160" y="231" font-size="11.5" fill="#333" text-anchor="middle" font-family="sans-serif">$\mathbf{R}_k = \mathbf{x}_k - \mathbf{x}^{*}$</text>
+        <line x1="160" y1="242" x2="160" y2="264" stroke="#555" stroke-width="1.5" marker-end="url(#m9-fl)"/>
+        <path d="M160,268 L246,300 L160,332 L74,300 Z" fill="#fff" stroke="#555" stroke-width="1.6"/>
+        <text x="160" y="296" font-size="11" fill="#333" text-anchor="middle" font-family="sans-serif">$\max\lVert\mathbf{R}_k\rVert$</text>
+        <text x="160" y="312" font-size="11" fill="#333" text-anchor="middle" font-family="sans-serif">$< \varepsilon$ ?</text>
+        <line x1="246" y1="300" x2="330" y2="300" stroke="#2e7d32" stroke-width="1.6" marker-end="url(#m9-fl)"/>
+        <text x="288" y="292" font-size="10.5" fill="#2e7d32" text-anchor="middle" font-family="sans-serif" font-weight="700">yes</text>
+        <rect x="334" y="278" width="256" height="44" rx="4" fill="#eef7ee" stroke="#2e7d32" stroke-width="1.6"/>
+        <text x="462" y="296" font-size="11.5" fill="#2e7d32" text-anchor="middle" font-family="sans-serif" font-weight="700">Load-free configuration $\mathbf{X}^{\star}$</text>
+        <text x="462" y="313" font-size="11" fill="#2e7d32" text-anchor="middle" font-family="sans-serif">and prestress $\boldsymbol{\sigma}(\mathbf{f})$ on the image</text>
+        <line x1="160" y1="332" x2="160" y2="356" stroke="#c62828" stroke-width="1.6" marker-end="url(#m9-fl)"/>
+        <text x="176" y="348" font-size="10.5" fill="#c62828" font-family="sans-serif" font-weight="700">no</text>
+        <rect x="60" y="360" width="200" height="32" rx="4" fill="#f3e8f7" stroke="#7b1fa2" stroke-width="1.6"/>
+        <text x="160" y="381" font-size="11.5" fill="#5b1580" text-anchor="middle" font-family="sans-serif" font-weight="700">Choose $\alpha_k$</text>
+        <line x1="260" y1="376" x2="330" y2="376" stroke="#7b1fa2" stroke-width="1.3" stroke-dasharray="4,3"/>
+        <g font-family="sans-serif">
+          <rect x="334" y="336" width="420" height="24" rx="3" fill="#faf6fc" stroke="#d9c2e5"/>
+          <text x="344" y="352" font-size="10.5" fill="#5b1580">Sellier 2011: $\alpha = 1$ (fixed)</text>
+          <rect x="334" y="362" width="420" height="24" rx="3" fill="#faf6fc" stroke="#d9c2e5"/>
+          <text x="344" y="378" font-size="10.5" fill="#5b1580">Rausch et al. 2017: Aitken $\Delta^2$ &mdash; optimum problem dependent, observed 0.6&ndash;1.1</text>
+          <rect x="334" y="388" width="420" height="24" rx="3" fill="#faf6fc" stroke="#d9c2e5"/>
+          <text x="344" y="404" font-size="10.5" fill="#5b1580">Marx et al. 2022: + Armijo line search &mdash; robust for all 19 LV cases, $\le 10$ iterations</text>
+          <rect x="334" y="414" width="420" height="24" rx="3" fill="#faf6fc" stroke="#d9c2e5"/>
+          <text x="344" y="430" font-size="10.5" fill="#5b1580">Barnafi et al. 2024: Anderson acceleration &mdash; iteration count reduced by up to 80%</text>
+        </g>
+        <line x1="160" y1="392" x2="160" y2="416" stroke="#555" stroke-width="1.5" marker-end="url(#m9-fl)"/>
+        <rect x="60" y="420" width="200" height="32" rx="4" fill="#fafafa" stroke="#bbb"/>
+        <text x="160" y="441" font-size="11.5" fill="#333" text-anchor="middle" font-family="sans-serif">$\mathbf{X}_{k+1} = \mathbf{X}_k - \alpha_k\mathbf{R}_k$</text>
+        <path d="M60,436 L26,436 L26,159 L36,159" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#m9-fl)"/>
+        <rect x="24" y="464" width="732" height="28" rx="4" fill="#fafafa" stroke="#e0e0e0"/>
+        <text x="40" y="483" font-size="11.5" fill="#333" font-family="sans-serif"><tspan font-weight="700">Cost: $N$ forward solves, and no convergence guarantee.</tspan> The pay-off is that the solver is a black box.</text>
+      </svg>
+      <div class="figure-caption">The black-box unloading loop and its accelerations. Every box marked FORWARD is a complete nonlinear analysis; the acceleration literature is entirely about reducing how many of them you need and making sure the sequence converges at all.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; the trade-off, stated honestly</div>
+      <div>Inverse elastostatics: <strong>one nonlinear solve</strong>, exact treatment of pressure, but you need access to the element/constitutive layer. Sellier family: <strong>$N$ forward solves</strong>, works around any black box, handles contact and plasticity and multiphysics, but may diverge and must handle the follower pressure correctly at every iteration. Do not describe Govindjee&ndash;Mihalic as &ldquo;iterative&rdquo; because Newton iterates inside it &mdash; that is the inner loop that every nonlinear solve has, and comparing it to Sellier's outer loop misrepresents the cost difference by an order of magnitude.</div>
+    </div>
+
+    <!-- ===== MAIN INTERACTIVE ===== -->
+    <div class="interactive-container" id="unloading-lab">
+      <div class="interactive-label">Interactive Tool &mdash; Unloaded-Shape Laboratory</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">An incompressible neo-Hookean thick-walled tube under internal pressure, plane strain, solved <em>analytically</em> &mdash; no FE, no mesh, so every number on this page is exact to bisection tolerance and nothing is hidden in a discretisation. The imaged inner and outer radii $a^{*}, b^{*}$ are the data; the reference radii are the unknowns. Neo-Hookean is a demonstrator, not a model of arterial tissue: real vessel wall stiffens steeply with stretch, so read the stretch levels here as a numerical experiment rather than a physiological prediction. Drive the load up and the stiffness down and watch four separate things break.</p>
+
+      <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Internal pressure $p$ (mmHg)</span> <span id="ul-p-val">80</span></label>
+          <input type="range" id="ul-p" min="0" max="200" step="1" value="80">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Shear modulus $\mu$ (kPa)</span> <span id="ul-mu-val">150</span></label>
+          <input type="range" id="ul-mu" min="10" max="500" step="1" value="150">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Imaged inner radius $a^{*}$ (mm)</span> <span id="ul-a-val">10.0</span></label>
+          <input type="range" id="ul-a" min="5" max="20" step="0.1" value="10">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Imaged wall $h^{*} = b^{*}-a^{*}$ (mm)</span> <span id="ul-h-val">1.50</span></label>
+          <input type="range" id="ul-h" min="0.5" max="4" step="0.05" value="1.5">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Opening angle $\Theta_0$ (&deg;)</span> <span id="ul-th-val">0</span></label>
+          <input type="range" id="ul-th" min="0" max="150" step="1" value="0">
+        </div>
+      </div>
+      <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-top:2px;">
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Relaxation $\alpha$</span> <span id="ul-al-val">1.00</span></label>
+          <input type="range" id="ul-al" min="0.1" max="1.5" step="0.01" value="1">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Load-continuation steps $N$</span> <span id="ul-ct-val">1</span></label>
+          <input type="range" id="ul-ct" min="1" max="10" step="1" value="1">
+        </div>
+        <div style="min-width:200px;">
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="ul-aitken" checked> Aitken $\Delta^2$ trace
+          </label>
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:6px;">
+            <input type="checkbox" id="ul-naive" checked> show &ldquo;image is stress-free&rdquo; model
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;">
+        <div style="flex:1 1 330px;min-width:300px;">
+          <svg id="ul-svg-x" viewBox="0 0 340 356" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+        </div>
+        <div style="flex:1 1 330px;min-width:300px;">
+          <svg id="ul-svg-s" viewBox="0 0 360 356" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+        </div>
+        <div id="ul-panel" style="flex:1 1 270px;min-width:260px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <svg id="ul-svg-c" viewBox="0 0 740 270" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+        <div id="ul-legend" style="font-size:11.5px;color:#555;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;"></div>
+      </div>
+
+      <div id="ul-readout" style="font-size:13px;margin-top:10px;"></div>
+
+      <div style="font-size:12px;color:#555;margin-top:10px;border-top:1px solid #eee;padding-top:8px;">
+        <strong>Try this:</strong>
+        (1) At the defaults, read the naive error in the panel &mdash; it is small but not zero. Now drag $\mu$ down toward 40&nbsp;kPa, or $p$ up toward 160&nbsp;mmHg, and watch it grow. That number is <em>computed</em>, not quoted: the &ldquo;apply minus $p$&rdquo; error has no universal magnitude.
+        (2) Set $\Theta_0 = 60^\circ$. The <em>shape</em> of the load-free tube barely notices, but the residual hoop-stress curve in the middle panel is now compressive at the inner wall and tensile at the outer. Load-free, not stress-free &mdash; and no unloading algorithm recovered $\Theta_0$; you supplied it.
+        (3) Soften the wall and raise the pressure until the $\alpha = 1$ trace in the convergence plot flattens or turns up. Then watch the Aitken trace. Then set $\alpha$ by hand near the computed $\alpha^{\star}$ shown in the panel. Nothing here is hard-coded &mdash; the computation decides what diverges.
+        (4) With a diverging $\alpha = 1$ case on screen, raise the continuation steps $N$. Continuation buys you the basin of attraction, at the price of more forward solves; the trace is plotted against cumulative forward solves so the price is visible.
+        (5) Compare the two cost numbers in the panel: one nonlinear solve for the direct route, versus the forward-solve count the fixed point actually needed.
+      </div>
+    </div>
+
+    <!-- ===== SECTION 7 ===== -->
+    <h2 class="section-heading" id="prestressing-mulf">7. Prestressing Instead of Un-Deforming</h2>
+
+    <p>Often you do not actually want the unloaded geometry. You want the <em>in vivo stress state on the imaged mesh</em> &mdash; because that is what a device-deployment simulation or a rupture-risk calculation starts from. Then you can leave the geometry alone and install a prestress instead. This is a different problem with different failure modes, and conflating the two is a standard error.</p>
+
+    <div class="definition-box">
+      <div class="box-label">MULF &mdash; Modified Updated Lagrangian Formulation</div>
+      <div>Keep the imaged geometry as the FE reference mesh and seek a prestretch field $\mathbf{F}_{\text{pre}}(\mathbf{x})$ such that the imaged geometry is in equilibrium with the in vivo load. The total deformation splits multiplicatively, $\mathbf{F} = \hat{\mathbf{F}}\,\mathbf{F}_{\text{pre}}$. The algorithm iterates: solve for displacement increments under the in vivo load, accumulate the increment into $\mathbf{F}_{\text{pre}}$, reset the geometry to the image, repeat until the displacement increment vanishes. At convergence $\hat{\mathbf{F}} = \mathbf{I}$ at the imaged shape and the stress is nonzero. Gee, F&ouml;rster &amp; Wall (2010).</div>
+    </div>
+
+    <div class="math-block">$$\mathbf{F} \;=\; \hat{\mathbf{F}}\,\mathbf{F}_{\text{pre}}, \qquad \hat{\mathbf{F}}\big|_{\text{converged}} = \mathbf{I}\ \text{ on the imaged geometry}$$</div>
+
+    <div class="math-block">$$\int_{\mathcal{B}_{\text{image}}} \boldsymbol{\sigma}\!\left(\hat{\mathbf{F}}\,\mathbf{F}_{\text{pre}}\right) : \operatorname{grad}\boldsymbol{\eta}\;\mathrm{d}v \;=\; \int_{\partial\mathcal{B}_t} \bar{\mathbf{t}}\cdot\boldsymbol{\eta}\;\mathrm{d}a$$</div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 780 400" style="width:100%;max-width:780px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="m9-arrB" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#555"/></marker>
+          <linearGradient id="m9-cbar" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stop-color="#3b6fb6"/><stop offset="0.5" stop-color="#f0f0d8"/><stop offset="1" stop-color="#c0392b"/>
+          </linearGradient>
+        </defs>
+        <rect x="290" y="12" width="200" height="36" rx="4" fill="#e0f2f1" stroke="#00838f" stroke-width="1.8"/>
+        <text x="390" y="35" font-size="12" fill="#00695c" text-anchor="middle" font-family="sans-serif" font-weight="700">CT/MRI geometry at 80 mmHg</text>
+        <path d="M330,48 L200,84" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#m9-arrB)"/>
+        <path d="M450,48 L580,84" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#m9-arrB)"/>
+        <!-- LEFT -->
+        <text x="196" y="106" font-size="12" fill="#c62828" text-anchor="middle" font-family="sans-serif" font-weight="700">INVERSE ELASTOSTATICS</text>
+        <circle cx="140" cy="176" r="52" fill="#e0f2f1" stroke="#00838f" stroke-width="1.6" opacity="0.5"/>
+        <circle cx="140" cy="176" r="38" fill="#fff" stroke="#00838f" stroke-width="1.4" opacity="0.5"/>
+        <circle cx="140" cy="176" r="41" fill="none" stroke="#c62828" stroke-width="2.2" stroke-dasharray="6,4"/>
+        <circle cx="140" cy="176" r="27" fill="none" stroke="#c62828" stroke-width="2.2" stroke-dasharray="6,4"/>
+        <text x="140" y="242" font-size="10.5" fill="#c62828" text-anchor="middle" font-family="sans-serif">unloaded $\mathcal{B}_0$ &mdash; new geometry</text>
+        <rect x="222" y="140" width="20" height="72" fill="url(#m9-cbar)" stroke="#999"/>
+        <text x="248" y="150" font-size="9.5" fill="#666" font-family="sans-serif">$\boldsymbol{\sigma}$ recovered</text>
+        <text x="248" y="163" font-size="9.5" fill="#666" font-family="sans-serif">as a by-product</text>
+        <text x="60" y="268" font-size="11" fill="#2e7d32" font-family="sans-serif" font-weight="700">Delivers: geometry &#10003;&nbsp;&nbsp;stress &#10003;</text>
+        <text x="60" y="288" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">Risk: recovered reference mesh may</text>
+        <text x="60" y="302" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">invert or self-intersect; needs $\det\mathbf{f} > 0$.</text>
+        <line x1="390" y1="96" x2="390" y2="316" stroke="#eee" stroke-width="1.5"/>
+        <!-- RIGHT -->
+        <text x="586" y="106" font-size="12" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif" font-weight="700">PRESTRESSING (MULF)</text>
+        <circle cx="540" cy="176" r="52" fill="#f3e8f7" stroke="#7b1fa2" stroke-width="2.2"/>
+        <circle cx="540" cy="176" r="38" fill="#fff" stroke="#7b1fa2" stroke-width="2.2"/>
+        <g stroke="#7b1fa2" stroke-width="1.1" opacity="0.75">
+          <line x1="540" y1="120" x2="540" y2="132"/><line x1="534" y1="126" x2="546" y2="126"/>
+          <line x1="500" y1="176" x2="512" y2="176"/><line x1="506" y1="170" x2="506" y2="182"/>
+          <line x1="568" y1="176" x2="580" y2="176"/><line x1="574" y1="170" x2="574" y2="182"/>
+          <line x1="540" y1="220" x2="540" y2="232"/><line x1="534" y1="226" x2="546" y2="226"/>
+        </g>
+        <text x="540" y="242" font-size="10.5" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif">same outline &mdash; $\mathbf{F}_{\text{pre}}(\mathbf{x})$ installed</text>
+        <text x="612" y="160" font-size="10.5" fill="#5b1580" font-family="sans-serif">$\mathbf{F} = \hat{\mathbf{F}}\,\mathbf{F}_{\text{pre}}$</text>
+        <text x="612" y="178" font-size="10.5" fill="#5b1580" font-family="sans-serif">$\hat{\mathbf{F}} = \mathbf{I}$ at the</text>
+        <text x="612" y="192" font-size="10.5" fill="#5b1580" font-family="sans-serif">imaged shape</text>
+        <text x="452" y="268" font-size="11" fill="#333" font-family="sans-serif" font-weight="700">Delivers: geometry &#10007;&nbsp;&nbsp;stress &#10003;</text>
+        <text x="452" y="288" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">Risk: the prestretch field need not correspond</text>
+        <text x="452" y="302" font-size="10.5" fill="#8a6d3b" font-family="sans-serif">to any global reference configuration.</text>
+        <rect x="24" y="326" width="732" height="30" rx="4" fill="#e0f2f1" stroke="#00838f"/>
+        <text x="390" y="346" font-size="11.5" fill="#00695c" text-anchor="middle" font-family="sans-serif" font-weight="700">Need the manufacturing / mold shape &rarr; LEFT.&nbsp;&nbsp;&nbsp;Need only in vivo stress on the imaged mesh &rarr; RIGHT.</text>
+        <rect x="24" y="362" width="732" height="30" rx="4" fill="#fdf7ee" stroke="#e0d5c2"/>
+        <text x="390" y="382" font-size="11" fill="#8a6d3b" text-anchor="middle" font-family="sans-serif">Ramella et al. (2024): neglecting pre-stress underestimates contact pressure by 48% (TAVI) and 55% (TEVAR) &mdash; doing neither is not an option.</text>
+      </svg>
+      <div class="figure-caption">Two routes from the same imaged geometry. They answer different questions and fail in different ways; the choice is made by what you have to hand over at the end, not by which one is more elegant.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Decision Rule</h3>
+
+    <ul>
+      <li><strong>Geometry is the deliverable</strong> (turbine cold shape, mold for a silicone skin, 3D-print compensation) &rArr; you need inverse elastostatics. Prestressing cannot help you: it never changes the shape.</li>
+      <li><strong>Stress on the imaged geometry is the deliverable</strong> (device deployment, rupture risk) &rArr; prestressing is simpler, preserves the mesh quality you paid a segmentation specialist for, and avoids the risk of producing a self-intersecting reference mesh.</li>
+      <li><strong>Both</strong> &rArr; inverse elastostatics; the prestress falls out for free as $\boldsymbol{\sigma}(\mathbf{f})$ evaluated on the image.</li>
+    </ul>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the two are not numerically equivalent</div>
+      <div>MULF converges to a prestretch field that need not be compatible with <em>any</em> global reference configuration; the inverse solve returns an actual configuration. For a residually stressed organ that incompatibility is a feature, not a bug &mdash; a residually stressed body has no single stress-free configuration to be compatible with (&sect;3). But it also means you cannot &ldquo;read off&rdquo; the unloaded geometry from a converged MULF prestretch field, and you should not report one.</div>
+    </div>
+
+    <!-- ===== SECTION 8 ===== -->
+    <h2 class="section-heading" id="uniqueness-conditioning-static-determinacy">8. Uniqueness, Conditioning, and Static Determinacy</h2>
+
+    <p>When is the inverse motion problem solvable, and how badly conditioned is it? Four separate answers, of which only the last is good news.</p>
+
+    <h3 class="subsection-heading">Existence of the Inverse Map</h3>
+
+    <p>$\boldsymbol{\varphi}^{-1}$ exists only if $\boldsymbol{\varphi}$ is a diffeomorphism: $\det\mathbf{F} > 0$ everywhere and $\boldsymbol{\varphi}$ globally injective. In the discrete inverse solve this becomes a check at every quadrature point, plus a global test the check does not cover.</p>
+
+    <div class="math-block">$$\det \mathbf{f}^{h}(\mathbf{x}_q) > 0 \quad \forall q, \qquad \kappa\!\left(\mathbf{K}\right) = \lVert \mathbf{K}\rVert\,\lVert \mathbf{K}^{-1}\rVert \;\longrightarrow\; \infty \ \text{ at a limit point}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Trap &mdash; the Newton solve will happily converge to a non-physical body</div>
+      <div>At large strain the recovered reference mesh can invert ($\det\mathbf{f}^h \le 0$ at quadrature points) or self-intersect, and neither shows up as a failure of the nonlinear solve. Check $\det\mathbf{f} > 0$ everywhere <em>and</em> test the recovered reference surface for self-intersection. A residual of $10^{-10}$ is not evidence that the answer is a body.</div>
+    </div>
+
+    <h3 class="subsection-heading">Loss of Variational Structure</h3>
+
+    <p>As established in Section 4, $W$ polyconvex does not imply $W^{*}$ polyconvex. The inverse problem can therefore lack a minimiser even when the forward problem is impeccably well posed. In practice this shows up as Newton failing to converge, not as a visible pathology &mdash; which is why it gets misdiagnosed as a meshing problem.</p>
+
+    <h3 class="subsection-heading">Non-Uniqueness Through the Forward Map</h3>
+
+    <p>If the forward problem admits multiple equilibria for the same load &mdash; buckling, snap-through, wrinkling of a thin skin &mdash; then several reference configurations map to the imaged shape, and the inverse problem has no unique answer. Near a limit point the forward tangent $\mathbf{K}$ approaches singularity and the inverse problem inherits the conditioning. It is not merely slow there; it is ill-posed.</p>
+
+    <h3 class="subsection-heading">Geometry and Material Are Not Jointly Identifiable</h3>
+
+    <p>This is the nonuniqueness that bites in practice, and it is structural rather than numerical. For essentially any assumed stiffness there exists a reference geometry that maps to the imaged shape under the given load: soften the material and the recovered reference shrinks to compensate, exactly. A single loaded state therefore determines a <em>curve</em> of $(\text{material}, \text{reference geometry})$ pairs, all of which reproduce the image perfectly.</p>
+
+    <p>Breaking the degeneracy needs a second, independent piece of load&ndash;response information: a second pressure state, or a pressure&ndash;volume relation. Marx et al. (2022) use image data at one time point <strong>plus</strong> one measured point of the end-diastolic pressure&ndash;volume relation to recover unloaded LV geometry and passive parameters together. The explorer below shows the degenerate curve and its collapse.</p>
+
+    <!-- ===== SECOND INTERACTIVE ===== -->
+    <div class="interactive-container" id="identifiability-explorer">
+      <div class="interactive-label">Interactive Tool &mdash; Joint Identifiability Explorer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Same analytic tube. A &ldquo;true&rdquo; wall with shear modulus $\mu_{\text{true}}$ produces the imaged geometry at $p_1 = 80$&nbsp;mmHg. Now pretend you do not know $\mu$. For every candidate $\mu$ the inverse solve returns a reference radius $A(\mu)$ that reproduces the image <em>exactly</em> &mdash; zero misfit, every time. Then add a second image at pressure $p_2$ and watch what survives.</p>
+
+      <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div class="slider-control" style="min-width:190px;">
+          <label><span>True $\mu_{\text{true}}$ (kPa)</span> <span id="id-mu-val">150</span></label>
+          <input type="range" id="id-mu" min="40" max="400" step="1" value="150">
+        </div>
+        <div class="slider-control" style="min-width:190px;">
+          <label><span>Second pressure $p_2$ (mmHg)</span> <span id="id-p2-val">140</span></label>
+          <input type="range" id="id-p2" min="0" max="200" step="1" value="140">
+        </div>
+        <div class="slider-control" style="min-width:190px;">
+          <label><span>Radius measurement noise (mm)</span> <span id="id-nz-val">0.05</span></label>
+          <input type="range" id="id-nz" min="0.005" max="0.4" step="0.005" value="0.05">
+        </div>
+        <div style="min-width:180px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Load states available</div>
+          <select id="id-nstates" style="font-size:12px;padding:4px;width:100%;">
+            <option value="1">One image (at $p_1$)</option>
+            <option value="2" selected>Two images ($p_1$ and $p_2$)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
+        <div style="flex:2 1 420px;min-width:320px;">
+          <svg id="id-svg-a" viewBox="0 0 660 200" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+          <svg id="id-svg-j" viewBox="0 0 660 210" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;margin-top:8px;"></svg>
+        </div>
+        <div id="id-panel" style="flex:1 1 260px;min-width:250px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+      </div>
+      <div id="id-readout" style="font-size:13px;margin-top:10px;"></div>
+      <div style="font-size:12px;color:#555;margin-top:10px;border-top:1px solid #eee;padding-top:8px;">
+        <strong>Try this:</strong>
+        (1) Switch to &ldquo;One image&rdquo;. The misfit is identically zero across the whole $\mu$ axis: every stiffness in the range is a perfect fit, with its own reference geometry. Nothing about the data prefers the truth.
+        (2) Switch back to two images and set $p_2 = 80$&nbsp;mmHg &mdash; the same pressure as the first. The misfit collapses to zero again. A second image at the same load state is not a second load state.
+        (3) Push $p_2$ far from $p_1$: the misfit valley narrows and the identifiable interval printed in the panel shrinks. Separation in load, not number of images, is what buys identifiability.
+        (4) Raise the noise. The valley floor rises above nothing in particular, but the interval where the misfit is below the noise floor widens &mdash; identifiability is a statement about data quality, not only about experiment design.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Static Determinacy &mdash; the One Piece of Good News</h3>
+
+    <p>For a thin pressurised membrane the equilibrium equations close <em>without any constitutive law</em>. With negligible bending resistance there are three equilibrium component equations for the three in-plane stress components, driven by geometry and pressure alone:</p>
+
+    <div class="math-block">$$\frac{\sigma_{1}}{\rho_{1}} + \frac{\sigma_{2}}{\rho_{2}} \;=\; \frac{p}{h}$$</div>
+
+    <div class="math-block">$$\text{sphere } \rho_1=\rho_2=R \Rightarrow \sigma = \tfrac{pR}{2h}; \qquad \text{cylinder } \rho_2\to\infty \Rightarrow \sigma_\theta = \tfrac{pR}{h}$$</div>
+
+    <p>Zhao, Raghavan &amp; Lu (2011) state that under traction boundaries the wall stress is completely independent of the material properties, and verified it numerically: the forward reference solution used an anisotropic <strong>Holzapfel</strong> model while the inverse analysis used a <strong>neo-Hookean auxiliary</strong> model, and the recovered <em>first principal</em> stress differed by <strong>less than 1%</strong> through most of the aneurysm sac &mdash; a 100-fold change in the auxiliary parameters moved it by at most 0.45%.</p>
+
+    <p>The exception is a boundary layer of roughly four element layers near the clamped edges, where the stress does become material-dependent and where the second principal stress deviates by more than 10%; the authors exclude that layer from identification.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; static determinacy giveth and taketh away</div>
+      <div>This is why aneurysm wall-stress estimates are trusted despite unknown patient-specific material properties: get the geometry and the pressure right and the stress follows, whatever the constitutive law. It is simultaneously why <em>stress alone can never identify stiffness</em> &mdash; the same independence that makes the stress robust makes it uninformative about the material. It is also what makes Zhao et al.'s two-stage <em>pointwise</em> identification possible: compute stress with an arbitrary auxiliary model, then regress stress against strain independently at each material point, so the problem size depends on the constitutive model rather than the mesh and no globally coupled optimisation is needed.</div>
+    </div>
+
+    <!-- ===== SECTION 9 ===== -->
+    <h2 class="section-heading" id="practice-and-pitfalls">9. Practice: Choosing a Method, and the Pitfalls That Bite</h2>
+
+    <h3 class="subsection-heading">Selection</h3>
+
+    <table>
+      <tr><th>Method</th><th>Cost</th><th>Needs</th><th>Returns</th><th>Main risk</th></tr>
+      <tr>
+        <td><strong>Inverse elastostatics</strong><br>(Govindjee&ndash;Mihalic)</td>
+        <td>One nonlinear solve</td>
+        <td>Access to the element/constitutive layer, or a code that ships it (e.g. ANSYS Mechanical)</td>
+        <td>Geometry <em>and</em> stress; exact treatment of pressure loads</td>
+        <td>Dual energy may lose ellipticity; recovered mesh may invert</td>
+      </tr>
+      <tr>
+        <td><strong>Fixed point</strong><br>(Sellier + Aitken / Armijo / Anderson)</td>
+        <td>$N$ forward solves &mdash; $\le 10$ with Armijo in Marx et al. (2022)</td>
+        <td>Nothing but a forward solver</td>
+        <td>Geometry, and stress from the final forward solve</td>
+        <td>May diverge; follower pressure must be re-applied every iteration</td>
+      </tr>
+      <tr>
+        <td><strong>MULF prestressing</strong><br>(Gee et al.)</td>
+        <td>Cheapest</td>
+        <td>Ability to accumulate a prestretch field</td>
+        <td>Stress only; mesh preserved exactly</td>
+        <td>Prestretch need not correspond to any configuration</td>
+      </tr>
+      <tr>
+        <td><strong>Learned surrogate</strong></td>
+        <td>Amortised: seconds of inference after an offline training campaign</td>
+        <td>A large simulation dataset in the target family</td>
+        <td>Geometry, at inference speed</td>
+        <td>Only as trustworthy as the training distribution</td>
+      </tr>
+    </table>
+
+    <h3 class="subsection-heading">Convergence Criteria People Actually Use</h3>
+
+    <p>Rausch et al. (2017) test $\max\lVert\mathbf{R}_k\rVert < \varepsilon$ at $\varepsilon = 0.01$, $0.001$ and $0.0001$ mm. Marx et al. (2022) require three conditions simultaneously: max nodal error $< 0.1$ mm, relative volume difference $< 0.5\%$ of end-diastolic volume, and parameter update magnitude $< 0.001$.</p>
+
+    <div class="math-block">$$\text{stop when}\quad \max_A \left\lVert \mathbf{x}^{k}_A - \mathbf{x}^{*}_A \right\rVert < 0.1\ \text{mm}, \quad \frac{\lvert V^{k} - V^{*}\rvert}{V^{*}} < 0.5\%, \quad \lVert \Delta\boldsymbol{\theta} \rVert < 10^{-3}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; use a geometric tolerance in physical units</div>
+      <div>Both groups stop on a distance in millimetres, not on a relative residual drop. A relative criterion says nothing about whether you have converged to something the imaging modality could even resolve: a six-order-of-magnitude residual drop can still leave you sub-voxel nonsense, and a loose relative tolerance can stop you a whole voxel away. Millimetres are comparable to the voxel size; residual ratios are comparable to nothing.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Pitfall List</h3>
+
+    <ul>
+      <li><strong>Locking.</strong> $\det\mathbf{f} = 1$ is as stiff a constraint as $J = 1$. Use mixed or $\bar{\mathbf{F}}$ inverse elements (Govindjee &amp; Mihalic, 1998). (&sect;5)</li>
+      <li><strong>Follower loads.</strong> Exactly dead in the inverse formulation because the surface is known; genuinely following in every forward solve of the Sellier loop. Re-apply the pressure normal to the <em>current iterate's</em> deformed surface or you converge to the wrong fixed point. (&sect;5, &sect;6)</li>
+      <li><strong>Traction pull-back.</strong> A pressure on the current surface and a dead traction on the reference surface are different boundary conditions related by Nanson's formula. Getting this wrong changes which problem you solved. (&sect;2)</li>
+      <li><strong>Anisotropy bookkeeping.</strong> Fibre directions live in the reference configuration you are solving for; decide whether an imaged or atlas fibre field is a material or a spatial direction. Fachinotti et al. (2008) formulate the anisotropic inverse design problem precisely for this setting. (&sect;5)</li>
+      <li><strong>Joint identifiability.</strong> Material parameters and the reference configuration are <strong>not</strong> jointly identifiable from a single loaded state. Get a second pressure state or a pressure&ndash;volume relation. (&sect;8)</li>
+      <li><strong>Mesh sanity.</strong> Check $\det\mathbf{f} > 0$ and test the recovered reference surface for self-intersection. At large strain this is a real failure mode, not a formality. (&sect;8)</li>
+      <li><strong>Regularisation of segmentation noise.</strong> The imaged surface carries voxel-scale noise and the inverse solve amplifies its high-frequency content into the reference geometry. Smooth the target surface <em>before</em>, not the answer after.</li>
+      <li><strong>Unfitted / immersed geometry.</strong> For heterogeneous cross-sections &mdash; calcified plaque, lipid pools &mdash; fitting a conforming mesh is often the real bottleneck rather than the inverse solve.</li>
+      <li><strong>Cost conflation.</strong> One nonlinear solve versus $N$ forward solves. Newton's inner iterations are not the same level of iteration as Sellier's outer loop. (&sect;6)</li>
+    </ul>
+
+    <div class="definition-box">
+      <div class="box-label">Symbol collision &mdash; two different $\bar{\mathbf{F}}$</div>
+      <div>In the volumetric&ndash;isochoric split, $\bar{\mathbf{F}} = J^{-1/3}\mathbf{F}$ is the <em>isochoric part</em> of the deformation gradient (&sect;5). In F-bar element technology, $\bar{\mathbf{F}} = (J_0/J)^{1/3}\mathbf{F}$ is a <em>stabilised</em> gradient built from the element-<em>centroid</em> Jacobian $J_0$. Both appear in this module's subject matter and they are different objects. Check which one a paper means before porting a formula.</div>
+    </div>
+
+    <div class="math-block">$$\bar{\mathbf{F}} = \left(\frac{J_0}{J}\right)^{1/3}\mathbf{F} \quad \text{(F-bar \textit{stabilisation})} \qquad \ne \qquad \bar{\mathbf{F}} = J^{-1/3}\mathbf{F} \quad \text{(isochoric part, \S5)}$$</div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="unloading-walkthrough" class="interactive-container" data-title="Walkthrough &mdash; Unloading a Patient-Specific Aorta"></div>
+
+    <!-- ===== SECTION 10 ===== -->
+    <h2 class="section-heading" id="applications-and-frontier">10. Applications and the 2023&ndash;2026 Frontier</h2>
+
+    <h3 class="subsection-heading">Vascular</h3>
+
+    <p>Lu, Zhou &amp; Raghavan (2007) gave the founding demonstration: inverse elastostatic stress analysis of abdominal aortic aneurysms from the CT (pre-deformed) geometry, for membrane-like biological structures, removing the conventional assumption that the imaged geometry is stress-free. Zhao, Raghavan &amp; Lu (2011) extended it to <em>pointwise</em> identification of heterogeneous anisotropic properties in cerebral aneurysms, using static determinacy to decouple the stress computation from the material regression.</p>
+
+    <h3 class="subsection-heading">Device Deployment</h3>
+
+    <p>Ramella et al. (2024) quantified what happens if you skip the step. The zero-pressure configuration was obtained by applying 80 mmHg diastolic pressure on the internal lumen of the segmented CT geometry with the inverse elastostatic method implemented in ANSYS Mechanical, all vessel outlets fixed in space, full Newton&ndash;Raphson. Neglecting pre-stress underestimated contact pressure by 48% (TAVI) and 55% (TEVAR); aorta stresses by 162% / 157%; aorta strains by 77% / 21%. Stent stresses were higher than 48% with the pre-stressed aorta for the TAVI valve, while TEVAR stent-graft stresses were essentially unchanged (~2.5%).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; a methods argument became a design requirement</div>
+      <div>Note which quantities moved and which did not. The stent-graft stresses in the TEVAR model barely changed; the vessel-side quantities changed by more than a factor of two. Prestress is not a uniform correction factor you can fold into a safety margin &mdash; it redistributes load between the device and the tissue, which is exactly the quantity a device designer is optimising.</div>
+    </div>
+
+    <h3 class="subsection-heading">Cardiac, and the Learned Shortcut</h3>
+
+    <p>Marx et al. (2022): a 19-patient LV cohort, reduced Holzapfel&ndash;Ogden constitutive law, joint recovery of unloaded reference geometry <em>and</em> passive parameters, within 10 Armijo-damped fixed-point iterations, 10.85&ndash;74.18 min per case on meshes up to 1.5 M elements.</p>
+
+    <p>Mu, Chan &amp; Yap (2025) then replaced the iteration entirely with <strong>HeartUnloadNet</strong>, a graph-attention network mapping an end-diastolic mesh plus diastolic pressure, stiffness scaling and fibre orientation directly to the unloaded mesh. Trained on 20,700 FE simulations and weakly supervised by cycle consistency (loading and unloading learned bidirectionally in one model), it reaches DSC 0.986 and Hausdorff distance 0.083 cm at 0.02 s per case &mdash; over $10^{5}\times$ faster than the iterative solver &mdash; and still reaches about 97% DSC when trained on only 200 samples.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; what a surrogate does and does not inherit</div>
+      <div>A learned unloading map amortises the cost of the iteration, not the identifiability of the problem. The network is trained on FE simulations whose reference configurations were <em>generated</em>, so the training pairs are exact by construction; nothing in that pipeline resolves the geometry&ndash;material degeneracy of &sect;8, which is why HeartUnloadNet takes the stiffness scaling as an <em>input</em>. Speed-ups of $10^{5}$ are real and they are not a substitute for a second load state.</div>
+    </div>
+
+    <h3 class="subsection-heading">Turbomachinery</h3>
+
+    <p>Fachinotti, Cardona &amp; Jetteur (2008) pose the inverse design problem as &ldquo;determining the initial shape of the piece, such that it attains the designed shape under the effect of service loads&rdquo;, targeted at markedly anisotropic parts &ldquo;like laminated turbine blades&rdquo;, and demonstrate it on an industrially relevant turbine-blade design example &mdash; the cold, manufacturing shape that becomes the aerodynamically correct hot shape. This is the cleanest statement of the case where <em>only</em> inverse elastostatics will do: nobody can machine a prestress field.</p>
+
+    <h3 class="subsection-heading">Soft Robotics and Tactile Skin</h3>
+
+    <p>The mold-design problem for a vision-based tactile sensor is the same problem with a different vocabulary: cut the mold so that the cured, gravity-loaded, membrane-pretensioned skin takes the designed geometry.</p>
+
+    <div class="math-block">$$\text{mold design:}\quad \text{find } \mathcal{B}_0 \ \text{ s.t. } \ \boldsymbol{\varphi}_{\mathcal{B}_0}\!\left(\mathcal{B}_0;\ \rho\mathbf{g},\ p_{\text{pretension}}\right) = \mathcal{B}_{\text{design}}$$</div>
+
+    <p>A sibling problem holds the geometry fixed and varies the material instead. Awasthi, Lamperski &amp; Kowalewski (2023) solve it: given the undeformed shape, the external load, and a desired final shape, find the spatially varying material fields (Mooney&ndash;Rivlin $c_1, c_2$) that realise it &mdash; a simultaneous-analysis-and-design formulation with analytical gradients for both the objective and the continuum-mechanics constraints, interior-point optimisation with a BFGS Hessian approximation, and a choice of $L^2$ (smooth) or TVD (sharp-contrast) regularisation. It is the design-side twin of a material-identification problem, and it is listed here as a secondary application: the configuration inverse and the material inverse are different problems (&sect;1), and mixing them is how projects lose a year.</p>
+
+    <h3 class="subsection-heading">Where the Field Is</h3>
+
+    <p>Two things have happened since 2023. The fixed-point family got robust: Sellier (2011, $\alpha = 1$) &rarr; Rausch, Genet &amp; Humphrey (2017, Aitken $\Delta^2$) &rarr; Marx et al. (2022, Armijo line search, robust on all 19 LV cases where the Aitken-augmented approach still diverged for some) &rarr; Barnafi, Petras &amp; Gerardo-Giorda (2024, Anderson acceleration, iteration counts reduced by up to 80%, and the problem extended to fully nonlinear poroelasticity). And the iteration started being replaced outright by amortised surrogates (Mu, Chan &amp; Yap, 2025).</p>
+
+    <p>The honest summary: for smooth single-phase hyperelasticity the configuration-inverse problem is algorithmically solved &mdash; one inverse-elastostatic solve, or fewer than ten accelerated fixed-point iterations. The open problems have moved to harder physics (poroelastic, heterogeneous, unfitted geometry), to amortisation, and to identifiability theory for the joint configuration-plus-material problem, which Section 8 shows is not a detail.</p>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="mod9-flashcards"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Shield, R. T. (1967). <em>Inverse deformation results in finite elasticity</em>. Zeitschrift f&uuml;r angewandte Mathematik und Physik (ZAMP) 18(4), 490&ndash;500. doi:10.1007/BF01601719</li>
+      <li>Govindjee, S.; Mihalic, P. A. (1996). <em>Computational methods for inverse finite elastostatics</em>. Computer Methods in Applied Mechanics and Engineering 136(1&ndash;2), 47&ndash;57. doi:10.1016/0045-7825(96)01045-6</li>
+      <li>Govindjee, Sanjay; Mihalic, Paul A. (1998). <em>Computational methods for inverse deformations in quasi-incompressible finite elasticity</em>. International Journal for Numerical Methods in Engineering 43(5), 821&ndash;838. doi:10.1002/(SICI)1097-0207(19981115)43:5&lt;821::AID-NME453&gt;3.0.CO;2-C</li>
+      <li>Barbone, P. E.; Bamber, J. C. (2002). <em>Quantitative elasticity imaging: what can and cannot be inferred from strain images</em>. Physics in Medicine and Biology 47(12), 2147&ndash;2164. doi:10.1088/0031-9155/47/12/310</li>
+      <li>Oberai, A. A.; Gokhale, N. H.; Feij&oacute;o, G. R. (2003). <em>Solution of inverse problems in elasticity imaging using the adjoint method</em>. Inverse Problems 19(2), 297&ndash;313. doi:10.1088/0266-5611/19/2/304</li>
+      <li>Barbone, P. E.; Gokhale, N. H. (2004). <em>Elastic modulus imaging: on the uniqueness and nonuniqueness of the elastography inverse problem in two dimensions</em>. Inverse Problems 20(1), 283&ndash;296. doi:10.1088/0266-5611/20/1/017</li>
+      <li>Lu, J.; Zhou, X.; Raghavan, M. L. (2007). <em>Inverse elastostatic stress analysis in pre-deformed biological structures: Demonstration using abdominal aortic aneurysms</em>. Journal of Biomechanics 40(3), 693&ndash;696. doi:10.1016/j.jbiomech.2006.01.015</li>
+      <li>Fachinotti, V. D.; Cardona, A.; Jetteur, P. (2008). <em>Finite element modelling of inverse design problems in large deformations anisotropic hyperelasticity</em>. International Journal for Numerical Methods in Engineering 74(6), 894&ndash;910. doi:10.1002/nme.2193</li>
+      <li>Gee, M. W.; F&ouml;rster, Ch.; Wall, W. A. (2010). <em>A computational strategy for prestressing patient-specific biomechanical problems under finite deformation</em>. International Journal for Numerical Methods in Biomedical Engineering 26(1), 52&ndash;72. doi:10.1002/cnm.1236</li>
+      <li>Sellier, M. (2011). <em>An iterative method for the inverse elasto-static problem</em>. Journal of Fluids and Structures 27(8), 1461&ndash;1470. doi:10.1016/j.jfluidstructs.2011.08.002</li>
+      <li>Zhao, X.; Raghavan, M. L.; Lu, J. (2011). <em>Identifying heterogeneous anisotropic properties in cerebral aneurysms: a pointwise approach</em>. Biomechanics and Modeling in Mechanobiology 10(2), 177&ndash;189. doi:10.1007/s10237-010-0225-7</li>
+      <li>Doyley, M. M. (2012). <em>Model-based elastography: a survey of approaches to the inverse elasticity problem</em>. Physics in Medicine and Biology 57(3), R35&ndash;R73. doi:10.1088/0031-9155/57/3/R35</li>
+      <li>Rausch, M. K.; Genet, M.; Humphrey, J. D. (2017). <em>An augmented iterative method for identifying a stress-free reference configuration in image-based biomechanical modeling</em>. Journal of Biomechanics 58, 227&ndash;231. doi:10.1016/j.jbiomech.2017.04.021</li>
+      <li>Marx, L.; Niestrawska, J. A.; Gsell, M. A. F.; Caforio, F.; Plank, G.; Augustin, C. M. (2022). <em>Robust and efficient fixed-point algorithm for the inverse elastostatic problem to identify myocardial passive material parameters and the unloaded reference configuration</em>. Journal of Computational Physics 463, 111266. doi:10.1016/j.jcp.2022.111266</li>
+      <li>Awasthi, C.; Lamperski, A.; Kowalewski, T. M. (2023). <em>Multi-material inverse design of soft deformable bodies via functional optimization</em>. Inverse Problems 39(3), 035006. doi:10.1088/1361-6420/acaa31</li>
+      <li>Barnafi, N. A.; Petras, A.; Gerardo-Giorda, L. (2024). <em>Fully nonlinear inverse poroelasticity: Stress-free configuration recovery</em>. Computer Methods in Applied Mechanics and Engineering 425, 116960. doi:10.1016/j.cma.2024.116960</li>
+      <li>Ramella, A.; Lissoni, V.; Bridio, S.; Rodriguez Matas, J. F.; Trimarchi, S.; Grossi, B.; Stefanini, G. G.; Migliavacca, F.; Luraghi, G. (2024). <em>On the necessity to include arterial pre-stress in patient-specific simulations of minimally invasive procedures</em>. Biomechanics and Modeling in Mechanobiology 23(2), 525&ndash;537. doi:10.1007/s10237-023-01789-0</li>
+      <li>Mu, S.; Chan, W. X.; Yap, C. H. (2025). <em>HeartUnloadNet: A Weakly-Supervised Cycle-Consistent Graph Network for Predicting Unloaded Cardiac Geometry from Diastolic States</em>. arXiv preprint arXiv:2507.18677.</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod8.html">&larr; 8. Load &amp; Contact Force Reconstruction</a>
+      <a href="mod10.html">10. Adjoints &amp; Differentiable FEM &rarr;</a>
+    </div>
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod9');</script>
+
+<!-- ===== SCRIPT: UNLOADED-SHAPE LABORATORY ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  var MMHG = 0.1333224;            // kPa per mmHg
+  var ACC = '#00838f', RED = '#c62828', PUR = '#7b1fa2', ORA = '#e67e22', GRY = '#9e9e9e';
+
+  // ---------- analytic model ----------
+  // Incompressible neo-Hookean, plane strain (lambda_z = 1), thick-walled tube.
+  // Stress-free state: annular sector, inner/outer radii Ri, Ro, total angle 2*pi/k.
+  // k = 1 <=> no residual stress.  Deformed: inner radius a, outer b.
+  //   b^2 = a^2 + (Ro^2 - Ri^2)/k        (incompressibility)
+  //   d   = a^2 - Ri^2/k,   R^2(u) = k*(u - d),  u = r^2
+  //   lambda_theta^2 = k*u/(u-d),  lambda_r^2 = (u-d)/(k*u)
+  function bOf(a, Ri, Ro, k) { return Math.sqrt(a * a + (Ro * Ro - Ri * Ri) / k); }
+
+  function pressureOf(a, Ri, Ro, k, mu) {
+    if (!(a > 0) || !(Ri > 0) || !(Ro > Ri)) return NaN;
+    var a2 = a * a, b2 = a2 + (Ro * Ro - Ri * Ri) / k;
+    if (!(b2 > a2)) return NaN;
+    var d = a2 - Ri * Ri / k;
+    if (!(a2 - d > 0) || !(b2 - d > 0)) return NaN;
+    return 0.5 * mu * (2 * k * Math.log(Ro / Ri) - (1 / k) * (Math.log(b2 / a2) + d * (1 / b2 - 1 / a2)));
+  }
+
+  // forward solve: given the reference sector, find the deformed inner radius at pressure pt
+  function forwardA(Ri, Ro, k, mu, pt) {
+    if (!(Ri > 0) || !(Ro > Ri) || !(mu > 0)) return NaN;
+    var lo = Ri * 0.05, hi = Ri * 25;
+    var plo = pressureOf(lo, Ri, Ro, k, mu), phi = pressureOf(hi, Ri, Ro, k, mu);
+    if (!isFinite(plo) || !isFinite(phi)) return NaN;
+    if ((plo - pt) * (phi - pt) > 0) return NaN;
+    for (var i = 0; i < 70; i++) {
+      var mid = 0.5 * (lo + hi), pm = pressureOf(mid, Ri, Ro, k, mu);
+      if (!isFinite(pm)) return NaN;
+      if ((plo - pt) * (pm - pt) <= 0) { hi = mid; phi = pm; } else { lo = mid; plo = pm; }
+    }
+    return 0.5 * (lo + hi);
+  }
+
+  function RoOf(Ri, as, bs, k) { return Math.sqrt(Ri * Ri + k * (bs * bs - as * as)); }
+
+  // inverse solve: given the imaged radii, find the reference inner radius at pressure pt
+  function inverseRi(as, bs, k, mu, pt) {
+    var N = 360, prevRi = null, prevG = null;
+    for (var i = 0; i <= N; i++) {
+      var Ri = 3 * as * Math.pow(0.01 / 3, i / N);       // sweep down from 3a* to 0.01a*
+      var g = pressureOf(as, Ri, RoOf(Ri, as, bs, k), k, mu) - pt;
+      if (!isFinite(g)) { prevRi = Ri; prevG = null; continue; }
+      if (prevG !== null && prevG * g <= 0) {
+        var lo = Ri, hi = prevRi, glo = g;
+        for (var j = 0; j < 70; j++) {
+          var m = 0.5 * (lo + hi), gm = pressureOf(as, m, RoOf(m, as, bs, k), k, mu) - pt;
+          if (!isFinite(gm)) break;
+          if (glo * gm <= 0) { hi = m; } else { lo = m; glo = gm; }
+        }
+        return 0.5 * (lo + hi);
+      }
+      prevRi = Ri; prevG = g;
+    }
+    return NaN;
+  }
+
+  function Ffun(u, d, k, mu) { return 0.5 * mu * (k * Math.log(u - d) - (1 / k) * (Math.log(u) + d / u)); }
+  function hoop(r, a, Ri, Ro, k, mu, p) {
+    var d = a * a - Ri * Ri / k, u = r * r;
+    var sr = -p + Ffun(u, d, k, mu) - Ffun(a * a, d, k, mu);
+    return sr + mu * (k * u / (u - d) - (u - d) / (k * u));
+  }
+
+  // ---------- fixed point ----------
+  function sellier(as, bs, k, mu, pt, alpha0, useAitken, maxIt) {
+    var Ri = as, Ro = bs, out = { res: [], diverged: false, its: null };
+    var prevR = null, prevAl = alpha0, al = alpha0;
+    for (var it = 0; it <= maxIt; it++) {
+      var a = forwardA(Ri, Ro, k, mu, pt);
+      if (!isFinite(a)) { out.diverged = true; break; }
+      var b = bOf(a, Ri, Ro, k);
+      var R0 = a - as, R1 = b - bs;
+      var nrm = Math.max(Math.abs(R0), Math.abs(R1));
+      out.res.push(nrm);
+      if (out.its === null && nrm < 0.01) out.its = it;
+      if (!isFinite(nrm) || nrm > 50) { out.diverged = true; break; }
+      if (useAitken && prevR !== null) {
+        var d0 = R0 - prevR[0], d1 = R1 - prevR[1], den = d0 * d0 + d1 * d1;
+        if (den > 1e-20) {
+          var cand = -prevAl * (prevR[0] * d0 + prevR[1] * d1) / den;
+          if (isFinite(cand)) al = Math.max(-2.5, Math.min(2.5, cand));
+        }
+      }
+      prevR = [R0, R1]; prevAl = al;
+      Ri -= al * R0; Ro -= al * R1;
+      if (!(Ri > 1e-6) || !(Ro > Ri)) { out.diverged = true; break; }
+    }
+    return out;
+  }
+
+  function continuation(as, bs, k, mu, pt, alpha, steps, budget) {
+    var Ri = as, Ro = bs, out = { res: [], diverged: false, solves: 0 };
+    for (var s = 1; s <= steps; s++) {
+      var ps = pt * s / steps, done = false;
+      for (var it = 0; it < 400 && out.solves < budget; it++) {
+        var a = forwardA(Ri, Ro, k, mu, ps);
+        if (!isFinite(a)) { out.diverged = true; return out; }
+        var b = bOf(a, Ri, Ro, k);
+        var R0 = a - as, R1 = b - bs;
+        var nrm = Math.max(Math.abs(R0), Math.abs(R1));
+        out.res.push(nrm); out.solves++;
+        if (!isFinite(nrm) || nrm > 50) { out.diverged = true; return out; }
+        if (nrm < 0.008) { done = true; break; }
+        Ri -= alpha * R0; Ro -= alpha * R1;
+        if (!(Ri > 1e-6) || !(Ro > Ri)) { out.diverged = true; return out; }
+      }
+      if (!done && s === steps) break;
+    }
+    return out;
+  }
+
+  // ---------- 2x2 linear algebra on the fixed-point Jacobian ----------
+  function jacobian(Ri, Ro, k, mu, pt) {
+    var h = 1e-4 * Ri;
+    function f(x, y) { var a = forwardA(x, y, k, mu, pt); return isFinite(a) ? [a, bOf(a, x, y, k)] : null; }
+    var p1 = f(Ri + h, Ro), m1 = f(Ri - h, Ro), p2 = f(Ri, Ro + h), m2 = f(Ri, Ro - h);
+    if (!p1 || !m1 || !p2 || !m2) return null;
+    return [[(p1[0] - m1[0]) / (2 * h), (p2[0] - m2[0]) / (2 * h)],
+            [(p1[1] - m1[1]) / (2 * h), (p2[1] - m2[1]) / (2 * h)]];
+  }
+  function specRad(M) {
+    var tr = M[0][0] + M[1][1], dt = M[0][0] * M[1][1] - M[0][1] * M[1][0];
+    var disc = tr * tr - 4 * dt;
+    if (disc >= 0) { var s = Math.sqrt(disc); return Math.max(Math.abs((tr + s) / 2), Math.abs((tr - s) / 2)); }
+    return Math.sqrt(Math.abs(dt));
+  }
+  function contraction(J, al) { return specRad([[1 - al * J[0][0], -al * J[0][1]], [-al * J[1][0], 1 - al * J[1][1]]]); }
+  function condOf(J) {
+    var a = J[0][0] * J[0][0] + J[1][0] * J[1][0], b = J[0][0] * J[0][1] + J[1][0] * J[1][1], c = J[0][1] * J[0][1] + J[1][1] * J[1][1];
+    var tr = a + c, dt = a * c - b * b, disc = Math.max(0, tr * tr - 4 * dt), s = Math.sqrt(disc);
+    var l1 = (tr + s) / 2, l2 = (tr - s) / 2;
+    if (l2 <= 1e-16) return Infinity;
+    return Math.sqrt(l1 / l2);
+  }
+
+  // ---------- drawing helpers ----------
+  function annulus(cx, cy, ri, ro, fill, stroke, sw, dash) {
+    var d = 'M ' + (cx + ro) + ' ' + cy + ' A ' + ro + ' ' + ro + ' 0 1 0 ' + (cx - ro) + ' ' + cy +
+            ' A ' + ro + ' ' + ro + ' 0 1 0 ' + (cx + ro) + ' ' + cy + ' Z' +
+            ' M ' + (cx + ri) + ' ' + cy + ' A ' + ri + ' ' + ri + ' 0 1 0 ' + (cx - ri) + ' ' + cy +
+            ' A ' + ri + ' ' + ri + ' 0 1 0 ' + (cx + ri) + ' ' + cy + ' Z';
+    return '<path d="' + d + '" fill-rule="evenodd" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"' +
+           (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  }
+  function sectorPath(cx, cy, ri, ro, kk) {
+    var half = Math.PI / kk, a0 = -Math.PI / 2 - half, a1 = -Math.PI / 2 + half, n = 90, pts = [], i;
+    for (i = 0; i <= n; i++) { var t = a0 + (a1 - a0) * i / n; pts.push((cx + ro * Math.cos(t)).toFixed(2) + ',' + (cy + ro * Math.sin(t)).toFixed(2)); }
+    for (i = n; i >= 0; i--) { var t2 = a0 + (a1 - a0) * i / n; pts.push((cx + ri * Math.cos(t2)).toFixed(2) + ',' + (cy + ri * Math.sin(t2)).toFixed(2)); }
+    return pts.join(' ');
+  }
+  function txt(x, y, s, size, fill, anchor, weight) {
+    return '<text x="' + x + '" y="' + y + '" font-size="' + (size || 11) + '" fill="' + (fill || '#333') +
+           '" font-family="sans-serif"' + (anchor ? ' text-anchor="' + anchor + '"' : '') +
+           (weight ? ' font-weight="' + weight + '"' : '') + '>' + s + '</text>';
+  }
+  function fmt(x, d) { return (isFinite(x) ? x.toFixed(d) : '&mdash;'); }
+
+  // ---------- main update ----------
+  function update() {
+    var pM = +el('ul-p').value, mu = +el('ul-mu').value, as = +el('ul-a').value, hs = +el('ul-h').value;
+    var th = +el('ul-th').value, alpha = +el('ul-al').value, nCont = +el('ul-ct').value;
+    var useAit = el('ul-aitken').checked, showNaive = el('ul-naive').checked;
+    el('ul-p-val').textContent = pM; el('ul-mu-val').textContent = mu;
+    el('ul-a-val').textContent = as.toFixed(1); el('ul-h-val').textContent = hs.toFixed(2);
+    el('ul-th-val').textContent = th; el('ul-al-val').textContent = alpha.toFixed(2);
+    el('ul-ct-val').textContent = nCont;
+
+    var bs = as + hs, p = pM * MMHG, k = 2 * Math.PI / (2 * Math.PI - th * Math.PI / 180);
+
+    // direct inverse solve
+    var Ri = inverseRi(as, bs, k, mu, p);
+    var Ro = isFinite(Ri) ? RoOf(Ri, as, bs, k) : NaN;
+    var ok = isFinite(Ri) && isFinite(Ro) && Ro > Ri;
+
+    // load-free configuration (p = 0)
+    var a0 = ok ? forwardA(Ri, Ro, k, mu, 0) : NaN;
+    var b0 = isFinite(a0) ? bOf(a0, Ri, Ro, k) : NaN;
+
+    // naive: treat the image as stress-free and inflate it
+    var aN = forwardA(as, bs, 1, mu, p);
+    var naiveErr = isFinite(aN) ? 100 * (aN - as) / as : NaN;
+
+    // residual of the direct solve, as a consistency check
+    var pBack = ok ? pressureOf(as, Ri, Ro, k, mu) : NaN;
+    var pResid = isFinite(pBack) ? Math.abs(pBack - p) : NaN;
+
+    // ---- PANEL 1: cross-section ----
+    var W = 340, H = 356, cx = 170, cy = 172;
+    var rmax = Math.max(bs, isFinite(Ro) ? Ro : 0, isFinite(b0) ? b0 : 0, showNaive && isFinite(aN) ? bOf(aN, as, bs, 1) : 0);
+    var sc = 132 / rmax;
+    var s1 = '';
+    if (k > 1.0001 && ok) {
+      s1 += '<polygon points="' + sectorPath(cx, cy, Ri * sc, Ro * sc, k) + '" fill="#f3e8f7" stroke="' + PUR + '" stroke-width="1.8"/>';
+    }
+    if (isFinite(a0)) s1 += annulus(cx, cy, a0 * sc, b0 * sc, 'rgba(198,40,40,0.10)', RED, 2, '6,4');
+    s1 += annulus(cx, cy, as * sc, bs * sc, 'rgba(0,131,143,0.20)', ACC, 2.4, null);
+    if (showNaive && isFinite(aN)) s1 += annulus(cx, cy, aN * sc, bOf(aN, as, bs, 1) * sc, 'none', '#666', 1.6, '2,3');
+    s1 += '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + rmax * sc) + '" y2="' + cy + '" stroke="#ccc" stroke-width="1"/>';
+    s1 += txt(12, 18, 'CROSS-SECTION', 11, '#888', null, 700);
+    var ly = 300;
+    s1 += '<rect x="12" y="' + (ly - 12) + '" width="14" height="9" fill="rgba(0,131,143,0.25)" stroke="' + ACC + '" stroke-width="1.6"/>' + txt(32, ly - 3, 'imaged (loaded) &mdash; DATA', 10.5, ACC);
+    s1 += '<rect x="12" y="' + (ly + 4) + '" width="14" height="9" fill="rgba(198,40,40,0.12)" stroke="' + RED + '" stroke-width="1.6" stroke-dasharray="4,3"/>' + txt(32, ly + 13, 'load-free reference &mdash; SOLVED', 10.5, RED);
+    if (k > 1.0001) s1 += '<rect x="12" y="' + (ly + 20) + '" width="14" height="9" fill="#f3e8f7" stroke="' + PUR + '" stroke-width="1.6"/>' + txt(32, ly + 29, 'stress-free sector &mdash; ASSUMED ($\\Theta_0$)', 10.5, PUR);
+    if (showNaive) s1 += '<rect x="12" y="' + (ly + 36) + '" width="14" height="9" fill="none" stroke="#666" stroke-width="1.4" stroke-dasharray="2,3"/>' + txt(32, ly + 45, 'wrong: image treated as stress-free', 10.5, '#666');
+    el('ul-svg-x').innerHTML = s1;
+
+    // ---- PANEL 2: hoop stress ----
+    var W2 = 360, H2 = 356, mL = 56, mR = 14, mT = 34, mB = 54;
+    var xs = function(t) { return mL + (t - 1) / (bs / as - 1) * (W2 - mL - mR); };
+    var curves = [], ymin = 0, ymax = 0, i, r, v;
+    if (ok) {
+      var c1 = [];
+      for (i = 0; i <= 60; i++) { r = as + (bs - as) * i / 60; v = hoop(r, as, Ri, Ro, k, mu, p); c1.push([r / as, v]); if (isFinite(v)) { ymin = Math.min(ymin, v); ymax = Math.max(ymax, v); } }
+      curves.push({ pts: c1, col: ACC, w: 2.4, dash: null, lab: 'loaded state, correct reference' });
+    }
+    if (k > 1.0001 && isFinite(a0)) {
+      var c2 = [];
+      for (i = 0; i <= 60; i++) { r = a0 + (b0 - a0) * i / 60; v = hoop(r, a0, Ri, Ro, k, mu, 0); c2.push([1 + (r - a0) / (b0 - a0) * (bs / as - 1), v]); if (isFinite(v)) { ymin = Math.min(ymin, v); ymax = Math.max(ymax, v); } }
+      curves.push({ pts: c2, col: PUR, w: 2.2, dash: '5,4', lab: 'residual $\\sigma_\\theta$ at zero load' });
+    }
+    if (ymax - ymin < 1e-6) { ymax = 1; ymin = -1; }
+    var pad = 0.12 * (ymax - ymin); ymax += pad; ymin -= pad;
+    var ys = function(v2) { return H2 - mB - (v2 - ymin) / (ymax - ymin) * (H2 - mT - mB); };
+    var s2 = txt(12, 18, 'HOOP STRESS $\\sigma_\\theta$ (kPa)', 11, '#888', null, 700);
+    s2 += '<line x1="' + mL + '" y1="' + mT + '" x2="' + mL + '" y2="' + (H2 - mB) + '" stroke="#999"/>';
+    s2 += '<line x1="' + mL + '" y1="' + ys(0) + '" x2="' + (W2 - mR) + '" y2="' + ys(0) + '" stroke="#bbb" stroke-dasharray="3,3"/>';
+    for (i = 0; i <= 4; i++) {
+      var yv = ymin + (ymax - ymin) * i / 4;
+      s2 += '<line x1="' + (mL - 4) + '" y1="' + ys(yv) + '" x2="' + mL + '" y2="' + ys(yv) + '" stroke="#999"/>' + txt(mL - 7, ys(yv) + 3.5, yv.toFixed(0), 9.5, '#666', 'end');
+    }
+    s2 += txt((mL + W2 - mR) / 2, H2 - mB + 18, '$r/a^{*}$', 10.5, '#666', 'middle');
+    s2 += txt(mL, H2 - mB + 18, '1.00', 9.5, '#666', 'middle') + txt(W2 - mR, H2 - mB + 18, (bs / as).toFixed(2), 9.5, '#666', 'middle');
+    curves.forEach(function(c) {
+      var d = c.pts.filter(function(q) { return isFinite(q[1]); }).map(function(q, j) { return (j ? 'L' : 'M') + xs(q[0]).toFixed(1) + ' ' + ys(q[1]).toFixed(1); }).join(' ');
+      s2 += '<path d="' + d + '" fill="none" stroke="' + c.col + '" stroke-width="' + c.w + '"' + (c.dash ? ' stroke-dasharray="' + c.dash + '"' : '') + '/>';
+    });
+    if (showNaive) s2 += '<line x1="' + mL + '" y1="' + ys(0) + '" x2="' + (W2 - mR) + '" y2="' + ys(0) + '" stroke="#666" stroke-width="2" stroke-dasharray="2,3"/>';
+    var ly2 = H2 - 30;
+    s2 += '<line x1="14" y1="' + ly2 + '" x2="34" y2="' + ly2 + '" stroke="' + ACC + '" stroke-width="2.4"/>' + txt(40, ly2 + 3.5, 'loaded state, recovered reference', 10, ACC);
+    if (k > 1.0001) { s2 += '<line x1="14" y1="' + (ly2 + 13) + '" x2="34" y2="' + (ly2 + 13) + '" stroke="' + PUR + '" stroke-width="2.2" stroke-dasharray="5,4"/>' + txt(40, ly2 + 16.5, 'residual, at ZERO external load', 10, PUR); }
+    if (showNaive) { s2 += '<line x1="14" y1="' + (ly2 + (k > 1.0001 ? 26 : 13)) + '" x2="34" y2="' + (ly2 + (k > 1.0001 ? 26 : 13)) + '" stroke="#666" stroke-width="2" stroke-dasharray="2,3"/>' + txt(40, ly2 + (k > 1.0001 ? 29.5 : 16.5), 'naive model: ZERO wall stress at diastole', 10, '#666'); }
+    el('ul-svg-s').innerHTML = s2;
+
+    // ---- PANEL 3: convergence ----
+    var MAXIT = 25;
+    var traces = [
+      { r: sellier(as, bs, k, mu, p, 0.5, false, MAXIT), col: GRY, lab: '$\\alpha = 0.5$', w: 1.6 },
+      { r: sellier(as, bs, k, mu, p, 1.0, false, MAXIT), col: '#37474f', lab: '$\\alpha = 1.0$ (Sellier)', w: 1.8 },
+      { r: sellier(as, bs, k, mu, p, alpha, false, MAXIT), col: ACC, lab: '$\\alpha = ' + alpha.toFixed(2) + '$ (yours)', w: 2.4 }
+    ];
+    if (useAit) traces.push({ r: sellier(as, bs, k, mu, p, alpha, true, MAXIT), col: ORA, lab: 'Aitken $\\Delta^2$', w: 2.2 });
+    var cont = null;
+    if (nCont > 1) { cont = continuation(as, bs, k, mu, p, alpha, nCont, 60); traces.push({ r: { res: cont.res, diverged: cont.diverged, its: null }, col: PUR, lab: 'continuation, $N = ' + nCont + '$', w: 2.0 }); }
+
+    var nx = MAXIT;
+    traces.forEach(function(t) { nx = Math.max(nx, t.r.res.length - 1); });
+    var W3 = 740, H3 = 270, m3L = 62, m3R = 18, m3T = 30, m3B = 40;
+    var LO = -6, HI = 1.6;
+    var X3 = function(i2) { return m3L + i2 / nx * (W3 - m3L - m3R); };
+    var Y3 = function(v3) { var g = Math.log(Math.max(v3, 1e-7)) / Math.LN10; g = Math.max(LO, Math.min(HI, g)); return H3 - m3B - (g - LO) / (HI - LO) * (H3 - m3T - m3B); };
+    var s3 = txt(12, 18, 'FIXED-POINT CONVERGENCE &mdash; $\\max\\lVert\\mathbf{R}_k\\rVert$ (mm)', 11, '#888', null, 700);
+    s3 += '<line x1="' + m3L + '" y1="' + m3T + '" x2="' + m3L + '" y2="' + (H3 - m3B) + '" stroke="#999"/>';
+    s3 += '<line x1="' + m3L + '" y1="' + (H3 - m3B) + '" x2="' + (W3 - m3R) + '" y2="' + (H3 - m3B) + '" stroke="#999"/>';
+    for (i = LO; i <= HI; i++) {
+      s3 += '<line x1="' + (m3L - 4) + '" y1="' + Y3(Math.pow(10, i)) + '" x2="' + (W3 - m3R) + '" y2="' + Y3(Math.pow(10, i)) + '" stroke="#f0f0f0"/>';
+      s3 += txt(m3L - 8, Y3(Math.pow(10, i)) + 3.5, '$10^{' + i + '}$', 9.5, '#666', 'end');
+    }
+    s3 += '<line x1="' + m3L + '" y1="' + Y3(0.01) + '" x2="' + (W3 - m3R) + '" y2="' + Y3(0.01) + '" stroke="#2e7d32" stroke-width="1.4" stroke-dasharray="6,4"/>';
+    s3 += txt(W3 - m3R - 4, Y3(0.01) - 5, '0.01 mm &mdash; loosest tolerance in Rausch et al. (2017)', 9.5, '#2e7d32', 'end');
+    for (i = 0; i <= nx; i += Math.max(1, Math.round(nx / 10))) s3 += txt(X3(i), H3 - m3B + 16, i, 9.5, '#666', 'middle');
+    s3 += txt((m3L + W3 - m3R) / 2, H3 - 8, nCont > 1 ? 'iteration $k$ (continuation trace: cumulative forward solves)' : 'iteration $k$ &mdash; one forward FE solve each', 10.5, '#666', 'middle');
+    traces.forEach(function(t) {
+      var pts = t.r.res;
+      if (!pts.length) return;
+      var d = pts.map(function(v4, j) { return (j ? 'L' : 'M') + X3(j).toFixed(1) + ' ' + Y3(v4).toFixed(1); }).join(' ');
+      s3 += '<path d="' + d + '" fill="none" stroke="' + t.col + '" stroke-width="' + t.w + '"/>';
+      if (t.r.diverged) {
+        var lx = X3(pts.length - 1), lyy = Y3(pts[pts.length - 1]);
+        s3 += '<rect x="' + (lx - 4) + '" y="' + (lyy - 20) + '" width="70" height="15" rx="3" fill="#c62828"/>' + txt(lx + 31, lyy - 9, 'DIVERGED', 9.5, '#fff', 'middle', 700);
+      }
+    });
+    el('ul-svg-c').innerHTML = s3;
+    var leg = traces.map(function(t) {
+      return '<span><span style="display:inline-block;width:16px;height:3px;background:' + t.col + ';vertical-align:middle;"></span> ' + t.lab +
+             (t.r.diverged ? ' <span style="color:#c62828;font-weight:700;">diverged</span>' : (t.r.its !== null ? ' <span style="color:#2e7d32;">&#8594; 0.01 mm in ' + t.r.its + '</span>' : '')) + '</span>';
+    }).join('');
+    el('ul-legend').innerHTML = leg;
+
+    // ---- side panel ----
+    var J = ok ? jacobian(Ri, Ro, k, mu, p) : null;
+    var Lu = J ? contraction(J, alpha) : NaN, L1 = J ? contraction(J, 1.0) : NaN, cnd = J ? condOf(J) : NaN;
+    var aStar = NaN, best = 1e30;
+    if (J) { for (var t3 = 0.02; t3 <= 2.0; t3 += 0.01) { var vv = contraction(J, t3); if (vv < best) { best = vv; aStar = t3; } } }
+    var userTrace = traces[2].r;
+    var lamTh = ok ? as / Ri : NaN;
+    var colL = (L1 < 1 ? '#2e7d32' : '#c62828');
+    var colU = (Lu < 1 ? '#2e7d32' : '#c62828');
+    el('ul-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the solver sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> 2 imaged radii, $a^{*} = ' + as.toFixed(2) + '$ mm, $b^{*} = ' + bs.toFixed(2) + '$ mm</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> 2 reference radii $R_i, R_o$ (the discrete stand-in for the field $\\mathbf{X}(\\mathbf{x})$)</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' +
+        '<li>incompressible neo-Hookean, $\\mu$ known = ' + mu + ' kPa</li>' +
+        '<li>plane strain, $\\lambda_z = 1$; axisymmetric</li>' +
+        '<li>pressure known exactly = ' + pM + ' mmHg</li>' +
+        '<li>opening angle ' + (th > 0 ? '$\\Theta_0 = ' + th + '^\\circ$ &mdash; <em>supplied, not recovered</em>' : '$\\Theta_0 = 0$ (no residual stress)') + '</li>' +
+      '</ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Conditioning:</strong><br>' +
+        '$\\kappa(\\partial\\mathbf{x}/\\partial\\mathbf{X}) = ' + (isFinite(cnd) ? cnd.toFixed(2) : '\\infty') + '$<br>' +
+        'contraction $L(\\alpha{=}1) = $ <span style="color:' + colL + ';font-weight:700;">' + fmt(L1, 3) + '</span><br>' +
+        'contraction $L(\\alpha{=}' + alpha.toFixed(2) + ') = $ <span style="color:' + colU + ';font-weight:700;">' + fmt(Lu, 3) + '</span><br>' +
+        'computed optimum $\\alpha^{\\star} = ' + fmt(aStar, 2) + '$</div>' +
+      '<div style="margin-bottom:7px;"><strong>Solution:</strong><br>' +
+        '$R_i = ' + fmt(Ri, 3) + '$ mm, $R_o = ' + fmt(Ro, 3) + '$ mm<br>' +
+        'unloaded wall $H = ' + fmt(Ro - Ri, 3) + '$ mm (imaged ' + hs.toFixed(2) + ')<br>' +
+        'stretch $\\lambda_\\theta = a^{*}/R_i = ' + fmt(lamTh, 3) + '$' +
+        (th > 0 ? '<br>load-free radii $' + fmt(a0, 3) + ' / ' + fmt(b0, 3) + '$ mm' : '') + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation:</strong><br>' +
+        'direct-solve residual $|p(R_i) - p| = ' + (isFinite(pResid) ? pResid.toExponential(1) : '&mdash;') + '$ kPa<br>' +
+        'fixed point at $\\alpha = ' + alpha.toFixed(2) + '$: ' + (userTrace.diverged ? '<span style="color:#c62828;font-weight:700;">diverged</span>' : (userTrace.its !== null ? '<span style="color:#2e7d32;font-weight:700;">' + userTrace.its + ' solves to 0.01 mm</span>' : '<span style="color:#8a6d3b;font-weight:700;">&gt; 25 solves</span>')) + '<br>' +
+        'naive re-inflation error: <span style="color:#c62828;font-weight:700;">' + (isFinite(naiveErr) ? (naiveErr >= 0 ? '+' : '') + naiveErr.toFixed(2) + '%' : '&mdash;') + '</span>' +
+        (nCont > 1 ? '<br>continuation: ' + cont.solves + ' forward solves' + (cont.diverged ? ' <span style="color:#c62828;">(diverged)</span>' : '') : '') + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Cost:</strong> direct inverse solve = 1 nonlinear solve; fixed point = the count above.</div>' +
+      '<div style="font-size:11px;font-weight:700;color:#00695c;border-top:1px solid #ddd;padding-top:6px;">Unobservable here: $\\mu$ and $R_i$ trade off exactly at one load state (&sect;8); $\\Theta_0$ is an input, never an output.</div>';
+    if (typeof renderMath === 'function') renderMath(el('ul-panel'));
+    if (typeof renderMath === 'function') renderMath(el('ul-legend'));
+
+    // ---- equation strip ----
+    var ro2 = el('ul-readout');
+    ro2.innerHTML =
+      '<div class="math-block" style="margin:6px 0;">$$p = \\int_a^b \\mu\\left(\\lambda_\\theta^{2} - \\lambda_r^{2}\\right)\\frac{\\mathrm{d}r}{r} = ' + (p).toFixed(3) + '\\ \\text{kPa}, \\qquad \\mu = ' + mu + '\\ \\text{kPa}$$</div>' +
+      '<div class="math-block" style="margin:6px 0;">$$\\mathbf{X}_{k+1} = \\mathbf{X}_k - \\alpha_k\\left(\\mathbf{x}_k - \\mathbf{x}^{*}\\right), \\qquad \\alpha = ' + alpha.toFixed(2) + ', \\qquad L = \\lVert\\mathbf{I} - \\alpha\\,\\partial\\mathbf{R}/\\partial\\mathbf{X}\\rVert = ' + fmt(Lu, 3) + '$$</div>' +
+      '<div style="color:#555;">' + (ok ? (L1 < 1 ? 'At this operating point the undamped iteration is a contraction.' : 'At this operating point $\\alpha = 1$ is <strong>not</strong> a contraction &mdash; which is the failure mode Aitken, Armijo and Anderson exist to fix.') : '<span style="color:#c62828;">No admissible reference configuration found at this load with this material &mdash; the bisection lost its bracket. Soften the load or stiffen the wall.</span>') + '</div>';
+    if (typeof renderMath === 'function') renderMath(ro2);
+  }
+
+  ['ul-p', 'ul-mu', 'ul-a', 'ul-h', 'ul-th', 'ul-al', 'ul-ct'].forEach(function(id) { el(id).addEventListener('input', update); });
+  ['ul-aitken', 'ul-naive'].forEach(function(id) { el(id).addEventListener('change', update); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: JOINT IDENTIFIABILITY EXPLORER ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  var MMHG = 0.1333224, ACC = '#00838f', RED = '#c62828', PUR = '#7b1fa2';
+  var AS = 10.0, BS = 11.5, P1 = 80 * MMHG;     // imaged geometry and first load state, fixed
+
+  function bOf(a, Ri, Ro) { return Math.sqrt(a * a + Ro * Ro - Ri * Ri); }
+  function pressureOf(a, Ri, Ro, mu) {
+    if (!(a > 0) || !(Ri > 0) || !(Ro > Ri)) return NaN;
+    var a2 = a * a, b2 = a2 + Ro * Ro - Ri * Ri, d = a2 - Ri * Ri;
+    if (!(b2 > a2) || !(a2 - d > 0)) return NaN;
+    return 0.5 * mu * (2 * Math.log(Ro / Ri) - Math.log(b2 / a2) - d * (1 / b2 - 1 / a2));
+  }
+  function forwardA(Ri, Ro, mu, pt) {
+    var lo = Ri * 0.05, hi = Ri * 25;
+    var plo = pressureOf(lo, Ri, Ro, mu), phi = pressureOf(hi, Ri, Ro, mu);
+    if (!isFinite(plo) || !isFinite(phi) || (plo - pt) * (phi - pt) > 0) return NaN;
+    for (var i = 0; i < 60; i++) {
+      var m = 0.5 * (lo + hi), pm = pressureOf(m, Ri, Ro, mu);
+      if (!isFinite(pm)) return NaN;
+      if ((plo - pt) * (pm - pt) <= 0) { hi = m; phi = pm; } else { lo = m; plo = pm; }
+    }
+    return 0.5 * (lo + hi);
+  }
+  function inverseRi(mu, pt) {
+    var N = 300, prevRi = null, prevG = null;
+    for (var i = 0; i <= N; i++) {
+      var Ri = AS * Math.pow(0.02, i / N);
+      var Ro = Math.sqrt(Ri * Ri + BS * BS - AS * AS);
+      var g = pressureOf(AS, Ri, Ro, mu) - pt;
+      if (!isFinite(g)) { prevRi = Ri; prevG = null; continue; }
+      if (prevG !== null && prevG * g <= 0) {
+        var lo = Ri, hi = prevRi, glo = g;
+        for (var j = 0; j < 60; j++) {
+          var m = 0.5 * (lo + hi), R2 = Math.sqrt(m * m + BS * BS - AS * AS);
+          var gm = pressureOf(AS, m, R2, mu) - pt;
+          if (!isFinite(gm)) break;
+          if (glo * gm <= 0) { hi = m; } else { lo = m; glo = gm; }
+        }
+        return 0.5 * (lo + hi);
+      }
+      prevRi = Ri; prevG = g;
+    }
+    return NaN;
+  }
+  function txt(x, y, s, size, fill, anchor, weight) {
+    return '<text x="' + x + '" y="' + y + '" font-size="' + (size || 11) + '" fill="' + (fill || '#333') +
+           '" font-family="sans-serif"' + (anchor ? ' text-anchor="' + anchor + '"' : '') + (weight ? ' font-weight="' + weight + '"' : '') + '>' + s + '</text>';
+  }
+
+  function update() {
+    var muT = +el('id-mu').value, p2M = +el('id-p2').value, nz = +el('id-nz').value, ns = +el('id-nstates').value;
+    el('id-mu-val').textContent = muT; el('id-p2-val').textContent = p2M; el('id-nz-val').textContent = nz.toFixed(3);
+    var p2 = p2M * MMHG;
+
+    var RiT = inverseRi(muT, P1);
+    var RoT = isFinite(RiT) ? Math.sqrt(RiT * RiT + BS * BS - AS * AS) : NaN;
+    var a2T = isFinite(RiT) ? forwardA(RiT, RoT, muT, p2) : NaN;
+
+    var muLo = 40, muHi = 400, NM = 90, rows = [];
+    for (var i = 0; i <= NM; i++) {
+      var mu = muLo * Math.pow(muHi / muLo, i / NM);
+      var Ri = inverseRi(mu, P1);
+      if (!isFinite(Ri)) { rows.push(null); continue; }
+      var Ro = Math.sqrt(Ri * Ri + BS * BS - AS * AS);
+      var a2 = forwardA(Ri, Ro, mu, p2);
+      var J = (ns === 1 || !isFinite(a2) || !isFinite(a2T)) ? 0 : Math.abs(a2 - a2T);
+      rows.push({ mu: mu, Ri: Ri, J: J });
+    }
+
+    // ---- top plot: the degenerate family ----
+    var W = 660, H = 200, mL = 62, mR = 130, mT = 30, mB = 40;
+    var X = function(mu) { return mL + Math.log(mu / muLo) / Math.log(muHi / muLo) * (W - mL - mR); };
+    var vals = rows.filter(Boolean).map(function(r) { return r.Ri; });
+    var rlo = Math.min.apply(null, vals), rhi = Math.max.apply(null, vals);
+    var padr = 0.1 * (rhi - rlo + 1e-6); rlo -= padr; rhi += padr;
+    var Y = function(v) { return H - mB - (v - rlo) / (rhi - rlo) * (H - mT - mB); };
+    var s = txt(12, 18, 'REFERENCE RADIUS $R_i$ THAT REPRODUCES THE IMAGE (mm)', 11, '#888', null, 700);
+    s += '<line x1="' + mL + '" y1="' + mT + '" x2="' + mL + '" y2="' + (H - mB) + '" stroke="#999"/>';
+    s += '<line x1="' + mL + '" y1="' + (H - mB) + '" x2="' + (W - mR) + '" y2="' + (H - mB) + '" stroke="#999"/>';
+    for (i = 0; i <= 3; i++) { var yv = rlo + (rhi - rlo) * i / 3; s += txt(mL - 7, Y(yv) + 3.5, yv.toFixed(2), 9.5, '#666', 'end'); }
+    [40, 60, 100, 150, 200, 300, 400].forEach(function(m) { if (m >= muLo && m <= muHi) s += txt(X(m), H - mB + 15, m, 9.5, '#666', 'middle'); });
+    s += txt((mL + W - mR) / 2, H - 8, 'assumed shear modulus $\\mu$ (kPa, log axis)', 10.5, '#666', 'middle');
+    var d = rows.filter(Boolean).map(function(r, j) { return (j ? 'L' : 'M') + X(r.mu).toFixed(1) + ' ' + Y(r.Ri).toFixed(1); }).join(' ');
+    s += '<path d="' + d + '" fill="none" stroke="' + RED + '" stroke-width="2.6"/>';
+    if (isFinite(RiT)) { s += '<circle cx="' + X(muT) + '" cy="' + Y(RiT) + '" r="5" fill="' + ACC + '"/>' + txt(X(muT) + 9, Y(RiT) - 6, 'truth', 10, ACC, null, 700); }
+    s += '<rect x="' + (W - mR + 6) + '" y="' + mT + '" width="' + (mR - 16) + '" height="86" rx="4" fill="#fdeaea" stroke="#e8bcbc"/>';
+    s += txt(W - mR + 14, mT + 17, 'every point on', 9.5, '#8a3a3a');
+    s += txt(W - mR + 14, mT + 30, 'this curve fits', 9.5, '#8a3a3a');
+    s += txt(W - mR + 14, mT + 43, 'the $p_1$ image', 9.5, '#8a3a3a');
+    s += txt(W - mR + 14, mT + 56, 'EXACTLY', 9.5, '#8a3a3a', null, 700);
+    s += txt(W - mR + 14, mT + 74, 'zero misfit', 9.5, '#8a3a3a');
+    el('id-svg-a').innerHTML = s;
+
+    // ---- bottom plot: second-state misfit ----
+    var H2 = 210, m2B = 44, m2T = 30;
+    var jmax = 0; rows.forEach(function(r) { if (r) jmax = Math.max(jmax, r.J); });
+    if (jmax < 1e-9) jmax = 1;
+    var Y2 = function(v) { return H2 - m2B - Math.min(v, jmax) / jmax * (H2 - m2T - m2B); };
+    var s2 = txt(12, 18, 'MISFIT AT THE SECOND LOAD STATE $|a(p_2) - a^{*}_2|$ (mm)', 11, '#888', null, 700);
+    s2 += '<line x1="' + mL + '" y1="' + m2T + '" x2="' + mL + '" y2="' + (H2 - m2B) + '" stroke="#999"/>';
+    s2 += '<line x1="' + mL + '" y1="' + (H2 - m2B) + '" x2="' + (W - mR) + '" y2="' + (H2 - m2B) + '" stroke="#999"/>';
+    for (i = 0; i <= 3; i++) { var jv = jmax * i / 3; s2 += txt(mL - 7, Y2(jv) + 3.5, jv.toFixed(2), 9.5, '#666', 'end'); }
+    [40, 60, 100, 150, 200, 300, 400].forEach(function(m) { if (m >= muLo && m <= muHi) s2 += txt(X(m), H2 - m2B + 15, m, 9.5, '#666', 'middle'); });
+    s2 += txt((mL + W - mR) / 2, H2 - 10, 'assumed shear modulus $\\mu$ (kPa, log axis)', 10.5, '#666', 'middle');
+    // identifiable band
+    var loB = null, hiB = null;
+    rows.forEach(function(r) { if (r && r.J <= nz) { if (loB === null) loB = r.mu; hiB = r.mu; } });
+    if (loB !== null) s2 += '<rect x="' + X(loB) + '" y="' + m2T + '" width="' + Math.max(2, X(hiB) - X(loB)) + '" height="' + (H2 - m2T - m2B) + '" fill="rgba(46,125,50,0.12)"/>';
+    s2 += '<line x1="' + mL + '" y1="' + Y2(nz) + '" x2="' + (W - mR) + '" y2="' + Y2(nz) + '" stroke="#2e7d32" stroke-width="1.4" stroke-dasharray="6,4"/>';
+    s2 += txt(W - mR - 4, Y2(nz) - 5, 'noise floor ' + nz.toFixed(3) + ' mm', 9.5, '#2e7d32', 'end');
+    var d2 = rows.filter(Boolean).map(function(r, j) { return (j ? 'L' : 'M') + X(r.mu).toFixed(1) + ' ' + Y2(r.J).toFixed(1); }).join(' ');
+    s2 += '<path d="' + d2 + '" fill="none" stroke="' + PUR + '" stroke-width="2.6"/>';
+    if (isFinite(RiT)) s2 += '<line x1="' + X(muT) + '" y1="' + m2T + '" x2="' + X(muT) + '" y2="' + (H2 - m2B) + '" stroke="' + ACC + '" stroke-width="1.4" stroke-dasharray="3,3"/>';
+    s2 += '<rect x="' + (W - mR + 6) + '" y="' + m2T + '" width="' + (mR - 16) + '" height="72" rx="4" fill="#f3e8f7" stroke="#d9c2e5"/>';
+    s2 += txt(W - mR + 14, m2T + 17, ns === 1 ? 'one load state:' : 'two load states:', 9.5, '#5b1580', null, 700);
+    s2 += txt(W - mR + 14, m2T + 32, ns === 1 ? 'flat &mdash; nothing' : 'a valley &mdash; the', 9.5, '#5b1580');
+    s2 += txt(W - mR + 14, m2T + 45, ns === 1 ? 'prefers the truth' : 'curve collapses', 9.5, '#5b1580');
+    s2 += txt(W - mR + 14, m2T + 60, ns === 1 ? '' : 'to an interval', 9.5, '#5b1580');
+    el('id-svg-j').innerHTML = s2;
+
+    // ---- panel ----
+    var width = (loB !== null && hiB !== null) ? 100 * (hiB - loB) / muT : NaN;
+    var same = Math.abs(p2M - 80) < 0.5;
+    el('id-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the solver sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + (ns === 1 ? '1 image (2 radii) at $p_1 = 80$ mmHg' : '2 images (4 radii), at $p_1 = 80$ and $p_2 = ' + p2M + '$ mmHg') + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> reference radii $R_i, R_o$ <em>and</em> the shear modulus $\\mu$ &mdash; 3 unknowns</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;"><li>constitutive <em>form</em> known (neo-Hookean), one free constant</li><li>pressures known exactly</li><li>no residual stress</li></ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank of the problem:</strong><br>' + (ns === 1
+        ? '1 load state, 2 equations, 3 unknowns &rarr; a <span style="color:#c62828;font-weight:700;">one-parameter family</span> of exact fits'
+        : (same ? 'the second state duplicates the first &rarr; still a <span style="color:#c62828;font-weight:700;">one-parameter family</span>'
+                : '2 <em>distinct</em> load states, 4 equations, 3 unknowns &rarr; <span style="color:#2e7d32;font-weight:700;">locally determined</span>')) + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Identifiable interval at this noise:</strong><br>' +
+        (ns === 1 || same ? '<span style="color:#c62828;font-weight:700;">40&ndash;400 kPa &mdash; the whole axis</span>'
+          : (loB !== null ? '$\\mu \\in [' + loB.toFixed(0) + ', ' + hiB.toFixed(0) + ']$ kPa &nbsp;(&plusmn;' + (width / 2).toFixed(0) + '% of truth)' : 'narrower than the sweep resolution')) + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation:</strong> misfit at $\\mu_{\\text{true}}$ is zero by construction &mdash; a zero training misfit proves nothing about identifiability. Read the <em>width of the valley</em>, not its depth.</div>' +
+      '<div style="font-size:11px;font-weight:700;color:#00695c;border-top:1px solid #ddd;padding-top:6px;">Marx et al. (2022) break exactly this degeneracy with one image time point plus one measured EDPVR point.</div>';
+    if (typeof renderMath === 'function') renderMath(el('id-panel'));
+
+    var ro = el('id-readout');
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\text{one state: } \\{(\\mu, R_i(\\mu))\\}\\ \\text{all satisfy}\\ \\boldsymbol{\\varphi}_{R_i(\\mu)}(p_1) = \\mathbf{x}^{*}, \\qquad \\text{two states: } \\min_\\mu\\ \\lvert a(p_2;\\mu) - a^{*}_2\\rvert$$</div>';
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+
+  ['id-mu', 'id-p2', 'id-nz'].forEach(function(id) { el(id).addEventListener('input', update); });
+  el('id-nstates').addEventListener('change', update);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+  initWalkthrough('unloading-walkthrough', [
+    {
+      tab: '1. Data',
+      title: 'Step 1: Write Down What You Actually Have',
+      text: 'A segmented CT geometry at a known diastolic pressure. That is one loaded state, plus a pressure number, plus whatever constitutive law you are prepared to assume. Before any solver runs, fill in the four rows: measured = the deformed surface; unknown = the reference configuration; assumed known = $W$, its parameters, the loads, the fibre architecture; unobservable = residual stress, and the stiffness/geometry split (&sect;8).',
+      visual: '<div class="definition-box"><div class="box-label">Sanity check on the data</div><div>The segmented surface carries voxel-scale noise, and the inverse solve amplifies its high-frequency content into the reference geometry. Smooth the target surface <em>before</em> the solve, not the answer after.</div></div>',
+      insight: 'The four-row table is not paperwork. Two of the pitfalls in &sect;9 &mdash; joint identifiability and load-free vs stress-free &mdash; are caught by filling in the "unobservable" row honestly and never by looking at a residual.'
+    },
+    {
+      tab: '2. Deliverable',
+      title: 'Step 2: Decide What You Are Handing Over',
+      text: 'Geometry, stress, or both? If a machinist or a mold shop is downstream, you need a configuration and only inverse elastostatics will produce one. If the answer feeds a device-deployment or rupture-risk simulation on the imaged mesh, MULF prestressing (Gee, F&ouml;rster &amp; Wall, 2010) is cheaper, preserves the mesh, and cannot produce a self-intersecting reference. Both? Inverse elastostatics &mdash; the prestress falls out as $\\boldsymbol{\\sigma}(\\mathbf{f})$ on the image.',
+      visual: '<div class="definition-box"><div class="box-label">Cost, once and for all</div><div>$$\\text{inverse elastostatics: } 1 \\text{ nonlinear solve} \\qquad \\text{Sellier family: } N \\text{ forward solves}$$</div></div>',
+      insight: 'The wrong version of this step is choosing by what your code already does. The right version is choosing by what the deliverable is &mdash; and then, if the code cannot do it, using the black-box route (&sect;6) rather than the wrong answer.'
+    },
+    {
+      tab: '3. Loads',
+      title: 'Step 3: Specify the Loads Without Ambiguity',
+      text: 'Ramella et al. (2024) applied 80 mmHg on the internal lumen of the segmented geometry, fixed all vessel outlets in space, and used full Newton&ndash;Raphson. Every clause matters. The pressure is a traction on the <em>current</em> surface; the outlet constraints are essential conditions on $\\mathbf{X}$ that anchor the reference configuration&apos;s rigid-body modes; and if you transfer any traction between configurations you must do it with Nanson&apos;s formula.',
+      visual: '<div class="definition-box"><div class="box-label">The transformation you cannot skip</div><div>$$\\mathrm{d}a\\,\\mathbf{n} = J\\,\\mathbf{F}^{-T}\\,\\mathrm{d}A\\,\\mathbf{N}$$<div style="margin-top:6px;font-size:13px;">In the inverse formulation the pressure is a <em>dead</em> load on a known surface. Inside a Sellier loop it is a <em>follower</em> load, re-applied to each iterate&apos;s deformed surface.</div></div></div>',
+      insight: 'A mis-specified load does not degrade the answer &mdash; it replaces the question. The recovered $\\mathcal{B}_0$ is defined as the configuration that maps to $\\mathcal{B}$ under the loads you gave, so a wrong load gives a confidently converged wrong body.'
+    },
+    {
+      tab: '4. Solve',
+      title: 'Step 4: Solve, and Instrument the Solve',
+      text: 'Direct route: one nonlinear inverse-elastostatic solve, nodes pinned at the imaged positions, unknowns the material coordinates. Black-box route: initialise $\\mathbf{X}_0 = \\mathbf{x}^{*}$ and iterate, with Aitken $\\Delta^2$ (Rausch et al., 2017), Armijo damping (Marx et al., 2022) or Anderson acceleration (Barnafi et al., 2024). Do not run the fixed point with $\\alpha = 1$ and no acceleration and then report divergence as a property of the problem.',
+      visual: '<div class="definition-box"><div class="box-label">Instrument this</div><div>$$L = \\left\\lVert \\mathbf{I} - \\alpha\\,\\frac{\\partial \\mathbf{R}}{\\partial \\mathbf{X}} \\right\\rVert$$<div style="margin-top:6px;font-size:13px;">You cannot form $\\partial\\mathbf{R}/\\partial\\mathbf{X}$ for a real mesh, but you can watch the ratio of successive residual norms, which estimates $L$ for free. If it exceeds 1, stop and change $\\alpha$ rather than waiting.</div></div></div>',
+      insight: 'If the iteration will not start at all, try load continuation before trying a new relaxation parameter. Continuation fixes a basin-of-attraction failure; relaxation fixes a rate failure. They are different diseases.'
+    },
+    {
+      tab: '5. Admissibility',
+      title: 'Step 5: Check That the Answer Is a Body',
+      text: 'Verify $\\det\\mathbf{f}^h > 0$ at every quadrature point, and test the recovered reference surface for self-intersection. At large strain both failures are real, and neither is announced by the nonlinear solver &mdash; a converged Newton residual says the discrete equilibrium equations are satisfied, not that the field is a diffeomorphism.',
+      visual: '<div class="definition-box"><div class="box-label">Admissibility</div><div>$$\\det \\mathbf{f}^{h}(\\mathbf{x}_q) > 0 \\quad \\forall q \\qquad \\text{and} \\qquad \\partial\\mathcal{B}_0 \\ \\text{non-self-intersecting}$$</div></div>',
+      insight: 'This is also where the ellipticity warning of &sect;4 cashes out. $W$ polyconvex does not make $W^{*}$ polyconvex, so &ldquo;Newton would not converge&rdquo; is a possible <em>correct</em> outcome of a well-posed forward problem, not necessarily a mesh defect.'
+    },
+    {
+      tab: '6. Validate',
+      title: 'Step 6: Validate in Millimetres, and Name What You Did Not Identify',
+      text: 'Rausch et al. (2017) stop at $\\max\\lVert\\mathbf{R}_k\\rVert < \\varepsilon$ with $\\varepsilon$ tested at 0.01, 0.001 and 0.0001 mm. Marx et al. (2022) require max nodal error $< 0.1$ mm <em>and</em> relative volume difference $< 0.5\\%$ of end-diastolic volume <em>and</em> parameter update $< 0.001$, simultaneously. Report the geometric error in physical units, next to the voxel size.',
+      visual: '<div class="definition-box"><div class="box-label">What the result is not</div><div>It is the <strong>load-free</strong> configuration, not the stress-free one: residual stress survives, and the opening angle was never an output. And if you fitted material parameters at the same time from a single loaded state, they are not identified &mdash; you need a second load state or a pressure&ndash;volume point (Marx et al., 2022).</div></div>',
+      insight: 'The two honest sentences to put in a methods section: &ldquo;the recovered configuration is in equilibrium with zero external load and may carry residual stress, which this method does not recover&rdquo;, and &ldquo;material parameters and reference geometry were identified jointly using two independent load states&rdquo; &mdash; or, if they were not, say so.'
+    }
+  ]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+  initFlashcards('mod9-flashcards', [
+    {
+      q: 'In the inverse elastostatics problem, what exactly is the field of unknowns, and on which domain is it defined?',
+      a: 'The material coordinates $\\mathbf{X}(\\mathbf{x})$ — i.e. the inverse motion $\\boldsymbol{\\Phi} = \\boldsymbol{\\varphi}^{-1}$ — defined on the <strong>known deformed domain</strong> $\\mathcal{B}$. In the FE discretisation the mesh nodes stay fixed at the imaged positions $\\mathbf{x}_A$ and the nodal unknowns are the $\\mathbf{X}_A$. Contrast the forward problem, where the nodes move and $\\mathbf{X}$ is data.'
+    },
+    {
+      q: 'State Shield\'s 1967 inverse deformation theorem.',
+      a: 'If $\\boldsymbol{\\varphi}$ is an equilibrium deformation for a hyperelastic material with strain energy $W(\\mathbf{F})$, then the inverse motion $\\boldsymbol{\\varphi}^{-1}$ is an equilibrium deformation for the dual material with $W^{*}(\\mathbf{f}) = \\det(\\mathbf{f})\\,W(\\mathbf{f}^{-1})$, $\\mathbf{f} = \\mathbf{F}^{-1}$, under loads transformed by Nanson\'s rule. $W^{*}$ is just the strain energy measured per unit <strong>current</strong> volume.'
+    },
+    {
+      q: 'Differentiate $W^{*}(\\mathbf{f}) = \\det(\\mathbf{f})W(\\mathbf{f}^{-1})$ with respect to $\\mathbf{f}$. What tensor appears?',
+      a: '$\\dfrac{\\partial W^{*}}{\\partial \\mathbf{f}} = J^{-1}\\left[W\\mathbf{I} - \\mathbf{F}^{T}\\mathbf{P}\\right]\\mathbf{F}^{T} = J^{-1}\\boldsymbol{\\Sigma}\\mathbf{F}^{T}$, where $\\boldsymbol{\\Sigma} = W\\mathbf{I} - \\mathbf{F}^{T}\\mathbf{P}$ is the <strong>Eshelby energy–momentum (configurational) tensor</strong>. Uses $\\delta(\\det\\mathbf{f}) = J^{-1}\\mathbf{F}^{T}\\!:\\!\\delta\\mathbf{f}$, $\\delta(\\mathbf{f}^{-1}) = -\\mathbf{F}\\,\\delta\\mathbf{f}\\,\\mathbf{F}$, and $\\mathbf{P}\\!:\\!(\\mathbf{F}\\,\\delta\\mathbf{f}\\,\\mathbf{F}) = (\\mathbf{F}^{T}\\mathbf{P}\\mathbf{F}^{T})\\!:\\!\\delta\\mathbf{f}$.'
+    },
+    {
+      q: 'Why is a pressure load <em>easier</em> to handle in the inverse elastostatic formulation than in the forward one?',
+      a: 'Because the loaded surface is the known deformed surface. $\\bar{\\mathbf{t}} = -p\\,\\mathbf{n}$ is fully specified before the solve, so the pressure behaves as a <strong>dead</strong> load and the follower-load (pressure load-stiffness) term never enters the tangent. In a forward solve — including every forward solve inside a Sellier iteration — the pressure genuinely follows the deforming surface.'
+    },
+    {
+      q: 'Write the Sellier fixed-point update and its Aitken-accelerated relaxation parameter.',
+      a: '$\\mathbf{R}_k = \\mathbf{x}_k - \\mathbf{x}^{*}$ (with $\\mathbf{x}_k$ from a forward solve using reference $\\mathbf{X}_k$), $\\;\\mathbf{X}_{k+1} = \\mathbf{X}_k - \\alpha_k \\mathbf{R}_k$. Aitken $\\Delta^2$: $\\alpha_k = -\\alpha_{k-1}\\dfrac{\\mathbf{R}_{k-1}\\cdot(\\mathbf{R}_k-\\mathbf{R}_{k-1})}{(\\mathbf{R}_k-\\mathbf{R}_{k-1})\\cdot(\\mathbf{R}_k-\\mathbf{R}_{k-1})}$. Sellier (2011) used $\\alpha = 1$; Rausch et al. (2017) showed this is not necessarily the best choice and that the optimum is problem dependent (they observe 0.6–1.1).'
+    },
+    {
+      q: 'Why does the inverse problem lose the existence guarantees the forward problem enjoys?',
+      a: 'Polyconvexity (and coercivity) of $W$ does <strong>not</strong> imply polyconvexity of the dual energy $W^{*}(\\mathbf{f}) = \\det(\\mathbf{f})W(\\mathbf{f}^{-1})$. Shield duality is an algebraic identity, not a well-posedness result, so the inverse variational problem may have no minimiser even when the forward one is perfectly well posed. Symptom: Newton simply fails to converge.'
+    },
+    {
+      q: 'A colleague proposes finding the unloaded artery shape by applying $-80$ mmHg to the CT mesh. What is wrong?',
+      a: 'Deflating by $-p$ and re-inflating by $+p$ does not return the imaged geometry, because the tangent stiffness at the imaged state differs from the one at the true reference state, and because pressure is a follower load whose direction and acting area change with configuration (Nanson). The trick is exact only in linear elasticity/small strain. How big the error is depends on material, stretch and geometry — compute it, don\'t quote a number.'
+    },
+    {
+      q: 'What does \'static determinacy\' buy you in aneurysm wall-stress estimation, and what does it cost you?',
+      a: 'For a thin pressurised membrane the equilibrium equations close without a constitutive law, so under traction boundaries the wall stress is independent of the material properties. Zhao, Raghavan &amp; Lu (2011) found $<1\\%$ difference in the <strong>first principal</strong> stress over most of the sac between an anisotropic Holzapfel forward reference and a neo-Hookean auxiliary model (0.45% max under a 100-fold parameter change) — except in a ~4-element boundary layer at clamped edges. Cost: the same independence means stress alone carries <strong>no</strong> stiffness information.'
+    },
+    {
+      q: 'Distinguish \'load-free\' from \'stress-free\'.',
+      a: 'Inverse elastostatics returns the configuration in equilibrium with <strong>zero external load</strong>. For an artery or ventricle that configuration still carries <strong>residual stress</strong> — cut an arterial ring radially and it springs open (the opening angle). Residual stress is an additional, separate unknown that the inverse motion problem does not recover.'
+    },
+    {
+      q: 'In inverse elastostatics with a nearly incompressible material, what is the constraint and what goes wrong with a naive element?',
+      a: 'The constraint is $\\det\\mathbf{f} = 1$ (equivalently $J = 1$, since $\\det\\mathbf{f} = J^{-1}$). A pure displacement-type inverse element <strong>locks</strong> exactly as its forward counterpart does. Use the mixed / $\\bar{\\mathbf{F}}$ formulation of Govindjee &amp; Mihalic, <em>Computational methods for inverse deformations in quasi-incompressible finite elasticity</em>, IJNME 43(5):821–838 (1998), splitting $W^{*} = \\det(\\mathbf{f})[\\bar W(\\bar{\\mathbf{F}}) + U(J)]$.'
+    },
+    {
+      q: 'Why is the adjoint method essential for elastography but irrelevant for a two-parameter Mooney–Rivlin fit?',
+      a: 'The adjoint gives the full gradient of the misfit at the cost of one forward plus one adjoint solve, <strong>independent of the number of parameters</strong> (Oberai, Gokhale &amp; Feijóo, 2003). With 2 parameters, finite differences cost 3 solves and you would not bother; with a nodal modulus field of $10^5$–$10^6$ unknowns, finite differencing is impossible and the adjoint is the only tractable route. (Module 10 develops the mechanism; Module 7 owns the elastography application.)'
+    },
+    {
+      q: 'What can and cannot be inferred from measured strain fields, and how does the answer depend on the number of load cases?',
+      a: 'Barbone &amp; Bamber (2002): the direct inverse problem has <strong>no unique solution</strong> unless stiffness is known a priori on a sufficient portion of the boundary; under displacement BCs identical strain fields arise from different modulus distributions; known boundary <em>stress</em> can restore well-posedness. Barbone &amp; Gokhale (2004) count the residual freedom against the number $N$ of independent displacement fields: $N=1$ leaves two arbitrary <strong>functions</strong> (unobtainable in practice), $N=2$ at most four arbitrary <strong>constants</strong>, $N=4$ a single constant. Consequence: a raw elastogram is a strain image, not a modulus image.'
+    },
+    {
+      q: 'You must recover the <em>cold manufacturing shape</em> of a turbine blade. Can MULF prestressing do it?',
+      a: 'No. Prestressing keeps the imaged/target geometry as the computational reference and installs a prestretch field $\\mathbf{F}_{\\text{pre}}$ — the geometry never changes, so it returns stress but never a new shape. When the geometry itself is the deliverable (blade cold shape, silicone-skin mold, 3D-print compensation) you must solve the inverse motion problem. Fachinotti, Cardona &amp; Jetteur (IJNME 74(6):894–910, 2008) do exactly this: \'determining the initial shape of the piece, such that it attains the designed shape under the effect of service loads\', for laminated turbine blades.'
+    },
+    {
+      q: 'Why are the reference configuration and the material parameters not jointly identifiable from a single loaded state?',
+      a: 'For essentially any assumed stiffness there exists a reference geometry that maps to the imaged shape under the given load — the two unknowns trade off exactly. You need a second, independent piece of load–response information to break the degeneracy. Marx et al. (2022) use image data at one time point <strong>plus</strong> one measured point of the end-diastolic pressure–volume relation (EDPVR) to recover unloaded LV geometry and passive Holzapfel–Ogden parameters together.'
+    },
+    {
+      q: 'Name the four configurations this module keeps apart, and say which one an unloading algorithm returns.',
+      a: 'Loaded/imaged ($p \\ne 0$, $\\boldsymbol{\\sigma} \\ne 0$ — the data); load-free ($p = 0$, $\\boldsymbol{\\sigma} \\ne 0$ in general); residually stressed (the same object described by its self-equilibrated stress field); stress-free ($\\boldsymbol{\\sigma} = 0$ pointwise, reached by cutting, generally <em>not</em> one connected configuration). Inverse elastostatics and the Sellier family both return the <strong>load-free</strong> configuration. Nothing in either recovers the opening angle.'
+    },
+    {
+      q: 'Why is transforming a traction between configurations not a bookkeeping detail in an inverse problem?',
+      a: 'A pressure $-p\\,\\mathbf{n}$ on the current surface and a dead traction on the reference surface are different boundary conditions, related by Nanson\'s formula $\\mathrm{d}a\\,\\mathbf{n} = J\\mathbf{F}^{-T}\\mathrm{d}A\\,\\mathbf{N}$. The recovered $\\mathcal{B}_0$ is <em>defined</em> as the configuration mapping to $\\mathcal{B}$ under the specified loads, so mis-specifying them does not add error to the answer — it changes which question was answered, and the solver converges happily to the wrong body. Shield\'s theorem itself holds only for loads transformed by Nanson\'s rule.'
+    },
+    {
+      q: 'What is the contraction factor of the Sellier iteration, and how do you estimate it without forming any derivative?',
+      a: '$L = \\lVert \\mathbf{I} - \\alpha\\,\\partial\\mathbf{R}/\\partial\\mathbf{X} \\rVert$, where $\\mathbf{R}(\\mathbf{X}) = \\boldsymbol{\\varphi}_{\\mathbf{X}}(\\mathbf{X}) - \\mathbf{x}^{*}$. Convergence requires $L < 1$, and $\\partial\\mathbf{R}/\\partial\\mathbf{X}$ is unavailable for a real mesh. In practice you read it off the iteration itself: the ratio of successive residual norms $\\lVert\\mathbf{R}_{k+1}\\rVert / \\lVert\\mathbf{R}_k\\rVert$ estimates $L$ for free. If it is above 1, change $\\alpha$ (or switch on Aitken/Armijo/Anderson) rather than waiting to see whether it recovers.'
+    },
+    {
+      q: 'Your fixed-point unloading will not even start — the first update produces an inverted reference mesh. Relaxation parameter or continuation?',
+      a: 'Continuation first. Load continuation solves a sequence of unloading problems at $p_1 < \\dots < p_N = p$ against the same target $\\mathbf{x}^{*}$, each warm-started from the previous answer; at $p \\to 0$ the answer is $\\mathbf{X} = \\mathbf{x}^{*}$, so the sequence never leaves the basin of attraction. It does not change the contraction factor at the solution — it changes whether your iterate ever gets close enough for that factor to matter. Relaxation and acceleration fix a <em>rate</em> problem; continuation fixes a <em>basin</em> problem. (Standard nonlinear-solver practice, not a result from the papers above.)'
+    }
+  ]);
+</script>
+
+</body>
+</html>

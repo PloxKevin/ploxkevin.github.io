@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3. Inverse Problems &amp; Regularization — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+    <h1 class="page-title">3. Inverse Problems &amp; Regularization</h1>
+    <p class="page-subtitle">Hadamard well-posedness, least squares, SVD, discrete Picard condition, Tikhonov and TSVD, L-curve/GCV/discrepancy, Bayesian MAP, inverse problems in solid mechanics</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#forward-vs-inverse">1. Forward vs. Inverse: Which Direction Is Hard?</a>
+      <a href="#observation-model">2. The Observation Model: One Equation, Four Families</a>
+      <a href="#hadamard-well-posedness">3. Hadamard Well-Posedness and Why Elasticity Inversion Breaks It</a>
+      <a href="#least-squares-normal-equations">4. Linear Least Squares and the Normal Equations</a>
+      <a href="#svd-ill-conditioning">5. The SVD: Anatomy of an Ill-Conditioned Problem</a>
+      <a href="#discrete-picard-condition">6. The Discrete Picard Condition</a>
+      <a href="#tikhonov-regularization">7. Tikhonov Regularization</a>
+      <a href="#truncated-svd">8. Truncated SVD and Friends</a>
+      <a href="#choosing-the-parameter">9. Choosing the Regularization Parameter</a>
+      <a href="#gauss-newton-lm">10. Nonlinear Problems: Gauss&ndash;Newton and Levenberg&ndash;Marquardt</a>
+      <a href="#bayesian-view">11. The Bayesian View: Regularization as a Prior</a>
+      <a href="#taxonomy-solid-mechanics">12. A Taxonomy of Inverse Problems in Solid Mechanics</a>
+      <a href="#practical-workflow">13. Practical Workflow: Diagnosing and Solving Your Inverse Problem</a>
+      <a class="toc-interactive" href="#picard-lab">Interactive: Picard &amp; Regularization Lab</a>
+      <a class="toc-interactive" href="#observability-lab">Interactive: Observability &amp; Sensor Placement Lab</a>
+      <a class="toc-interactive" href="#workflow-walkthrough">Interactive: Inversion Workflow Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: FORWARD VS INVERSE ===== -->
+    <h2 class="section-heading" id="forward-vs-inverse">1. Forward vs. Inverse: Which Direction Is Hard?</h2>
+
+    <p>In a <strong>forward problem</strong> you are given the causes — loads, material parameters, geometry, boundary conditions — and you compute the effects: displacements, strains, sensor readings. Module 2 was entirely forward. The <strong>inverse problem</strong> reverses the inference: you observe noisy effects and must estimate the causes that produced them.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given noisy measurements of a mechanical system's response, estimate the causes — loads, material parameters, boundary data, or the deformed state — when the forward map has already destroyed part of the information you need. Formally, with forward operator $G$, model parameters $\mathbf{m}$, and noise $\mathbf{e}$:
+      $$\mathbf{d} = G(\mathbf{m}) + \mathbf{e}, \qquad\qquad \mathbf{b} = \mathbf{A}\mathbf{x} + \mathbf{e} \quad \text{(discrete linear case)}$$
+      </div>
+    </div>
+
+    <p>The asymmetry between the two directions is <em>physical</em>, not computational. Forward operators in continuum mechanics are <strong>smoothing</strong>: elliptic boundary-value problems damp high-spatial-frequency components of the input. By Saint-Venant-type reasoning, two statically equivalent but locally different load distributions produce nearly identical fields a short distance away. The forward map compresses distinct causes into nearly indistinguishable effects.</p>
+
+    <p>Concretely, in vision-based tactile sensing: a contact pressure profile on a soft skin's surface produces marker displacements measured at depth $h$ below the surface. Pressure detail finer than roughly the embedding depth is blurred away, so two distinct contact profiles map to nearly indistinguishable camera data. Inverting means <em>un-smoothing</em> — dividing by numbers close to zero — which amplifies measurement noise without bound.</p>
+
+    <p>The same structure appears everywhere:</p>
+    <ul>
+      <li><strong>Image deblurring</strong> — blur (forward) is easy and stable; deblurring is unstable.</li>
+      <li><strong>Hearing a drum</strong> — computing the sound of a known drum is forward; inferring the drum's shape from its sound is inverse.</li>
+      <li><strong>Gravimetric prospecting</strong> — computing surface gravity from a known density distribution is forward; mapping subsurface density from surface gravity is inverse.</li>
+    </ul>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 330" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="150" cy="115" rx="118" ry="80" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/>
+        <text x="150" y="45" text-anchor="middle" font-size="12" font-weight="600" fill="#1565c0">parameter space M</text>
+        <ellipse cx="550" cy="115" rx="105" ry="78" fill="#fafafa" stroke="#333" stroke-width="1.2"/>
+        <text x="550" y="45" text-anchor="middle" font-size="12" font-weight="600" fill="#333">data space D</text>
+        <circle cx="105" cy="95" r="4" fill="#1565c0"/><text x="93" y="88" font-size="11" fill="#1565c0">m&#8321;</text>
+        <circle cx="170" cy="160" r="4" fill="#1565c0"/><text x="178" y="170" font-size="11" fill="#1565c0">m&#8322;</text>
+        <circle cx="547" cy="110" r="3.5" fill="#333"/><text x="512" y="100" font-size="11" fill="#333">G(m&#8321;)</text>
+        <circle cx="555" cy="118" r="3.5" fill="#333"/><text x="562" y="130" font-size="11" fill="#333">G(m&#8322;)</text>
+        <path d="M 280 100 C 340 80, 390 80, 435 98" fill="none" stroke="#1565c0" stroke-width="2" marker-end="url(#arrowblue)"/>
+        <defs><marker id="arrowblue" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#1565c0"/></marker></defs>
+        <text x="358" y="70" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1565c0">forward map G</text>
+        <text x="358" y="85" text-anchor="middle" font-size="10.5" fill="#666">smoothing: kills high-frequency detail</text>
+        <circle cx="551" cy="114" r="24" fill="none" stroke="#e67e22" stroke-width="1.3" stroke-dasharray="4,3"/>
+        <text x="598" y="150" font-size="10.5" fill="#e67e22">noise ball &#948;</text>
+        <ellipse cx="140" cy="120" rx="98" ry="11" fill="none" stroke="#e67e22" stroke-width="1.3" stroke-dasharray="4,3" transform="rotate(-27 140 120)"/>
+        <text x="150" y="215" text-anchor="middle" font-size="10.5" fill="#e67e22">all parameters consistent with the data</text>
+        <line x1="0" y1="238" x2="700" y2="238" stroke="#eee"/>
+        <text x="20" y="258" font-size="11.5" font-weight="600" fill="#333">Hadamard's three conditions, geometrically:</text>
+        <text x="20" y="280" font-size="11" fill="#333"><tspan font-weight="600" fill="#1565c0">Existence</tspan> — noisy data can land outside G(M): no exact preimage</text>
+        <text x="20" y="299" font-size="11" fill="#333"><tspan font-weight="600" fill="#1565c0">Uniqueness</tspan> — two parameters can share one image: multiple preimages</text>
+        <text x="20" y="318" font-size="11" fill="#333"><tspan font-weight="600" fill="#1565c0">Stability</tspan> — the preimage of a small noise ball is a long thin sliver: tiny data moves, huge parameter moves</text>
+      </svg>
+      <div class="figure-caption">The forward map $G$ compresses well-separated parameters into nearly coincident data. Inversion must undo the compression: the preimage of the noise ball is an elongated sliver of mutually consistent parameters.</div>
+    </div>
+
+    <p>Three framings recur throughout this guide, in increasing order of difficulty of the unknown:</p>
+    <table>
+      <tr><th>Framing</th><th>Unknown</th><th>Example</th></tr>
+      <tr><td><strong>Parameter identification</strong></td><td>A finite vector of numbers</td><td>Young's modulus, a handful of hyperelastic constants</td></tr>
+      <tr><td><strong>Field / distributed reconstruction</strong></td><td>A function — discretizes to many unknowns; the hard case</td><td>A contact pressure map, a spatial modulus field</td></tr>
+      <tr><td><strong>State reconstruction</strong></td><td>The current state of a known system</td><td>iFEM's displacement-field-from-strain problem (Module 4)</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — the thesis of this module</div>
+      <div>The forward map <strong>loses information</strong>. The data alone cannot give it back. Every "solution" of an ill-posed inverse problem is <em>data plus injected prior assumptions</em>, and honest methods make the injection explicit. Regularization (Sections 7&ndash;9) is not a numerical trick — it is a modeling decision.</div>
+    </div>
+
+    <!-- ===== SECTION 2: OBSERVATION MODEL ===== -->
+    <h2 class="section-heading" id="observation-model">2. The Observation Model: One Equation, Four Families</h2>
+
+    <p>Before any machinery, fix the vocabulary that the whole guide runs on. Every inverse method in Modules 4&ndash;12 is an instance of a single observation model, and every method is fully characterized by how it answers four questions: <strong>what is measured, what is unknown, what is assumed known, and what is unobservable</strong>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">The Observation Model (guide-wide spine)</div>
+      <div>
+        $$\mathbf{y} = \mathcal{H}(\mathbf{u},\, \mathbf{p},\, \mathbf{f},\, \mathbf{X}_0) + \mathbf{b} + \boldsymbol{\eta}$$
+        <table>
+          <tr><td>$\mathbf{y}$</td><td>measurements (strains, marker positions, forces, images)</td></tr>
+          <tr><td>$\mathcal{H}$</td><td>observation operator: the physics (Module 2's forward FEM) composed with the sensor model</td></tr>
+          <tr><td>$\mathbf{u}$</td><td>state — the displacement/deformation field</td></tr>
+          <tr><td>$\mathbf{p}$</td><td>material parameters or parameter fields</td></tr>
+          <tr><td>$\mathbf{f}$</td><td>loads and boundary tractions</td></tr>
+          <tr><td>$\mathbf{X}_0$</td><td>reference (unloaded) configuration</td></tr>
+          <tr><td>$\mathbf{b}$</td><td>systematic bias: model error, miscalibration, drift</td></tr>
+          <tr><td>$\boldsymbol{\eta}$</td><td>random measurement noise</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <p>Choosing which argument of $\mathcal{H}$ is unknown — and assuming the rest — generates four distinct inverse families. They share the machinery of this module, but they are <em>separate problems</em> with different conditioning, different priors, and different literatures; none is a variant of another:</p>
+
+    <table>
+      <tr><th>Unknown</th><th>Family</th><th>Where in this guide</th></tr>
+      <tr><td>$\mathbf{u}$</td><td>Shape sensing / state reconstruction (iFEM)</td><td>Modules 4&ndash;6</td></tr>
+      <tr><td>$\mathbf{p}$</td><td>Material identification (FEMU, VFM, elastography)</td><td>Module 7</td></tr>
+      <tr><td>$\mathbf{f}$</td><td>Load and contact-force inversion</td><td>Module 8</td></tr>
+      <tr><td>$\mathbf{X}_0$</td><td>Reference-configuration recovery</td><td>Module 9</td></tr>
+    </table>
+
+    <p><em>A notation collision, flagged once:</em> in the spine equation $\mathbf{b}$ denotes systematic bias; in this module's linear algebra, following the numerical-analysis convention, $\mathbf{b}$ is the data vector in $\mathbf{A}\mathbf{x}=\mathbf{b}$. Context disambiguates — the spine's bias term will not reappear until the validation discussion in Section 13, where structured residuals reveal it.</p>
+
+    <h3 class="subsection-heading">Rank, Nullspace, and What "Unobservable" Means</h3>
+
+    <p>Linearize $\mathcal{H}$ about an operating point and collect the derivatives into a matrix $\mathbf{A}$ (the sensitivity or observation matrix). Two subspaces of the unknown space now decide everything:</p>
+    <ul>
+      <li><strong>rank$(\mathbf{A})$</strong> counts the independently observable directions — the number of distinct pieces of information your sensor set can deliver, at most $\min(m,n)$.</li>
+      <li><strong>The nullspace</strong>, $\{\mathbf{v} : \mathbf{A}\mathbf{v} = \mathbf{0}\}$, contains the unknown components your sensors <em>cannot see at all</em>. Adding any nullspace vector to a solution changes nothing in the predicted data.</li>
+    </ul>
+
+    <p>Mechanics supplies canonical nullspaces: strain gauges are blind to rigid-body motion (rigid translation and rotation produce zero strain), and boundary sensors cannot distinguish interior load distributions that are statically equivalent. Two terms of art, used consistently from here on: <strong>observability</strong> asks whether a <em>state or field</em> ($\mathbf{u}$, $\mathbf{X}_0$-type unknowns) is determined by the measurements; <strong>identifiability</strong> asks the same for <em>parameters</em> ($\mathbf{p}$-type unknowns). For linear problems both reduce to the nullspace of $\mathbf{A}$; for nonlinear parameter dependence, the rank of the Jacobian governs identifiability only locally.</p>
+
+    <p>Between "observable" and "unobservable" lies the practically important middle ground: directions that $\mathbf{A}$ maps to <em>tiny but nonzero</em> outputs. They are formally observable and practically lost in noise. Quantifying that middle ground is exactly what the SVD does in Section 5.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>A nullspace is a property of the <strong>sensor set</strong>, not of the algorithm. No regularizer can restore an unobservable component — it can only fill it in from the prior. If an unobservable component matters, the fix is to change the experiment (add sensors, move them, measure a different quantity), not to change the solver.</div>
+    </div>
+
+    <!-- ===== SECTION 3: HADAMARD ===== -->
+    <h2 class="section-heading" id="hadamard-well-posedness">3. Hadamard Well-Posedness and Why Elasticity Inversion Breaks It</h2>
+
+    <p>Hadamard (1923) called a problem <strong>well-posed</strong> if it passes three tests. A problem failing any one of them is <strong>ill-posed</strong>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Hadamard well-posedness</div>
+      <div>
+        <ol style="margin-left:18px;">
+          <li><strong>Existence:</strong> a solution exists for all admissible data.</li>
+          <li><strong>Uniqueness:</strong> the solution is unique.</li>
+          <li><strong>Stability:</strong> the solution depends continuously on the data.</li>
+        </ol>
+      </div>
+    </div>
+
+    <p>Each condition fails in a concrete, mechanical way:</p>
+
+    <p><strong>Existence.</strong> Noisy data $\mathbf{b}$ generally lies outside the range of $\mathbf{A}$ in an overdetermined system — no $\mathbf{x}$ satisfies $\mathbf{A}\mathbf{x}=\mathbf{b}$ exactly. Least squares (Section 4) repairs this by asking for the closest achievable fit instead.</p>
+
+    <p><strong>Uniqueness.</strong> A nullspace: strain gauges cannot see rigid-body motion; boundary sensors cannot distinguish statically equivalent interior load distributions (Section 2).</p>
+
+    <p><strong>Stability.</strong> The canonical example is differentiation of noisy data. Perturb $g(x)$ by a tiny high-frequency wiggle and watch the derivative:</p>
+
+    <div class="math-block">$$g_\varepsilon(x) = g(x) + \varepsilon\sin(kx) \;\Longrightarrow\; g_\varepsilon'(x) = g'(x) + \varepsilon k\cos(kx)$$</div>
+
+    <p>As $k$ grows, the data perturbation stays at size $\varepsilon$ while the answer perturbation $\varepsilon k$ blows up without bound. The same mechanism drives the backward heat equation, where recovering the initial state amplifies mode $k$ by $e^{k^2 T}$.</p>
+
+    <h3 class="subsection-heading">The Structural Reason: Compact Operators</h3>
+
+    <p>The instability is not bad luck; it is built into the physics. When the forward map is a <strong>compact operator</strong> between infinite-dimensional spaces — the situation for a first-kind Fredholm integral equation, which is the continuous model of deconvolution and of load-to-strain maps —</p>
+
+    <div class="math-block">$$\int_0^1 k(s,t)\,f(t)\,dt = g(s) \qquad \text{(Fredholm equation of the first kind)}$$</div>
+
+    <p>a bounded inverse cannot exist, so condition (3) fails <em>structurally</em>, not accidentally (Engl, Hanke &amp; Neubauer 1996). Discretization does not remove the pathology; it converts the unbounded inverse into a finite matrix whose condition number grows without bound as the mesh refines.</p>
+
+    <p>In elasticity specifically (Bonnet &amp; Constantinescu 2005): the <strong>Cauchy problem</strong> — reconstructing tractions and displacements on an inaccessible boundary from overdetermined data on an accessible one — is severely ill-posed, while interior parameter-field identification from full-field data is more mildly ill-posed. The severity spectrum matters practically and returns in Section 12.</p>
+
+    <p>History then reversed itself: Hadamard considered ill-posed problems physically meaningless; Tikhonov's school (Tikhonov &amp; Arsenin 1977) showed they are meaningful once prior information restores stability. The repair kit maps one-to-one onto the failures:</p>
+
+    <table>
+      <tr><th>Failed condition</th><th>Repair</th><th>Where</th></tr>
+      <tr><td>Existence</td><td>Least squares: minimize the residual instead of solving exactly</td><td>Section 4</td></tr>
+      <tr><td>Uniqueness</td><td>Prior/penalty structure selects one solution from the consistent set</td><td>Sections 7, 11</td></tr>
+      <tr><td>Stability</td><td>Regularization filters the noise-amplifying components</td><td>Sections 7&ndash;9</td></tr>
+    </table>
+
+    <!-- ===== SECTION 4: LEAST SQUARES ===== -->
+    <h2 class="section-heading" id="least-squares-normal-equations">4. Linear Least Squares and the Normal Equations</h2>
+
+    <p>The workhorse setting: $\mathbf{A} \in \mathbb{R}^{m\times n}$ with $m \ge n$ and full column rank. Since noisy $\mathbf{b}$ is not in the range of $\mathbf{A}$, minimize the squared residual instead. Setting the gradient of the quadratic $\|\mathbf{A}\mathbf{x}-\mathbf{b}\|_2^2$ to zero gives the <strong>normal equations</strong>:</p>
+
+    <div class="math-block">$$\hat{\mathbf{x}} = \arg\min_{\mathbf{x}} \|\mathbf{A}\mathbf{x}-\mathbf{b}\|_2^2 \;\Longleftrightarrow\; \mathbf{A}^\mathsf{T}\mathbf{A}\,\hat{\mathbf{x}} = \mathbf{A}^\mathsf{T}\mathbf{b}$$</div>
+
+    <p>Geometric reading: $\mathbf{A}\hat{\mathbf{x}}$ is the orthogonal projection of $\mathbf{b}$ onto range$(\mathbf{A})$; the residual is orthogonal to every column of $\mathbf{A}$. The solution $\hat{\mathbf{x}} = (\mathbf{A}^\mathsf{T}\mathbf{A})^{-1}\mathbf{A}^\mathsf{T}\mathbf{b} = \mathbf{A}^\dagger\mathbf{b}$ defines the Moore&ndash;Penrose pseudoinverse for full-rank $\mathbf{A}$.</p>
+
+    <h3 class="subsection-heading">Conditioning: How Many Digits Survive?</h3>
+
+    <p>The <strong>spectral condition number</strong> measures noise amplification through a linear solve (singular values $\sigma_i$ formally defined in Section 5):</p>
+
+    <div class="math-block">$$\kappa_2(\mathbf{A}) = \frac{\sigma_1}{\sigma_n}, \qquad \kappa_2(\mathbf{A}^\mathsf{T}\mathbf{A}) = \kappa_2(\mathbf{A})^2$$</div>
+
+    <p>Rule of thumb: a linear solve loses about $\log_{10}\kappa$ decimal digits; double precision holds about 16. The precise perturbation facts, needed later: for <em>consistent</em> systems the relative error in $\mathbf{x}$ is bounded by $\kappa(\mathbf{A})$ times the relative error in $\mathbf{b}$; for least-squares problems with a <em>large residual</em>, an additional $\kappa(\mathbf{A})^2$ term enters even for backward-stable algorithms. So "least squares amplifies errors by $\kappa$" is only true in the small-residual regime, and only for the right algorithm — always state which algorithm and which regime.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — never form $\mathbf{A}^\mathsf{T}\mathbf{A}$</div>
+      <div>Forming the normal equations <strong>squares the condition number</strong>: $\kappa_2(\mathbf{A}^\mathsf{T}\mathbf{A}) = \kappa_2(\mathbf{A})^2$. With $\kappa(\mathbf{A}) = 10^8$ — typical for a mildly ill-posed identification matrix — $\mathbf{A}^\mathsf{T}\mathbf{A}$ is numerically singular in double precision even though $\mathbf{A}$ itself still carries 8 digits of information. Remedy: QR factorization ($\mathbf{A}=\mathbf{Q}\mathbf{R}$, solve $\mathbf{R}\mathbf{x}=\mathbf{Q}^\mathsf{T}\mathbf{b}$) or the SVD, which work at $\kappa(\mathbf{A})$, not $\kappa(\mathbf{A})^2$. The same warning applies verbatim to $\mathbf{J}^\mathsf{T}\mathbf{J}$ in Gauss&ndash;Newton (Section 10).</div>
+    </div>
+
+    <p>Ill-conditioning hides in innocuous-looking matrices. The $n\times n$ Hilbert matrix — a classic mildly ill-posed Gram matrix with clean analytic entries — has $\kappa(\mathbf{H}_5) \approx 4.8\times10^5$ and $\kappa(\mathbf{H}_{10}) \approx 1.6\times10^{13}$: at $n=10$ it has already exhausted double precision.</p>
+
+    <p>Foreshadowing the rest of the module: for well-conditioned $\mathbf{A}$, least squares is the end of the story and no regularization is needed. Regularization earns its place only when $\kappa$ is large <em>and</em> the singular values decay gradually — which is Section 5's diagnosis.</p>
+
+    <h3 class="subsection-heading">Weighted Least Squares, Whitening, and Correlated Noise</h3>
+
+    <p>Ordinary least squares implicitly assumes every measurement deserves equal trust. When the noise has covariance $\mathbf{C} = \operatorname{cov}(\mathbf{e})$, the statistically correct functional weights the residual by the inverse covariance (the Gaussian likelihood of Section 11 makes this exact; Kaipio &amp; Somersalo 2005):</p>
+
+    <div class="math-block">$$\min_{\mathbf{x}} \;(\mathbf{A}\mathbf{x}-\mathbf{b})^\mathsf{T}\,\mathbf{C}^{-1}(\mathbf{A}\mathbf{x}-\mathbf{b})$$</div>
+
+    <p>Equivalently, <strong>whiten</strong>: multiply both $\mathbf{A}$ and $\mathbf{b}$ by $\mathbf{C}^{-1/2}$ and solve an ordinary least-squares problem whose noise is white with unit variance. Dividing each row by its sensor channel's noise standard deviation is the diagonal special case. After whitening — and only after — the clean statements of Sections 5&ndash;9 hold: the noise floor is flat, the discrepancy principle has a known target, GCV's assumptions are met.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — weights are a claim about your noise</div>
+      <div>Weighted least squares delivers statistical precision <strong>only if the covariance model is right</strong>. A wrong $\mathbf{C}$ does not merely lose efficiency — it systematically distorts the solution toward fitting the channels you overtrust. Camera-derived measurements that pass through spatial post-processing (interpolation, smoothing, marker tracking) carry <em>spatially correlated</em> noise: treating it as white is itself a modeling error, and it resurfaces as GCV's classic failure mode in Section 9.</div>
+    </div>
+
+    <!-- ===== SECTION 5: SVD ===== -->
+    <h2 class="section-heading" id="svd-ill-conditioning">5. The SVD: Anatomy of an Ill-Conditioned Problem</h2>
+
+    <p>The <strong>singular value decomposition</strong> is the diagnostic instrument for everything in this module. It rotates the problem into a basis where the forward map is a plain diagonal scaling:</p>
+
+    <div class="math-block">$$\mathbf{A} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\mathsf{T} = \sum_{i=1}^{n} \sigma_i\,\mathbf{u}_i\mathbf{v}_i^\mathsf{T}$$</div>
+
+    <p>with orthonormal left/right singular vectors $\mathbf{u}_i$, $\mathbf{v}_i$ and $\sigma_1 \ge \sigma_2 \ge \cdots \ge \sigma_n \ge 0$. In this basis the least-squares solution is an explicit expansion, and splitting the data $\mathbf{b} = \mathbf{b}_{\mathrm{exact}} + \mathbf{e}$ exposes exactly where inversion goes wrong:</p>
+
+    <div class="math-block">$$\mathbf{x}_{\mathrm{LS}} = \sum_{i=1}^{n} \frac{\mathbf{u}_i^\mathsf{T}\mathbf{b}}{\sigma_i}\,\mathbf{v}_i = \underbrace{\sum_{i=1}^{n} \frac{\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}}{\sigma_i}\,\mathbf{v}_i}_{\text{signal}} + \underbrace{\sum_{i=1}^{n} \frac{\mathbf{u}_i^\mathsf{T}\mathbf{e}}{\sigma_i}\,\mathbf{v}_i}_{\text{amplified noise}}$$</div>
+
+    <p>Two facts drive everything that follows:</p>
+
+    <p><strong>Fact 1 — white noise is flat in the singular basis.</strong> The exact coefficients $\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}$ decay with $i$ (Section 6), but for white noise of standard deviation $s$, every $|\mathbf{u}_i^\mathsf{T}\mathbf{e}| \approx s$ regardless of $i$ — an orthogonal rotation preserves white noise. So component $i$ of the naive solution carries a noise term of size $s/\sigma_i$: and once $\sigma_i$ is small that term is enormous. Be careful about the exact criterion, though: what decides whether component $i$ is <em>recoverable</em> is not $\sigma_i$ against $s$, but the exact data coefficient $|\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}|$ against $s$. Once the signal in a direction has sunk below the noise, inverting it returns amplified noise no matter how the singular value compares.</p>
+
+    <p><strong>Fact 2 — small-$\sigma$ singular vectors are oscillatory.</strong> In discrete ill-posed problems, singular vectors associated with small $\sigma_i$ have increasingly many sign changes — the matrix version of "the forward map kills high frequencies". Hence the amplified garbage is <em>high-frequency</em>, which is why an unregularized solution looks like noise rather than like a slightly-wrong answer.</p>
+
+    <h3 class="subsection-heading">A Taxonomy of Singular Spectra</h3>
+
+    <p>Plot $\sigma_i$ against $i$ on a semilog axis and the problem type reads off directly (Hansen 1998; Hansen 2010):</p>
+
+    <div class="figure-container">
+      <svg id="fig-spectrum-zoo" viewBox="0 0 700 280" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="figure-caption">Three singular spectra, three regimes. Well-conditioned: ordinary least squares suffices. Rank-deficient: a gap defines the numerical rank $r$; truncate there. Discrete ill-posed: gradual decay with no gap — no natural rank exists, and the truncation point becomes a free parameter you must choose.</div>
+    </div>
+    <script>
+    (function(){
+      var svg = document.getElementById('fig-spectrum-zoo');
+      var W=700, H=280, L=58, R=690, T=18, B=238;
+      function y(v){ var lg=Math.log10(Math.max(v,1e-18)); return T + (0 - lg)/(18) * (B-T); }
+      function x(i){ return L + i/64*(R-L); }
+      var s='';
+      s += '<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/>';
+      s += '<line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+      [0,-4,-8,-12,-16].forEach(function(e){
+        s += '<text x="'+(L-6)+'" y="'+(y(Math.pow(10,e))+4)+'" text-anchor="end" font-size="10" fill="#888">1e'+e+'</text>';
+        s += '<line x1="'+L+'" y1="'+y(Math.pow(10,e))+'" x2="'+R+'" y2="'+y(Math.pow(10,e))+'" stroke="#f2f2f2"/>';
+      });
+      s += '<text x="'+((L+R)/2)+'" y="'+(B+24)+'" text-anchor="middle" font-size="11" fill="#666">index i</text>';
+      s += '<text x="16" y="'+((T+B)/2)+'" font-size="11" fill="#666" transform="rotate(-90 16 '+((T+B)/2)+')" text-anchor="middle">&#963;&#7522; (log)</text>';
+      var p1='';
+      for(var i=0;i<=64;i++){ p1 += (i?' L':'M')+x(i).toFixed(1)+' '+y(Math.pow(10,-i/64)).toFixed(1); }
+      s += '<path d="'+p1+'" fill="none" stroke="#2e7d32" stroke-width="2"/>';
+      s += '<text x="'+x(40)+'" y="'+(y(0.3))+'" font-size="11" font-weight="600" fill="#2e7d32">well-conditioned (&#954; ~ 10)</text>';
+      var p2='';
+      for(i=0;i<=20;i++){ p2 += (i?' L':'M')+x(i).toFixed(1)+' '+y(Math.pow(10,-0.015*i)-0).toFixed(1); }
+      for(i=21;i<=64;i++){ p2 += ' L'+x(i).toFixed(1)+' '+y(1e-15).toFixed(1); }
+      s += '<path d="'+p2+'" fill="none" stroke="#1565c0" stroke-width="2"/>';
+      s += '<text x="'+x(22)+'" y="'+(y(1e-13))+'" font-size="11" font-weight="600" fill="#1565c0">rank-deficient: gap &#8594; numerical rank r = 20, use TSVD at the gap</text>';
+      var p3='';
+      for(i=0;i<=64;i++){ p3 += (i?' L':'M')+x(i).toFixed(1)+' '+y(Math.pow(10,-0.25*i)).toFixed(1); }
+      s += '<path d="'+p3+'" fill="none" stroke="#e67e22" stroke-width="2"/>';
+      s += '<text x="'+x(26)+'" y="'+(y(3e-8))+'" font-size="11" font-weight="600" fill="#e67e22">discrete ill-posed: no gap &#8594; no natural rank,</text>';
+      s += '<text x="'+x(26)+'" y="'+(y(3e-8)+14)+'" font-size="11" font-weight="600" fill="#e67e22">the regularization parameter is a choice</text>';
+      var ym = y(2.2e-16);
+      s += '<line x1="'+L+'" y1="'+ym+'" x2="'+R+'" y2="'+ym+'" stroke="#c62828" stroke-width="1.2" stroke-dasharray="5,4"/>';
+      s += '<text x="'+(R-4)+'" y="'+(ym-5)+'" text-anchor="end" font-size="10.5" fill="#c62828">double-precision floor &#8776; 2.2&#215;10&#8315;&#185;&#8310; &#183; &#963;&#8321;</text>';
+      svg.innerHTML = s;
+    })();
+    </script>
+
+    <table>
+      <tr><th>Spectrum</th><th>Signature</th><th>Diagnosis</th></tr>
+      <tr><td><strong>Well-conditioned</strong></td><td>$\sigma_i$ roughly flat</td><td>Ordinary least squares; stop, no regularization</td></tr>
+      <tr><td><strong>Rank-deficient</strong></td><td>Cluster of large $\sigma_i$, then a sharp gap down to machine-precision level</td><td>Numerical rank is well defined; TSVD at the gap (Section 8)</td></tr>
+      <tr><td><strong>Discrete ill-posed</strong></td><td>Gradual decay to zero with <em>no gap</em> — algebraic $\sigma_i \sim i^{-p}$ (mildly ill-posed) or exponential (severely ill-posed)</td><td>No meaningful rank exists; the truncation/regularization level is a free parameter (Sections 7&ndash;9)</td></tr>
+    </table>
+
+    <p>For calibration of expectations: deconvolution with a Gaussian kernel is <em>severely</em> ill-posed — its spectrum decays like a Gaussian in frequency — while many elasticity identification operators are mildly to moderately ill-posed.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — refinement makes it worse</div>
+      <div>The ill-conditioning is inherited from the continuous compact operator (Section 3), so refining the discretization makes $\kappa$ <strong>worse</strong>, not better — "add more elements" is not a fix. Conversely, a coarse mesh is itself a crude <em>implicit</em> regularizer: if you then add an explicit penalty on top, know that you are regularizing twice.</div>
+    </div>
+
+    <!-- ===== SECTION 6: PICARD ===== -->
+    <h2 class="section-heading" id="discrete-picard-condition">6. The Discrete Picard Condition</h2>
+
+    <p>Small singular values alone do not doom a problem — what matters is how fast the data's SVD coefficients fall <em>relative to</em> the singular values. That comparison is the discrete Picard condition, and its plot is the single most informative diagnostic you can produce before attempting any inversion.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Discrete Picard Condition (Hansen 1990)</div>
+      <div>
+        A discrete ill-posed problem has a meaningful, bounded-norm underlying solution only if the SVD coefficients of the <em>exact</em> data decay to zero faster on average than the singular values:
+        $$\text{DPC:}\quad |\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}| \;\text{decays faster than}\; \sigma_i \;\text{(on average)}$$
+        If they decay slower, even noise-free inversion produces a solution whose norm diverges under mesh refinement — the discrete shadow of the classical Picard condition for first-kind Fredholm equations.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Reading a Picard Plot</h3>
+
+    <p>On a semilog axis versus index $i$, plot three things: $\sigma_i$, the data coefficients $|\mathbf{u}_i^\mathsf{T}\mathbf{b}|$, and their ratio $|\mathbf{u}_i^\mathsf{T}\mathbf{b}|/\sigma_i$. With real (noisy) data the coefficients track the decaying exact coefficients only until they hit the <strong>noise floor</strong> at the per-sample noise standard deviation $s$, where they level off into a horizontal band — because $|\mathbf{u}_i^\mathsf{T}\mathbf{e}| \approx s$ for all $i$ (Section 5):</p>
+
+    <div class="math-block">$$|\mathbf{u}_i^\mathsf{T}\mathbf{b}| \approx \max\left\{\,|\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}|,\; s\,\right\}, \qquad s = \text{noise std. dev.}$$</div>
+
+    <div class="figure-container">
+      <svg id="fig-picard-anatomy" viewBox="0 0 700 300" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="figure-caption">Anatomy of a Picard plot. The crossing index $i^*$ — where the data coefficients $|\mathbf{u}_i^\mathsf{T}\mathbf{b}|$ flatten onto the noise plateau — is the information content of the experiment: more unknowns do not raise it; better sensors do. ($\sigma_i$ reaching that same level, further right, is a different and later event.)</div>
+    </div>
+    <script>
+    (function(){
+      var svg = document.getElementById('fig-picard-anatomy');
+      var L=58, R=690, T=16, B=252, n=50;
+      function y(v){ var lg=Math.log10(Math.max(v,1e-9)); return T + (1 - lg)/(1-(-7)) * (B-T); }
+      function x(i){ return L + i/n*(R-L); }
+      var sig=function(i){ return Math.pow(10,-0.12*i); };
+      var exact=function(i){ return 0.8*Math.pow(10,-0.18*i); };
+      var floor=1e-3;
+      // i* is where the EXACT data coefficients sink into the noise floor
+      // (|u_i^T b_exact| = s), i.e. where the measured coefficients stop
+      // decaying and level off -- NOT where sigma_i = s, which happens later
+      // (here: i = 25) and would overstate the recoverable content.
+      var istar = Math.round(Math.log10(0.8/floor)/0.18);
+      var s='';
+      s += '<rect x="'+L+'" y="'+T+'" width="'+(x(istar)-L)+'" height="'+(B-T)+'" fill="#e8f5e9" opacity="0.55"/>';
+      s += '<rect x="'+x(istar)+'" y="'+T+'" width="'+(R-x(istar))+'" height="'+(B-T)+'" fill="#ffebee" opacity="0.55"/>';
+      s += '<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/>';
+      s += '<line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+      [0,-2,-4,-6].forEach(function(e){
+        s += '<text x="'+(L-6)+'" y="'+(y(Math.pow(10,e))+4)+'" text-anchor="end" font-size="10" fill="#888">1e'+e+'</text>';
+      });
+      s += '<text x="'+((L+R)/2)+'" y="'+(B+24)+'" text-anchor="middle" font-size="11" fill="#666">index i</text>';
+      var p='';
+      for(var i=0;i<=n;i++){ p += (i?' L':'M')+x(i).toFixed(1)+' '+y(sig(i)).toFixed(1); }
+      s += '<path d="'+p+'" fill="none" stroke="#1565c0" stroke-width="2"/>';
+      s += '<text x="'+(x(31)+4)+'" y="'+(y(sig(31))-8)+'" font-size="11" font-weight="600" fill="#1565c0">&#963;&#7522;</text>';
+      function jit(i){ return 0.55 + 0.5*Math.abs(Math.sin(i*2.7)); }
+      for(i=0;i<=n;i+=1){
+        var c = Math.max(exact(i), floor*jit(i));
+        s += '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(c).toFixed(1)+'" r="2.6" fill="#333"/>';
+      }
+      s += '<text x="'+x(7)+'" y="'+(y(exact(7))+18)+'" font-size="11" font-weight="600" fill="#333">|u&#7522;&#7488;b|</text>';
+      for(i=0;i<=n;i+=2){
+        var c2 = Math.max(exact(i), floor*jit(i))/sig(i);
+        var xx=x(i), yy=y(c2);
+        s += '<path d="M'+(xx-3)+' '+(yy-3)+' L'+(xx+3)+' '+(yy+3)+' M'+(xx-3)+' '+(yy+3)+' L'+(xx+3)+' '+(yy-3)+'" stroke="#e67e22" stroke-width="1.6"/>';
+      }
+      s += '<text x="'+x(41)+'" y="'+(y(3e-1))+'" font-size="11" font-weight="600" fill="#e67e22">|u&#7522;&#7488;b| / &#963;&#7522; grows like s/&#963;&#7522;</text>';
+      s += '<line x1="'+L+'" y1="'+y(floor)+'" x2="'+R+'" y2="'+y(floor)+'" stroke="#666" stroke-width="1.2" stroke-dasharray="5,4"/>';
+      s += '<text x="'+(R-4)+'" y="'+(y(floor)+16)+'" text-anchor="end" font-size="10.5" fill="#666">noise floor &#8776; s</text>';
+      s += '<line x1="'+x(istar)+'" y1="'+T+'" x2="'+x(istar)+'" y2="'+B+'" stroke="#c62828" stroke-width="1.4" stroke-dasharray="2,3"/>';
+      s += '<text x="'+x(istar)+'" y="'+(T-2+14)+'" text-anchor="middle" font-size="11.5" font-weight="600" fill="#c62828">i*</text>';
+      s += '<text x="'+x(12)+'" y="'+(B-10)+'" text-anchor="middle" font-size="10.5" fill="#2e7d32">recoverable: signal above noise</text>';
+      s += '<text x="'+x(38)+'" y="'+(B-10)+'" text-anchor="middle" font-size="10.5" fill="#c62828">noise-dominated</text>';
+      svg.innerHTML = s;
+    })();
+    </script>
+
+    <p>Define the <strong>crossing index</strong> $i^*$: the index at which the measured coefficients stop tracking the exact ones and flatten onto the noise plateau — equivalently, where $|\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}|$ sinks to $s$. Components $i &lt; i^*$ carry recoverable signal; beyond it the coefficients are noise, so the ratio grows like $s/\sigma_i$ and inverting those directions amplifies noise. Note what $i^*$ is <em>not</em>: the index where $\sigma_i$ itself drops below $s$. That crossing is a different (and later) event — in the figure above the coefficients flatten at $i^* \approx 16$ while $\sigma_i$ only reaches the noise level near $i = 25$ — and using it would overstate the information you actually hold. Recoverability is decided by the data coefficients, not by the singular values alone. $i^*$ is the honest measure of the information content of the experiment — often brutally small. In a 64-point Gaussian deconvolution at 1% noise, typically only on the order of 10 components are recoverable, <em>regardless of how many unknowns were discretized</em>.</p>
+
+    <p>The experiment-design reading: adding sensors, moving them closer to the source, or reducing noise raises $i^*$. Adding unknowns does not.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — the plateau is not a violation</div>
+      <div>The leveling-off of $|\mathbf{u}_i^\mathsf{T}\mathbf{b}|$ does <strong>not</strong> mean the discrete Picard condition is violated. The DPC concerns the <em>exact</em> data; the plateau is the visible signature of the noise and is expected in every real dataset. Reading the plateau as a broken Picard condition is a classic misreading — what the plateau actually tells you is where the recoverable components end.</div>
+    </div>
+
+    <p>This diagnosis motivates both regularization families: TSVD keeps components $i \le k \approx i^*$ (Section 8); Tikhonov rolls components off smoothly around $\sigma_i \approx \lambda$ (Section 7).</p>
+
+    <!-- ===== SECTION 7: TIKHONOV ===== -->
+    <h2 class="section-heading" id="tikhonov-regularization">7. Tikhonov Regularization</h2>
+
+    <p>Tikhonov's repair (Tikhonov &amp; Arsenin 1977): stop asking for the best data fit, and minimize a penalized functional that trades fidelity against a prior notion of "reasonable":</p>
+
+    <div class="math-block">$$\mathbf{x}_\lambda = \arg\min_{\mathbf{x}}\left\{ \|\mathbf{A}\mathbf{x}-\mathbf{b}\|_2^2 + \lambda^2\|\mathbf{L}(\mathbf{x}-\mathbf{x}_0)\|_2^2 \right\}$$</div>
+
+    <p>The seminorm matrix $\mathbf{L}$ and reference $\mathbf{x}_0$ encode the prior. Standard form: $\mathbf{L}=\mathbf{I}$, $\mathbf{x}_0=\mathbf{0}$ — penalize magnitude. Common general forms: $\mathbf{L}$ = discrete first-derivative (bidiagonal) or Laplacian (tridiagonal) operator — penalize <em>roughness</em>, appropriate when the unknown field (e.g. a contact pressure distribution under a smooth indenter) is expected smooth. Setting the gradient to zero gives the regularized normal equations, uniquely solvable — and, for $\lambda$ not too small, far better conditioned than $\mathbf{A}^\mathsf{T}\mathbf{A}$ alone — provided $\mathbf{L}$ actually covers what $\mathbf{A}$ cannot see, i.e. $\ker\mathbf{A}\cap\ker\mathbf{L}=\{\mathbf{0}\}$. That condition is automatic for $\mathbf{L}=\mathbf{I}$ but not for derivative penalties: a first-difference $\mathbf{L}$ has constants in its nullspace and a Laplacian has constants and linears, so if $\mathbf{A}$ is also blind to those modes, no $\lambda$ will pin them down.</p>
+
+    <div class="math-block">$$\left(\mathbf{A}^\mathsf{T}\mathbf{A} + \lambda^2\mathbf{L}^\mathsf{T}\mathbf{L}\right)\mathbf{x}_\lambda = \mathbf{A}^\mathsf{T}\mathbf{b} + \lambda^2\mathbf{L}^\mathsf{T}\mathbf{L}\,\mathbf{x}_0$$</div>
+
+    <h3 class="subsection-heading">Filter Factors: Tikhonov in the Singular Basis</h3>
+
+    <p>For $\mathbf{L}=\mathbf{I}$ the SVD diagonalizes everything, and the Tikhonov solution is a <strong>filtered</strong> version of the least-squares expansion:</p>
+
+    <div class="math-block">$$\mathbf{x}_\lambda = \sum_{i=1}^{n} f_i\,\frac{\mathbf{u}_i^\mathsf{T}\mathbf{b}}{\sigma_i}\,\mathbf{v}_i, \qquad f_i = \frac{\sigma_i^2}{\sigma_i^2+\lambda^2} \quad (\mathbf{L}=\mathbf{I})$$</div>
+
+    <p>The filter factors interpolate smoothly between keep and kill: $f_i \approx 1$ for $\sigma_i \gg \lambda$ (component kept), $f_i \approx \sigma_i^2/\lambda^2 \to 0$ for $\sigma_i \ll \lambda$ (component suppressed). Tikhonov is a low-pass filter in the singular basis, with $\lambda$ the cutoff singular value.</p>
+
+    <h3 class="subsection-heading">The Bias&ndash;Noise Trade-Off Is a U-Shaped Curve</h3>
+
+    <p>Substituting $\mathbf{b} = \mathbf{A}\mathbf{x}_{\mathrm{exact}} + \mathbf{e}$ into the filtered expansion splits the error into two opposing terms:</p>
+
+    <div class="math-block">$$\mathbf{x}_\lambda - \mathbf{x}_{\mathrm{exact}} = \underbrace{-\sum_{i=1}^{n} (1-f_i)\,(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i}_{\text{regularization error (bias): grows with }\lambda} \;+\; \underbrace{\sum_{i=1}^{n} f_i\,\frac{\mathbf{u}_i^\mathsf{T}\mathbf{e}}{\sigma_i}\,\mathbf{v}_i}_{\text{perturbation error (noise): shrinks with }\lambda}$$</div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Full derivation: the bias&ndash;noise split</div>
+      <div class="collapsible-body">
+        <p>Write the exact data as $\mathbf{b}_{\mathrm{exact}} = \mathbf{A}\mathbf{x}_{\mathrm{exact}}$. Then $\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}} = \mathbf{u}_i^\mathsf{T}\mathbf{A}\mathbf{x}_{\mathrm{exact}} = \sigma_i\,\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}}$, because $\mathbf{u}_i^\mathsf{T}\mathbf{A} = \sigma_i \mathbf{v}_i^\mathsf{T}$. Substituting $\mathbf{b} = \mathbf{b}_{\mathrm{exact}} + \mathbf{e}$ into the filtered expansion:</p>
+        <div class="math-block">$$\mathbf{x}_\lambda = \sum_{i=1}^{n} f_i\,(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i + \sum_{i=1}^{n} f_i\,\frac{\mathbf{u}_i^\mathsf{T}\mathbf{e}}{\sigma_i}\,\mathbf{v}_i$$</div>
+        <p>Subtract $\mathbf{x}_{\mathrm{exact}} = \sum_i (\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i$ and the two terms above appear. As $\lambda$ grows, every $f_i$ falls: the bias term (the signal components you filtered away) grows, and the noise term (the amplified noise you let through) shrinks. The total error is <strong>U-shaped in $\lambda$</strong>, and the entire parameter-choice problem of Section 9 is locating the bottom of the U without knowing $\mathbf{x}_{\mathrm{exact}}$.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Numerical Practice</h3>
+
+    <p>Never form $\mathbf{A}^\mathsf{T}\mathbf{A}$ (Section 4). Solve the augmented least-squares system by QR instead — it is an ordinary least-squares problem with the penalty rows stacked beneath the data rows:</p>
+
+    <div class="math-block">$$\min_{\mathbf{x}}\left\|\begin{bmatrix}\mathbf{A}\\ \lambda\mathbf{L}\end{bmatrix}\mathbf{x} - \begin{bmatrix}\mathbf{b}\\ \lambda\mathbf{L}\mathbf{x}_0\end{bmatrix}\right\|_2 \qquad \text{(augmented system, solve by QR)}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — two weight conventions coexist</div>
+      <div>The literature writes the penalty either as $\lambda^2\|\cdot\|^2$ (Hansen's convention, used on this page throughout) or as $\alpha\|\cdot\|^2$ (ridge regression, $\alpha = \lambda^2$). Filter factors, GCV formulas, and L-curve code all silently change form between the two. Mixing them mid-derivation is a classic source of off-by-a-square bugs — fix one convention and state it.</div>
+    </div>
+
+    <p><strong>Caveat for general $\mathbf{L}$:</strong> the SVD filter-factor formulas above hold for $\mathbf{L}=\mathbf{I}$ only. For derivative-type $\mathbf{L}$ the correct analysis uses the generalized SVD (GSVD), and components in null$(\mathbf{L})$ — the constant mode for a first-derivative $\mathbf{L}$ — pass through completely <em>unregularized</em>. Verify that $\mathbf{A}$ constrains them, or the "regularized" solution can still contain an arbitrarily wild unpenalized component.</p>
+
+    <!-- ===== SECTION 8: TSVD ===== -->
+    <h2 class="section-heading" id="truncated-svd">8. Truncated SVD and Friends</h2>
+
+    <p>Truncated SVD (TSVD) is the blunt-scissors alternative: keep the first $k$ terms of the SVD expansion and discard the rest.</p>
+
+    <div class="math-block">$$\mathbf{x}_k = \sum_{i=1}^{k} \frac{\mathbf{u}_i^\mathsf{T}\mathbf{b}}{\sigma_i}\,\mathbf{v}_i \qquad\qquad f_i^{\mathrm{TSVD}} = \begin{cases} 1, &amp; i \le k \\ 0, &amp; i &gt; k \end{cases} \qquad \text{vs.} \qquad f_i^{\mathrm{Tik}} = \frac{\sigma_i^2}{\sigma_i^2 + \lambda^2}$$</div>
+
+    <p>The truncation index $k$ plays exactly the role of $\lambda$, with the correspondence $\lambda \approx \sigma_k$: Tikhonov at parameter $\lambda$ and TSVD at the $k$ where $\sigma_k \approx \lambda$ produce nearly identical solutions whenever the singular values decay fast, because the smooth roll-off and the hard cutoff then bracket the same components (Hansen 2010).</p>
+
+    <table>
+      <tr><th>Situation</th><th>Natural choice</th><th>Why</th></tr>
+      <tr><td>Genuinely rank-deficient spectrum (gap)</td><td>TSVD</td><td>$k$ = numerical rank; truncating at the gap is unambiguous</td></tr>
+      <tr><td>Discrete ill-posed (gradual decay)</td><td>Tikhonov</td><td>No natural $k$; smooth filter with $\lambda$ chosen by Section 9</td></tr>
+      <tr><td>Nontrivial $\mathbf{L}$ (roughness penalty)</td><td>Tikhonov</td><td>TSVD's analog requires the generalized SVD (truncated GSVD)</td></tr>
+      <tr><td>Many right-hand sides at fixed $\lambda$</td><td>Tikhonov (factor once, reuse)</td><td>The regime of a tactile sensor inverting at camera frame rate: $\mathbf{A}$ is fixed by skin geometry and calibration, only $\mathbf{b}$ changes per frame</td></tr>
+    </table>
+
+    <p><strong>Cost.</strong> A full SVD is $O(mn^2)$ — trivial for the $n \lesssim 10^3$ unknowns typical of per-frame reconstruction problems. For large 3D field identification ($n \sim 10^{5+}$) one uses iterative methods (CGLS/LSQR), which exploit <strong>semi-convergence</strong>: early iterations pick up the large-$\sigma$ components first, so the iteration count itself acts as a regularization parameter. Stop early, using the same criteria as Section 9 — running the iteration to convergence faithfully reproduces the noise-dominated naive solution.</p>
+
+    <p><strong>Selective-filtering caveat.</strong> TSVD assumes the coefficient decay is roughly monotone. If the Picard plot shows an exact-coefficient spike beyond $k$, the hard cutoff deletes real signal that Tikhonov's tail would have partially kept.</p>
+
+    <h3 class="subsection-heading">Resolution: What the Filtered Solution Can Show</h3>
+
+    <p>Apply any filtered method to <em>noise-free</em> data and the algebra of Section 7 gives its reconstruction of the truth as</p>
+
+    <div class="math-block">$$\mathbf{x}_{\mathrm{filtered}} = \sum_{i=1}^{n} f_i\,(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i$$</div>
+
+    <p>— the true solution seen through a low-pass filter. For TSVD this is exactly the orthogonal projection onto $\mathrm{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$: features of $\mathbf{x}_{\mathrm{exact}}$ outside the first $k$ singular vectors are invisible, no matter how good the data. Since small-$\sigma$ singular vectors are the oscillatory ones (Section 5), the spatial resolution of any honest reconstruction is capped at the length scale of $\mathbf{v}_{i^*}$ — the Picard index again, now read as a resolution limit.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — regularization does not recover information</div>
+      <div>Regularization injects prior information and buys variance reduction <strong>with bias</strong>. Tikhonov systematically underestimates peaks and sharpens nothing — which matters directly when peak contact pressure is the quantity of interest. Report the bias; do not hide it. If sharp features must survive, the prior itself must change (edge-preserving or sparsity priors, Section 11), not the parameter $\lambda$.</div>
+    </div>
+
+    <!-- ===== SECTION 9: PARAMETER CHOICE ===== -->
+    <h2 class="section-heading" id="choosing-the-parameter">9. Choosing the Regularization Parameter</h2>
+
+    <p>The U-shaped error curve of Section 7 must be located <em>blind</em> — $\mathbf{x}_{\mathrm{exact}}$ is not available. Three standard criteria exist, each with an honest failure profile. None is ground truth; all three are estimators of the U's bottom.</p>
+
+    <h3 class="subsection-heading">9.1 Morozov's Discrepancy Principle</h3>
+
+    <p>If the noise <em>level</em> $\delta = \|\mathbf{e}\|_2$ is known, choose $\lambda$ so the residual matches it — fitting the data below the noise level means fitting noise:</p>
+
+    <div class="math-block">$$\|\mathbf{A}\mathbf{x}_\lambda - \mathbf{b}\|_2 = \tau\,\delta, \qquad \delta = \|\mathbf{e}\|_2, \quad \tau \gtrsim 1 \;\;(\text{e.g. } 1.05)$$</div>
+
+    <p>The residual norm is monotone increasing in $\lambda$, so this is a 1-D root find. Behavior: theoretically convergent as $\delta \to 0$ (Engl, Hanke &amp; Neubauer 1996); tends to slightly over-smooth; its quality stands or falls with the $\delta$ estimate. It is the best default in engineering settings where sensor noise is characterizable.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — $s$ is not $\delta$</div>
+      <div>The discrepancy principle consumes the noise <strong>norm</strong> $\delta = \|\mathbf{e}\|_2$, not the per-sample standard deviation $s$. For white noise, $\delta \approx s\sqrt{m}$. Confusing the two — a factor $\sqrt{m}$ — shifts the selected $\lambda$ by orders of magnitude and is a classic bug in inversion code.</div>
+    </div>
+
+    <h3 class="subsection-heading">9.2 The L-Curve</h3>
+
+    <p>Plot the trade-off itself (Hansen 1992): a parametric <strong>log-log</strong> plot of $(\|\mathbf{A}\mathbf{x}_\lambda-\mathbf{b}\|_2,\; \|\mathbf{L}\mathbf{x}_\lambda\|_2)$ as $\lambda$ sweeps. Under-regularized solutions populate a steep vertical branch (solution norm explodes while the residual barely improves); over-regularized ones populate a flat horizontal branch (norm barely drops while the residual grows). Pick the corner — operationalized by Hansen &amp; O'Leary (1993) as the point of maximum curvature of the log-log curve. It needs no noise estimate and is visually informative even when not used for selection. (The figure below marks its corner with a cheaper nearest-corner heuristic; curvature-based selection is the standard implementation, and the two can disagree on a rounded L.)</p>
+
+    <div class="figure-container">
+      <svg id="fig-lcurve" viewBox="0 0 700 320" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="figure-caption">Anatomy of the L-curve (log-log axes; here computed from a small synthetic ill-posed problem). The corner balances perturbation error against regularization error; the discrepancy principle instead picks the intersection with the vertical line at residual $= \tau\delta$.</div>
+    </div>
+    <script>
+    (function(){
+      var svg = document.getElementById('fig-lcurve');
+      var nm=30, sig=[], beta=[], i;
+      for(i=0;i<nm;i++){ sig.push(Math.pow(10,-4*i/(nm-1))); beta.push(Math.pow(sig[i],1.4)); }
+      var s_noise=2e-3;
+      function jn(i){ return 0.6+0.8*Math.abs(Math.sin(i*3.1)); }
+      var coef=[]; for(i=0;i<nm;i++){ coef.push(beta[i] + s_noise*jn(i)*(i%2?1:-1)); }
+      var lams=[]; for(i=0;i<80;i++){ lams.push(Math.pow(10, -4 + 4*i/79)); }
+      var pts=lams.map(function(lam){
+        var r2=0, n2=0;
+        for(var j=0;j<nm;j++){
+          var f=sig[j]*sig[j]/(sig[j]*sig[j]+lam*lam);
+          r2+=Math.pow((1-f)*coef[j],2); n2+=Math.pow(f*coef[j]/sig[j],2);
+        }
+        return {r:Math.sqrt(r2), n:Math.sqrt(n2), lam:lam};
+      });
+      var delta=Math.sqrt(nm)*s_noise*0.55;
+      var L=70, R=670, T=20, B=270;
+      var lr0=Math.log10(pts[0].r), lr1=Math.log10(pts[pts.length-1].r);
+      var ln0=Math.log10(pts[pts.length-1].n), ln1=Math.log10(pts[0].n);
+      function X(r){ return L + (Math.log10(r)-lr0)/(lr1-lr0)*(R-L); }
+      function Y(n){ return B - (Math.log10(n)-ln0)/(ln1-ln0)*(B-T); }
+      var best=0, bd=1e99;
+      for(i=0;i<pts.length;i++){
+        var d=Math.pow(Math.log10(pts[i].r)-lr0,2)+Math.pow(Math.log10(pts[i].n)-ln0,2);
+        if(d<bd){ bd=d; best=i; }
+      }
+      var s='';
+      s += '<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/><line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+      s += '<text x="'+((L+R)/2)+'" y="'+(B+26)+'" text-anchor="middle" font-size="11" fill="#666">residual norm ||Ax&#955; &#8722; b|| (log)</text>';
+      s += '<text x="20" y="'+((T+B)/2)+'" font-size="11" fill="#666" transform="rotate(-90 20 '+((T+B)/2)+')" text-anchor="middle">seminorm ||Lx&#955;|| (log)</text>';
+      var p='';
+      for(i=0;i<pts.length;i++){ p += (i?' L':'M')+X(pts[i].r).toFixed(1)+' '+Y(pts[i].n).toFixed(1); }
+      s += '<path d="'+p+'" fill="none" stroke="#1565c0" stroke-width="2.2"/>';
+      var cb=pts[best];
+      s += '<circle cx="'+X(cb.r).toFixed(1)+'" cy="'+Y(cb.n).toFixed(1)+'" r="5.5" fill="#e67e22"/>';
+      s += '<text x="'+(X(cb.r)+12)+'" y="'+(Y(cb.n)+4)+'" font-size="11.5" font-weight="600" fill="#e67e22">&#955;* = corner picked by a nearest-corner heuristic</text>';
+      s += '<text x="'+(X(pts[6].r)+10)+'" y="'+(Y(pts[6].n)+16)+'" font-size="11" fill="#333">&#955; &#8594; 0: under-regularized,</text>';
+      s += '<text x="'+(X(pts[6].r)+10)+'" y="'+(Y(pts[6].n)+30)+'" font-size="11" fill="#333">noise blows up the solution norm</text>';
+      s += '<text x="'+(X(pts[pts.length-4].r)-4)+'" y="'+(Y(pts[pts.length-4].n)-14)+'" text-anchor="end" font-size="11" fill="#333">&#955; &#8594; &#8734;: over-regularized, bias grows the residual</text>';
+      var xd=X(1.05*delta);
+      s += '<line x1="'+xd.toFixed(1)+'" y1="'+T+'" x2="'+xd.toFixed(1)+'" y2="'+B+'" stroke="#2e7d32" stroke-width="1.3" stroke-dasharray="5,4"/>';
+      s += '<text x="'+(xd+6)+'" y="'+(T+14)+'" font-size="10.5" fill="#2e7d32">discrepancy: residual = &#964;&#948;</text>';
+      var a1=pts[3], a2=pts[10];
+      s += '<path d="M'+X(a1.r)+' '+Y(a1.n)+' L'+X(a2.r)+' '+Y(a2.n)+'" stroke="none"/>';
+      s += '<text x="'+(R-6)+'" y="'+(B-8)+'" text-anchor="end" font-size="10" fill="#888">&#955; increases along the curve from top-left to bottom-right &#8594;</text>';
+      svg.innerHTML = s;
+    })();
+    </script>
+
+    <p>Known failures, both proven, not anecdotal: for very smooth exact solutions the L-curve-selected parameter does not converge at the right rate (Hanke 1996), and the corner can degenerate when singular values decay very fast. And a computational trap: the corner is defined on the <strong>log-log</strong> curve — drawn or differentiated in linear axes, the corner moves and often disappears entirely.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — diagnostic first, selector second</div>
+      <div>Treat the L-curve as a <em>diagnostic</em> you always draw (its shape tells you whether regularization is doing anything sensible at all) and as a <em>selector</em> only second, with the Hanke caveat in mind. A beautiful corner is evidence; a degenerate corner is a warning about the problem, not about your plotting.</div>
+    </div>
+
+    <h3 class="subsection-heading">9.3 Generalized Cross-Validation</h3>
+
+    <p>GCV (Golub, Heath &amp; Wahba 1979) chooses $\lambda$ to minimize a rotation-invariant leave-one-out criterion — "how well does the model predict measurements it did not see":</p>
+
+    <div class="math-block">$$G(\lambda) = \frac{\|\mathbf{A}\mathbf{x}_\lambda-\mathbf{b}\|_2^2}{\left[\operatorname{trace}\!\left(\mathbf{I}_m - \mathbf{A}\mathbf{A}_\lambda^{\#}\right)\right]^2}, \qquad \operatorname{trace}\!\left(\mathbf{I}_m - \mathbf{A}\mathbf{A}_\lambda^{\#}\right) = m - n + \sum_{i=1}^{n}\frac{\lambda^2}{\sigma_i^2+\lambda^2} \qquad (\mathbf{L}=\mathbf{I})$$</div>
+
+    <p>where $\mathbf{A}_\lambda^{\#}$ is the regularized inverse mapping $\mathbf{b} \mapsto \mathbf{x}_\lambda$. The trace costs nothing once the filter factors are known: $\operatorname{trace} = m - \sum_i f_i$. GCV is statistically optimal in expected predictive risk for white Gaussian noise and needs no noise estimate. Its failure profile: <strong>correlated noise causes drastic under-smoothing</strong> — GCV is not assumption-free; it assumes white (uncorrelated, equal-variance) noise, exactly what camera-based measurements with spatial post-processing violate (Section 4). And its minimum is often very flat, demanding careful 1-D minimization rather than eyeballing.</p>
+
+    <h3 class="subsection-heading">Practice</h3>
+
+    <p>Sweep 50&ndash;100 log-spaced $\lambda$ values from $\sigma_n$ to $\sigma_1$, evaluate all three criteria on the sweep, and inspect the selected solutions side by side. <strong>Agreement is evidence; disagreement is diagnosis</strong> — a GCV pick far below the discrepancy pick suggests correlated noise; a wandering L-curve corner suggests fast singular-value decay. The criteria estimate the optimum, they do not certify it.</p>
+
+    <!-- ===== INTERACTIVE: PICARD & REGULARIZATION LAB ===== -->
+    <div class="interactive-container" id="picard-lab">
+      <div class="interactive-label">Interactive Tool — Picard &amp; Regularization Lab</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A 64-point periodic Gaussian deconvolution problem, solved live in your browser via its exact singular system. Drag $\lambda$ (or $k$) from tiny to huge and watch: amplified garbage &#8594; good reconstruction &#8594; oversmoothed blur. Then raise the noise or widen the PSF and watch the recoverable-component budget $i^*$ shrink.</p>
+      <div style="display:flex;gap:0;margin-bottom:12px;max-width:340px;">
+        <button id="pl-mode-tik" style="flex:1;text-align:center;padding:7px 4px;font-size:12px;background:#1565c0;color:#fff;cursor:pointer;border:1px solid #1565c0;border-right:none;border-radius:4px 0 0 4px;font-weight:600;">Tikhonov (&#955;)</button>
+        <button id="pl-mode-tsvd" style="flex:1;text-align:center;padding:7px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-radius:0 4px 4px 0;">TSVD (k)</button>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control">
+          <label><span>PSF width $w$ (grid units)</span> <span id="pl-w-val">1.5</span></label>
+          <input type="range" id="pl-w" min="0.5" max="4" step="0.1" value="1.5">
+        </div>
+        <div class="slider-control">
+          <label><span>noise level (rel.)</span> <span id="pl-noise-val">1e-2</span></label>
+          <input type="range" id="pl-noise" min="-4" max="-1" step="0.1" value="-2">
+        </div>
+        <div class="slider-control" id="pl-lam-ctrl">
+          <label><span>$\lambda$</span> <span id="pl-lam-val">&mdash;</span></label>
+          <input type="range" id="pl-lam" min="0" max="59" step="1" value="30">
+        </div>
+        <div class="slider-control" id="pl-k-ctrl" style="display:none;">
+          <label><span>$k$ (kept components)</span> <span id="pl-k-val">12</span></label>
+          <input type="range" id="pl-k" min="1" max="64" step="1" value="12">
+        </div>
+      </div>
+      <button id="pl-redraw" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;margin-bottom:12px;">Redraw noise</button>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:300px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Picard plot (semilog): &#963;&#7522; line, |u&#7522;&#7488;b| dots, ratio crosses</div>
+          <svg id="pl-picard" width="340" height="235" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+        </div>
+        <div style="flex:1;min-width:300px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Filter factors f&#7522;</div>
+          <svg id="pl-filter" width="340" height="235" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#888;margin:8px 0 2px;">Reconstruction: x_true (thin), x&#955; (thick)</div>
+      <svg id="pl-recon" width="700" height="200" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+      <div style="font-size:10px;color:#888;margin:8px 0 2px;">True relative error vs &#955; (the "oracle" U-curve, computable only because x_true is known) with the blind criteria's picks</div>
+      <svg id="pl-ucurve" width="700" height="190" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+      <div id="pl-readout" style="font-size:13px;margin-top:10px;"></div>
+      <p style="font-size:12px;color:#777;margin-top:10px;">Things to try: (a) set $\lambda$ tiny — the reconstruction is high-frequency garbage of enormous norm, exactly the $s/\sigma_i$ amplification of Section 5; (b) raise the noise — the Picard plateau rises, $i^*$ drops, and the optimal $\lambda$ moves right; (c) widen the PSF — the $\sigma_i$ decay steepens and the recoverable budget shrinks no matter what you do; (d) press "Redraw noise" repeatedly at low noise and watch GCV occasionally collapse to under-smoothing while the discrepancy pick stays put; (e) switch to TSVD and find the $k$ that matches $\lambda \approx \sigma_k$.</p>
+    </div>
+
+    <!-- ===== SECTION 10: GAUSS-NEWTON / LM ===== -->
+    <h2 class="section-heading" id="gauss-newton-lm">10. Nonlinear Problems: Gauss&ndash;Newton and Levenberg&ndash;Marquardt</h2>
+
+    <p>Everything so far assumed a linear forward map. Material identification breaks that assumption: the response is generally nonlinear in the parameters even when the physics is linear (Section 12). The standard treatment is iterative — linearize, solve a linear least-squares problem for the update, repeat.</p>
+
+    <p><strong>Gauss&ndash;Newton.</strong> At iterate $\mathbf{m}_k$, with Jacobian $\mathbf{J}_k = \partial G/\partial \mathbf{m}$ evaluated at $\mathbf{m}_k$, the step solves the linearized problem:</p>
+
+    <div class="math-block">$$\Delta\mathbf{m} = \arg\min_{\Delta}\,\big\|\mathbf{J}_k\,\Delta - \big(\mathbf{d} - G(\mathbf{m}_k)\big)\big\|_2^2, \qquad \mathbf{m}_{k+1} = \mathbf{m}_k + \Delta\mathbf{m}$$</div>
+
+    <p><strong>Levenberg&ndash;Marquardt</strong> damps the step with a parameter $\mu$, which in normal-equations form reads</p>
+
+    <div class="math-block">$$\left(\mathbf{J}_k^\mathsf{T}\mathbf{J}_k + \mu^2\mathbf{I}\right)\Delta\mathbf{m} = \mathbf{J}_k^\mathsf{T}\big(\mathbf{d} - G(\mathbf{m}_k)\big)$$</div>
+
+    <p>— formally a Tikhonov term with $\mathbf{L}=\mathbf{I}$ applied to the <em>update</em>. Large $\mu$ shortens the step toward gradient descent; small $\mu$ recovers Gauss&ndash;Newton. In practice $\mu$ is shrunk as iterations succeed and grown when they fail.</p>
+
+    <p>The connection to the rest of the module is direct: the Jacobian plays the role of $\mathbf{A}$, so each iteration is a (regularized) linear least-squares problem, and the SVD of $\mathbf{J}$ at the solution governs <em>local identifiability</em> — small singular values of $\mathbf{J}$ mark parameter combinations the data barely constrains. The Section 4 warning applies verbatim: forming $\mathbf{J}^\mathsf{T}\mathbf{J}$ squares the condition number; solve the augmented system $[\mathbf{J};\,\mu\mathbf{I}]$ by QR instead.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — damping is not regularization</div>
+      <div>LM's $\mu$ stabilizes the <strong>step</strong>, not the <strong>problem</strong>: it is driven toward zero as the iteration converges, so at convergence you are minimizing the plain data-misfit functional. If the underlying problem is ill-posed, the converged answer is still noise-dominated. An ill-posed nonlinear problem needs an explicit regularization term in the <em>objective itself</em> — $\|\mathbf{A}\mathbf{x}-\mathbf{b}\|^2 + \lambda^2\|\mathbf{L}\mathbf{x}\|^2$ with $\lambda$ chosen as in Section 9 — on top of whatever damping the optimizer uses.</div>
+    </div>
+
+    <!-- ===== SECTION 11: BAYESIAN VIEW ===== -->
+    <h2 class="section-heading" id="bayesian-view">11. The Bayesian View: Regularization as a Prior</h2>
+
+    <p>Reframe the whole construction statistically (Kaipio &amp; Somersalo 2005; Calvetti &amp; Somersalo 2018). Model the noise as Gaussian, $\mathbf{e}\sim\mathcal{N}(\mathbf{0},\sigma^2\mathbf{I})$, and encode prior belief as a Gaussian prior on the unknown. Bayes' theorem multiplies likelihood and prior; taking $-\log$ of the posterior and dropping constants yields <em>exactly</em> the Tikhonov functional.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Tikhonov = Gaussian MAP</div>
+      <div>
+        Under three assumptions — <strong>linear forward map</strong>, <strong>Gaussian noise</strong> $\mathbf{e}\sim\mathcal{N}(\mathbf{0},\sigma^2\mathbf{I})$, and <strong>Gaussian prior</strong> $\mathbf{x}\sim\mathcal{N}(\mathbf{x}_0,\gamma^2(\mathbf{L}^\mathsf{T}\mathbf{L})^{-1})$ with $\mathbf{L}$ of full column rank — the maximum a posteriori estimate is the Tikhonov solution:
+        $$\mathbf{x}_{\mathrm{MAP}} = \arg\min_{\mathbf{x}}\left\{\|\mathbf{A}\mathbf{x}-\mathbf{b}\|_2^2 + \lambda^2\|\mathbf{L}(\mathbf{x}-\mathbf{x}_0)\|_2^2\right\}, \qquad \lambda^2 = \frac{\sigma^2}{\gamma^2}$$
+        Drop any one assumption and the equivalence breaks.
+      </div>
+    </div>
+
+    <p>Three consequences worth internalizing:</p>
+    <ul>
+      <li><strong>$\lambda$ stops being a fudge factor.</strong> It is the noise-to-prior variance ratio — "how much do I trust the sensor relative to my prior about the field". A strong prior (small $\gamma$) means large $\lambda$.</li>
+      <li><strong>$\mathbf{L}$ is a statement about spatial correlation.</strong> A first-derivative $\mathbf{L}$ says increments are independent Gaussians — smooth fields are a-priori probable. That is precisely right for a pressure field under a smooth indenter, and wrong (over-smoothing) for sharp contact edges — which motivates non-Gaussian alternatives: a Laplace prior gives an $\ell_1$ penalty, a sparsity-promoting MAP that is no longer linear in $\mathbf{b}$.</li>
+      <li><strong>The posterior comes with error bars.</strong> In the linear-Gaussian setting the posterior is fully Gaussian, so regularized inversion silently carries an uncertainty estimate (details in the collapsible below).</li>
+    </ul>
+
+    <p><strong>Caveats, stated bluntly:</strong> MAP = Tikhonov requires linear forward map <em>and</em> Gaussian noise <em>and</em> Gaussian prior — Laplace/sparsity priors, positivity constraints, or nonlinear models all break the equivalence. And the posterior quantifies uncertainty <em>only within the assumed model</em>: model error — wrong $E$, wrong geometry, the bias term $\mathbf{b}$ of Section 2's spine — is not included in those error bars.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Full derivation, posterior covariance, and where the field went after 2018</div>
+      <div class="collapsible-body">
+        <p>Likelihood times prior:</p>
+        <div class="math-block">$$\pi(\mathbf{x}\mid\mathbf{b}) \;\propto\; \exp\!\left(-\tfrac{1}{2\sigma^2}\|\mathbf{A}\mathbf{x}-\mathbf{b}\|_2^2\right)\,\exp\!\left(-\tfrac{1}{2\gamma^2}\|\mathbf{L}(\mathbf{x}-\mathbf{x}_0)\|_2^2\right)$$</div>
+        <p>Taking $-\log$ and multiplying through by $2\sigma^2$ gives the Tikhonov functional with $\lambda^2 = \sigma^2/\gamma^2$. Because the exponent is quadratic, the posterior is Gaussian with mean equal to the MAP estimate and covariance</p>
+        <div class="math-block">$$\boldsymbol{\Gamma}_{\mathrm{post}} = \sigma^2\left(\mathbf{A}^\mathsf{T}\mathbf{A} + \lambda^2\mathbf{L}^\mathsf{T}\mathbf{L}\right)^{-1}$$</div>
+        <p>The diagonal gives a per-unknown posterior standard deviation, and the directions of large posterior variance are exactly the small-$\sigma_i$ singular directions the data cannot see — the Bayesian restatement of Sections 2 and 5.</p>
+        <p>Unknown hyperparameters $\sigma$, $\gamma$ lead to hierarchical Bayes / evidence maximization, conceptually adjacent to GCV. Modern practice replaces hand-built Gaussian priors with <em>learned generative priors</em> and samples the posterior instead of maximizing it — e.g. conditional score-based diffusion models for inverse elasticity problems (Dasgupta et al. 2025) — but the likelihood-plus-prior scaffolding of this section, and the ill-posedness it compensates, remain exactly as taught here.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 12: TAXONOMY ===== -->
+    <h2 class="section-heading" id="taxonomy-solid-mechanics">12. A Taxonomy of Inverse Problems in Solid Mechanics</h2>
+
+    <p>Organize the field by <strong>which ingredient of the boundary-value problem is unknown</strong>, everything else given (Bonnet &amp; Constantinescu 2005) — the solid-mechanics instantiation of Section 2's spine.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 470" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg">
+        <!-- card 1: load -->
+        <rect x="15" y="12" width="330" height="190" rx="6" fill="#fafafa" stroke="#ccc"/>
+        <text x="30" y="36" font-size="13" font-weight="700" fill="#1a1a1a">1. LOAD identification</text>
+        <rect x="40" y="52" width="120" height="10" fill="#dfe7f0" stroke="#1565c0"/>
+        <line x1="60" y1="30" x2="60" y2="50" stroke="#e67e22" stroke-width="2" marker-end="url(#arrO)"/>
+        <line x1="95" y1="34" x2="95" y2="50" stroke="#e67e22" stroke-width="2" marker-end="url(#arrO)"/>
+        <text x="112" y="44" font-size="11" fill="#e67e22" font-weight="600">?F</text>
+        <defs><marker id="arrO" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#e67e22"/></marker></defs>
+        <text x="30" y="88" font-size="11" fill="#333"><tspan font-weight="600">unknown:</tspan> applied forces / pressures</text>
+        <text x="30" y="106" font-size="11" fill="#333"><tspan font-weight="600">linearity:</tspan> linear in the unknowns (b = Af)</text>
+        <text x="30" y="124" font-size="11" fill="#333"><tspan font-weight="600">severity:</tspan></text>
+        <rect x="95" y="115" width="14" height="9" fill="#e67e22"/><rect x="112" y="115" width="14" height="9" fill="#e67e22"/><rect x="129" y="115" width="14" height="9" fill="#f0e0d0" stroke="#ddd"/>
+        <text x="150" y="124" font-size="10.5" fill="#666">moderate</text>
+        <text x="30" y="142" font-size="11" fill="#333"><tspan font-weight="600">methods:</tspan> transfer matrix + Tikhonov</text>
+        <text x="30" y="163" font-size="10.5" fill="#1565c0" font-style="italic">tactile contact-force maps live here (Module 8)</text>
+        <text x="30" y="181" font-size="10.5" fill="#888">dynamic variants add time deconvolution</text>
+        <!-- card 2: material -->
+        <rect x="355" y="12" width="330" height="190" rx="6" fill="#fafafa" stroke="#ccc"/>
+        <text x="370" y="36" font-size="13" font-weight="700" fill="#1a1a1a">2. MATERIAL identification</text>
+        <rect x="380" y="48" width="90" height="42" fill="#eef3f8" stroke="#1565c0"/>
+        <circle cx="405" cy="62" r="9" fill="#c4d6ea"/><circle cx="440" cy="76" r="12" fill="#9dbcdc"/>
+        <text x="480" y="70" font-size="11" fill="#1565c0" font-weight="600">E(x) ?</text>
+        <text x="370" y="106" font-size="11" fill="#333"><tspan font-weight="600">unknown:</tspan> parameters or modulus fields</text>
+        <text x="370" y="124" font-size="11" fill="#333"><tspan font-weight="600">linearity:</tspan> nonlinear in the parameters</text>
+        <text x="370" y="142" font-size="11" fill="#333"><tspan font-weight="600">severity:</tspan></text>
+        <rect x="435" y="133" width="14" height="9" fill="#e67e22"/><rect x="452" y="133" width="14" height="9" fill="#f0e0d0" stroke="#ddd"/><rect x="469" y="133" width="14" height="9" fill="#f0e0d0" stroke="#ddd"/>
+        <text x="490" y="142" font-size="10.5" fill="#666">mild&ndash;moderate</text>
+        <text x="370" y="160" font-size="11" fill="#333"><tspan font-weight="600">methods:</tspan> FEMU / VFM / all-at-once</text>
+        <text x="370" y="181" font-size="10.5" fill="#1565c0" font-style="italic">elastography, full-field ID (Module 7)</text>
+        <!-- card 3: shape/config, highlighted -->
+        <rect x="15" y="212" width="330" height="190" rx="6" fill="#fff8f0" stroke="#e67e22" stroke-width="2.5"/>
+        <text x="30" y="236" font-size="13" font-weight="700" fill="#1a1a1a">3. SHAPE / CONFIGURATION</text>
+        <rect x="40" y="248" width="110" height="34" fill="#eef3f8" stroke="#1565c0"/>
+        <path d="M 70 258 L 92 272" stroke="#c62828" stroke-width="2"/>
+        <path d="M 40 292 C 70 300, 120 300, 150 288" fill="none" stroke="#e67e22" stroke-width="1.6" stroke-dasharray="4,3"/>
+        <text x="160" y="266" font-size="10.5" fill="#c62828">crack?</text>
+        <text x="160" y="296" font-size="10.5" fill="#e67e22">deformed shape from strain</text>
+        <text x="30" y="322" font-size="11" fill="#333"><tspan font-weight="600">unknown:</tspan> geometry — defects, or the deformed shape</text>
+        <text x="30" y="340" font-size="11" fill="#333"><tspan font-weight="600">linearity:</tspan> nonlinear (defects); variational LS (shape sensing)</text>
+        <text x="30" y="358" font-size="11" fill="#333"><tspan font-weight="600">methods:</tspan> adjoints, level sets, topological derivatives;</text>
+        <text x="95" y="374" font-size="11" fill="#333">least-squares shape sensing</text>
+        <text x="30" y="394" font-size="11" fill="#e67e22" font-weight="600">shape sensing from strain &#8594; iFEM (Modules 4&ndash;6)</text>
+        <!-- card 4: BC -->
+        <rect x="355" y="212" width="330" height="190" rx="6" fill="#fafafa" stroke="#ccc"/>
+        <text x="370" y="236" font-size="13" font-weight="700" fill="#1a1a1a">4. BOUNDARY CONDITIONS</text>
+        <path d="M 385 250 L 500 250 L 500 296 L 385 296 Z" fill="#eef3f8" stroke="#1565c0"/>
+        <circle cx="405" cy="250" r="3" fill="#2e7d32"/><circle cx="430" cy="250" r="3" fill="#2e7d32"/><circle cx="455" cy="250" r="3" fill="#2e7d32"/><circle cx="480" cy="250" r="3" fill="#2e7d32"/>
+        <text x="510" y="252" font-size="10.5" fill="#2e7d32">sensors (accessible)</text>
+        <path d="M 385 296 L 500 296" stroke="#c62828" stroke-width="2.5" stroke-dasharray="5,3"/>
+        <text x="510" y="300" font-size="10.5" fill="#c62828">? tractions (inaccessible)</text>
+        <text x="370" y="322" font-size="11" fill="#333"><tspan font-weight="600">unknown:</tspan> tractions/displacements on a hidden boundary</text>
+        <text x="370" y="340" font-size="11" fill="#333"><tspan font-weight="600">linearity:</tspan> linear</text>
+        <text x="370" y="358" font-size="11" fill="#333"><tspan font-weight="600">severity:</tspan></text>
+        <rect x="435" y="349" width="14" height="9" fill="#c62828"/><rect x="452" y="349" width="14" height="9" fill="#c62828"/><rect x="469" y="349" width="14" height="9" fill="#c62828"/>
+        <text x="490" y="358" font-size="10.5" fill="#c62828">severe (exponential)</text>
+        <text x="370" y="378" font-size="11" fill="#333"><tspan font-weight="600">canonical name:</tspan> the Cauchy problem in elasticity</text>
+        <!-- footer -->
+        <rect x="15" y="418" width="670" height="38" rx="6" fill="#f5f8ff" stroke="#1565c0"/>
+        <text x="350" y="442" text-anchor="middle" font-size="12" font-weight="600" fill="#1565c0">after discretization + linearization, all four funnel into regularized least squares</text>
+      </svg>
+      <div class="figure-caption">Four classes of inverse problem in solid mechanics, organized by the unknown ingredient (Bonnet &amp; Constantinescu 2005). Shape sensing — iFEM's home — is the benign member of class 3.</div>
+    </div>
+
+    <h3 class="subsection-heading">Class 1 — Load Identification</h3>
+    <p>Geometry, material, and boundary conditions known; applied forces or pressures unknown. For linear elasticity the response is <em>linear in the loads</em>, so discretization gives</p>
+    <div class="math-block">$$\mathbf{b} = \mathbf{A}\,\mathbf{f} + \mathbf{e}, \qquad A_{ij} = \text{response at sensor } i \text{ to unit load } j$$</div>
+    <p>with $\mathbf{A}$ an influence/transfer matrix assembled from the FE model (columns = responses to unit loads) — directly a linear discrete ill-posed problem to which Sections 4&ndash;9 apply verbatim. Ill-posedness worsens with sensor-to-load distance (Saint-Venant smoothing, Section 1). Dynamic variants add time deconvolution on top; Liu et al. (2022) review the frequency- and time-domain machinery, the ill-posedness handling, and the ML variants. Contact-force-map reconstruction in tactile skin is squarely this class.</p>
+
+    <h3 class="subsection-heading">Class 2 — Material / Parameter Identification</h3>
+    <p>Constitutive parameters or spatial modulus fields unknown. The response is generally <em>nonlinear</em> in the parameters even when the physics is linear, so the problem is solved iteratively — each Gauss&ndash;Newton step (Section 10) is a regularized linear least-squares problem in the parameter update. For full-field data the method families are FEMU (finite element model updating), the constitutive equation gap, the virtual fields method, the equilibrium gap, and the reciprocity gap (Avril et al. 2008). Römer et al. (2025) recast these as <strong>reduced</strong> (a forward solver in the loop) versus <strong>all-at-once</strong> (field and parameters jointly unknown) formulations, with PINN-type approaches in the all-at-once family. Elastography / elasticity imaging is the field-identification version of this class.</p>
+
+    <h3 class="subsection-heading">Class 3 — Shape, Configuration, and Defect Identification</h3>
+    <p>Unknown geometry. The hard direction: cracks, voids, inclusions — nonlinear, handled with adjoint fields, level sets, and topological derivatives. The benign direction: <strong>shape sensing</strong> — reconstructing the deformed configuration from discrete strain measurements. This is where iFEM lives (Module 4): a variational least-squares <em>state-reconstruction</em> problem, much better conditioned than the other classes — but still an inverse problem, with observability that depends on sensor placement.</p>
+
+    <h3 class="subsection-heading">Class 4 — Boundary-Condition Identification</h3>
+    <p>Unknown tractions or displacements on an inaccessible boundary, from overdetermined data on the accessible part — the Cauchy problem of elasticity. Severely (exponentially) ill-posed; regularization is indispensable, not optional (Bonnet &amp; Constantinescu 2005).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>After discretization and linearization, every class funnels through the same regularized least-squares machinery of this module. What changes between classes is the <em>conditioning</em> of the resulting operator and the <em>prior</em> that is defensible — not the mathematics of the solve.</div>
+    </div>
+
+    <!-- ===== INTERACTIVE: OBSERVABILITY & SENSOR PLACEMENT LAB ===== -->
+    <div class="interactive-container" id="observability-lab">
+      <div class="interactive-label">Interactive Tool — Observability &amp; Sensor Placement Lab</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A toy load-identification problem, live: 16 unknown contact-pressure patches on a soft skin, sensed by markers you place at depth $h$ (click the slots to toggle sensors). The influence of each patch spreads over a width $\approx h$ — Saint-Venant smoothing made tangible. Watch the singular spectrum, the invisible mode, and the LS vs. Tikhonov reconstructions react to every change.</p>
+      <div class="slider-group">
+        <div class="slider-control">
+          <label><span>embedding depth $h$</span> <span id="ob-h-val">1.5</span></label>
+          <input type="range" id="ob-h" min="0.6" max="3.5" step="0.1" value="1.5">
+        </div>
+        <div class="slider-control">
+          <label><span>noise level (rel.)</span> <span id="ob-noise-val">1e-2</span></label>
+          <input type="range" id="ob-noise" min="-4" max="-1" step="0.1" value="-2">
+        </div>
+        <div class="slider-control" id="ob-lam-ctrl">
+          <label><span>Tikhonov $\lambda$</span> <span id="ob-lam-val">&mdash;</span></label>
+          <input type="range" id="ob-lam" min="-5" max="0" step="0.1" value="-2">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button id="ob-mode-ls" class="ob-btn" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Plain LS</button>
+        <button id="ob-mode-tik" class="ob-btn" style="border:1px solid #1565c0;color:#fff;background:#1565c0;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;">Tikhonov</button>
+        <span style="width:14px;"></span>
+        <button id="ob-noise-white" class="ob-btn" style="border:1px solid #1565c0;color:#fff;background:#1565c0;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;">White noise</button>
+        <button id="ob-noise-corr" class="ob-btn" style="border:1px solid #1565c0;color:#1565c0;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Correlated noise</button>
+        <span style="width:14px;"></span>
+        <button id="ob-preset-spread" style="border:1px solid #888;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">8 spread</button>
+        <button id="ob-preset-cluster" style="border:1px solid #888;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">8 clustered</button>
+        <button id="ob-preset-few" style="border:1px solid #888;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">4 sparse</button>
+        <button id="ob-preset-all" style="border:1px solid #888;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">all 20</button>
+        <button id="ob-redraw" style="border:1px solid #888;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Redraw noise</button>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
+        <div style="flex:1 1 440px;min-width:320px;">
+          <div style="font-size:10px;color:#888;margin-bottom:2px;">Structure — true pressure (orange) on 16 patches; sensor slots at depth h (click to toggle; filled = active)</div>
+          <svg id="ob-struct" width="460" height="185" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;">
+            <div style="flex:1;min-width:210px;">
+              <div style="font-size:10px;color:#888;margin-bottom:2px;">Singular spectrum of A (semilog)</div>
+              <svg id="ob-spec" width="225" height="170" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+            </div>
+            <div style="flex:1;min-width:210px;">
+              <div style="font-size:10px;color:#888;margin-bottom:2px;">Hardest-to-see mode v&#8345; (smallest &#963;)</div>
+              <svg id="ob-null" width="225" height="170" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+            </div>
+          </div>
+          <div style="font-size:10px;color:#888;margin:10px 0 2px;">Reconstruction: true pressure (thin orange) vs estimate (thick blue)</div>
+          <svg id="ob-recon" width="460" height="170" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+        </div>
+        <div id="ob-panel" style="flex:0 0 215px;min-width:200px;background:#fff;border:1px solid #d5dde5;border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.55;"></div>
+      </div>
+      <div id="ob-readout" style="font-size:13px;margin-top:10px;"></div>
+      <p style="font-size:12px;color:#777;margin-top:10px;">Things to try: (a) "8 clustered" vs "8 spread" — same sensor count, wildly different conditioning: information is about <em>geometry</em>, not just quantity; (b) increase the depth $h$ — the singular values collapse and the invisible mode becomes smoother: deeper sensing loses finer detail; (c) drop to "4 sparse" — rank falls below 16 and plain LS has a genuine nullspace; (d) switch Plain LS &#8596; Tikhonov at 1% noise and watch the amplified-garbage vs. biased-but-stable trade; (e) switch to correlated noise — the reconstruction degrades <em>at the same noise level</em>, because smooth noise masquerades as signal in exactly the components the filter keeps; note the narrow central spike of the true pressure is underestimated at every $\lambda$: that is the resolution limit and bias of Section 8, not a bug.</p>
+    </div>
+
+    <!-- ===== SECTION 13: PRACTICAL WORKFLOW ===== -->
+    <h2 class="section-heading" id="practical-workflow">13. Practical Workflow: Diagnosing and Solving Your Inverse Problem</h2>
+
+    <p>A field recipe consolidating the module. Follow it in order; each step is cheap compared to debugging its omission.</p>
+
+    <ol>
+      <li><strong>Scale first.</strong> Non-dimensionalize rows (divide by the sensor noise std per channel — whitening, Section 4) and columns (characteristic magnitudes of the unknowns). Conditioning and the SVD are <em>not</em> scale-invariant: a $\kappa = 10^9$ that drops to $10^3$ after sensible scaling was a units problem, not an ill-posed problem.</li>
+      <li><strong>Compute the SVD</strong> of the scaled $\mathbf{A}$ and classify the spectrum (Section 5): flat &#8594; ordinary least squares, stop here; gap &#8594; rank-deficient, TSVD at the gap; gradual decay &#8594; discrete ill-posed, continue.</li>
+      <li><strong>Picard plot</strong> with real data (Section 6); read off the crossing index $i^*$ = number of recoverable components. If $i^*$ is far below the number of unknowns, consider re-parameterizing coarser — fewer basis functions for the pressure field — instead of fighting with heavy regularization.</li>
+      <li><strong>Choose $\mathbf{L}$ from prior physics</strong> (Section 7): identity for magnitude, gradient/Laplacian for smoothness; check that null$(\mathbf{L})$ is observable through $\mathbf{A}$.</li>
+      <li><strong>Sweep $\lambda$</strong> over 50&ndash;100 log-spaced values spanning $[\sigma_n, \sigma_1]$; evaluate discrepancy (if $\delta$ is known), L-curve corner, and GCV (Section 9); compare the selected $\lambda$'s and inspect the corresponding solutions side by side.</li>
+      <li><strong>Validate honestly.</strong> (a) <em>Residual check:</em> after subtracting the fit, the residual should look like sensor noise — white, correct magnitude. A structured residual means model error (the bias term $\mathbf{b}$ of Section 2's spine). (b) <em>Withheld data:</em> hold out sensors or whole loading cases from the fit and score the reconstruction on predicting them — a solution that only explains the data it was fitted to has explained nothing. (c) <em>No inverse crimes</em> (box below). (d) <em>Report the bias:</em> Tikhonov solutions systematically underestimate peaks and sharpen nothing — state this wherever peak values (e.g. peak contact pressure) are the quantity of interest.</li>
+      <li><strong>For repeated real-time inversion</strong> (fixed $\mathbf{A}$, streaming $\mathbf{b}$): precompute the SVD, or the QR/Cholesky factorization of the augmented system at the chosen $\lambda$; the per-frame cost drops to two matrix&ndash;vector products, $O(mn)$.</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Inverse Crime</div>
+      <div>Validating an inversion pipeline on synthetic data generated with the <strong>same discretization, model, and noise assumptions</strong> used inside the inversion. The test then flatters the method — the only error source left is the one your regularizer is tuned to remove. Generate test data on a finer or different mesh, with realistic (possibly correlated) noise, or the reconstruction quality you report is fiction.</div>
+    </div>
+
+    <p><em>Tools note:</em> Hansen's Regularization Tools — the companion package to Hansen (2010) — implement Picard plots, filter factors, the L-curve, GCV, and the standard test problems of this literature (including the deconvolution family used in this page's interactives).</p>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="workflow-walkthrough" class="interactive-container" data-title="Walkthrough — From Raw Data to a Defensible Solution"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="mod3-flashcards"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Hansen, P. C.; O&#8217;Leary, D. P. (1993). <em>The Use of the L-Curve in the Regularization of Discrete Ill-Posed Problems</em>. SIAM Journal on Scientific Computing 14(6), 1487&ndash;1503. doi:10.1137/0914086</li>
+      <li>Hadamard, Jacques (1923). <em>Lectures on Cauchy's Problem in Linear Partial Differential Equations</em>. Yale University Press (Silliman Lectures), New Haven.</li>
+      <li>Tikhonov, A. N.; Arsenin, V. Y. (1977). <em>Solutions of Ill-Posed Problems</em>. V. H. Winston &amp; Sons / Wiley, Washington DC (Scripta Series in Mathematics).</li>
+      <li>Golub, Gene H.; Heath, Michael; Wahba, Grace (1979). <em>Generalized Cross-Validation as a Method for Choosing a Good Ridge Parameter</em>. Technometrics 21(2), 215&ndash;223. doi:10.1080/00401706.1979.10489751</li>
+      <li>Hansen, Per Christian (1990). <em>The discrete Picard condition for discrete ill-posed problems</em>. BIT Numerical Mathematics 30, 658&ndash;672. doi:10.1007/BF01933214</li>
+      <li>Hansen, Per Christian (1992). <em>Analysis of Discrete Ill-Posed Problems by Means of the L-Curve</em>. SIAM Review 34(4), 561&ndash;580. doi:10.1137/1034115</li>
+      <li>Engl, Heinz W.; Hanke, Martin; Neubauer, Andreas (1996). <em>Regularization of Inverse Problems</em>. Kluwer Academic Publishers, Dordrecht (Mathematics and Its Applications, vol. 375). doi:10.1007/978-94-009-1740-8</li>
+      <li>Hanke, Martin (1996). <em>Limitations of the L-curve method in ill-posed problems</em>. BIT Numerical Mathematics 36, 287&ndash;301. doi:10.1007/BF01731984</li>
+      <li>Hansen, Per Christian (1998). <em>Rank-Deficient and Discrete Ill-Posed Problems: Numerical Aspects of Linear Inversion</em>. SIAM (Society for Industrial and Applied Mathematics). doi:10.1137/1.9780898719697</li>
+      <li>Bonnet, Marc; Constantinescu, Andrei (2005). <em>Inverse problems in elasticity</em>. Inverse Problems 21(2), R1&ndash;R50 (topical review). doi:10.1088/0266-5611/21/2/R01</li>
+      <li>Kaipio, Jari P.; Somersalo, Erkki (2005). <em>Statistical and Computational Inverse Problems</em>. Springer, Applied Mathematical Sciences (vol. 160). doi:10.1007/b138659</li>
+      <li>Avril, Stéphane; Bonnet, Marc; Bretelle, Anne-Sophie; Grédiac, Michel; Hild, François; et al. (2008). <em>Overview of Identification Methods of Mechanical Parameters Based on Full-field Measurements</em>. Experimental Mechanics 48(4), 381&ndash;402. doi:10.1007/s11340-008-9148-y</li>
+      <li>Hansen, Per Christian (2010). <em>Discrete Inverse Problems: Insight and Algorithms</em>. SIAM, Philadelphia (Fundamentals of Algorithms series). doi:10.1137/1.9780898718836</li>
+      <li>Calvetti, Daniela; Somersalo, Erkki (2018). <em>Inverse problems: From regularization to Bayesian inference</em>. WIREs Computational Statistics 10(3), e1427. doi:10.1002/wics.1427</li>
+      <li>Liu, Ruixue; Dobriban, Edgar; Hou, Zhichao; Qian, Kun (2022). <em>Dynamic Load Identification for Mechanical Systems: A Review</em>. Archives of Computational Methods in Engineering 29, 831&ndash;863. doi:10.1007/s11831-021-09594-7</li>
+      <li>Römer, Ulrich; Hartmann, Stefan; Tröger, Jendrik-Alexander; Anton, David; Wessels, Henning; Flaschel, Moritz; De Lorenzis, Laura (2025). <em>Reduced and All-at-Once Approaches for Model Calibration and Discovery in Computational Solid Mechanics</em>. Applied Mechanics Reviews 77(4), 040801. doi:10.1115/1.4066118</li>
+      <li>Dasgupta, Agnimitra; Ramaswamy, Harisankar; Murgoitio-Esandi, Javier; Foo, Ken Y.; Li, Runze; Zhou, Qifa; Kennedy, Brendan F.; Oberai, Assad A. (2025). <em>Conditional score-based diffusion models for solving inverse elasticity problems</em>. Computer Methods in Applied Mechanics and Engineering 433, 117425. doi:10.1016/j.cma.2024.117425</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod2.html">&larr; 2. The Forward Finite Element Method</a>
+      <a href="mod4.html">4. The iFEM Principle &rarr;</a>
+    </div>
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod3');</script>
+
+<!-- ===== SCRIPT: PICARD & REGULARIZATION LAB ===== -->
+<script>
+(function() {
+  var n = 64, TAU = 1.05;
+  var state = { mode:'tik', w:1.5, nExp:-2, lamIdx:30, k:12, seed:1 };
+
+  function makeRng(seed){ var s=(seed*2654435761)>>>0; return function(){ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+  function gaussDraw(rng){ var u=Math.max(rng(),1e-12), v=rng(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+  function fmt(x){
+    if(!isFinite(x)) return '&#8734;';
+    if(x===0) return '0';
+    var a=Math.abs(x);
+    if(a>=0.01 && a<1000) return x.toPrecision(3);
+    return x.toExponential(2).replace('e','&times;10^').replace('^+','^').replace(/\^(-?\d+)/, function(m,p){return '<sup>'+p+'</sup>';});
+  }
+  function fmtPlain(x){
+    if(!isFinite(x)) return 'inf';
+    var a=Math.abs(x);
+    if(a>=0.01 && a<1000) return x.toPrecision(3);
+    return x.toExponential(1);
+  }
+
+  // fixed true signal: two smooth bumps + one step edge
+  var xtrue = [];
+  for(var j=0;j<n;j++){ var t=j/n;
+    xtrue.push(Math.exp(-Math.pow((t-0.22)/0.06,2)) + 0.6*Math.exp(-Math.pow((t-0.48)/0.04,2)) + ((t>0.68&&t<0.85)?0.8:0));
+  }
+
+  function buildModes(w){
+    var k=[], sum=0, j;
+    for(j=0;j<n;j++){ var d=Math.min(j,n-j); k.push(Math.exp(-d*d/(2*w*w))); sum+=k[j]; }
+    for(j=0;j<n;j++) k[j]/=sum;
+    var modes=[];
+    var v0=[]; for(j=0;j<n;j++) v0.push(1/Math.sqrt(n));
+    var l0=0; for(j=0;j<n;j++) l0+=k[j];
+    modes.push({v:v0, lam:l0});
+    for(var f=1;f<n/2;f++){
+      var c=[], s2=[], lam=0;
+      for(j=0;j<n;j++){
+        var ang=2*Math.PI*f*j/n;
+        c.push(Math.sqrt(2/n)*Math.cos(ang));
+        s2.push(Math.sqrt(2/n)*Math.sin(ang));
+        lam+=k[j]*Math.cos(ang);
+      }
+      modes.push({v:c, lam:lam}); modes.push({v:s2, lam:lam});
+    }
+    var vn=[], ln=0;
+    for(j=0;j<n;j++){ vn.push((j%2?-1:1)/Math.sqrt(n)); ln+=k[j]*(j%2?-1:1); }
+    modes.push({v:vn, lam:ln});
+    modes.sort(function(a,b){ return Math.abs(b.lam)-Math.abs(a.lam); });
+    return modes;
+  }
+
+  function dot(a,b){ var s=0; for(var i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
+
+  function compute(){
+    var modes = buildModes(state.w);
+    var sig=[], sgn=[], ci=[], i, j;
+    for(i=0;i<n;i++){ sig.push(Math.abs(modes[i].lam)); sgn.push(modes[i].lam<0?-1:1); ci.push(dot(modes[i].v,xtrue)); }
+    // exact data
+    var bex=new Array(n).fill(0);
+    for(i=0;i<n;i++){ var cf=modes[i].lam*ci[i]; for(j=0;j<n;j++) bex[j]+=cf*modes[i].v[j]; }
+    var bmax=0; for(j=0;j<n;j++) bmax=Math.max(bmax,Math.abs(bex[j]));
+    var s=Math.pow(10,state.nExp)*bmax;
+    var rng=makeRng(state.seed);
+    var e=[]; for(j=0;j<n;j++) e.push(s*gaussDraw(rng));
+    var delta=Math.sqrt(dot(e,e));
+    var b=[]; for(j=0;j<n;j++) b.push(bex[j]+e[j]);
+    var beta=[]; for(i=0;i<n;i++) beta.push(dot(modes[i].v,b));
+    // lambda sweep grid
+    var lo=Math.max(sig[n-1],1e-10), hi=sig[0];
+    var lams=[]; for(i=0;i<60;i++) lams.push(Math.pow(10, Math.log10(lo)+(Math.log10(hi)-Math.log10(lo))*i/59));
+    function evalParams(phiOf){
+      var res2=0, nrm2=0, err2=0, trc=n, xc=[];
+      for(var i2=0;i2<n;i2++){
+        var phi=phiOf(i2);
+        var xcf=phi*sgn[i2]*beta[i2];
+        var f=sig[i2]*phi;
+        xc.push(xcf);
+        res2+=Math.pow((1-f)*beta[i2],2);
+        nrm2+=xcf*xcf;
+        err2+=Math.pow(xcf-ci[i2],2);
+        trc-=f;
+      }
+      return {res:Math.sqrt(res2), nrm:Math.sqrt(nrm2), err:Math.sqrt(err2), gcv:res2/(trc*trc), xc:xc};
+    }
+    var sweep, params, isK = (state.mode==='tsvd');
+    if(isK){
+      params=[]; for(i=1;i<=n;i++) params.push(i);
+      sweep=params.map(function(kk){ return evalParams(function(i2){ return (i2<kk && sig[i2]>1e-300)?1/sig[i2]:0; }); });
+    } else {
+      params=lams;
+      sweep=params.map(function(lm){ return evalParams(function(i2){ return sig[i2]/(sig[i2]*sig[i2]+lm*lm); }); });
+    }
+    // criteria picks (indices into sweep)
+    var xtn=Math.sqrt(dot(xtrue,xtrue));
+    var iOpt=0, iGcv=0, iDsc=-1;
+    for(i=0;i<sweep.length;i++){
+      if(sweep[i].err<sweep[iOpt].err) iOpt=i;
+      if(sweep[i].gcv<sweep[iGcv].gcv) iGcv=i;
+    }
+    if(isK){ // residual decreases with k: pick largest k with res >= tau*delta ... discrepancy: smallest residual param with res<=tau*delta
+      for(i=0;i<sweep.length;i++){ if(sweep[i].res<=TAU*delta){ iDsc=i; break; } }
+      if(iDsc<0) iDsc=sweep.length-1;
+    } else { // residual increases with lambda: pick largest lambda with res <= tau*delta
+      for(i=sweep.length-1;i>=0;i--){ if(sweep[i].res<=TAU*delta){ iDsc=i; break; } }
+      if(iDsc<0) iDsc=0;
+    }
+    var iCur = isK ? (state.k-1) : state.lamIdx;
+    iCur=Math.max(0,Math.min(sweep.length-1,iCur));
+    var cur=sweep[iCur];
+    // current solution vector
+    var x=new Array(n).fill(0);
+    for(i=0;i<n;i++){ for(j=0;j<n;j++) x[j]+=cur.xc[i]*modes[i].v[j]; }
+    // cutoff index for picard marker
+    var cutIdx;
+    if(isK){ cutIdx=state.k; }
+    else { cutIdx=n; for(i=0;i<n;i++){ if(sig[i]<params[iCur]){ cutIdx=i; break; } } }
+    return { modes:modes, sig:sig, beta:beta, s:s, delta:delta, b:b, x:x, xtn:xtn,
+             params:params, sweep:sweep, isK:isK, iCur:iCur, iOpt:iOpt, iGcv:iGcv, iDsc:iDsc, cur:cur, cutIdx:cutIdx };
+  }
+
+  // --- drawing helpers ---
+  function logY(v, top, bot, lgMin, lgMax){
+    var lg=Math.log10(Math.max(Math.abs(v),Math.pow(10,lgMin)));
+    lg=Math.min(lg,lgMax);
+    return bot-(lg-lgMin)/(lgMax-lgMin)*(bot-top);
+  }
+
+  function drawPicard(r){
+    var W=340,H=235,L=44,R=330,T=12,B=200, lgMin=-8, lgMax=2;
+    var s='', i;
+    s+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/><line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+    [0,-4,-8].forEach(function(ee){ var yy=logY(Math.pow(10,ee),T,B,lgMin,lgMax); s+='<text x="'+(L-4)+'" y="'+(yy+3)+'" text-anchor="end" font-size="9" fill="#888">1e'+ee+'</text>'; });
+    function X(i2){ return L+i2/(n-1)*(R-L); }
+    var p='';
+    for(i=0;i<n;i++){ p+=(i?' L':'M')+X(i).toFixed(1)+' '+logY(r.sig[i],T,B,lgMin,lgMax).toFixed(1); }
+    s+='<path d="'+p+'" fill="none" stroke="#1565c0" stroke-width="1.8"/>';
+    for(i=0;i<n;i+=1){ s+='<circle cx="'+X(i).toFixed(1)+'" cy="'+logY(r.beta[i],T,B,lgMin,lgMax).toFixed(1)+'" r="1.9" fill="#333"/>'; }
+    for(i=0;i<n;i+=2){
+      var rat=Math.abs(r.beta[i])/Math.max(r.sig[i],1e-300);
+      var xx=X(i), yy=logY(rat,T,B,lgMin,lgMax);
+      s+='<path d="M'+(xx-2.4)+' '+(yy-2.4)+' L'+(xx+2.4)+' '+(yy+2.4)+' M'+(xx-2.4)+' '+(yy+2.4)+' L'+(xx+2.4)+' '+(yy-2.4)+'" stroke="#e67e22" stroke-width="1.3"/>';
+    }
+    var yf=logY(r.s,T,B,lgMin,lgMax);
+    s+='<line x1="'+L+'" y1="'+yf+'" x2="'+R+'" y2="'+yf+'" stroke="#666" stroke-width="1" stroke-dasharray="4,3"/>';
+    s+='<text x="'+(R-2)+'" y="'+(yf-4)+'" text-anchor="end" font-size="9" fill="#666">noise floor s</text>';
+    if(r.cutIdx<n){
+      var xc=X(r.cutIdx);
+      s+='<line x1="'+xc+'" y1="'+T+'" x2="'+xc+'" y2="'+B+'" stroke="#c62828" stroke-width="1.2" stroke-dasharray="2,3"/>';
+      s+='<text x="'+xc+'" y="'+(B+13)+'" text-anchor="middle" font-size="9" fill="#c62828">'+(r.isK?'k':'&#963;=&#955;')+'</text>';
+    }
+    s+='<text x="'+((L+R)/2)+'" y="'+(B+28)+'" text-anchor="middle" font-size="10" fill="#666">index i &mdash; &#963;&#7522; line &#183; |u&#7522;&#7488;b| dots &#183; ratio &#215;</text>';
+    document.getElementById('pl-picard').innerHTML=s;
+  }
+
+  function drawFilter(r){
+    var L=44,R=330,T=14,B=200, s='', i;
+    s+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/><line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+    s+='<text x="'+(L-4)+'" y="'+(T+4)+'" text-anchor="end" font-size="9" fill="#888">1</text>';
+    s+='<text x="'+(L-4)+'" y="'+(B+3)+'" text-anchor="end" font-size="9" fill="#888">0</text>';
+    var bw=(R-L)/n;
+    for(i=0;i<n;i++){
+      var f;
+      if(r.isK){ f=(i<state.k)?1:0; }
+      else { var lm=r.params[r.iCur]; f=r.sig[i]*r.sig[i]/(r.sig[i]*r.sig[i]+lm*lm); }
+      var hh=(B-T)*f;
+      s+='<rect x="'+(L+i*bw).toFixed(1)+'" y="'+(B-hh).toFixed(1)+'" width="'+(bw*0.85).toFixed(1)+'" height="'+Math.max(hh,0.5).toFixed(1)+'" fill="'+(f>0.5?'#1565c0':'#a9c4e4')+'"/>';
+    }
+    s+='<text x="'+((L+R)/2)+'" y="'+(B+28)+'" text-anchor="middle" font-size="10" fill="#666">'+(r.isK?'hard cutoff at k='+state.k:'smooth Tikhonov roll-off, f&#7522; = &#963;&#7522;&#178;/(&#963;&#7522;&#178;+&#955;&#178;)')+'</text>';
+    document.getElementById('pl-filter').innerHTML=s;
+  }
+
+  function drawRecon(r){
+    var L=40,R=690,T=12,B=170, s='', i;
+    var lo=-0.6, hi=1.9;
+    function Y(v){ v=Math.max(lo,Math.min(hi,v)); return B-(v-lo)/(hi-lo)*(B-T); }
+    function X(i2){ return L+i2/(n-1)*(R-L); }
+    s+='<line x1="'+L+'" y1="'+Y(0)+'" x2="'+R+'" y2="'+Y(0)+'" stroke="#eee"/>';
+    var p='';
+    for(i=0;i<n;i++){ p+=(i?' L':'M')+X(i).toFixed(1)+' '+Y(xtrue[i]).toFixed(1); }
+    s+='<path d="'+p+'" fill="none" stroke="#e67e22" stroke-width="1.3"/>';
+    p='';
+    for(i=0;i<n;i++){ p+=(i?' L':'M')+X(i).toFixed(1)+' '+Y(r.x[i]).toFixed(1); }
+    s+='<path d="'+p+'" fill="none" stroke="#1565c0" stroke-width="2.4"/>';
+    s+='<text x="'+(R-4)+'" y="'+(T+10)+'" text-anchor="end" font-size="10" fill="#666">values clipped to axis range for display</text>';
+    document.getElementById('pl-recon').innerHTML=s;
+  }
+
+  function drawUcurve(r){
+    var L=52,R=690,T=14,B=150, s='', i, N=r.sweep.length;
+    var errs=r.sweep.map(function(q){ return q.err/r.xtn; });
+    var lgMin=Math.log10(Math.min.apply(null,errs))-0.15;
+    var lgMax=Math.min(Math.log10(Math.max.apply(null,errs)),3)+0.15;
+    function Y(v){ var lg=Math.min(Math.log10(Math.max(v,1e-12)),lgMax); return B-(lg-lgMin)/(lgMax-lgMin)*(B-T); }
+    function X(i2){ return L+i2/(N-1)*(R-L); }
+    s+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/><line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+    var p='';
+    for(i=0;i<N;i++){ p+=(i?' L':'M')+X(i).toFixed(1)+' '+Y(errs[i]).toFixed(1); }
+    s+='<path d="'+p+'" fill="none" stroke="#888" stroke-width="1.6" stroke-dasharray="5,3"/>';
+    function mark(idx,color,label,dy){
+      s+='<line x1="'+X(idx)+'" y1="'+T+'" x2="'+X(idx)+'" y2="'+B+'" stroke="'+color+'" stroke-width="1.1" stroke-dasharray="2,3"/>';
+      s+='<text x="'+X(idx)+'" y="'+(T+dy)+'" text-anchor="middle" font-size="9.5" font-weight="600" fill="'+color+'">'+label+'</text>';
+    }
+    mark(r.iOpt,'#2e7d32','oracle',10);
+    mark(r.iGcv,'#7b1fa2','GCV',22);
+    mark(r.iDsc,'#333','discrepancy',34);
+    s+='<circle cx="'+X(r.iCur)+'" cy="'+Y(errs[r.iCur])+'" r="4.5" fill="#1565c0"/>';
+    s+='<text x="'+((L+R)/2)+'" y="'+(B+28)+'" text-anchor="middle" font-size="10" fill="#666">'+(r.isK?'k = 1 &#8594; 64 (left to right)':'&#955; small &#8594; large (left to right), log-spaced')+' &mdash; dashed curve: true relative error (oracle)</text>';
+    document.getElementById('pl-ucurve').innerHTML=s;
+  }
+
+  function update(){
+    var r=compute();
+    drawPicard(r); drawFilter(r); drawRecon(r); drawUcurve(r);
+    var parName = r.isK ? 'k' : '\\lambda';
+    var parVal = r.isK ? String(state.k) : fmtPlain(r.params[r.iCur]);
+    document.getElementById('pl-lam-val').innerHTML = r.isK ? '' : fmtPlain(r.params[r.iCur]);
+    document.getElementById('pl-k-val').innerHTML = String(state.k);
+    var ro=document.getElementById('pl-readout');
+    var eq = r.isK
+      ? '$$\\mathbf{x}_k = \\sum_{i=1}^{k} \\frac{\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}}{\\sigma_i}\\,\\mathbf{v}_i, \\qquad k = '+parVal+', \\qquad \\frac{\\|\\mathbf{x}_k-\\mathbf{x}_{\\mathrm{true}}\\|}{\\|\\mathbf{x}_{\\mathrm{true}}\\|} = '+fmtPlain(r.cur.err/r.xtn)+'$$'
+      : '$$\\mathbf{x}_\\lambda = \\sum_{i=1}^{n} f_i\\,\\frac{\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}}{\\sigma_i}\\,\\mathbf{v}_i, \\quad f_i = \\frac{\\sigma_i^2}{\\sigma_i^2+\\lambda^2}, \\qquad \\lambda = '+parVal+', \\qquad \\frac{\\|\\mathbf{x}_\\lambda-\\mathbf{x}_{\\mathrm{true}}\\|}{\\|\\mathbf{x}_{\\mathrm{true}}\\|} = '+fmtPlain(r.cur.err/r.xtn)+'$$';
+    var pk=function(i){ return r.isK ? ('k='+r.params[i]) : ('&#955;='+fmt(r.params[i])); };
+    ro.innerHTML = eq +
+      '<table style="margin-top:6px;"><tr><th></th><th>current</th><th>discrepancy (&#964;=1.05, uses &#948;='+fmt(r.delta)+')</th><th>GCV (blind)</th><th>oracle (cheats)</th></tr>' +
+      '<tr><td><strong>pick</strong></td><td>'+pk(r.iCur)+'</td><td>'+pk(r.iDsc)+'</td><td>'+pk(r.iGcv)+'</td><td>'+pk(r.iOpt)+'</td></tr>' +
+      '<tr><td><strong>rel. error</strong></td><td>'+fmt(r.cur.err/r.xtn)+'</td><td>'+fmt(r.sweep[r.iDsc].err/r.xtn)+'</td><td>'+fmt(r.sweep[r.iGcv].err/r.xtn)+'</td><td>'+fmt(r.sweep[r.iOpt].err/r.xtn)+'</td></tr></table>' +
+      '<div style="margin-top:4px;color:#555;">residual $\\|\\mathbf{A}\\mathbf{x}-\\mathbf{b}\\|_2$ = '+fmt(r.cur.res)+' &nbsp;&middot;&nbsp; solution norm $\\|\\mathbf{x}\\|_2$ = '+fmt(r.cur.nrm)+' &nbsp;&middot;&nbsp; noise norm $\\delta$ = '+fmt(r.delta)+' &nbsp;&middot;&nbsp; per-sample std $s$ = '+fmt(r.s)+'</div>';
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+
+  function setMode(md){
+    state.mode=md;
+    var bt=document.getElementById('pl-mode-tik'), bs=document.getElementById('pl-mode-tsvd');
+    function on(b){ b.style.background='#1565c0'; b.style.color='#fff'; b.style.borderColor='#1565c0'; b.style.fontWeight='600'; }
+    function off(b){ b.style.background='#e8ecf0'; b.style.color='#888'; b.style.borderColor='#ddd'; b.style.fontWeight='normal'; }
+    if(md==='tik'){ on(bt); off(bs); } else { on(bs); off(bt); }
+    document.getElementById('pl-lam-ctrl').style.display = md==='tik'?'':'none';
+    document.getElementById('pl-k-ctrl').style.display = md==='tsvd'?'':'none';
+    update();
+  }
+  document.getElementById('pl-mode-tik').addEventListener('click', function(){ setMode('tik'); });
+  document.getElementById('pl-mode-tsvd').addEventListener('click', function(){ setMode('tsvd'); });
+  document.getElementById('pl-w').addEventListener('input', function(){ state.w=parseFloat(this.value); document.getElementById('pl-w-val').textContent=this.value; update(); });
+  document.getElementById('pl-noise').addEventListener('input', function(){ state.nExp=parseFloat(this.value); document.getElementById('pl-noise-val').textContent='1e'+(Math.round(state.nExp*10)/10); update(); });
+  document.getElementById('pl-lam').addEventListener('input', function(){ state.lamIdx=parseInt(this.value,10); update(); });
+  document.getElementById('pl-k').addEventListener('input', function(){ state.k=parseInt(this.value,10); update(); });
+  document.getElementById('pl-redraw').addEventListener('click', function(){ state.seed++; update(); });
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: OBSERVABILITY & SENSOR PLACEMENT LAB ===== -->
+<script>
+(function() {
+  var n=16, nSlots=20, TOL=1e-8;
+  var state = { active:[], h:1.5, nExp:-2, mode:'tik', lamExp:-2, noiseType:'white', seed:1 };
+  var i0;
+  for(i0=0;i0<nSlots;i0++) state.active.push(false);
+  [0,3,5,8,11,14,16,19].forEach(function(i){ state.active[i]=true; });
+
+  var ptrue=[];
+  for(i0=0;i0<n;i0++){ var c=i0+0.5;
+    ptrue.push(Math.exp(-Math.pow((c-4.5)/1.6,2)) + 0.7*Math.exp(-Math.pow((c-11.5)/2.0,2)) + 0.9*Math.exp(-Math.pow((c-8)/0.55,2)));
+  }
+
+  function makeRng(seed){ var s=(seed*2654435761)>>>0; return function(){ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+  function gaussDraw(rng){ var u=Math.max(rng(),1e-12), v=rng(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+  function fmt(x){
+    if(!isFinite(x)) return '&#8734;';
+    var a=Math.abs(x);
+    if(a!==0 && (a<0.01||a>=1000)) return x.toExponential(1);
+    return x.toPrecision(3);
+  }
+  function slotPos(i){ return (i+0.5)*(16/nSlots); }
+
+  function eigSym(Ain, nn){
+    var a=[], V=[], i, j;
+    for(i=0;i<nn;i++){ a.push(Ain[i].slice()); V.push(new Array(nn).fill(0)); V[i][i]=1; }
+    for(var sweep=0; sweep<60; sweep++){
+      var off=0;
+      for(i=0;i<nn;i++) for(j=i+1;j<nn;j++) off+=a[i][j]*a[i][j];
+      if(off<1e-26) break;
+      for(var p=0;p<nn-1;p++) for(var q=p+1;q<nn;q++){
+        if(Math.abs(a[p][q])<1e-18) continue;
+        var th=(a[q][q]-a[p][p])/(2*a[p][q]);
+        var t=(th===0)?1:(Math.sign(th)/(Math.abs(th)+Math.sqrt(th*th+1)));
+        var cc=1/Math.sqrt(t*t+1), ss=t*cc;
+        for(var k=0;k<nn;k++){ var akp=a[k][p], akq=a[k][q]; a[k][p]=cc*akp-ss*akq; a[k][q]=ss*akp+cc*akq; }
+        for(k=0;k<nn;k++){ var apk=a[p][k], aqk=a[q][k]; a[p][k]=cc*apk-ss*aqk; a[q][k]=ss*apk+cc*aqk; }
+        for(k=0;k<nn;k++){ var vkp=V[k][p], vkq=V[k][q]; V[k][p]=cc*vkp-ss*vkq; V[k][q]=ss*vkp+cc*vkq; }
+      }
+    }
+    var d=new Array(nn); for(i=0;i<nn;i++) d[i]=a[i][i];
+    return {d:d, V:V};
+  }
+
+  function compute(){
+    var act=[], i, j;
+    for(i=0;i<nSlots;i++) if(state.active[i]) act.push(i);
+    var m=act.length;
+    var A=act.map(function(si){
+      var row=[], sp=slotPos(si);
+      for(var jj=0;jj<n;jj++){ var cj=jj+0.5; row.push(Math.exp(-(sp-cj)*(sp-cj)/(2*state.h*state.h))/4); }
+      return row;
+    });
+    // AtA and eigen
+    var AtA=[];
+    for(i=0;i<n;i++){ AtA.push(new Array(n).fill(0)); }
+    for(i=0;i<n;i++) for(j=0;j<n;j++){ var s2=0; for(var r2=0;r2<m;r2++) s2+=A[r2][i]*A[r2][j]; AtA[i][j]=s2; }
+    var eg = m>0 ? eigSym(AtA,n) : {d:new Array(n).fill(0), V:(function(){var V=[];for(var a2=0;a2<n;a2++){V.push(new Array(n).fill(0));V[a2][a2]=1;}return V;})()};
+    var order=[]; for(i=0;i<n;i++) order.push(i);
+    order.sort(function(a,b){ return eg.d[b]-eg.d[a]; });
+    var sig=order.map(function(ix){ return Math.sqrt(Math.max(eg.d[ix],0)); });
+    var Vc=order.map(function(ix){ var col=[]; for(var k2=0;k2<n;k2++) col.push(eg.V[k2][ix]); return col; });
+    // data
+    var bex=A.map(function(row){ var s3=0; for(var jj=0;jj<n;jj++) s3+=row[jj]*ptrue[jj]; return s3; });
+    var bmax=0; for(i=0;i<m;i++) bmax=Math.max(bmax,Math.abs(bex[i]));
+    if(bmax===0) bmax=1;
+    var s=Math.pow(10,state.nExp)*bmax;
+    var rng=makeRng(state.seed);
+    var w=[]; for(i=0;i<nSlots;i++) w.push(gaussDraw(rng));
+    var e=[];
+    if(state.noiseType==='white'){
+      for(i=0;i<m;i++) e.push(s*w[act[i]]);
+    } else {
+      for(i=0;i<m;i++){
+        var num=0, den=0;
+        for(j=0;j<nSlots;j++){ var g=Math.exp(-Math.pow(act[i]-j,2)/(2*4)); num+=g*w[j]; den+=g*g; }
+        e.push(s*num/Math.sqrt(den));
+      }
+    }
+    var delta=Math.sqrt(e.reduce(function(a3,v){return a3+v*v;},0));
+    var b=bex.map(function(v,ii){ return v+e[ii]; });
+    // reconstruction
+    var lam = state.mode==='tik' ? Math.pow(10,state.lamExp)*(sig[0]||1) : 0;
+    var x=new Array(n).fill(0);
+    var rank=0;
+    for(i=0;i<n;i++){
+      if(sig[i]>TOL*(sig[0]||1)) rank++;
+      if(sig[i]<=1e-12*(sig[0]||1)) continue;
+      // u_i^T b = (A v_i . b)/sigma_i
+      var Av=[], k3;
+      for(k3=0;k3<m;k3++){ var s4=0; for(j=0;j<n;j++) s4+=A[k3][j]*Vc[i][j]; Av.push(s4); }
+      var uib=0; for(k3=0;k3<m;k3++) uib+=Av[k3]*b[k3];
+      uib/=sig[i];
+      var coef = state.mode==='tik' ? sig[i]*uib/(sig[i]*sig[i]+lam*lam) : uib/sig[i];
+      for(j=0;j<n;j++) x[j]+=coef*Vc[i][j];
+    }
+    // residual and errors
+    var res2=0;
+    for(i=0;i<m;i++){ var pr=0; for(j=0;j<n;j++) pr+=A[i][j]*x[j]; res2+=Math.pow(pr-b[i],2); }
+    var errN=0, ptN=0;
+    for(j=0;j<n;j++){ errN+=Math.pow(x[j]-ptrue[j],2); ptN+=ptrue[j]*ptrue[j]; }
+    var kappa = (sig[n-1]>TOL*(sig[0]||1)) ? sig[0]/sig[n-1] : Infinity;
+    return { act:act, m:m, A:A, sig:sig, Vc:Vc, s:s, delta:delta, b:b, x:x, lam:lam, rank:rank, kappa:kappa,
+             res:Math.sqrt(res2), relerr:Math.sqrt(errN/ptN) };
+  }
+
+  function drawStruct(r){
+    var L=25,R=445,Tsurf=52,B=178, s='', i;
+    function X(u){ return L+u/16*(R-L); }
+    // pressure profile above surface
+    var pmax=1.9;
+    s+='<text x="'+L+'" y="14" font-size="9.5" fill="#e67e22">true contact pressure</text>';
+    var p='';
+    for(i=0;i<n;i++){
+      var xx=X(i+0.5), yy=Tsurf-4-(ptrue[i]/pmax)*30;
+      p+=(i?' L':'M')+xx.toFixed(1)+' '+yy.toFixed(1);
+    }
+    s+='<path d="'+p+'" fill="none" stroke="#e67e22" stroke-width="1.8"/>';
+    // skin block
+    s+='<rect x="'+L+'" y="'+Tsurf+'" width="'+(R-L)+'" height="'+(B-Tsurf)+'" fill="#f2f6fa" stroke="#bbb"/>';
+    for(i=0;i<=n;i++){ var xg=X(i); s+='<line x1="'+xg+'" y1="'+Tsurf+'" x2="'+xg+'" y2="'+(Tsurf+6)+'" stroke="#999"/>'; }
+    s+='<text x="'+(R+2)+'" y="'+(Tsurf+4)+'" font-size="9" fill="#888"></text>';
+    // depth scale: h units -> px
+    var pxPerUnit=(B-Tsurf-22)/3.5;
+    var yS=Tsurf+state.h*pxPerUnit;
+    // influence footprint of first active sensor
+    if(r.act.length>0){
+      var si=slotPos(r.act[0]), amp=26;
+      var p2='';
+      for(i=0;i<=60;i++){ var u=i/60*16;
+        var g=Math.exp(-(u-si)*(u-si)/(2*state.h*state.h));
+        p2+=(i?' L':'M')+X(u).toFixed(1)+' '+(Tsurf+8+ (1-g)*amp).toFixed(1);
+      }
+      s+='<path d="'+p2+'" fill="none" stroke="#1565c0" stroke-width="1" stroke-dasharray="3,3" opacity="0.75"/>';
+      s+='<text x="'+X(Math.min(si+1.2,13))+'" y="'+(Tsurf+18)+'" font-size="8.5" fill="#1565c0" opacity="0.85">influence width &#8776; h</text>';
+    }
+    // sensors
+    for(i=0;i<nSlots;i++){
+      var xs=X(slotPos(i));
+      var on=state.active[i];
+      s+='<circle data-slot="'+i+'" cx="'+xs.toFixed(1)+'" cy="'+yS.toFixed(1)+'" r="7" fill="'+(on?'#1565c0':'#fff')+'" stroke="'+(on?'#1565c0':'#999')+'" stroke-width="1.5" style="cursor:pointer;"/>';
+    }
+    s+='<line x1="'+(L-6)+'" y1="'+Tsurf+'" x2="'+(L-6)+'" y2="'+yS+'" stroke="#666" stroke-width="1"/>';
+    s+='<text x="'+(L-10)+'" y="'+((Tsurf+yS)/2+3)+'" text-anchor="end" font-size="9" fill="#666">h</text>';
+    document.getElementById('ob-struct').innerHTML=s;
+  }
+
+  function drawSpec(r){
+    var L=38,R=215,T=12,B=138, lgMin=-8, lgMax=1, s='', i;
+    s+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+B+'" stroke="#999"/><line x1="'+L+'" y1="'+B+'" x2="'+R+'" y2="'+B+'" stroke="#999"/>';
+    [0,-4,-8].forEach(function(ee){
+      var yy=B-(ee-lgMin)/(lgMax-lgMin)*(B-T);
+      s+='<text x="'+(L-3)+'" y="'+(yy+3)+'" text-anchor="end" font-size="8.5" fill="#888">1e'+ee+'</text>';
+    });
+    var s1=r.sig[0]||1;
+    for(i=0;i<n;i++){
+      var v=Math.max(r.sig[i]/s1,1e-9);
+      var lg=Math.log10(v);
+      var yy=B-(lg-lgMin)/(lgMax-lgMin)*(B-T);
+      yy=Math.max(T,Math.min(B,yy));
+      var xx=L+6+(i/(n-1))*(R-L-14);
+      var dead = r.sig[i]<=TOL*s1;
+      s+='<circle cx="'+xx.toFixed(1)+'" cy="'+yy.toFixed(1)+'" r="3" fill="'+(dead?'#c62828':'#1565c0')+'"/>';
+    }
+    if(state.mode==='tik'){
+      var lgl=Math.log10(Math.max(r.lam/s1,1e-9));
+      var yl=B-(lgl-lgMin)/(lgMax-lgMin)*(B-T);
+      if(yl>T&&yl<B){
+        s+='<line x1="'+L+'" y1="'+yl+'" x2="'+R+'" y2="'+yl+'" stroke="#e67e22" stroke-width="1" stroke-dasharray="4,3"/>';
+        s+='<text x="'+(R-2)+'" y="'+(yl-4)+'" text-anchor="end" font-size="8.5" fill="#e67e22">&#955;</text>';
+      }
+    }
+    s+='<text x="'+((L+R)/2)+'" y="'+(B+16)+'" text-anchor="middle" font-size="9" fill="#666">&#963;&#7522;/&#963;&#8321; &mdash; red = below rank tolerance</text>';
+    document.getElementById('ob-spec').innerHTML=s;
+  }
+
+  function drawNull(r){
+    var L=14,R=215,T=16,B=140, s='', i;
+    var v=r.Vc[n-1];
+    var mid=(T+B)/2;
+    s+='<line x1="'+L+'" y1="'+mid+'" x2="'+R+'" y2="'+mid+'" stroke="#ddd"/>';
+    var bw=(R-L)/n;
+    for(i=0;i<n;i++){
+      var hh=v[i]*(B-T)/2*1.6;
+      hh=Math.max(-((B-T)/2-2),Math.min((B-T)/2-2,hh));
+      var yy=hh>0?mid-hh:mid;
+      s+='<rect x="'+(L+i*bw+1).toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+Math.abs(hh).toFixed(1)+'" fill="#7b1fa2" opacity="0.8"/>';
+    }
+    var lbl = (r.sig[n-1]<=TOL*(r.sig[0]||1)) ? 'invisible (in the nullspace: &#963; &#8776; 0)' : 'barely visible: &#963;&#8345;/&#963;&#8321; = '+fmt(r.sig[n-1]/(r.sig[0]||1));
+    s+='<text x="'+((L+R)/2)+'" y="'+(B+16)+'" text-anchor="middle" font-size="9" fill="#666">'+lbl+'</text>';
+    document.getElementById('ob-null').innerHTML=s;
+  }
+
+  function drawRecon(r){
+    var L=30,R=445,T=12,B=140, s='', i;
+    var lo=-0.5, hi=2.1;
+    function Y(v){ v=Math.max(lo,Math.min(hi,v)); return B-(v-lo)/(hi-lo)*(B-T); }
+    function X(i2){ return L+(i2+0.5)/n*(R-L); }
+    s+='<line x1="'+L+'" y1="'+Y(0)+'" x2="'+R+'" y2="'+Y(0)+'" stroke="#eee"/>';
+    var p='';
+    for(i=0;i<n;i++){ p+=(i?' L':'M')+X(i).toFixed(1)+' '+Y(ptrue[i]).toFixed(1); }
+    s+='<path d="'+p+'" fill="none" stroke="#e67e22" stroke-width="1.4"/>';
+    p='';
+    for(i=0;i<n;i++){ p+=(i?' L':'M')+X(i).toFixed(1)+' '+Y(r.x[i]).toFixed(1); }
+    s+='<path d="'+p+'" fill="none" stroke="#1565c0" stroke-width="2.4"/>';
+    s+='<text x="'+(R-4)+'" y="'+(T+10)+'" text-anchor="end" font-size="10" fill="#666">clipped to axis range</text>';
+    document.getElementById('ob-recon').innerHTML=s;
+  }
+
+  function panelHtml(r){
+    function head(t){ return '<div style="font-size:10px;font-weight:600;color:#1565c0;text-transform:uppercase;letter-spacing:0.3px;margin:10px 0 2px;">'+t+'</div>'; }
+    var kap = isFinite(r.kappa) ? fmt(r.kappa) : '&#8734; (rank-deficient)';
+    var prior = state.mode==='tik' ? 'magnitude prior (L = I) via Tikhonov, &#955; = '+fmt(r.lam) : 'none (plain least squares)';
+    return '<div style="font-size:11px;font-weight:700;color:#333;">WHAT THIS INVERSION IS BUILT ON</div>'
+      + head('Measurements') + r.m+' sensors at depth h = '+state.h.toFixed(1)+'; noise: '+(state.noiseType==='white'?'white':'spatially correlated')+', s = '+fmt(r.s)
+      + head('Unknowns') + n+' patch pressures (field reconstruction)'
+      + head('Assumed known') + 'geometry &amp; depth; influence matrix A (calibrated forward model); noise level; '+prior
+      + head('Rank / conditioning') + 'rank '+r.rank+' / '+n+'; &#954;&#8322;(A) = '+kap
+      + head('Validation') + 'residual = '+fmt(r.res)+' vs. noise norm &#948; = '+fmt(r.delta)+'<br>oracle rel. error = '+fmt(r.relerr)+' <span style="color:#888;">(known only because this is synthetic)</span>';
+  }
+
+  function update(){
+    var r=compute();
+    drawStruct(r); drawSpec(r); drawNull(r); drawRecon(r);
+    document.getElementById('ob-panel').innerHTML=panelHtml(r);
+    document.getElementById('ob-lam-val').innerHTML = state.mode==='tik' ? fmt(r.lam) : '&mdash;';
+    var ro=document.getElementById('ob-readout');
+    ro.innerHTML = '<strong>'+(state.mode==='tik'?'Tikhonov':'Plain LS')+'</strong>: rel. error '+fmt(r.relerr)
+      + ' &nbsp;&middot;&nbsp; residual '+fmt(r.res)+' (target &#8776; &#948; = '+fmt(r.delta)+')'
+      + ' &nbsp;&middot;&nbsp; a residual far <em>below</em> &#948; means the model is fitting noise; far above, it is missing signal or the model is wrong.';
+  }
+
+  function styleToggle(onBtn, offBtn){
+    onBtn.style.background='#1565c0'; onBtn.style.color='#fff'; onBtn.style.fontWeight='600';
+    offBtn.style.background='none'; offBtn.style.color='#1565c0'; offBtn.style.fontWeight='normal';
+  }
+  document.getElementById('ob-struct').addEventListener('click', function(ev){
+    var t=ev.target;
+    if(t && t.getAttribute && t.getAttribute('data-slot')!==null){
+      var i=parseInt(t.getAttribute('data-slot'),10);
+      state.active[i]=!state.active[i];
+      update();
+    }
+  });
+  document.getElementById('ob-h').addEventListener('input', function(){ state.h=parseFloat(this.value); document.getElementById('ob-h-val').textContent=this.value; update(); });
+  document.getElementById('ob-noise').addEventListener('input', function(){ state.nExp=parseFloat(this.value); document.getElementById('ob-noise-val').textContent='1e'+(Math.round(state.nExp*10)/10); update(); });
+  document.getElementById('ob-lam').addEventListener('input', function(){ state.lamExp=parseFloat(this.value); update(); });
+  document.getElementById('ob-mode-ls').addEventListener('click', function(){ state.mode='ls'; styleToggle(this, document.getElementById('ob-mode-tik')); update(); });
+  document.getElementById('ob-mode-tik').addEventListener('click', function(){ state.mode='tik'; styleToggle(this, document.getElementById('ob-mode-ls')); update(); });
+  document.getElementById('ob-noise-white').addEventListener('click', function(){ state.noiseType='white'; styleToggle(this, document.getElementById('ob-noise-corr')); update(); });
+  document.getElementById('ob-noise-corr').addEventListener('click', function(){ state.noiseType='corr'; styleToggle(this, document.getElementById('ob-noise-white')); update(); });
+  function preset(list){ for(var i=0;i<nSlots;i++) state.active[i]=false; list.forEach(function(i2){ state.active[i2]=true; }); update(); }
+  document.getElementById('ob-preset-spread').addEventListener('click', function(){ preset([0,3,5,8,11,14,16,19]); });
+  document.getElementById('ob-preset-cluster').addEventListener('click', function(){ preset([6,7,8,9,10,11,12,13]); });
+  document.getElementById('ob-preset-few').addEventListener('click', function(){ preset([1,7,12,18]); });
+  document.getElementById('ob-preset-all').addEventListener('click', function(){ preset([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]); });
+  document.getElementById('ob-redraw').addEventListener('click', function(){ state.seed++; update(); });
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+  initWalkthrough('workflow-walkthrough', [
+    {
+      tab: '1. Model',
+      title: 'Step 1: Write the Observation Model',
+      text: 'Before touching a solver, write the observation model for <em>your</em> experiment and answer the four questions: what is measured, what is unknown, what is assumed known, what is unobservable. The answers decide everything downstream — which family the problem belongs to, what the operator $\\mathbf{A}$ is, and which prior is defensible.',
+      visual: '<div class="definition-box"><div class="box-label">The spine</div><div>$$\\mathbf{y} = \\mathcal{H}(\\mathbf{u},\\, \\mathbf{p},\\, \\mathbf{f},\\, \\mathbf{X}_0) + \\mathbf{b} + \\boldsymbol{\\eta}$$</div></div>',
+      insight: 'Most inversion failures are not solver failures — they are unacknowledged entries in the "assumed known" column: a miscalibrated geometry, an unmodeled temperature drift, a wrongly trusted boundary condition.'
+    },
+    {
+      tab: '2. Scale',
+      title: 'Step 2: Scale and Whiten',
+      text: 'Divide each row by its sensor channel’s noise standard deviation (whitening — the diagonal case of $\\mathbf{C}^{-1/2}$) and each column by the characteristic magnitude of its unknown. The SVD and the condition number are not scale-invariant: skip this step and every later diagnostic can lie to you.',
+      visual: '<div class="math-block">$$\\min_{\\mathbf{x}}\\;\\big\\|\\mathbf{C}^{-1/2}(\\mathbf{A}\\mathbf{x}-\\mathbf{b})\\big\\|_2^2 \\qquad \\text{then all noise-floor and criteria formulas hold with } s = 1$$</div>',
+      insight: 'A $\\kappa = 10^9$ that drops to $10^3$ after sensible scaling was a units problem, not an ill-posed problem.'
+    },
+    {
+      tab: '3. SVD',
+      title: 'Step 3: Compute the SVD and Classify the Spectrum',
+      text: 'Plot $\\sigma_i$ on a semilog axis. Flat spectrum: ordinary least squares, stop here. A cluster then a sharp gap: rank-deficient — TSVD at the gap, done. Gradual decay with no gap: discrete ill-posed — continue to Step 4, a regularization parameter must be chosen.',
+      visual: '<div class="definition-box"><div class="box-label">The three regimes</div><div>flat &#8594; solve; &nbsp; gap &#8594; truncate at the numerical rank; &nbsp; gradual decay &#8594; regularize and choose $\\lambda$ honestly.</div></div>',
+      insight: 'The spectrum is a property of your experiment design, not of your data: it is computable before the first measurement is ever taken — which makes this step a design tool, not just a diagnostic.'
+    },
+    {
+      tab: '4. Picard',
+      title: 'Step 4: Draw the Picard Plot',
+      text: 'With real data, plot $\\sigma_i$, $|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}|$, and their ratio. Find the crossing index $i^*$ where the measured coefficients $|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}|$ stop decaying and flatten onto the noise plateau: that is the number of recoverable components. (Not where $\\sigma_i$ dips below the plateau &mdash; that happens later and flatters the experiment.) If $i^*$ is far below the number of unknowns, re-parameterize coarser instead of fighting with heavy regularization.',
+      visual: '<div class="math-block">$$|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}| \\approx \\max\\{\\,|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}_{\\mathrm{exact}}|,\\; s\\,\\}$$</div>',
+      insight: 'The plateau is the noise floor, not a violation of the discrete Picard condition — the DPC concerns the exact data. Expect the plateau in every real dataset; read it as "the signal ends here".'
+    },
+    {
+      tab: '5. Regularize',
+      title: 'Step 5: Choose L, Sweep λ, Cross-Check the Criteria',
+      text: 'Pick $\\mathbf{L}$ from prior physics (identity for magnitude, gradient/Laplacian for smoothness — and check null$(\\mathbf{L})$ is observable through $\\mathbf{A}$). Sweep 50–100 log-spaced $\\lambda$ values across $[\\sigma_n, \\sigma_1]$ and evaluate all three criteria: discrepancy (needs $\\delta = \\|\\mathbf{e}\\| \\approx s\\sqrt{m}$ — not $s$!), L-curve corner (on log-log axes), and GCV (assumes white noise).',
+      visual: '<div class="math-block">$$\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2 = \\tau\\delta \\qquad\\quad \\text{corner of } (\\log\\rho, \\log\\eta) \\qquad\\quad \\min_\\lambda G(\\lambda)$$</div>',
+      insight: 'Agreement between the criteria is evidence; disagreement is diagnosis. A GCV pick far below the discrepancy pick usually means correlated noise; a wandering corner means fast singular-value decay.'
+    },
+    {
+      tab: '6. Validate',
+      title: 'Step 6: Validate Honestly',
+      text: 'Check the residual looks like sensor noise (white, right magnitude) — structure in the residual is model error. Score the fit on <em>withheld</em> sensors or loading cases, never only on the data it was fitted to. Never commit an inverse crime: synthetic test data must come from a finer or different discretization with realistic noise. And report the bias: filtered solutions underestimate peaks by construction.',
+      visual: '<div class="definition-box"><div class="box-label">Validation checklist</div><div>residual whiteness &nbsp;&#183;&nbsp; withheld-data error &nbsp;&#183;&nbsp; no inverse crime &nbsp;&#183;&nbsp; bias reported</div></div>',
+      insight: 'The parameter-choice criteria of Step 5 estimate the optimum <em>inside</em> your model. Only withheld real data tests the model itself — including everything sitting silently in the "assumed known" column of Step 1.'
+    }
+  ]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+  initFlashcards('mod3-flashcards', [
+    {
+      q: 'State Hadamard’s three conditions for a well-posed problem.',
+      a: '(1) Existence: a solution exists for all admissible data; (2) Uniqueness: the solution is unique; (3) Stability: the solution depends continuously on the data. A problem is ill-posed if any one fails.'
+    },
+    {
+      q: 'Express the condition number $\\kappa_2(\\mathbf{A})$ in terms of singular values, and give the digits-lost rule of thumb.',
+      a: '$\\kappa_2(\\mathbf{A}) = \\sigma_1/\\sigma_n$. A solve loses roughly $\\log_{10}\\kappa$ decimal digits of accuracy; double precision provides about 16.'
+    },
+    {
+      q: 'Why should you avoid explicitly forming the normal equations $\\mathbf{A}^\\mathsf{T}\\mathbf{A}\\mathbf{x} = \\mathbf{A}^\\mathsf{T}\\mathbf{b}$ for ill-conditioned $\\mathbf{A}$?',
+      a: 'Because $\\kappa_2(\\mathbf{A}^\\mathsf{T}\\mathbf{A}) = \\kappa_2(\\mathbf{A})^2$ — forming the product squares the condition number. Use QR or SVD on $\\mathbf{A}$ (or on the augmented Tikhonov system), which work at $\\kappa(\\mathbf{A})$.'
+    },
+    {
+      q: 'Give the Tikhonov filter factors for $\\mathbf{L}=\\mathbf{I}$ and their two asymptotic regimes.',
+      a: '$f_i = \\dfrac{\\sigma_i^2}{\\sigma_i^2+\\lambda^2}$; $f_i \\approx 1$ when $\\sigma_i \\gg \\lambda$ (component kept), $f_i \\approx \\sigma_i^2/\\lambda^2 \\to 0$ when $\\sigma_i \\ll \\lambda$ (component suppressed).'
+    },
+    {
+      q: 'State the discrete Picard condition.',
+      a: 'The SVD coefficients of the exact data $|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}_{\\mathrm{exact}}|$ must decay to zero faster, on average, than the singular values $\\sigma_i$. Otherwise no bounded-norm meaningful solution underlies the data (Hansen 1990).'
+    },
+    {
+      q: 'In a Picard plot of noisy data, the coefficients $|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}|$ level off at a horizontal band. Violation of the Picard condition?',
+      a: 'No — the plateau is the noise floor ($|\\mathbf{u}_i^\\mathsf{T}\\mathbf{e}| \\approx s$ for white noise at every $i$). The DPC concerns the exact data; the crossing index is where the measured coefficients <em>flatten onto</em> that plateau &mdash; equivalently where $|\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}_{\\mathrm{exact}}|$ sinks to $s$ &mdash; and that is what marks the number of recoverable components. The later index at which $\\sigma_i$ itself reaches $s$ is a different event and overstates the information you hold.'
+    },
+    {
+      q: 'State Morozov’s discrepancy principle and its main practical requirement.',
+      a: 'Choose $\\lambda$ so that $\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2 = \\tau\\delta$ with $\\delta = \\|\\mathbf{e}\\|_2$ and $\\tau \\gtrsim 1$: do not fit the data below the noise level. It requires a reliable estimate of the noise norm $\\delta$ (for white noise, $\\delta \\approx s\\sqrt{m}$) and tends to over-smooth slightly.'
+    },
+    {
+      q: 'What do the two branches and the corner of the L-curve represent?',
+      a: 'Log-log plot of $(\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2, \\|\\mathbf{L}\\mathbf{x}_\\lambda\\|_2)$: the steep vertical branch is under-regularization (noise inflates the solution norm), the flat horizontal branch is over-regularization (bias inflates the residual), and the corner — the maximum-curvature point — balances perturbation error against regularization error.'
+    },
+    {
+      q: 'What is GCV’s key advantage over the discrepancy principle, and its two classic failure modes?',
+      a: 'GCV (Golub–Heath–Wahba 1979) minimizes $G(\\lambda)=\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2^2/[\\mathrm{trace}(\\mathbf{I}-\\mathbf{A}\\mathbf{A}_\\lambda^{\\#})]^2$ and needs no noise-level estimate. It fails (under-smooths badly) for correlated noise, and its minimum is often very flat, making it numerically delicate to locate.'
+    },
+    {
+      q: 'Under what assumptions does MAP estimation reduce to Tikhonov regularization, and what is $\\lambda$ then?',
+      a: 'Linear forward model, Gaussian noise $\\mathbf{e}\\sim\\mathcal{N}(\\mathbf{0},\\sigma^2\\mathbf{I})$, Gaussian prior $\\mathbf{x}\\sim\\mathcal{N}(\\mathbf{x}_0,\\gamma^2(\\mathbf{L}^\\mathsf{T}\\mathbf{L})^{-1})$. Then $\\mathbf{x}_{\\mathrm{MAP}}$ is the Tikhonov solution with $\\lambda^2 = \\sigma^2/\\gamma^2$ — the noise-to-prior variance ratio, not a fudge factor.'
+    },
+    {
+      q: 'Compute the Tikhonov filter factors for $\\sigma = (1,\\ 0.1,\\ 10^{-3})$ at $\\lambda = 0.03$.',
+      a: '$\\lambda^2 = 9\\times10^{-4}$. $f_1 = 1/(1+9\\times10^{-4}) \\approx 0.999$; $f_2 = 0.01/0.0109 \\approx 0.917$; $f_3 = 10^{-6}/(9.01\\times10^{-4}) \\approx 1.1\\times10^{-3}$. Components with $\\sigma_i$ near $\\lambda$ are partially kept; far below, annihilated.'
+    },
+    {
+      q: 'How do rank-deficient and discrete ill-posed problems differ in their singular spectra, and which regularizer fits each?',
+      a: 'Rank-deficient: a gap in the spectrum defines a numerical rank — truncate there (TSVD is natural). Discrete ill-posed: gradual decay with no gap — no natural truncation index; Tikhonov’s smooth filter (or TSVD with $k$ chosen by a parameter-choice rule, $\\lambda \\approx \\sigma_k$) is used.'
+    },
+    {
+      q: 'Name the four classes in the taxonomy of inverse problems in solid mechanics, with the unknown of each.',
+      a: '(1) Load identification — applied forces/pressures; (2) Material identification — constitutive parameters or modulus fields; (3) Shape/configuration identification — geometry: cracks, inclusions, or the deformed shape itself (iFEM’s home); (4) Boundary-condition identification — tractions/displacements on an inaccessible boundary (the severely ill-posed Cauchy problem).'
+    },
+    {
+      q: 'Write the guide’s observation model and name each term.',
+      a: '$\\mathbf{y} = \\mathcal{H}(\\mathbf{u}, \\mathbf{p}, \\mathbf{f}, \\mathbf{X}_0) + \\mathbf{b} + \\boldsymbol{\\eta}$: measurements $\\mathbf{y}$, observation operator $\\mathcal{H}$ (physics + sensor model), state $\\mathbf{u}$, material parameters $\\mathbf{p}$, loads $\\mathbf{f}$, reference configuration $\\mathbf{X}_0$, systematic bias $\\mathbf{b}$, random noise $\\boldsymbol{\\eta}$. Every inverse method picks one argument as unknown and assumes the rest — and must state what remains unobservable.'
+    },
+    {
+      q: 'Distinguish observability from identifiability, and give mechanics’ canonical example of an unobservable component.',
+      a: 'Observability concerns states/fields (can $\\mathbf{u}$ or $\\mathbf{X}_0$ be determined from the data?); identifiability concerns parameters ($\\mathbf{p}$). For linear problems both reduce to the nullspace of the observation matrix; for nonlinear parameter dependence the Jacobian’s rank governs identifiability only locally. Canonical nullspace: strain gauges cannot see rigid-body motion.'
+    },
+    {
+      q: 'How does Levenberg–Marquardt relate to Gauss–Newton, and why is its damping not regularization of the problem?',
+      a: 'LM solves $(\\mathbf{J}^\\mathsf{T}\\mathbf{J} + \\mu^2\\mathbf{I})\\Delta = \\mathbf{J}^\\mathsf{T}(\\mathbf{d}-G(\\mathbf{m}))$ — a damped Gauss–Newton step, formally Tikhonov-with-identity on the update. But $\\mu$ is driven toward zero as iterations converge: it stabilizes the step, not the problem. An ill-posed problem still needs an explicit regularization term in the objective itself.'
+    },
+    {
+      q: 'What is an "inverse crime", and how do you avoid it?',
+      a: 'Validating an inversion on synthetic data generated with the same discretization, model, and noise assumptions used inside the inversion — the test then flatters the method. Avoid it by generating test data on a finer or different mesh with realistic (possibly correlated) noise, and by scoring on withheld sensors or loading cases.'
+    }
+  ]);
+</script>
+
+</body>
+</html>

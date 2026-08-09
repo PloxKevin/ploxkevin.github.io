@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1. Continuum Mechanics Primer — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">1. Continuum Mechanics Primer</h1>
+    <p class="page-subtitle">Kinematics of deformation, deformation gradient, small vs finite strain, stress measures, linear elasticity, Voigt notation, plane stress/strain, compatibility, hyperelasticity</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#why-continuum-mechanics-for-ifem">1. Why Continuum Mechanics Before iFEM</a>
+      <a href="#configurations-and-displacement">2. Configurations, Motion, and Displacement</a>
+      <a href="#deformation-gradient">3. The Deformation Gradient F</a>
+      <a href="#strain-measures">4. Strain Measures: Small Strain vs Green&ndash;Lagrange</a>
+      <a href="#compatibility">5. Compatibility: When Is a Strain Field Integrable?</a>
+      <a href="#stress-measures">6. Stress Measures: Cauchy, First and Second Piola&ndash;Kirchhoff</a>
+      <a href="#linear-elasticity">7. Linear Elasticity and the Hooke Tensor</a>
+      <a href="#voigt-notation">8. Voigt Notation and the Factor-of-2 Shear Trap</a>
+      <a href="#plane-stress-plane-strain">9. Plane Stress and Plane Strain</a>
+      <a href="#hyperelasticity-strain-energy">10. Hyperelasticity: Stress From a Strain-Energy Density</a>
+      <a href="#neo-hookean-mooney-rivlin">11. Neo-Hookean, Mooney&ndash;Rivlin, and Incompressibility</a>
+      <a href="#choosing-the-right-theory">12. Choosing the Right Theory: A Decision Guide</a>
+      <a class="toc-interactive" href="#strain-trap-lab">Interactive: Strain-Convention Trap Lab</a>
+      <a class="toc-interactive" href="#uniaxial-stress-explorer">Interactive: Uniaxial Stress Explorer</a>
+      <a class="toc-interactive" href="#mod1-walkthrough">Interactive: From Motion to Stress and Back</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: WHY CONTINUUM MECHANICS BEFORE IFEM ===== -->
+    <h2 class="section-heading" id="why-continuum-mechanics-for-ifem">1. Why Continuum Mechanics Before iFEM</h2>
+
+    <p>Continuum mechanics starts with a deliberate act of forgetting: replace the molecular detail of a body with smooth fields — a displacement $\mathbf{u}(\mathbf{X})$, a strain field, a stress field. The <strong>continuum hypothesis</strong> is justified whenever the smallest feature you care about is far larger than the microstructure. For a silicone tactile skin the polymer network mesh size is around 10&nbsp;nm while the skin geometry lives at the millimeter scale — five orders of magnitude of separation. Field theory applies without apology.</p>
+
+    <p>This entire study guide is about inverting parts of one map. The <em>forward</em> elasticity map runs: geometry + boundary conditions + constitutive law $\rightarrow$ displacement field everywhere $\rightarrow$ strains $\rightarrow$ stresses $\rightarrow$ reaction and contact forces. iFEM inverts a piece of it: sparse measured strains (strain gauges, fibers) or vision-derived surface displacements $\rightarrow$ best-fit full displacement field $\rightarrow$ interior strain and stress $\rightarrow$ contact load reconstruction. You cannot pose, regularize, or debug the inverse map without owning the forward vocabulary — which is exactly what this module builds.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Every inverse method on this site is an instance of the observation model
+      $$\mathbf{y} = \mathcal{H}(\mathbf{u}, p, f, X_0) + b + \eta,$$
+      where $\mathbf{y}$ is what you measure, and $\mathcal{H}$ maps the displacement field $\mathbf{u}$, material parameters $p$, loads $f$, and reference configuration $X_0$ (plus bias $b$ and noise $\eta$) to those measurements. This module supplies the vocabulary inside $\mathcal{H}$: what $\mathbf{u}$, strain, and stress <em>are</em>, and which relations between them are exact versus modeled.</div>
+    </div>
+
+    <p>Three ingredient types make up the forward map, and it matters enormously which is which:</p>
+
+    <table>
+      <tr><th>Ingredient</th><th>What it is</th><th>Status</th></tr>
+      <tr><td><strong>Kinematics</strong></td><td>The geometry of deformation: configurations, $\mathbf{F}$, strain measures</td><td>Material-<em>independent</em>, exact</td></tr>
+      <tr><td><strong>Balance / stress</strong></td><td>Internal force bookkeeping and equilibrium</td><td>Material-independent, exact</td></tr>
+      <tr><td><strong>Constitutive law</strong></td><td>The material-specific bridge from strain to stress</td><td>The <em>only</em> place modeling error about the material enters</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters</div>
+      <div>When an inverse reconstruction disagrees with reality, this three-way split tells you where to look. Kinematics and balance cannot be wrong — they are mathematics. Every modeling sin about the material lives in the constitutive law, and every modeling sin about the deformation regime lives in pretending small-strain formulas hold at large deformation.</div>
+    </div>
+
+    <p><strong>Roadmap.</strong> Kinematics first: configurations, the deformation gradient $\mathbf{F}$, and strain measures (§2&ndash;4). Then compatibility (§5) — the integrability condition that turns out to be the hidden regularizer of iFEM shape sensing. Then stress measures (§6), linear elasticity and its engineering machinery — the Hooke tensor, Voigt notation, plane problems (§7&ndash;9) — and finally finite-strain material models: strain energy, neo-Hookean, Mooney&ndash;Rivlin, incompressibility (§10&ndash;11), closing with a decision guide (§12).</p>
+
+    <p>The site spans two regimes, and this primer covers both ends. Classic iFEM (Tessler &amp; Spangler 2005) is built on linear, small-strain, first-order shear-deformation shell theory — appropriate for aerospace panels at sub-percent strain. Vision-based tactile skins made of Ecoflex/DragonSkin-class silicones routinely see 20&ndash;100%+ strain and near-incompressible response (Liao, Hossain &amp; Yao 2020 characterize Ecoflex across Shore hardnesses) — that is finite-strain hyperelasticity territory. Crucially, this module tells you <em>when each applies</em>.</p>
+
+    <!-- ===== SECTION 2: CONFIGURATIONS ===== -->
+    <h2 class="section-heading" id="configurations-and-displacement">2. Configurations, Motion, and Displacement</h2>
+
+    <p>A deforming body occupies two configurations we care about. The <strong>reference</strong> (material, undeformed) configuration $\Omega_0$ carries material points labeled $\mathbf{X}$ — think of $\mathbf{X}$ as a particle's name. The <strong>current</strong> (spatial, deformed) configuration $\Omega$ contains the positions $\mathbf{x}$ those particles occupy now. The motion is a smooth, invertible map, and displacement is the difference:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Motion and Displacement</div>
+      <div>
+        $$\mathbf{x} = \boldsymbol{\varphi}(\mathbf{X}, t), \qquad \mathbf{u}(\mathbf{X}, t) = \boldsymbol{\varphi}(\mathbf{X}, t) - \mathbf{X}$$
+        Convention used site-wide (Holzapfel; Bonet &amp; Wood): <strong>uppercase for referential</strong> quantities ($\mathbf{X}$, $\mathbf{N}$, $dA$, $\operatorname{Grad} = \nabla_{\mathbf{X}}$), <strong>lowercase for spatial</strong> ($\mathbf{x}$, $\mathbf{n}$, $da$, $\operatorname{grad} = \nabla_{\mathbf{x}}$).
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 300" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="cfgArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+          </marker>
+          <marker id="cfgArrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#1565c0"/>
+          </marker>
+        </defs>
+        <!-- reference blob -->
+        <path d="M 60 190 C 40 130 90 70 160 75 C 230 80 260 120 245 175 C 230 230 90 250 60 190 Z" fill="#eef4fb" stroke="#333" stroke-width="1.5"/>
+        <text x="150" y="262" font-size="12" font-family="sans-serif" fill="#333" text-anchor="middle">reference (material) &#937;&#8320;</text>
+        <!-- current blob (deformed) -->
+        <path d="M 420 210 C 405 140 470 60 560 80 C 650 100 665 150 630 195 C 595 240 440 265 420 210 Z" fill="#fdf3e7" stroke="#333" stroke-width="1.5"/>
+        <text x="540" y="262" font-size="12" font-family="sans-serif" fill="#333" text-anchor="middle">current (spatial) &#937;</text>
+        <!-- material point X and mapped x -->
+        <circle cx="150" cy="150" r="3.5" fill="#1565c0"/>
+        <text x="138" y="143" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1565c0">X</text>
+        <circle cx="540" cy="160" r="3.5" fill="#e67e22"/>
+        <text x="548" y="153" font-size="13" font-family="sans-serif" font-weight="bold" fill="#e67e22">x</text>
+        <!-- motion arrow -->
+        <path d="M 200 105 C 290 45 420 50 500 105" fill="none" stroke="#333" stroke-width="1.5" marker-end="url(#cfgArrow)"/>
+        <text x="350" y="55" font-size="13" font-family="sans-serif" font-style="italic" fill="#333" text-anchor="middle">&#966;(X, t)</text>
+        <!-- displacement vector -->
+        <line x1="150" y1="150" x2="536" y2="160" stroke="#1565c0" stroke-width="1.3" stroke-dasharray="6,4" marker-end="url(#cfgArrowB)"/>
+        <text x="345" y="145" font-size="12" font-family="sans-serif" fill="#1565c0" text-anchor="middle">u = x &#8722; X</text>
+        <!-- line elements -->
+        <line x1="150" y1="150" x2="182" y2="128" stroke="#1565c0" stroke-width="2" marker-end="url(#cfgArrowB)"/>
+        <text x="186" y="122" font-size="11" font-family="sans-serif" fill="#1565c0">dX</text>
+        <line x1="540" y1="160" x2="586" y2="150" stroke="#e67e22" stroke-width="2" marker-end="url(#cfgArrow)"/>
+        <text x="590" y="144" font-size="11" font-family="sans-serif" fill="#e67e22">dx = F dX</text>
+        <!-- volume elements -->
+        <rect x="98" y="185" width="20" height="20" fill="none" stroke="#555" stroke-width="1"/>
+        <text x="108" y="222" font-size="11" font-family="sans-serif" fill="#555" text-anchor="middle">dV</text>
+        <path d="M 470 190 l 26 -7 l 7 20 l -26 8 z" fill="none" stroke="#555" stroke-width="1"/>
+        <text x="487" y="228" font-size="11" font-family="sans-serif" fill="#555" text-anchor="middle">dv = J dV</text>
+        <!-- normals -->
+        <line x1="225" y1="105" x2="248" y2="82" stroke="#555" stroke-width="1.3" marker-end="url(#cfgArrow)"/>
+        <text x="255" y="82" font-size="11" font-family="sans-serif" fill="#555">N dA</text>
+        <line x1="615" y1="115" x2="645" y2="98" stroke="#555" stroke-width="1.3" marker-end="url(#cfgArrow)"/>
+        <text x="648" y="96" font-size="11" font-family="sans-serif" fill="#555">n da</text>
+        <!-- legend -->
+        <rect x="16" y="12" width="240" height="46" fill="#fafafa" stroke="#ddd" rx="4"/>
+        <text x="26" y="30" font-size="11" font-family="sans-serif" fill="#333">UPPERCASE: referential &#8212; X, N, dA, &#8711;&#8339;</text>
+        <text x="26" y="48" font-size="11" font-family="sans-serif" fill="#333">lowercase: spatial &#8212; x, n, da, &#8711;&#8331;</text>
+        <text x="440" y="30" font-size="11" font-family="sans-serif" fill="#555">Nanson: n da = J F&#8315;&#7488; N dA</text>
+      </svg>
+      <div class="figure-caption">The two-configuration picture: the motion $\boldsymbol{\varphi}$ carries the material point $\mathbf{X}$ to its current position $\mathbf{x}$; the displacement $\mathbf{u}$ connects them. Infinitesimal line, volume, and area elements transform through $\mathbf{F}$, $J = \det\mathbf{F}$, and Nanson's formula respectively (§3).</div>
+    </div>
+
+    <h3 class="subsection-heading">Material vs Spatial Description</h3>
+
+    <p>A field can be written as a function of $\mathbf{X}$ — the <strong>material (Lagrangian)</strong> description, where you follow particles — or as a function of $\mathbf{x}$ — the <strong>spatial (Eulerian)</strong> description, where you watch a fixed location in space. Solid mechanics and FEM are overwhelmingly Lagrangian: the reference configuration is <em>known</em> (it is your undeformed mesh), and boundary conditions attach to material particles. Fluids, with no natural reference state, are Eulerian.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>In FEM the displacement field $\mathbf{u}$ is <em>the</em> primary unknown — strain, stress, and contact force are all derived from it. This is precisely why iFEM reconstructs $\mathbf{u}$ first and reads everything else off afterwards: recover the primary field and the derived fields come for free (given a constitutive law, where needed).</div>
+    </div>
+
+    <h3 class="subsection-heading">Two Examples to Carry Through the Module</h3>
+
+    <p><strong>Homogeneous uniaxial stretch.</strong> $x_1 = \lambda X_1$, $x_2 = X_2$, $x_3 = X_3$, so $\mathbf{u} = ((\lambda - 1)X_1,\, 0,\, 0)$. Simple, homogeneous, and every strain measure has a clean closed form for it.</p>
+
+    <p><strong>Rigid-body motion.</strong> $\mathbf{x} = \mathbf{R}\mathbf{X} + \mathbf{c}$ with $\mathbf{R}$ a rotation. The body moves but does not deform: <em>zero strain</em>. This is the acid test every strain measure must pass — and, as §4 shows, the small-strain tensor fails it.</p>
+
+    <p><strong>Invertibility.</strong> The motion $\boldsymbol{\varphi}$ must be one-to-one with $\det(\partial\boldsymbol{\varphi}/\partial\mathbf{X}) > 0$: no interpenetration of matter, no local inversion. This is not a technicality — it is a physical constraint that every <em>reconstructed</em> displacement field should respect too. An inverse solver that returns a field with negative local volume has produced nonsense, however small its data residual.</p>
+
+    <!-- ===== SECTION 3: DEFORMATION GRADIENT ===== -->
+    <h2 class="section-heading" id="deformation-gradient">3. The Deformation Gradient F</h2>
+
+    <p>Differentiate the motion once and you get the fundamental kinematic object of finite deformation:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Deformation Gradient</div>
+      <div>
+        $$\mathbf{F} = \frac{\partial \mathbf{x}}{\partial \mathbf{X}} = \mathbf{I} + \nabla_{\mathbf{X}} \mathbf{u}, \qquad d\mathbf{x} = \mathbf{F}\, d\mathbf{X}$$
+        $\mathbf{F}$ is a linear map sending each infinitesimal material line element $d\mathbf{X}$ to its deformed image $d\mathbf{x}$. It is a <strong>two-point tensor</strong> — one leg in each configuration. All strain measures are built from $\mathbf{F}$.
+      </div>
+    </div>
+
+    <p>Volumes and areas transform through $\mathbf{F}$ as well:</p>
+
+    <div class="math-block">$$J = \det \mathbf{F} > 0, \qquad dv = J\, dV, \qquad \mathbf{n}\, da = J \mathbf{F}^{-\mathsf{T}} \mathbf{N}\, dA$$</div>
+
+    <p>$J > 0$ encodes orientation preservation (the invertibility requirement of §2); $J = 1$ means locally volume-preserving (<strong>isochoric</strong>) deformation. The area relation is <strong>Nanson's formula</strong> — file it away, because it is exactly what connects stress measures across configurations in §6.</p>
+
+    <h3 class="subsection-heading">Polar Decomposition: Every Deformation is Stretch Plus Rotation</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Polar Decomposition</div>
+      <div>
+        $$\mathbf{F} = \mathbf{R}\mathbf{U} = \mathbf{v}\mathbf{R}, \qquad \mathbf{C} = \mathbf{F}^{\mathsf{T}}\mathbf{F} = \mathbf{U}^2$$
+        Every local deformation is a pure stretch $\mathbf{U}$ (symmetric positive definite, living in the reference frame) followed by a rigid rotation $\mathbf{R}$ — or a rotation first, then the spatial stretch $\mathbf{v}$. $\mathbf{U}$ is computed from the <strong>right Cauchy&ndash;Green tensor</strong> $\mathbf{C} = \mathbf{F}^{\mathsf{T}}\mathbf{F}$; the eigenvalues of $\mathbf{U}$ are the <strong>principal stretches</strong> $\lambda_1, \lambda_2, \lambda_3$, its eigenvectors the principal directions.
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <svg id="polar-svg" viewBox="0 0 700 330" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="figure-caption">The polar-decomposition commuting square, drawn for $\lambda_1 = 1.5$, $\lambda_2 = 0.75$, $\theta = 25°$. Upper path: stretch $\mathbf{U}$ first (square $\to$ rectangle, embedded circle $\to$ axis-aligned ellipse with semi-axes $\lambda_1, \lambda_2$), then rotate by $\mathbf{R}$. Lower path: rotate first, then apply the spatial stretch $\mathbf{v}$. Both arrive at the same state: $\mathbf{F} = \mathbf{R}\mathbf{U} = \mathbf{v}\mathbf{R}$. Since $\mathbf{C} = \mathbf{F}^{\mathsf{T}}\mathbf{F} = \mathbf{U}^2$, the tensor $\mathbf{C}$ is rotation-free.</div>
+    </div>
+    <script>
+    (function() {
+      var svg = document.getElementById('polar-svg');
+      var l1 = 1.5, l2 = 0.75, th = 25 * Math.PI / 180;
+      var c = Math.cos(th), s = Math.sin(th);
+      var sc = 38; // px per unit
+      function shape(cx, cy, M, fill, stroke) {
+        // draws square [-1,1]^2 and inscribed unit circle mapped through 2x2 M, y-flipped
+        var pts = [[-1,-1],[1,-1],[1,1],[-1,1]];
+        var poly = pts.map(function(p){
+          var x = M[0][0]*p[0] + M[0][1]*p[1], y = M[1][0]*p[0] + M[1][1]*p[1];
+          return (cx + x*sc).toFixed(1) + ',' + (cy - y*sc).toFixed(1);
+        }).join(' ');
+        var circ = '';
+        for (var i = 0; i <= 48; i++) {
+          var a = i/48 * 2*Math.PI, px = Math.cos(a), py = Math.sin(a);
+          var x = M[0][0]*px + M[0][1]*py, y = M[1][0]*px + M[1][1]*py;
+          circ += (i===0?'M':'L') + (cx + x*sc).toFixed(1) + ' ' + (cy - y*sc).toFixed(1) + ' ';
+        }
+        return '<polygon points="' + poly + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.5"/>' +
+               '<path d="' + circ + 'Z" fill="none" stroke="' + stroke + '" stroke-width="1" stroke-dasharray="3,3"/>';
+      }
+      var I  = [[1,0],[0,1]];
+      var U  = [[l1,0],[0,l2]];
+      var R  = [[c,-s],[s,c]];
+      var RU = [[c*l1, -s*l2],[s*l1, c*l2]];
+      var h = '<defs><marker id="polArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1565c0"/></marker></defs>';
+      // positions: start left-middle, U-path top-middle, R-path bottom-middle, F right-middle
+      h += shape(105, 165, I, '#eef4fb', '#333');
+      h += shape(350, 78, U, '#eef4fb', '#1565c0');
+      h += shape(350, 252, R, '#eef4fb', '#1565c0');
+      h += shape(595, 165, RU, '#fdf3e7', '#e67e22');
+      // labels
+      h += '<text x="105" y="235" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#333">reference: unit square + circle</text>';
+      h += '<text x="350" y="24" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#1565c0">stretch U: semi-axes &#955;&#8321;, &#955;&#8322;</text>';
+      h += '<text x="350" y="322" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#1565c0">rotation R first</text>';
+      h += '<text x="595" y="253" font-size="12" font-family="sans-serif" text-anchor="middle" fill="#e67e22">F = RU = vR</text>';
+      // arrows upper path
+      h += '<line x1="150" y1="128" x2="272" y2="86" stroke="#1565c0" stroke-width="1.4" marker-end="url(#polArr)"/>';
+      h += '<text x="200" y="92" font-size="12" font-family="sans-serif" fill="#1565c0" font-style="italic">U</text>';
+      h += '<line x1="428" y1="86" x2="548" y2="128" stroke="#1565c0" stroke-width="1.4" marker-end="url(#polArr)"/>';
+      h += '<text x="498" y="92" font-size="12" font-family="sans-serif" fill="#1565c0" font-style="italic">R</text>';
+      // arrows lower path
+      h += '<line x1="150" y1="202" x2="272" y2="244" stroke="#1565c0" stroke-width="1.4" marker-end="url(#polArr)"/>';
+      h += '<text x="200" y="242" font-size="12" font-family="sans-serif" fill="#1565c0" font-style="italic">R</text>';
+      h += '<line x1="428" y1="244" x2="548" y2="202" stroke="#1565c0" stroke-width="1.4" marker-end="url(#polArr)"/>';
+      h += '<text x="495" y="242" font-size="12" font-family="sans-serif" fill="#1565c0" font-style="italic">v</text>';
+      h += '<text x="595" y="72" font-size="11" font-family="sans-serif" text-anchor="middle" fill="#555">C = F&#7488;F = U&#178;</text>';
+      h += '<text x="595" y="88" font-size="11" font-family="sans-serif" text-anchor="middle" fill="#555">is rotation-free</text>';
+      svg.innerHTML = h;
+    })();
+    </script>
+
+    <h3 class="subsection-heading">Worked Examples with Numbers</h3>
+
+    <p><strong>(a) Uniaxial stretch.</strong> $\mathbf{F} = \operatorname{diag}(\lambda, 1, 1)$, so $J = \lambda$. Here $\mathbf{R} = \mathbf{I}$: the deformation is pure stretch.</p>
+
+    <p><strong>(b) Simple shear.</strong> $x_1 = X_1 + \gamma X_2$ gives, in the $1$&ndash;$2$ plane,</p>
+    <div class="math-block">$$\mathbf{F} = \begin{bmatrix} 1 & \gamma \\ 0 & 1 \end{bmatrix}, \qquad J = 1, \qquad \mathbf{C} = \begin{bmatrix} 1 & \gamma \\ \gamma & 1 + \gamma^2 \end{bmatrix}$$</div>
+    <p>Volume is exactly preserved ($J = 1$), yet $\mathbf{C} \neq \mathbf{I}$: the material is genuinely strained. Moreover $\mathbf{C}$ has unequal principal values, and the polar decomposition of this $\mathbf{F}$ contains a nontrivial rotation — <em>simple shear is not "pure" shear</em>; it is a pure shear plus an embedded rotation.</p>
+
+    <p><strong>(c) Pure rotation.</strong> $\mathbf{F} = \mathbf{R}$, so $\mathbf{C} = \mathbf{R}^{\mathsf{T}}\mathbf{R} = \mathbf{I}$ and $\mathbf{U} = \mathbf{I}$: zero strain, as required.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>$\mathbf{F}$ contains rotation. A strain measure must filter the rotation out — that is the entire plot of the next section, and the geometric picture to hold on to is the embedded unit circle mapping to an ellipse with semi-axes $\lambda_1, \lambda_2$ along rotated principal directions. The interactive lab below animates exactly this.</div>
+    </div>
+
+    <!-- ===== SECTION 4: STRAIN MEASURES ===== -->
+    <h2 class="section-heading" id="strain-measures">4. Strain Measures: Small Strain vs Green&ndash;Lagrange</h2>
+
+    <p>What should a strain measure do? Two things: <strong>vanish for rigid motion</strong>, and <strong>reduce to intuitive elongation</strong> for small stretch. The natural finite-strain candidate subtracts the identity from the rotation-free tensor $\mathbf{C}$:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Green&ndash;Lagrange Strain</div>
+      <div>
+        $$\mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) = \tfrac{1}{2}\left(\nabla_{\mathbf{X}}\mathbf{u} + \nabla_{\mathbf{X}}\mathbf{u}^{\mathsf{T}} + \nabla_{\mathbf{X}}\mathbf{u}^{\mathsf{T}}\,\nabla_{\mathbf{X}}\mathbf{u}\right)$$
+        For rigid motion $\mathbf{F} = \mathbf{R}$: $\mathbf{C} = \mathbf{R}^{\mathsf{T}}\mathbf{R} = \mathbf{I}$, so $\mathbf{E} = \mathbf{0}$ <em>exactly</em> — the rigid-motion test is passed.
+      </div>
+    </div>
+
+    <p>Drop the quadratic term and you get the <strong>small-strain (infinitesimal) tensor</strong> — the linearization of $\mathbf{E}$ about the undeformed state:</p>
+
+    <div class="math-block">$$\boldsymbol{\varepsilon} = \tfrac{1}{2}\left(\nabla \mathbf{u} + \nabla \mathbf{u}^{\mathsf{T}}\right)$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — the failure mode study material glosses over</div>
+      <div>$\boldsymbol{\varepsilon}$ is valid only when strains <em>and</em> rotations are both small — small-strain kinematics are <strong>not objective</strong> under finite rigid rotation. For a pure rotation by angle $\theta$: $\varepsilon_{11} = \varepsilon_{22} = \cos\theta - 1 \approx -\theta^2/2$. A rigid $10°$ rotation produces a spurious $-1.52\%$ compressive strain — larger than real working strains in stiff structures. Thin flexible structures (shells, skins) can rotate a lot while straining little; this is why geometrically nonlinear analysis exists <em>even for linear materials</em>. "Small strain" does not mean "small displacement."</div>
+    </div>
+
+    <h3 class="subsection-heading">One Deformation, Many Numbers</h3>
+
+    <p>For uniaxial stretch $\lambda$, the common scalar measures are</p>
+
+    <div class="math-block">$$E_{11} = \tfrac{1}{2}(\lambda^2 - 1), \qquad \varepsilon_{\text{eng}} = \lambda - 1, \qquad \varepsilon_{\ln} = \ln \lambda$$</div>
+
+    <table>
+      <tr><th>Stretch $\lambda$</th><th>Engineering $\lambda - 1$</th><th>Green&ndash;Lagrange $\tfrac{1}{2}(\lambda^2-1)$</th><th>Logarithmic $\ln\lambda$</th></tr>
+      <tr><td>1.1</td><td>0.100</td><td>0.105</td><td>0.0953</td></tr>
+      <tr><td>1.5</td><td>0.500</td><td>0.625</td><td>0.405</td></tr>
+      <tr><td>2.0</td><td>1.000</td><td>1.500</td><td>0.693</td></tr>
+    </table>
+
+    <p>At $\lambda = 1.1$ all three agree to about 5%. At $\lambda = 2$ they are wildly different numbers for the <em>same physical deformation</em>. Note in particular that at 50% stretch, $E_{11} = 0.625$, not $0.5$: presenting Green&ndash;Lagrange components as percent elongation is wrong. A "strain" value at large deformation is meaningless without naming the measure.</p>
+
+    <div class="figure-container">
+      <svg id="strainchart-svg" viewBox="0 0 700 360" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="figure-caption">Four strain measures against stretch $\lambda$: engineering $\lambda - 1$ (straight line), Green&ndash;Lagrange $\tfrac{1}{2}(\lambda^2 - 1)$ (steepest parabola), logarithmic $\ln\lambda$ (flattest — the only curve antisymmetric in tension/compression), and Euler&ndash;Almansi $\tfrac{1}{2}(1 - \lambda^{-2})$. All four share a common tangent at $\lambda = 1$ (inset): agreeing to first order in $\nabla\mathbf{u}$ is what "small strain" means. Guide lines at $\lambda = 1.1$ and $\lambda = 1.5$ mark the values from the table.</div>
+    </div>
+    <script>
+    (function() {
+      var svg = document.getElementById('strainchart-svg');
+      var W = 700, H = 360, mL = 58, mR = 20, mT = 16, mB = 40;
+      var x0 = 0.5, x1 = 2.5, y0 = -0.8, y1 = 2.7;
+      function X(l) { return mL + (l - x0) / (x1 - x0) * (W - mL - mR); }
+      function Y(v) { return H - mB - (v - y0) / (y1 - y0) * (H - mT - mB); }
+      var measures = [
+        { f: function(l){ return l - 1; },            col: '#1565c0', name: 'engineering λ−1' },
+        { f: function(l){ return 0.5*(l*l - 1); },    col: '#c62828', name: 'Green–Lagrange ½(λ²−1)' },
+        { f: function(l){ return Math.log(l); },      col: '#2e7d32', name: 'logarithmic ln λ' },
+        { f: function(l){ return 0.5*(1 - 1/(l*l)); },col: '#7b1fa2', name: 'Euler–Almansi ½(1−λ⁻²)' }
+      ];
+      var h = '';
+      // axes
+      h += '<line x1="' + mL + '" y1="' + Y(0) + '" x2="' + (W-mR) + '" y2="' + Y(0) + '" stroke="#999" stroke-width="1"/>';
+      h += '<line x1="' + X(1) + '" y1="' + mT + '" x2="' + X(1) + '" y2="' + (H-mB) + '" stroke="#ddd" stroke-width="1"/>';
+      h += '<line x1="' + mL + '" y1="' + mT + '" x2="' + mL + '" y2="' + (H-mB) + '" stroke="#999" stroke-width="1"/>';
+      for (var l = 0.5; l <= 2.51; l += 0.5) {
+        h += '<line x1="' + X(l) + '" y1="' + (H-mB) + '" x2="' + X(l) + '" y2="' + (H-mB+4) + '" stroke="#999"/>';
+        h += '<text x="' + X(l) + '" y="' + (H-mB+18) + '" font-size="11" font-family="sans-serif" fill="#555" text-anchor="middle">' + l.toFixed(1) + '</text>';
+      }
+      for (var v = -0.5; v <= 2.51; v += 0.5) {
+        h += '<text x="' + (mL-8) + '" y="' + (Y(v)+4) + '" font-size="11" font-family="sans-serif" fill="#555" text-anchor="end">' + v.toFixed(1) + '</text>';
+        h += '<line x1="' + (mL-4) + '" y1="' + Y(v) + '" x2="' + mL + '" y2="' + Y(v) + '" stroke="#999"/>';
+      }
+      h += '<text x="' + (W/2) + '" y="' + (H-6) + '" font-size="12" font-family="sans-serif" fill="#333" text-anchor="middle">stretch λ</text>';
+      h += '<text x="16" y="' + (H/2) + '" font-size="12" font-family="sans-serif" fill="#333" text-anchor="middle" transform="rotate(-90 16 ' + (H/2) + ')">strain value</text>';
+      // guide lines
+      [[1.1, ['0.100','0.105','0.095']], [1.5, ['0.500','0.625','0.405']]].forEach(function(g) {
+        h += '<line x1="' + X(g[0]) + '" y1="' + mT + '" x2="' + X(g[0]) + '" y2="' + (H-mB) + '" stroke="#bbb" stroke-width="1" stroke-dasharray="4,4"/>';
+        h += '<text x="' + (X(g[0])+4) + '" y="' + (mT+12) + '" font-size="10.5" font-family="sans-serif" fill="#888">λ=' + g[0] + ': ' + g[1].join(' / ') + '</text>';
+      });
+      // curves
+      measures.forEach(function(m) {
+        var d = '';
+        for (var i = 0; i <= 160; i++) {
+          var l = x0 + i/160 * (x1 - x0);
+          d += (i===0?'M':'L') + X(l).toFixed(1) + ' ' + Y(m.f(l)).toFixed(1) + ' ';
+        }
+        h += '<path d="' + d + '" fill="none" stroke="' + m.col + '" stroke-width="2"/>';
+      });
+      // legend
+      h += '<rect x="' + (mL+10) + '" y="' + (mT+24) + '" width="215" height="76" fill="#fafafa" stroke="#ddd" rx="4"/>';
+      measures.forEach(function(m, i) {
+        var ly = mT + 40 + i*17;
+        h += '<line x1="' + (mL+18) + '" y1="' + ly + '" x2="' + (mL+40) + '" y2="' + ly + '" stroke="' + m.col + '" stroke-width="2.5"/>';
+        h += '<text x="' + (mL+46) + '" y="' + (ly+4) + '" font-size="11" font-family="sans-serif" fill="#333">' + m.name + '</text>';
+      });
+      // inset: zoom near lambda=1 showing common tangency
+      var iX0 = W - 218, iY0 = H - 200, iW = 185, iH = 130;
+      h += '<rect x="' + iX0 + '" y="' + iY0 + '" width="' + iW + '" height="' + iH + '" fill="#fff" stroke="#999" rx="4"/>';
+      h += '<text x="' + (iX0 + iW/2) + '" y="' + (iY0+16) + '" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">zoom λ ∈ [0.92, 1.08]: common tangent</text>';
+      function iXf(l) { return iX0 + 10 + (l - 0.92) / 0.16 * (iW - 20); }
+      function iYf(v) { return iY0 + iH - 14 - (v + 0.09) / 0.18 * (iH - 36); }
+      measures.forEach(function(m) {
+        var d = '';
+        for (var i = 0; i <= 40; i++) {
+          var l = 0.92 + i/40 * 0.16;
+          d += (i===0?'M':'L') + iXf(l).toFixed(1) + ' ' + iYf(m.f(l)).toFixed(1) + ' ';
+        }
+        h += '<path d="' + d + '" fill="none" stroke="' + m.col + '" stroke-width="1.6"/>';
+      });
+      svg.innerHTML = h;
+    })();
+    </script>
+
+    <h3 class="subsection-heading">Spatial Counterparts</h3>
+
+    <p>Just as $\mathbf{C} = \mathbf{F}^{\mathsf{T}}\mathbf{F}$ lives in the reference configuration, the <strong>left Cauchy&ndash;Green tensor</strong> $\mathbf{b} = \mathbf{F}\mathbf{F}^{\mathsf{T}}$ lives in the current one, and its associated strain is the <strong>Euler&ndash;Almansi strain</strong>:</p>
+
+    <div class="math-block">$$\mathbf{e} = \tfrac{1}{2}\left(\mathbf{I} - \mathbf{b}^{-1}\right), \qquad \mathbf{b} = \mathbf{F}\mathbf{F}^{\mathsf{T}}$$</div>
+
+    <p>$\mathbf{e}$ is the spatial counterpart of $\mathbf{E}$, and it linearizes to the <em>same</em> $\boldsymbol{\varepsilon}$. That is the general pattern: all these measures agree to first order in $\nabla\mathbf{u}$ — that agreement is what "small strain" means. Full derivations: Holzapfel ch.&nbsp;2; Bonet &amp; Wood ch.&nbsp;4.</p>
+
+    <!-- ===== INTERACTIVE: STRAIN-CONVENTION TRAP LAB ===== -->
+    <div class="interactive-container" id="strain-trap-lab">
+      <div class="interactive-label">Interactive Tool &mdash; Strain-Convention Trap Lab</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Deform a material patch with the sliders (the deformation is composed as $\mathbf{F} = \mathbf{R}(\theta)\,\mathbf{S}$: stretch/shear $\mathbf{S}$ first, rotation last) and compare what the Green&ndash;Lagrange tensor $\mathbf{E}$ and the small-strain tensor $\boldsymbol{\varepsilon}$ report. The ledger on the right keeps the inverse-problem bookkeeping honest: what a strain rosette measures, what is unknown, what is assumed, what is observable, and how large the convention error is. Try the presets.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="stl-preset" data-p="rot"     style="border:1px solid #1565c0;color:#1565c0;background:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Pure rotation 30&deg;</button>
+        <button class="stl-preset" data-p="shear"   style="border:1px solid #1565c0;color:#1565c0;background:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Simple shear</button>
+        <button class="stl-preset" data-p="uni"     style="border:1px solid #1565c0;color:#1565c0;background:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Uniaxial stretch</button>
+        <button class="stl-preset" data-p="pure"    style="border:1px solid #1565c0;color:#1565c0;background:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Pure stretch</button>
+        <button class="stl-preset" data-p="rotstr"  style="border:1px solid #1565c0;color:#1565c0;background:none;padding:5px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Rotation + 1% stretch</button>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label><span>Stretch $\lambda_1$</span> <span id="stl-l1-val">1.00</span></label><input type="range" id="stl-l1" min="0.5" max="2" step="0.01" value="1"></div>
+        <div class="slider-control"><label><span>Stretch $\lambda_2$</span> <span id="stl-l2-val">1.00</span></label><input type="range" id="stl-l2" min="0.5" max="2" step="0.01" value="1"></div>
+        <div class="slider-control"><label><span>Shear $\gamma$</span> <span id="stl-g-val">0.00</span></label><input type="range" id="stl-g" min="-1" max="1" step="0.01" value="0"></div>
+        <div class="slider-control"><label><span>Rotation $\theta$</span> <span id="stl-th-val">0</span>&deg;</label><input type="range" id="stl-th" min="-90" max="90" step="1" value="0"></div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
+        <div style="flex:1 1 340px;min-width:300px;">
+          <svg id="stl-svg" viewBox="0 0 360 300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;width:100%;max-width:420px;"></svg>
+          <div id="stl-matrices" style="font-size:12.5px;margin-top:10px;overflow-x:auto;"></div>
+        </div>
+        <div id="stl-ledger" style="flex:1 1 260px;min-width:250px;background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:12px 14px;font-size:12.5px;line-height:1.55;"></div>
+      </div>
+      <div id="stl-verdict" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 5: COMPATIBILITY ===== -->
+    <h2 class="section-heading" id="compatibility">5. Compatibility: When Is a Strain Field Integrable?</h2>
+
+    <p>Count components: six strain components derive from only three displacement components. So an arbitrary symmetric tensor field is generally <em>not</em> a strain field — most candidate "strain fields" correspond to no displacement field at all. The integrability requirements are the <strong>Saint-Venant compatibility conditions</strong>:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Saint-Venant Compatibility</div>
+      <div>
+        $$\nabla \times (\nabla \times \boldsymbol{\varepsilon}) = \mathbf{0}$$
+        In compact form: the incompatibility tensor vanishes. Componentwise these are 6 distinct second-order PDEs, of which only 3 are independent (they satisfy Bianchi-type identities). In 2D a single equation survives:
+        $$\frac{\partial^2 \varepsilon_{11}}{\partial x_2^2} + \frac{\partial^2 \varepsilon_{22}}{\partial x_1^2} = 2\,\frac{\partial^2 \varepsilon_{12}}{\partial x_1 \partial x_2}$$
+        Verify it in one line: substitute $\varepsilon_{11} = u_{1,1}$, $\varepsilon_{22} = u_{2,2}$, $\varepsilon_{12} = \tfrac{1}{2}(u_{1,2} + u_{2,1})$ for any smooth $\mathbf{u}$ and both sides equal $u_{1,122} + u_{2,112}$.
+      </div>
+    </div>
+
+    <p>Sufficiency comes with a caveat. On a <strong>simply-connected</strong> domain, compatibility guarantees a single-valued displacement field, reconstructable by the Ces&agrave;ro path integral and unique up to rigid motion. On <strong>multiply-connected</strong> domains — a skin patch with a hole, a ring — the conditions are necessary but <em>not</em> sufficient: path integrals around the hole can be multivalued (dislocations exploit exactly this). Classical treatment: Timoshenko &amp; Goodier.</p>
+
+    <h3 class="subsection-heading">Why This Section Sits Here: the Bridge to Shape Sensing</h3>
+
+    <p>Measured strains are pointwise, sparse, and noisy. As raw data they are essentially <em>never</em> compatible: no displacement field exists whose strains equal the measurements exactly. Direct spatial integration of strain data is therefore path-dependent and accumulates noise along the integration path.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — compatibility is iFEM's hidden regularizer</div>
+      <div>iFEM sidesteps incompatibility <em>structurally</em>. It parametrizes the <strong>displacement</strong> field with finite-element shape functions and minimizes a least-squares functional between the strains of that trial field and the measured strains (Tessler &amp; Spangler 2005). Any strain field derived from an interpolated displacement is compatible <em>by construction</em> — so iFEM is a projection of noisy data onto the compatible manifold. Compatibility is the hidden regularizer that makes shape sensing well-posed. This is the single most important conceptual bridge from this primer to the iFEM modules: Module 4 builds the least-squares functional on exactly this observation.</div>
+    </div>
+
+    <!-- ===== SECTION 6: STRESS MEASURES ===== -->
+    <h2 class="section-heading" id="stress-measures">6. Stress Measures: Cauchy, First and Second Piola&ndash;Kirchhoff</h2>
+
+    <p>Cut a body along any internal surface and the two sides exert forces on each other. <strong>Cauchy's theorem</strong> says the traction — force per unit <em>current</em> area — on a surface with normal $\mathbf{n}$ is linear in the normal:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Cauchy Stress and Equilibrium</div>
+      <div>
+        $$\mathbf{t} = \boldsymbol{\sigma}\,\mathbf{n}, \qquad \operatorname{div}\boldsymbol{\sigma} + \mathbf{b} = \mathbf{0}$$
+        This defines the <strong>Cauchy ("true") stress</strong> $\boldsymbol{\sigma}$. Balance of angular momentum makes $\boldsymbol{\sigma}$ symmetric; balance of linear momentum gives the equilibrium PDE — the equation that FEM weak forms discretize (Module 2).
+      </div>
+    </div>
+
+    <p>At finite deformation, "force per area" is ambiguous — <em>which</em> area, deformed or undeformed? Each answer defines a different stress measure, related through $\mathbf{F}$ and Nanson's formula:</p>
+
+    <div class="math-block">$$\mathbf{P} = J\,\boldsymbol{\sigma}\,\mathbf{F}^{-\mathsf{T}}, \qquad \mathbf{S} = \mathbf{F}^{-1}\mathbf{P} = J\,\mathbf{F}^{-1}\boldsymbol{\sigma}\,\mathbf{F}^{-\mathsf{T}}, \qquad \boldsymbol{\sigma} = J^{-1}\,\mathbf{F}\,\mathbf{S}\,\mathbf{F}^{\mathsf{T}}$$</div>
+
+    <ul>
+      <li><strong>First Piola&ndash;Kirchhoff stress $\mathbf{P}$</strong>: the <em>actual</em> force referred to <em>reference</em> area. It is a two-point tensor and generally <strong>unsymmetric</strong>. Its uniaxial component is exactly the engineering/nominal stress that a load cell plus the initial cross-section gives you.</li>
+      <li><strong>Second Piola&ndash;Kirchhoff stress $\mathbf{S}$</strong>: fully referential and symmetric, but its components have <em>no direct physical meaning</em> — the force vector has been pulled back by $\mathbf{F}^{-1}$.</li>
+    </ul>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 330" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="stArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#c62828"/>
+          </marker>
+          <marker id="stArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+          </marker>
+        </defs>
+        <!-- Panel 1: Cauchy -->
+        <text x="120" y="26" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">Cauchy &#963;</text>
+        <rect x="85" y="42" width="70" height="180" fill="#fdf3e7" stroke="#333" stroke-width="1.5"/>
+        <line x1="85" y1="132" x2="155" y2="132" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="160" y="136" font-size="10.5" font-family="sans-serif" fill="#e67e22">da (current)</text>
+        <line x1="120" y1="132" x2="120" y2="76" stroke="#c62828" stroke-width="2.2" marker-end="url(#stArr)"/>
+        <text x="127" y="88" font-size="11" font-family="sans-serif" fill="#c62828">dF</text>
+        <text x="120" y="245" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">deformed bar (stretched):</text>
+        <text x="120" y="260" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">true stress = force / current area</text>
+        <text x="120" y="275" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">symmetric &#8226; lives in &#937;</text>
+        <!-- Panel 2: PK1 -->
+        <text x="350" y="26" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">First PK &#8212; P</text>
+        <rect x="300" y="72" width="100" height="120" fill="#eef4fb" stroke="#333" stroke-width="1.5"/>
+        <line x1="300" y1="132" x2="400" y2="132" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="404" y="136" font-size="10.5" font-family="sans-serif" fill="#1565c0">dA (reference)</text>
+        <line x1="350" y1="132" x2="350" y2="76" stroke="#c62828" stroke-width="2.2" marker-end="url(#stArr)"/>
+        <text x="357" y="88" font-size="11" font-family="sans-serif" fill="#c62828">dF (same force)</text>
+        <text x="350" y="245" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">actual force / reference area:</text>
+        <text x="350" y="260" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">what load cell + initial area report</text>
+        <text x="350" y="275" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">unsymmetric &#8226; two-point tensor</text>
+        <!-- Panel 3: PK2 -->
+        <text x="580" y="26" font-size="13" font-family="sans-serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">Second PK &#8212; S</text>
+        <rect x="530" y="72" width="100" height="120" fill="#eef4fb" stroke="#333" stroke-width="1.5"/>
+        <line x1="530" y1="132" x2="630" y2="132" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="634" y="136" font-size="10.5" font-family="sans-serif" fill="#1565c0">dA</text>
+        <line x1="580" y1="132" x2="565" y2="88" stroke="#c62828" stroke-width="2.2" stroke-dasharray="4,3" marker-end="url(#stArr)"/>
+        <text x="548" y="80" font-size="11" font-family="sans-serif" fill="#c62828">F&#8315;&#185;dF (pulled back)</text>
+        <text x="580" y="245" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">fictitious pulled-back force / dA:</text>
+        <text x="580" y="260" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">symmetric, material, conjugate to E</text>
+        <text x="580" y="275" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">no direct physical reading</text>
+        <!-- transformation arrows -->
+        <line x1="175" y1="150" x2="290" y2="150" stroke="#555" stroke-width="1.3" marker-end="url(#stArrG)"/>
+        <text x="232" y="143" font-size="11" font-family="sans-serif" fill="#555" text-anchor="middle">P = J&#963;F&#8315;&#7488;</text>
+        <line x1="410" y1="150" x2="520" y2="150" stroke="#555" stroke-width="1.3" marker-end="url(#stArrG)"/>
+        <text x="465" y="143" font-size="11" font-family="sans-serif" fill="#555" text-anchor="middle">S = F&#8315;&#185;P</text>
+        <!-- footer -->
+        <rect x="140" y="296" width="420" height="24" fill="#fafafa" stroke="#ddd" rx="4"/>
+        <text x="350" y="312" font-size="11.5" font-family="sans-serif" fill="#333" text-anchor="middle">incompressible uniaxial at &#955; = 2:  &#963; = 2P &#8212; true stress is twice nominal</text>
+      </svg>
+      <div class="figure-caption">Three bookkeeping conventions for the same physics. Cauchy $\boldsymbol{\sigma}$ divides the force by the current area; first Piola&ndash;Kirchhoff $\mathbf{P}$ divides the <em>same</em> force by the reference area; second Piola&ndash;Kirchhoff $\mathbf{S}$ additionally pulls the force vector back by $\mathbf{F}^{-1}$, gaining symmetry but losing physical interpretability.</div>
+    </div>
+
+    <h3 class="subsection-heading">Why S Exists at All: Work Conjugacy</h3>
+
+    <p>If $\mathbf{S}$ has no physical reading, why keep it? Because of <strong>work conjugacy</strong>. Internal power per unit reference volume can be written two equivalent ways, and per unit current volume a third:</p>
+
+    <div class="math-block">$$\dot{W}_{\text{int}} = \int_{\Omega_0} \mathbf{P} : \dot{\mathbf{F}}\; dV = \int_{\Omega_0} \mathbf{S} : \dot{\mathbf{E}}\; dV, \qquad \text{and per unit current volume: } \boldsymbol{\sigma} : \mathbf{d}$$</div>
+
+    <p>with $\mathbf{d}$ the rate of deformation. The pair $(\mathbf{S}, \mathbf{E})$ makes constitutive theory clean — both are objective material tensors — so material laws are naturally written $\mathbf{S}(\mathbf{E})$ or $\mathbf{S} = 2\,\partial\Psi/\partial\mathbf{C}$, then pushed forward to $\boldsymbol{\sigma}$ for output.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — pair stresses and strains from the same configuration</div>
+      <div>The conjugate pairs are $(\mathbf{P}, \dot{\mathbf{F}})$ and $(\mathbf{S}, \dot{\mathbf{E}})$ per reference volume, and $(\boldsymbol{\sigma}, \mathbf{d})$ per current volume. Never pair Cauchy stress with Green&ndash;Lagrange strain, and never pair second Piola&ndash;Kirchhoff stress with a spatial strain: the products are not work densities and a constitutive law written across mismatched configurations is dimensionally plausible nonsense. Likewise, never read $\mathbf{S}$ components as physical tractions — push forward to $\boldsymbol{\sigma}$ before comparing with measured contact pressures.</div>
+    </div>
+
+    <h3 class="subsection-heading">Concrete Numbers</h3>
+
+    <p>Stretch an incompressible rod to $\lambda = 2$. Incompressibility forces the current area to $A = A_0/\lambda$, so</p>
+
+    <div class="math-block">$$\sigma = \lambda\, P \quad \text{(incompressible uniaxial: at } \lambda = 2,\ \sigma = 2P\text{)}$$</div>
+
+    <p>True stress is <em>twice</em> nominal at $\lambda = 2$. A hyperelastic fit is meaningless if you don't know which stress the data sheet reports. Division of labor in practice: experiments report $\mathbf{P}$; total-Lagrangian FE codes compute $\mathbf{S}$ internally; contact pressures and material failure arguments live in $\boldsymbol{\sigma}$. At small strain all three coincide to first order ($J \approx 1$, $\mathbf{F} \approx \mathbf{I}$). Full treatment: Holzapfel ch.&nbsp;3; Bonet &amp; Wood ch.&nbsp;5; Ogden ch.&nbsp;3.</p>
+
+    <!-- ===== SECTION 7: LINEAR ELASTICITY ===== -->
+    <h2 class="section-heading" id="linear-elasticity">7. Linear Elasticity and the Hooke Tensor</h2>
+
+    <p>Now the constitutive layer, starting at small strain. The most general linear relation between two symmetric second-order tensors is a fourth-order tensor:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Generalized Hooke's Law</div>
+      <div>
+        $$\sigma_{ij} = C_{ijkl}\,\varepsilon_{kl}, \qquad C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij}$$
+        Raw count: 81 components. The <strong>minor symmetries</strong> ($\boldsymbol{\sigma}$ and $\boldsymbol{\varepsilon}$ symmetric) cut this to 36; the <strong>major symmetry</strong> $C_{ijkl} = C_{klij}$ — equivalent to the existence of a strain energy $\tfrac{1}{2}\boldsymbol{\varepsilon}:\mathbb{C}:\boldsymbol{\varepsilon}$ — cuts it to <strong>21</strong>: the fully anisotropic (triclinic) material.
+      </div>
+    </div>
+
+    <p>Isotropy collapses 21 constants to <strong>two</strong>, the Lam&eacute; parameters:</p>
+
+    <div class="math-block">$$\boldsymbol{\sigma} = \lambda\,\mathrm{tr}(\boldsymbol{\varepsilon})\,\mathbf{I} + 2\mu\,\boldsymbol{\varepsilon}$$</div>
+
+    <p>The engineering constants and the full conversion set:</p>
+
+    <div class="math-block">$$G = \frac{E}{2(1+\nu)}, \qquad K = \frac{E}{3(1-2\nu)}, \qquad \lambda = \frac{E\nu}{(1+\nu)(1-2\nu)}$$</div>
+
+    <p>with inverses $E = \mu(3\lambda + 2\mu)/(\lambda + \mu)$ and $\nu = \lambda/(2(\lambda + \mu))$, and $G \equiv \mu$. Physical readings: $E$ is the slope of the uniaxial stress&ndash;strain curve; $\nu$ the lateral contraction ratio; $G$ the shear stiffness; $K$ the pressure per relative volume change. A useful energy split for isotropy — volumetric and deviatoric responses decouple:</p>
+
+    <div class="math-block">$$\Psi = \tfrac{1}{2}K\,(\mathrm{tr}\,\boldsymbol{\varepsilon})^2 + \mu\,\operatorname{dev}(\boldsymbol{\varepsilon}) : \operatorname{dev}(\boldsymbol{\varepsilon})$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — the incompressible limit</div>
+      <div>Isotropic stability admits $-1 < \nu < \tfrac{1}{2}$. As $\nu \to \tfrac{1}{2}$, both $K/G \to \infty$ and $\lambda \to \infty$: volumetric stiffness diverges while shear stiffness stays finite. Setting $\nu = 0.5$ <em>exactly</em> in a standard displacement formulation is a bug — $\lambda$ and the plane-strain stiffness contain $1/(1-2\nu)$ and become singular — and even near-incompressibility makes standard displacement FEM <strong>lock</strong> volumetrically. The remedies (mixed $u$&ndash;$p$ formulations, selective reduced integration) appear in later modules; the mechanical root of the problem appears again in §10.</div>
+    </div>
+
+    <h3 class="subsection-heading">Orders of Magnitude</h3>
+
+    <table>
+      <tr><th>Material</th><th>Young's modulus $E$</th><th>Poisson ratio $\nu$</th></tr>
+      <tr><td>Steel</td><td>$\approx 200$ GPa</td><td>$\approx 0.3$</td></tr>
+      <tr><td>Aluminum</td><td>$\approx 70$ GPa</td><td>$\approx 0.3$</td></tr>
+      <tr><td>PDMS</td><td>$\approx$ 1&ndash;3 MPa</td><td>near 0.5</td></tr>
+      <tr><td>Ecoflex-class platinum-cure silicones</td><td>initial stiffness in the tens-of-kPa range (Liao, Hossain &amp; Yao 2020)</td><td>$\approx 0.499$, nearly incompressible</td></tr>
+    </table>
+
+    <p>Six decades softer than steel — which is why tactile skins deform measurably under fingertip forces, and why the same fingertip force that a steel panel would not notice drives an Ecoflex pad deep into the finite-strain regime.</p>
+
+    <p><strong>Validity envelope.</strong> Linear elasticity assumes small strain <em>and</em> small rotation <em>and</em> linear material response. For elastomers it is only the tangent at the origin of a strongly nonlinear curve — a useful tangent (§11 computes it: $E = 3\mu$), but a tangent.</p>
+
+    <!-- ===== SECTION 8: VOIGT NOTATION ===== -->
+    <h2 class="section-heading" id="voigt-notation">8. Voigt Notation and the Factor-of-2 Shear Trap</h2>
+
+    <p>FEM implementations flatten symmetric tensors to vectors. Standard Voigt ordering stacks stress and strain as</p>
+
+    <div class="math-block">$$\boldsymbol{\sigma} = [\sigma_{11}, \sigma_{22}, \sigma_{33}, \sigma_{23}, \sigma_{13}, \sigma_{12}]^{\mathsf{T}}, \qquad \boldsymbol{\varepsilon} = [\varepsilon_{11}, \varepsilon_{22}, \varepsilon_{33}, \gamma_{23}, \gamma_{13}, \gamma_{12}]^{\mathsf{T}}$$</div>
+
+    <p>where $\gamma_{ij} = 2\varepsilon_{ij}$ is the <strong>engineering shear strain</strong>. The 2 is not a convention accident:</p>
+
+    <div class="math-block">$$\gamma_{ij} = 2\,\varepsilon_{ij} \; (i \neq j), \qquad \boldsymbol{\sigma}^{\mathsf{T}}\boldsymbol{\varepsilon}_{\text{Voigt}} = \boldsymbol{\sigma} : \boldsymbol{\varepsilon}$$</div>
+
+    <p>It is exactly what makes the vector dot product reproduce the tensor work density, because each off-diagonal pair $(ij, ji)$ contributes twice to $\boldsymbol{\sigma}:\boldsymbol{\varepsilon}$. With that convention, the full isotropic stiffness matrix reads:</p>
+
+    <div class="math-block">$$\begin{bmatrix}\sigma_{11}\\\sigma_{22}\\\sigma_{33}\\\sigma_{23}\\\sigma_{13}\\\sigma_{12}\end{bmatrix} = \frac{E}{(1{+}\nu)(1{-}2\nu)} \begin{bmatrix} 1{-}\nu & \nu & \nu & 0 & 0 & 0\\ \nu & 1{-}\nu & \nu & 0 & 0 & 0\\ \nu & \nu & 1{-}\nu & 0 & 0 & 0\\ 0&0&0& \tfrac{1-2\nu}{2} &0&0\\ 0&0&0&0& \tfrac{1-2\nu}{2} &0\\ 0&0&0&0&0& \tfrac{1-2\nu}{2} \end{bmatrix} \begin{bmatrix}\varepsilon_{11}\\\varepsilon_{22}\\\varepsilon_{33}\\\gamma_{23}\\\gamma_{13}\\\gamma_{12}\end{bmatrix}$$</div>
+
+    <p>Check the shear block: $\frac{E}{(1+\nu)(1-2\nu)} \cdot \frac{1-2\nu}{2} = \frac{E}{2(1+\nu)} = G$. The shear entries equal $G$ only <em>because</em> the strain vector carries $\gamma$, not $\varepsilon_{12}$. In the compliance form $\boldsymbol{\varepsilon} = \mathbf{S}\boldsymbol{\sigma}$ the shear diagonal is $1/G$ — the factor 2 migrates to the other side.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — two silent bugs</div>
+      <div><strong>Trap 1: the factor of 2.</strong> An FE B-matrix produces $\gamma$; if a material routine or a strain-gauge rosette formula expects tensor shear (or vice versa), you silently halve or double all shear response. No error message, no crash — just wrong stiffness in shear. This is a classic bug in home-grown iFEM/FEM code, and it resurfaces in Module 6 where rosette transforms must use the <em>same</em> engineering-shear convention as the FE strain vector.<br><br>
+      <strong>Trap 2: the ordering.</strong> Voigt component ordering is not universal: classical texts use $(11, 22, 33, 23, 13, 12)$ while e.g. Abaqus uses $(11, 22, 33, 12, 13, 23)$. Porting a stiffness matrix between conventions scrambles the shear terms without any error message. Always check the ordering before porting.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Mandel notation: the norm-preserving alternative</div>
+      <div class="collapsible-body">
+        <p>Mandel notation scales the off-diagonal components by $\sqrt{2}$ in <em>both</em> the stress and strain vectors. The payoff: the vector 2-norm equals the tensor norm and eigenvalues are preserved, which makes spectral algorithms (eigen-decompositions of stiffness, projections) clean. The cost: components no longer read as engineering quantities. Voigt remains the FEM default; Mandel is worth knowing when you meet norm-based algorithms.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 9: PLANE STRESS AND PLANE STRAIN ===== -->
+    <h2 class="section-heading" id="plane-stress-plane-strain">9. Plane Stress and Plane Strain</h2>
+
+    <p>Two classical 2D reductions of 3D elasticity (Timoshenko &amp; Goodier ch.&nbsp;2). They are <em>different assumptions</em> with <em>different reduced stiffness matrices</em> — swapping them is not a rounding error.</p>
+
+    <p><strong>Plane stress</strong> assumes $\sigma_{33} = \sigma_{13} = \sigma_{23} = 0$: thin sheets loaded in-plane with free faces. The sheet is free to thin, so $\varepsilon_{33} \neq 0$:</p>
+
+    <div class="math-block">$$\text{Plane stress:}\quad \begin{bmatrix}\sigma_{11}\\\sigma_{22}\\\sigma_{12}\end{bmatrix} = \frac{E}{1-\nu^2} \begin{bmatrix}1 & \nu & 0\\ \nu & 1 & 0\\ 0 & 0 & \tfrac{1-\nu}{2}\end{bmatrix} \begin{bmatrix}\varepsilon_{11}\\\varepsilon_{22}\\\gamma_{12}\end{bmatrix}$$</div>
+
+    <p><strong>Plane strain</strong> assumes $\varepsilon_{33} = \varepsilon_{13} = \varepsilon_{23} = 0$: long prismatic bodies or layers constrained against out-of-plane motion. The constraint must then carry a stress $\sigma_{33} \neq 0$:</p>
+
+    <div class="math-block">$$\text{Plane strain:}\quad \begin{bmatrix}\sigma_{11}\\\sigma_{22}\\\sigma_{12}\end{bmatrix} = \frac{E}{(1{+}\nu)(1{-}2\nu)} \begin{bmatrix}1{-}\nu & \nu & 0\\ \nu & 1{-}\nu & 0\\ 0 & 0 & \tfrac{1-2\nu}{2}\end{bmatrix} \begin{bmatrix}\varepsilon_{11}\\\varepsilon_{22}\\\gamma_{12}\end{bmatrix}$$</div>
+
+    <p>The out-of-plane bookkeeping in each case:</p>
+
+    <div class="math-block">$$\varepsilon_{33} = -\frac{\nu}{1-\nu}\left(\varepsilon_{11}+\varepsilon_{22}\right) \;\text{(plane stress)}, \qquad \sigma_{33} = \nu\left(\sigma_{11}+\sigma_{22}\right) \;\text{(plane strain)}$$</div>
+
+    <p>Note the $1 - 2\nu$ in the plane-strain prefactor: plane strain <strong>stiffens dramatically</strong> as $\nu \to \tfrac{1}{2}$ and blows up in the incompressible limit, while plane stress stays finite. A substitution rule worth memorizing: any plane-stress solution converts to plane strain via $E \to E/(1-\nu^2)$, $\nu \to \nu/(1-\nu)$.</p>
+
+    <table>
+      <tr><th>$\nu$</th><th>Plane-stress prefactor $\frac{E}{1-\nu^2}$</th><th>Plane-strain $(1,1)$ entry $\frac{E(1-\nu)}{(1+\nu)(1-2\nu)}$</th></tr>
+      <tr><td>0.3</td><td>$1.10\,E$</td><td>$1.35\,E$</td></tr>
+      <tr><td>0.49</td><td>$1.31\,E$</td><td>$17.1\,E$</td></tr>
+    </table>
+
+    <p>At $\nu = 0.3$ the choice changes stiffness by ~20%; at $\nu = 0.49$ by a factor of 13. For rubber, the choice is not a detail.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 290" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="psArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#c62828"/>
+          </marker>
+          <marker id="psArrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+          </marker>
+        </defs>
+        <!-- Left: plane stress thin sheet -->
+        <text x="118" y="24" font-size="12.5" font-family="sans-serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">Plane stress</text>
+        <polygon points="45,110 165,90 195,120 75,140" fill="#eef4fb" stroke="#333" stroke-width="1.4"/>
+        <polygon points="45,110 165,90 165,98 45,118" fill="#dbe7f5" stroke="#333" stroke-width="0.8"/>
+        <line x1="40" y1="122" x2="14" y2="126" stroke="#c62828" stroke-width="2" marker-end="url(#psArr)"/>
+        <line x1="200" y1="108" x2="226" y2="104" stroke="#c62828" stroke-width="2" marker-end="url(#psArr)"/>
+        <text x="118" y="170" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">thin sheet, in-plane load, free faces</text>
+        <text x="118" y="186" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">&#963;&#8323;&#8323; = 0, thickness free to change</text>
+        <text x="118" y="204" font-size="10.5" font-family="sans-serif" fill="#1565c0" text-anchor="middle">prefactor E/(1&#8722;&#957;&#178;)</text>
+        <!-- Middle: plane strain prism -->
+        <text x="352" y="24" font-size="12.5" font-family="sans-serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">Plane strain</text>
+        <polygon points="290,70 380,70 410,95 320,95" fill="#dbe7f5" stroke="#333" stroke-width="1"/>
+        <rect x="290" y="70" width="90" height="75" fill="#eef4fb" stroke="#333" stroke-width="1.4"/>
+        <polygon points="380,70 410,95 410,170 380,145" fill="#dbe7f5" stroke="#333" stroke-width="1"/>
+        <line x1="290" y1="60" x2="410" y2="85" stroke="#555" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="352" y="52" font-size="10" font-family="sans-serif" fill="#555" text-anchor="middle">long prismatic body, ends fixed</text>
+        <text x="352" y="170" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">&#949;&#8323;&#8323; = 0; constraint carries</text>
+        <text x="352" y="186" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">&#963;&#8323;&#8323; = &#957;(&#963;&#8321;&#8321;+&#963;&#8322;&#8322;)</text>
+        <text x="352" y="204" font-size="10.5" font-family="sans-serif" fill="#c62828" text-anchor="middle">prefactor has 1/(1&#8722;2&#957;): blows up as &#957;&#8594;&#189;</text>
+        <!-- Right: bonded elastomer layer -->
+        <text x="582" y="24" font-size="12.5" font-family="sans-serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">Tactile skin: neither!</text>
+        <rect x="505" y="120" width="155" height="30" fill="#fdf3e7" stroke="#333" stroke-width="1.4"/>
+        <rect x="505" y="150" width="155" height="14" fill="#ccc" stroke="#333" stroke-width="1.2"/>
+        <text x="582" y="162" font-size="9" font-family="sans-serif" fill="#333" text-anchor="middle">rigid substrate (bonded)</text>
+        <circle cx="582" cy="94" r="16" fill="#eef4fb" stroke="#333" stroke-width="1.4"/>
+        <line x1="582" y1="78" x2="582" y2="60" stroke="#333" stroke-width="1.4"/>
+        <line x1="582" y1="112" x2="582" y2="124" stroke="#c62828" stroke-width="2" marker-end="url(#psArr)"/>
+        <text x="606" y="70" font-size="10" font-family="sans-serif" fill="#555">indenter</text>
+        <!-- escape arrows blocked -->
+        <line x1="545" y1="138" x2="518" y2="138" stroke="#555" stroke-width="1.5" marker-end="url(#psArrB)"/>
+        <line x1="620" y1="138" x2="647" y2="138" stroke="#555" stroke-width="1.5" marker-end="url(#psArrB)"/>
+        <text x="530" y="132" font-size="12" font-family="sans-serif" fill="#c62828">&#10007;</text>
+        <text x="631" y="132" font-size="12" font-family="sans-serif" fill="#c62828">&#10007;</text>
+        <text x="582" y="222" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">confined, near-incompressible &#8212;</text>
+        <text x="582" y="238" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">material cannot escape sideways at</text>
+        <text x="582" y="254" font-size="10.5" font-family="sans-serif" fill="#555" text-anchor="middle">the bonded interface</text>
+        <text x="582" y="272" font-size="10.5" font-family="sans-serif" fill="#00838f" text-anchor="middle">use 3D or axisymmetric models</text>
+      </svg>
+      <div class="figure-caption">Left and middle: the two classical reductions and their assumptions. Right: a thin elastomer layer bonded to a rigid substrate under indentation fits neither — it is closer to confined compression, and the near-incompressible material cannot escape sideways.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — which applies to a tactile skin?</div>
+      <div>Honestly, often <em>neither</em>. A thin elastomer layer bonded to a rigid substrate and indented from above is closer to confined compression: free-surface (plane-stress-like) assumptions underestimate stiffness badly, because the near-incompressible material cannot escape sideways. Full 3D or axisymmetric models are usually needed, and the apparent stiffness becomes <strong>geometry-dominated</strong> — set by the aspect ratio of the contact versus the layer thickness, not by $E$ alone. This is stated explicitly here because sensor-calibration shortcuts frequently assume plane stress by default.</div>
+    </div>
+
+    <p>Closing the loop to iFEM: classic iFEM plate formulations are built on plane-stress-based laminate kinematics (first-order shear deformation theory) — which is part of their small-strain validity envelope, revisited in §12 and Module 4.</p>
+
+    <!-- ===== SECTION 10: HYPERELASTICITY ===== -->
+    <h2 class="section-heading" id="hyperelasticity-strain-energy">10. Hyperelasticity: Stress From a Strain-Energy Density</h2>
+
+    <p>Beyond a few percent strain, the linear law of §7 stops describing elastomers. The finite-strain constitutive framework starts from a scalar potential.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition — Hyperelastic Material</div>
+      <div>
+        A material is <strong>hyperelastic</strong> if a scalar strain-energy density $\Psi(\mathbf{F})$ exists with
+        $$\mathbf{P} = \frac{\partial \Psi}{\partial \mathbf{F}}, \qquad \mathbf{S} = 2\,\frac{\partial \Psi}{\partial \mathbf{C}}, \qquad \boldsymbol{\sigma} = \frac{2}{J}\,\mathbf{F}\,\frac{\partial \Psi}{\partial \mathbf{C}}\,\mathbf{F}^{\mathsf{T}}$$
+        Stress is the gradient of a potential: work is path-independent and no energy is dissipated in a closed cycle. This follows from the Clausius&ndash;Planck inequality with zero dissipation (Holzapfel ch.&nbsp;6).
+      </div>
+    </div>
+
+    <p>Two invariance requirements sculpt what $\Psi$ may depend on:</p>
+
+    <ul>
+      <li><strong>Objectivity (frame indifference):</strong> $\Psi(\mathbf{Q}\mathbf{F}) = \Psi(\mathbf{F})$ for all rotations $\mathbf{Q}$ forces $\Psi = \Psi(\mathbf{C})$ — the energy cannot see the rotation part of $\mathbf{F}$. This is the constitutive echo of §4: only the rotation-free part of the deformation may enter.</li>
+      <li><strong>Material isotropy:</strong> $\Psi(\mathbf{F}\mathbf{Q}) = \Psi(\mathbf{F})$ further reduces $\Psi$ to a function of the three principal invariants, or equivalently of the principal stretches $(\lambda_1, \lambda_2, \lambda_3)$ — Ogden's preferred formulation.</li>
+    </ul>
+
+    <div class="math-block">$$I_1 = \mathrm{tr}\,\mathbf{C}, \qquad I_2 = \tfrac{1}{2}\left[(\mathrm{tr}\,\mathbf{C})^2 - \mathrm{tr}(\mathbf{C}^2)\right], \qquad I_3 = \det \mathbf{C} = J^2$$</div>
+
+    <p>The stress recipes above, pushed through the chain rule over the invariants, give the standard representation of $\boldsymbol{\sigma}$ in powers of $\mathbf{b}$.</p>
+
+    <h3 class="subsection-heading">Near-Incompressibility: the Isochoric&ndash;Volumetric Split</h3>
+
+    <p>Elastomers strongly resist volume change while shearing freely. The standard handling splits the deformation multiplicatively and the energy additively:</p>
+
+    <div class="math-block">$$\bar{\mathbf{F}} = J^{-1/3}\mathbf{F}, \qquad \bar{I}_1 = J^{-2/3} I_1, \qquad \bar{I}_2 = J^{-4/3} I_2, \qquad \Psi = \Psi_{\text{iso}}(\bar{I}_1, \bar{I}_2) + U(J)$$</div>
+
+    <p>with a volumetric penalty such as $U(J) = \tfrac{\kappa}{2}(J-1)^2$. For elastomers the scale separation is stark: bulk modulus $\kappa \sim 1$ GPa versus shear modulus $\mu \sim 10$ kPa&ndash;1 MPa — a ratio of $10^3$&ndash;$10^5$. This is the mechanical root of both the $\nu \to \tfrac{1}{2}$ limit of §7 and volumetric locking.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — hyperelasticity is an idealization</div>
+      <div>Hyperelasticity is the <em>equilibrium</em> idealization. Real skin silicones exhibit hysteresis, rate dependence, stress relaxation, and Mullins softening — documented systematically for Ecoflex by Liao, Hossain &amp; Yao (2020), with visco-hyperelastic extensions for soft-robotics silicones in Kulkarni, Bayre &amp; Khan (2025). A hyperelastic fit represents <strong>one chosen backbone curve</strong> of that richer behavior — loading, unloading, or equilibrium — and you should state which. Treating the fit as "the" material behavior of a skin silicone is a modeling decision, not a fact.</div>
+    </div>
+
+    <!-- ===== SECTION 11: NEO-HOOKEAN, MOONEY-RIVLIN ===== -->
+    <h2 class="section-heading" id="neo-hookean-mooney-rivlin">11. Neo-Hookean, Mooney&ndash;Rivlin, and Incompressibility</h2>
+
+    <p>The simplest useful $\Psi$ is the incompressible <strong>neo-Hookean</strong> model:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Incompressible Neo-Hookean</div>
+      <div>
+        $$\Psi_{\text{NH}} = \frac{\mu}{2}\left(I_1 - 3\right) \;\text{ with constraint } J = 1, \qquad \boldsymbol{\sigma} = -p\,\mathbf{I} + \mu\,\mathbf{b}$$
+        The constraint's reaction is an indeterminate pressure $p$ — a Lagrange multiplier fixed by boundary conditions, not by the material. Statistical-mechanics pedigree: Gaussian polymer chains give $\mu = nkT$.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Worked Example: the Uniaxial Law</h3>
+
+    <p>Stretch an incompressible neo-Hookean rod: $\lambda_1 = \lambda$, and incompressibility ($J = \lambda_1\lambda_2\lambda_3 = 1$ with lateral symmetry) forces $\lambda_2 = \lambda_3 = \lambda^{-1/2}$. Traction-free lateral faces require $\sigma_{22} = 0$, which fixes the pressure: $p = \mu/\lambda$. Substituting back:</p>
+
+    <div class="math-block">$$\sigma_{\text{uni}} = \mu\left(\lambda^2 - \frac{1}{\lambda}\right), \qquad P_{\text{uni}} = \frac{\sigma}{\lambda} = \mu\left(\lambda - \frac{1}{\lambda^2}\right), \qquad E = 3\mu$$</div>
+
+    <p>The tangent at $\lambda = 1$ gives the initial Young's modulus $E = 3\mu$ — consistent with $E = 2\mu(1+\nu)$ at $\nu = \tfrac{1}{2}$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — E = 2&mu; vs E = 3&mu;</div>
+      <div>$E = 2\mu(1+\nu)$ always; $E = 3\mu$ only in the incompressible limit $\nu \to \tfrac{1}{2}$. Mixing the two conventions for elastomers produces 50% modulus errors — a real failure mode when comparing a shear-modulus fit against a tensile-test modulus.</div>
+    </div>
+
+    <p><strong>Mooney&ndash;Rivlin</strong> adds the second invariant. Mooney (1940) derived the form by requiring linearity in simple shear; Rivlin (1948) built the general invariant framework it lives in:</p>
+
+    <div class="math-block">$$\Psi_{\text{MR}} = C_{10}\left(I_1 - 3\right) + C_{01}\left(I_2 - 3\right), \qquad \mu = 2\left(C_{10} + C_{01}\right)$$</div>
+
+    <p>In uniaxial data the two models are hard to distinguish; the $I_2$ term mainly improves biaxial and pure-shear predictions. That is exactly why parameters fitted to uniaxial data <em>alone</em> are non-unique and can misbehave in other deformation modes — a recurring conclusion of Dal, A&ccedil;&#305;kg&ouml;z &amp; Badienia (2021), comparing 44 models, and Ricker &amp; Wriggers (2023), fitting protocols over nine rubber compounds. Both insist on simultaneous uniaxial + pure-shear + equibiaxial fitting, and both warn that fitted $C_{01} < 0$ can produce unstable response in biaxial or compressive states.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Mooney&ndash;Rivlin in detail: parameterization, uniaxial law, and fitting caveats</div>
+      <div class="collapsible-body">
+        <p>The uniaxial true stress for incompressible Mooney&ndash;Rivlin follows the same route as the neo-Hookean derivation ($\lambda_2 = \lambda_3 = \lambda^{-1/2}$, lateral faces traction-free):</p>
+        <div class="math-block">$$\sigma_{\text{MR}} = 2\left(C_{10} + \frac{C_{01}}{\lambda}\right)\left(\lambda^2 - \frac{1}{\lambda}\right)$$</div>
+        <p>with small-strain shear modulus $\mu = 2(C_{10} + C_{01})$: at $\lambda = 1$ the model is indistinguishable from neo-Hookean with the same $\mu$. The $C_{01}/\lambda$ factor is what separates the models away from $\lambda = 1$ — weakly in uniaxial tension, strongly in biaxial and pure-shear modes. Practical consequences:</p>
+        <ul>
+          <li><strong>Non-uniqueness:</strong> many $(C_{10}, C_{01})$ pairs fit the same uniaxial curve almost equally well; only multi-mode data (uniaxial + pure shear + equibiaxial, per Dal et al. 2021 and Ricker &amp; Wriggers 2023) pins them down.</li>
+          <li><strong>Stability:</strong> fitted $C_{01} < 0$ can produce unstable response outside the fitted mode — check before deploying a fit in an FE model.</li>
+          <li><strong>Strain stiffening:</strong> both neo-Hookean and Mooney&ndash;Rivlin underpredict the sharp stiffening of elastomers above $\lambda \approx 2$&ndash;$3$ (finite chain extensibility). The standard upgrades are the Ogden, Gent, and Arruda&ndash;Boyce families — named here, detailed when they are needed in Modules 7 and 9.</li>
+        </ul>
+        <p>This detail is deliberately tucked away: the material-identification module (Module 7) reintroduces these parameterizations just-in-time, with the fitting machinery to go with them.</p>
+      </div>
+    </div>
+
+    <p><strong>Compressible implementation form.</strong> FE codes rarely enforce $J = 1$ exactly; they use the split of §10 with a large penalty:</p>
+
+    <div class="math-block">$$\Psi = \frac{\mu}{2}\left(\bar{I}_1 - 3\right) + \frac{\kappa}{2}\left(J - 1\right)^2, \qquad \kappa/\mu \sim 10^3\text{–}10^5$$</div>
+
+    <p>For Ecoflex-class skin silicones, $\mu$ is of order tens of kPa with strong Shore-hardness dependence (Liao, Hossain &amp; Yao 2020) — always re-fit for your batch and cure state rather than trusting datasheet values.</p>
+
+    <!-- ===== INTERACTIVE: UNIAXIAL STRESS EXPLORER ===== -->
+    <div class="interactive-container" id="uniaxial-stress-explorer">
+      <div class="interactive-label">Interactive Tool &mdash; Uniaxial Stress Explorer: True vs Nominal, Linear vs Hyperelastic</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Move the operating point $\lambda$ and watch true stress $\sigma$ (solid) and nominal stress $P = \sigma/\lambda$ (dashed) diverge. The gray dashed line is the shared linear tangent $3\mu(\lambda - 1)$ at $\lambda = 1$ — all models and both stress measures collapse onto it locally.</p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:12.5px;">
+        <label><input type="radio" name="use-model" value="lin"> Linear elastic $\sigma = E(\lambda{-}1)$, $E = 3\mu$</label>
+        <label><input type="radio" name="use-model" value="nh" checked> Incompressible neo-Hookean</label>
+        <label><input type="radio" name="use-model" value="mr"> Incompressible Mooney&ndash;Rivlin</label>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label><span>Operating point $\lambda$</span> <span id="use-lam-val">1.50</span></label><input type="range" id="use-lam" min="0.4" max="3" step="0.01" value="1.5"></div>
+        <div class="slider-control"><label><span>Shear modulus $\mu$ (kPa)</span> <span id="use-mu-val">50</span></label><input type="range" id="use-mu" min="10" max="200" step="1" value="50"></div>
+        <div class="slider-control" id="use-mr-ctl" style="display:none;"><label><span>MR ratio $C_{01}/(C_{10}{+}C_{01})$</span> <span id="use-r-val">0.25</span></label><input type="range" id="use-r" min="0" max="0.5" step="0.01" value="0.25"></div>
+      </div>
+      <svg id="use-svg" viewBox="0 0 700 340" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;"></svg>
+      <div id="use-badge" style="font-size:13px;margin-top:10px;font-weight:600;color:#1a1a1a;"></div>
+      <div id="use-readout" style="font-size:13px;margin-top:6px;"></div>
+    </div>
+
+    <!-- ===== SECTION 12: CHOOSING THE RIGHT THEORY ===== -->
+    <h2 class="section-heading" id="choosing-the-right-theory">12. Choosing the Right Theory: A Decision Guide</h2>
+
+    <p>The rest of the site points back to this table. Which regime is your problem in?</p>
+
+    <table>
+      <tr><th>Regime</th><th>Kinematics</th><th>Material law</th><th>Machinery</th></tr>
+      <tr>
+        <td><strong>(1)</strong> Strains $\lesssim 2\%$ <em>and</em> rotations small</td>
+        <td>$\boldsymbol{\varepsilon}$ (linear)</td>
+        <td>Hooke (§7)</td>
+        <td>Voigt (§8), superposition holds, plane reductions available (§9). Home turf of classic iFEM: the least-squares functional of Tessler &amp; Spangler (2005) is written in the strain measures of linear first-order shear-deformation plate theory.</td>
+      </tr>
+      <tr>
+        <td><strong>(2)</strong> Small strains, <em>large rotations</em> (thin shells, cantilevers, flexible skins bending)</td>
+        <td>Finite: $\mathbf{E}$ or corotational formulations</td>
+        <td>May stay linear</td>
+        <td>$\boldsymbol{\varepsilon}$ alone produces the spurious rotation strains of §4 — geometry must go nonlinear even when the material does not.</td>
+      </tr>
+      <tr>
+        <td><strong>(3)</strong> Elastomeric strains $\gtrsim 10\%$</td>
+        <td>Full finite-strain</td>
+        <td>Hyperelasticity + near-incompressibility (§10&ndash;11)</td>
+        <td>Stress-measure bookkeeping of §6 mandatory; expect volumetric locking in naive displacement elements as $\nu \to \tfrac{1}{2}$ — reach for mixed $u$&ndash;$p$ or selective reduced integration.</td>
+      </tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">The tactile-skin verdict</div>
+      <div>A fingertip pressing millimeters into a millimeters-thick Ecoflex pad sits squarely in regime (3). Transplanting small-strain iFEM formulations to soft skins imports a modeling error that <em>no amount of sensor accuracy fixes</em> — extending deformation reconstruction to finite strains is an active research front, not settled machinery.</div>
+    </div>
+
+    <p><strong>Forward dependencies of this module.</strong> The FEM discretization of Module 2 needs §6's equilibrium in weak form, §7's Hooke law, and §8's Voigt machinery. The iFEM core (Module 4) needs §5's compatibility-as-regularization insight plus the small-strain validity envelope. Material-identification content (Module 7) needs §10&ndash;11 and the fitting caveats: multi-mode data and stress-measure hygiene.</p>
+
+    <p>The one-sentence takeaway: <strong>kinematics is exact, balance is exact — every modeling sin lives in the constitutive law and in pretending small-strain formulas hold at large deformation.</strong></p>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="mod1-walkthrough" class="interactive-container" data-title="Walkthrough — From Motion to Stress and Back"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="mod1-flashcards"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Gerhard A. Holzapfel (2000). <em>Nonlinear Solid Mechanics: A Continuum Approach for Engineering</em>. John Wiley &amp; Sons, Chichester.</li>
+      <li>Javier Bonet, Richard D. Wood (2008). <em>Nonlinear Continuum Mechanics for Finite Element Analysis, 2nd Edition</em>. Cambridge University Press.</li>
+      <li>R. W. Ogden (1997). <em>Non-Linear Elastic Deformations</em>. Dover Publications, Mineola, New York.</li>
+      <li>S. P. Timoshenko, J. N. Goodier (1970). <em>Theory of Elasticity, 3rd Edition</em>. McGraw-Hill, New York.</li>
+      <li>M. Mooney (1940). <em>A Theory of Large Elastic Deformation</em>. Journal of Applied Physics 11(9), 582&ndash;592. doi:10.1063/1.1712836</li>
+      <li>R. S. Rivlin (1948). <em>Large elastic deformations of isotropic materials. I. Fundamental concepts</em>. Philosophical Transactions of the Royal Society of London A 240(822), 459&ndash;490. doi:10.1098/rsta.1948.0002</li>
+      <li>Alexander Tessler, Jan L. Spangler (2005). <em>A least-squares variational method for full-field reconstruction of elastic deformations in shear-deformable plates and shells</em>. Computer Methods in Applied Mechanics and Engineering 194, 327&ndash;339. doi:10.1016/j.cma.2004.03.015</li>
+      <li>H&uuml;sn&uuml; Dal, Kemal A&ccedil;&#305;kg&ouml;z, Yashar Badienia (2021). <em>On the Performance of Isotropic Hyperelastic Constitutive Models for Rubber-Like Materials: A State of the Art Review</em>. Applied Mechanics Reviews 73(2), 020802. doi:10.1115/1.4050978</li>
+      <li>Alexander Ricker, Peter Wriggers (2023). <em>Systematic Fitting and Comparison of Hyperelastic Continuum Models for Elastomers</em>. Archives of Computational Methods in Engineering 30, 2257&ndash;2288. doi:10.1007/s11831-022-09865-x</li>
+      <li>Kevin Linka, Ellen Kuhl (2023). <em>A new family of Constitutive Artificial Neural Networks towards automated model discovery</em>. Computer Methods in Applied Mechanics and Engineering 403, 115731. doi:10.1016/j.cma.2022.115731</li>
+      <li>Vahidullah Ta&ccedil;, Kevin Linka, Francisco Sahli-Costabal, Ellen Kuhl, Adrian Buganza Tepole (2024). <em>Benchmarking physics-informed frameworks for data-driven hyperelasticity</em>. Computational Mechanics 73, 49&ndash;65. doi:10.1007/s00466-023-02355-2</li>
+      <li>Zisheng Liao, Mokarram Hossain, Xiaohu Yao (2020). <em>Ecoflex polymer of different Shore hardnesses: Experimental investigations and constitutive modelling</em>. Mechanics of Materials 144, 103366. doi:10.1016/j.mechmat.2020.103366</li>
+      <li>Siddhesh S. Kulkarni, Nahom M. Bayre, Kamran Khan (2025). <em>Modelling visco-hyperelastic response of Silicone based elastomers for soft robotics and foldable structure applications</em>. International Journal of Engineering Science 211, 104253. doi:10.1016/j.ijengsci.2025.104253</li>
+    </ul>
+
+    <p style="font-size:12.5px;color:#666;">Where do the recent references fit? The 2023&ndash;2026 activity relevant to this primer is not new strain or stress measures — that layer is settled — but a professionalization of the constitutive layer on top of it: rigorous multi-mode fitting protocols (Dal et al. 2021; Ricker &amp; Wriggers 2023), machine-learned constitutive models rebuilt on the classical invariant machinery so that $I_1$, $I_2$, $J$ are literally the input layer of the state of the art (Linka &amp; Kuhl 2023; Ta&ccedil; et al. 2024), and soft-silicone characterization moving beyond pure hyperelasticity into rate-dependent regimes (Liao et al. 2020; Kulkarni et al. 2025).</p>
+
+    <!-- ===== PAGE NAVIGATION ===== -->
+    <div class="page-nav">
+      <a href="mod2.html">2. The Forward Finite Element Method &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod1');</script>
+
+<!-- ===== SCRIPT: STRAIN-CONVENTION TRAP LAB ===== -->
+<script>
+(function() {
+  var st = { l1: 1, l2: 1, g: 0, th: 0 };
+  var svg = document.getElementById('stl-svg');
+  var matEl = document.getElementById('stl-matrices');
+  var ledEl = document.getElementById('stl-ledger');
+  var verEl = document.getElementById('stl-verdict');
+
+  function rm(el) { if (typeof renderMath === 'function') renderMath(el); }
+  function fmt(v) { var x = Math.abs(v) < 5e-4 ? 0 : v; return x.toFixed(3); }
+
+  function Fmat(p) {
+    var c = Math.cos(p.th * Math.PI / 180), s = Math.sin(p.th * Math.PI / 180);
+    // F = R(theta) * [[l1, g],[0, l2]]
+    return [[c * p.l1, c * p.g - s * p.l2], [s * p.l1, s * p.g + c * p.l2]];
+  }
+
+  function rosette(p) {
+    // engineering elongation along reference directions 0deg, 45deg, 90deg: e_N = sqrt(N.C N) - 1
+    var F = Fmat(p);
+    var C00 = F[0][0]*F[0][0] + F[1][0]*F[1][0];
+    var C01 = F[0][0]*F[0][1] + F[1][0]*F[1][1];
+    var C11 = F[0][1]*F[0][1] + F[1][1]*F[1][1];
+    var e0  = Math.sqrt(C00) - 1;
+    var e90 = Math.sqrt(C11) - 1;
+    var e45 = Math.sqrt(0.5 * (C00 + 2*C01 + C11)) - 1;
+    return [e0, e45, e90];
+  }
+
+  function eigSym2(a, b, d) { // symmetric [[a,b],[b,d]] -> [max,min]
+    var m = 0.5 * (a + d), r = Math.sqrt(0.25 * (a - d) * (a - d) + b * b);
+    return [m + r, m - r];
+  }
+
+  function eigSym3(A) {
+    var p1 = A[0][1]*A[0][1] + A[0][2]*A[0][2] + A[1][2]*A[1][2];
+    if (p1 === 0) return [A[0][0], A[1][1], A[2][2]];
+    var q = (A[0][0] + A[1][1] + A[2][2]) / 3;
+    var p2 = (A[0][0]-q)*(A[0][0]-q) + (A[1][1]-q)*(A[1][1]-q) + (A[2][2]-q)*(A[2][2]-q) + 2*p1;
+    var p = Math.sqrt(p2 / 6);
+    var B = [[(A[0][0]-q)/p, A[0][1]/p, A[0][2]/p],
+             [A[1][0]/p, (A[1][1]-q)/p, A[1][2]/p],
+             [A[2][0]/p, A[2][1]/p, (A[2][2]-q)/p]];
+    var detB = B[0][0]*(B[1][1]*B[2][2]-B[1][2]*B[2][1]) - B[0][1]*(B[1][0]*B[2][2]-B[1][2]*B[2][0]) + B[0][2]*(B[1][0]*B[2][1]-B[1][1]*B[2][0]);
+    var r = Math.max(-1, Math.min(1, detB / 2));
+    var phi = Math.acos(r) / 3;
+    var e1 = q + 2*p*Math.cos(phi);
+    var e3 = q + 2*p*Math.cos(phi + 2*Math.PI/3);
+    return [e1, 3*q - e1 - e3, e3];
+  }
+
+  function jacobianInfo() {
+    // FD Jacobian of rosette measurements wrt (l1, l2, g, th)
+    var h = 1e-5, base = rosette(st), keys = ['l1','l2','g','th'];
+    var Jc = [];
+    keys.forEach(function(k) {
+      var p = { l1: st.l1, l2: st.l2, g: st.g, th: st.th };
+      p[k] += (k === 'th') ? h * 180 / Math.PI : h; // perturb th by h radians
+      var e = rosette(p);
+      Jc.push([(e[0]-base[0])/h, (e[1]-base[1])/h, (e[2]-base[2])/h]);
+    });
+    var dth = Math.sqrt(Jc[3][0]*Jc[3][0] + Jc[3][1]*Jc[3][1] + Jc[3][2]*Jc[3][2]);
+    // condition number of 3x3 block wrt (l1, l2, g): singular values = sqrt(eig(M^T M))
+    var M = [Jc[0], Jc[1], Jc[2]]; // rows = d e / d param
+    var G = [[0,0,0],[0,0,0],[0,0,0]];
+    for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) {
+      var sum = 0;
+      for (var k = 0; k < 3; k++) sum += M[i][k] * M[j][k];
+      G[i][j] = sum;
+    }
+    var ev = eigSym3(G).map(function(v){ return Math.max(v, 0); });
+    var smax = Math.sqrt(Math.max.apply(null, ev)), smin = Math.sqrt(Math.min.apply(null, ev));
+    return { dth: dth, cond: smin > 1e-12 ? smax / smin : Infinity };
+  }
+
+  function draw() {
+    var F = Fmat(st);
+    var cx = 180, cy = 155, sc = 46;
+    function P(x, y) { return (cx + x * sc).toFixed(1) + ',' + (cy - y * sc).toFixed(1); }
+    function map(x, y) { return [F[0][0]*x + F[0][1]*y, F[1][0]*x + F[1][1]*y]; }
+    var h = '';
+    // reference grid (light)
+    for (var i = -2; i <= 2; i++) {
+      var t = i / 2;
+      h += '<line x1="' + (cx - sc) + '" y1="' + (cy - t*sc) + '" x2="' + (cx + sc) + '" y2="' + (cy - t*sc) + '" stroke="#e3e3e3" stroke-width="1"/>';
+      h += '<line x1="' + (cx + t*sc) + '" y1="' + (cy - sc) + '" x2="' + (cx + t*sc) + '" y2="' + (cy + sc) + '" stroke="#e3e3e3" stroke-width="1"/>';
+    }
+    h += '<rect x="' + (cx - sc) + '" y="' + (cy - sc) + '" width="' + (2*sc) + '" height="' + (2*sc) + '" fill="none" stroke="#aaa" stroke-width="1.2"/>';
+    // reference unit circle (dashed gray)
+    h += '<circle cx="' + cx + '" cy="' + cy + '" r="' + sc + '" fill="none" stroke="#bbb" stroke-width="1" stroke-dasharray="4,3"/>';
+    // deformed grid (accent)
+    for (var gi = -2; gi <= 2; gi++) {
+      var t2 = gi / 2;
+      var a = map(-1, t2), b = map(1, t2), c2 = map(t2, -1), d2 = map(t2, 1);
+      h += '<line x1="' + (cx + a[0]*sc) + '" y1="' + (cy - a[1]*sc) + '" x2="' + (cx + b[0]*sc) + '" y2="' + (cy - b[1]*sc) + '" stroke="#c5d7ee" stroke-width="1"/>';
+      h += '<line x1="' + (cx + c2[0]*sc) + '" y1="' + (cy - c2[1]*sc) + '" x2="' + (cx + d2[0]*sc) + '" y2="' + (cy - d2[1]*sc) + '" stroke="#c5d7ee" stroke-width="1"/>';
+    }
+    var q = [map(-1,-1), map(1,-1), map(1,1), map(-1,1)];
+    h += '<polygon points="' + q.map(function(p){ return P(p[0], p[1]); }).join(' ') + '" fill="rgba(21,101,192,0.07)" stroke="#1565c0" stroke-width="1.8"/>';
+    // deformed circle -> ellipse
+    var d = '';
+    for (var k = 0; k <= 64; k++) {
+      var a2 = k / 64 * 2 * Math.PI;
+      var p2 = map(Math.cos(a2), Math.sin(a2));
+      d += (k === 0 ? 'M' : 'L') + (cx + p2[0]*sc).toFixed(1) + ' ' + (cy - p2[1]*sc).toFixed(1) + ' ';
+    }
+    h += '<path d="' + d + 'Z" fill="none" stroke="#1565c0" stroke-width="1.6"/>';
+    // principal axes of the ellipse: eigvectors of b = F F^T, lengths = principal stretches
+    var b00 = F[0][0]*F[0][0] + F[0][1]*F[0][1];
+    var b01 = F[0][0]*F[1][0] + F[0][1]*F[1][1];
+    var b11 = F[1][0]*F[1][0] + F[1][1]*F[1][1];
+    var ev2 = eigSym2(b00, b01, b11);
+    [0, 1].forEach(function(ix) {
+      var lam2 = ev2[ix], ang;
+      if (Math.abs(b01) < 1e-12) { ang = (ix === 0) === (b00 >= b11) ? 0 : Math.PI / 2; }
+      else { ang = Math.atan2(lam2 - b00, b01); }
+      var L = Math.sqrt(Math.max(lam2, 0));
+      var ux = Math.cos(ang) * L, uy = Math.sin(ang) * L;
+      h += '<line x1="' + (cx - ux*sc) + '" y1="' + (cy + uy*sc) + '" x2="' + (cx + ux*sc) + '" y2="' + (cy - uy*sc) + '" stroke="#e67e22" stroke-width="1.6" stroke-dasharray="6,3"/>';
+    });
+    // rosette gauge arms (reference: gray; deformed image: dark)
+    [[1,0],[Math.SQRT1_2,Math.SQRT1_2],[0,1]].forEach(function(N) {
+      h += '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + N[0]*0.55*sc) + '" y2="' + (cy - N[1]*0.55*sc) + '" stroke="#999" stroke-width="2.4"/>';
+      var m = map(N[0]*0.55, N[1]*0.55);
+      h += '<line x1="' + cx + '" y1="' + cy + '" x2="' + (cx + m[0]*sc) + '" y2="' + (cy - m[1]*sc) + '" stroke="#333" stroke-width="1.4"/>';
+    });
+    h += '<text x="10" y="18" font-size="11" font-family="sans-serif" fill="#888">gray: reference &#8226; blue: deformed &#8226; orange dashes: principal axes &#955;&#8321;, &#955;&#8322;</text>';
+    h += '<text x="10" y="292" font-size="11" font-family="sans-serif" fill="#888">rosette arms at 0&#176;/45&#176;/90&#176; (gray) and their deformed images (dark)</text>';
+    svg.innerHTML = h;
+  }
+
+  function update() {
+    document.getElementById('stl-l1-val').textContent = st.l1.toFixed(2);
+    document.getElementById('stl-l2-val').textContent = st.l2.toFixed(2);
+    document.getElementById('stl-g-val').textContent = st.g.toFixed(2);
+    document.getElementById('stl-th-val').textContent = st.th.toFixed(0);
+    draw();
+
+    var F = Fmat(st);
+    var C00 = F[0][0]*F[0][0] + F[1][0]*F[1][0];
+    var C01 = F[0][0]*F[0][1] + F[1][0]*F[1][1];
+    var C11 = F[0][1]*F[0][1] + F[1][1]*F[1][1];
+    var E00 = 0.5*(C00 - 1), E01 = 0.5*C01, E11 = 0.5*(C11 - 1);
+    var e00 = F[0][0] - 1, e11s = F[1][1] - 1, e01 = 0.5*(F[0][1] + F[1][0]);
+    var Jdet = F[0][0]*F[1][1] - F[0][1]*F[1][0];
+    var evC = eigSym2(C00, C01, C11);
+    var ps1 = Math.sqrt(Math.max(evC[0],0)), ps2 = Math.sqrt(Math.max(evC[1],0));
+    var normE = Math.sqrt(E00*E00 + 2*E01*E01 + E11*E11);
+    var normEps = Math.sqrt(e00*e00 + 2*e01*e01 + e11s*e11s);
+    var diff = Math.sqrt((e00-E00)*(e00-E00) + 2*(e01-E01)*(e01-E01) + (e11s-E11)*(e11s-E11));
+    var rigidSpurious = normE < 1e-9 && normEps > 1e-6;
+
+    function bm(a, b, c, d) { return "\\begin{bmatrix}" + fmt(a) + " & " + fmt(b) + " \\\\ " + fmt(c) + " & " + fmt(d) + "\\end{bmatrix}"; }
+    var eStyle = (normE < 1e-9 && Math.abs(st.th) > 0.5) ? 'color:#2e7d32;font-weight:600;' : '';
+    var epsStyle = rigidSpurious ? 'color:#c62828;font-weight:600;' : '';
+    matEl.innerHTML =
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;">' +
+      '<span>$\\mathbf{F} = ' + bm(F[0][0], F[0][1], F[1][0], F[1][1]) + '$</span>' +
+      '<span>$\\mathbf{C} = \\mathbf{F}^{\\mathsf{T}}\\mathbf{F} = ' + bm(C00, C01, C01, C11) + '$</span>' +
+      '<span style="' + eStyle + '">$\\mathbf{E} = \\tfrac{1}{2}(\\mathbf{C} - \\mathbf{I}) = ' + bm(E00, E01, E01, E11) + '$</span>' +
+      '<span style="' + epsStyle + '">$\\boldsymbol{\\varepsilon} = \\tfrac{1}{2}(\\nabla\\mathbf{u} + \\nabla\\mathbf{u}^{\\mathsf{T}}) = ' + bm(e00, e01, e01, e11s) + '$</span>' +
+      '<span>$J = \\det\\mathbf{F} = ' + fmt(Jdet) + '$</span>' +
+      '<span>$\\lambda_1 = ' + fmt(ps1) + ',\\; \\lambda_2 = ' + fmt(ps2) + '$</span>' +
+      '</div>';
+    rm(matEl);
+
+    var e = rosette(st);
+    var ji = jacobianInfo();
+    ledEl.innerHTML =
+      '<div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:8px;">Inverse-problem ledger</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements</strong> (rosette elongations along reference 0&#176;/45&#176;/90&#176;):<br>e&#8320; = ' + e[0].toFixed(4) + ', &nbsp;e&#8324;&#8325; = ' + e[1].toFixed(4) + ', &nbsp;e&#8329;&#8320; = ' + e[2].toFixed(4) + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns</strong>: 4 deformation parameters &#955;&#8321;, &#955;&#8322;, &#947;, &#952;</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions</strong>: homogeneous deformation over the patch; exact gauge model e&#8342; = &#8730;(N&#183;CN) &#8722; 1; a strain <em>convention</em> still has to be chosen &#8212; that choice is a modeling decision, not data</div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank / observability</strong>: 3 measurements, 4 unknowns &#8594; rank &#8804; 3. Numerically &#8214;&#8706;e/&#8706;&#952;&#8214; = ' + ji.dth.toExponential(1) + ' &#8776; 0: <em>rigid rotation is in the nullspace &#8212; strain cannot observe &#952;</em>. Conditioning of the (&#955;&#8321;, &#955;&#8322;, &#947;) block: cond &#8776; ' + (isFinite(ji.cond) ? ji.cond.toFixed(1) : '&#8734;') + '</div>' +
+      '<div><strong>Validation error</strong>: interpreting these measurements with small-strain kinematics costs &#8214;&#949; &#8722; E&#8214;<sub>F</sub> = ' + diff.toExponential(2) + (rigidSpurious ? ' &#8212; <span style="color:#c62828;font-weight:600;">entirely spurious: the patch is rigidly rotated, E = 0</span>' : '') + '. Shear-convention check: &#947;&#8321;&#8322; = 2E&#8321;&#8322; = ' + (2*E01).toFixed(4) + '; treating tensor shear E&#8321;&#8322; = ' + E01.toFixed(4) + ' as &#947; halves the shear.</div>';
+
+    var v = '';
+    if (rigidSpurious) {
+      v = '<span style="color:#2e7d32;font-weight:600;">E = 0 exactly</span> &#8212; Green&ndash;Lagrange passes the rigid-motion test &#8212; while <span style="color:#c62828;font-weight:600;">&#949; reports &#949;&#8321;&#8321; = &#949;&#8322;&#8322; = cos&#952; &#8722; 1 = ' + (Math.cos(st.th*Math.PI/180)-1).toFixed(3) + '</span>: spurious strain from pure rotation (&#8776; &#8722;&#952;&#178;/2). This is why geometrically nonlinear kinematics exist.';
+    } else if (Math.abs(Jdet - 1) < 1e-9 && normE > 1e-9) {
+      v = '<strong>J = 1</strong> &#8212; volume exactly preserved &#8212; yet <strong>C &#8800; I</strong>: isochoric but genuinely strained. Simple shear also hides a rotation in its polar decomposition: it is not &#8220;pure&#8221; shear.';
+    } else if (normE < 1e-9) {
+      v = 'Undeformed: every measure agrees, every entry zero. Move a slider.';
+    } else {
+      v = 'Small-strain error &#8214;&#949; &#8722; E&#8214;<sub>F</sub> = ' + diff.toExponential(2) + ' &#8212; grows quadratically with stretch and rotation. Compare against &#8214;E&#8214;<sub>F</sub> = ' + normE.toExponential(2) + '.';
+    }
+    verEl.innerHTML = v;
+  }
+
+  ['stl-l1','stl-l2','stl-g','stl-th'].forEach(function(id, i) {
+    document.getElementById(id).addEventListener('input', function() {
+      st[['l1','l2','g','th'][i]] = parseFloat(this.value);
+      update();
+    });
+  });
+  var presets = {
+    rot:    { l1: 1,    l2: 1,   g: 0,   th: 30 },
+    shear:  { l1: 1,    l2: 1,   g: 0.5, th: 0 },
+    uni:    { l1: 1.5,  l2: 1,   g: 0,   th: 0 },
+    pure:   { l1: 1.4,  l2: 0.7, g: 0,   th: 0 },
+    rotstr: { l1: 1.01, l2: 1,   g: 0,   th: 30 }
+  };
+  document.querySelectorAll('.stl-preset').forEach(function(b) {
+    b.addEventListener('click', function() {
+      var p = presets[b.getAttribute('data-p')];
+      st = { l1: p.l1, l2: p.l2, g: p.g, th: p.th };
+      document.getElementById('stl-l1').value = st.l1;
+      document.getElementById('stl-l2').value = st.l2;
+      document.getElementById('stl-g').value = st.g;
+      document.getElementById('stl-th').value = st.th;
+      update();
+    });
+  });
+  update();
+  window.addEventListener('load', update);
+})();
+</script>
+
+<!-- ===== SCRIPT: UNIAXIAL STRESS EXPLORER ===== -->
+<script>
+(function() {
+  var st = { lam: 1.5, mu: 50, model: 'nh', r: 0.25 };
+  var svg = document.getElementById('use-svg');
+  var badge = document.getElementById('use-badge');
+  var readout = document.getElementById('use-readout');
+  function rm(el) { if (typeof renderMath === 'function') renderMath(el); }
+
+  function sigma(l) {
+    if (st.model === 'lin') return 3 * st.mu * (l - 1);
+    if (st.model === 'nh') return st.mu * (l * l - 1 / l);
+    var C10 = (1 - st.r) * st.mu / 2, C01 = st.r * st.mu / 2;
+    return 2 * (C10 + C01 / l) * (l * l - 1 / l);
+  }
+  function nominal(l) { return st.model === 'lin' ? sigma(l) : sigma(l) / l; }
+  function tangent(l) { return 3 * st.mu * (l - 1); }
+
+  function update() {
+    document.getElementById('use-lam-val').textContent = st.lam.toFixed(2);
+    document.getElementById('use-mu-val').textContent = st.mu.toFixed(0);
+    document.getElementById('use-r-val').textContent = st.r.toFixed(2);
+    document.getElementById('use-mr-ctl').style.display = st.model === 'mr' ? '' : 'none';
+
+    var W = 700, H = 340, mL = 62, mR = 16, mT = 14, mB = 40;
+    var x0 = 0.4, x1 = 3;
+    var ymin = 0, ymax = 0;
+    for (var i = 0; i <= 100; i++) {
+      var l = x0 + i / 100 * (x1 - x0);
+      [sigma(l), nominal(l), tangent(l)].forEach(function(v) {
+        ymin = Math.min(ymin, v); ymax = Math.max(ymax, v);
+      });
+    }
+    var pad = 0.06 * (ymax - ymin); ymin -= pad; ymax += pad;
+    function X(l) { return mL + (l - x0) / (x1 - x0) * (W - mL - mR); }
+    function Y(v) { return H - mB - (v - ymin) / (ymax - ymin) * (H - mT - mB); }
+    function path(f) {
+      var d = '';
+      for (var i = 0; i <= 160; i++) {
+        var l = x0 + i / 160 * (x1 - x0);
+        d += (i === 0 ? 'M' : 'L') + X(l).toFixed(1) + ' ' + Y(f(l)).toFixed(1) + ' ';
+      }
+      return d;
+    }
+    var h = '';
+    h += '<line x1="' + mL + '" y1="' + Y(0) + '" x2="' + (W - mR) + '" y2="' + Y(0) + '" stroke="#999"/>';
+    h += '<line x1="' + mL + '" y1="' + mT + '" x2="' + mL + '" y2="' + (H - mB) + '" stroke="#999"/>';
+    for (var l = 0.5; l <= 3.01; l += 0.5) {
+      h += '<line x1="' + X(l) + '" y1="' + (H - mB) + '" x2="' + X(l) + '" y2="' + (H - mB + 4) + '" stroke="#999"/>';
+      h += '<text x="' + X(l) + '" y="' + (H - mB + 18) + '" font-size="11" font-family="sans-serif" fill="#555" text-anchor="middle">' + l.toFixed(1) + '</text>';
+    }
+    var stepY = Math.pow(10, Math.floor(Math.log10(ymax - ymin))) / 2;
+    if ((ymax - ymin) / stepY > 12) stepY *= 2;
+    for (var v = Math.ceil(ymin / stepY) * stepY; v <= ymax; v += stepY) {
+      h += '<text x="' + (mL - 8) + '" y="' + (Y(v) + 4) + '" font-size="11" font-family="sans-serif" fill="#555" text-anchor="end">' + Math.round(v) + '</text>';
+      h += '<line x1="' + (mL - 4) + '" y1="' + Y(v) + '" x2="' + mL + '" y2="' + Y(v) + '" stroke="#999"/>';
+    }
+    h += '<text x="' + (W / 2) + '" y="' + (H - 6) + '" font-size="12" font-family="sans-serif" fill="#333" text-anchor="middle">stretch &#955;</text>';
+    h += '<text x="16" y="' + (H / 2) + '" font-size="12" font-family="sans-serif" fill="#333" text-anchor="middle" transform="rotate(-90 16 ' + (H / 2) + ')">stress (kPa)</text>';
+    h += '<line x1="' + X(1) + '" y1="' + mT + '" x2="' + X(1) + '" y2="' + (H - mB) + '" stroke="#eee"/>';
+    // tangent
+    h += '<path d="' + path(tangent) + '" fill="none" stroke="#999" stroke-width="1.4" stroke-dasharray="7,4"/>';
+    // curves
+    h += '<path d="' + path(sigma) + '" fill="none" stroke="#1565c0" stroke-width="2.2"/>';
+    if (st.model !== 'lin') h += '<path d="' + path(nominal) + '" fill="none" stroke="#e67e22" stroke-width="2" stroke-dasharray="6,4"/>';
+    // marker at current lambda
+    var sg = sigma(st.lam), Pn = nominal(st.lam);
+    h += '<line x1="' + X(st.lam) + '" y1="' + mT + '" x2="' + X(st.lam) + '" y2="' + (H - mB) + '" stroke="#bbb" stroke-dasharray="3,3"/>';
+    h += '<circle cx="' + X(st.lam) + '" cy="' + Y(sg) + '" r="4.5" fill="#1565c0"/>';
+    if (st.model !== 'lin') h += '<circle cx="' + X(st.lam) + '" cy="' + Y(Pn) + '" r="4.5" fill="#e67e22"/>';
+    // legend
+    h += '<rect x="' + (mL + 12) + '" y="' + (mT + 6) + '" width="248" height="62" fill="#fafafa" stroke="#ddd" rx="4"/>';
+    h += '<line x1="' + (mL + 20) + '" y1="' + (mT + 20) + '" x2="' + (mL + 44) + '" y2="' + (mT + 20) + '" stroke="#1565c0" stroke-width="2.2"/><text x="' + (mL + 50) + '" y="' + (mT + 24) + '" font-size="11" font-family="sans-serif" fill="#333">true (Cauchy) &#963;(&#955;)</text>';
+    h += '<line x1="' + (mL + 20) + '" y1="' + (mT + 37) + '" x2="' + (mL + 44) + '" y2="' + (mT + 37) + '" stroke="#e67e22" stroke-width="2" stroke-dasharray="6,4"/><text x="' + (mL + 50) + '" y="' + (mT + 41) + '" font-size="11" font-family="sans-serif" fill="#333">nominal (first PK) P(&#955;) = &#963;/&#955;</text>';
+    h += '<line x1="' + (mL + 20) + '" y1="' + (mT + 54) + '" x2="' + (mL + 44) + '" y2="' + (mT + 54) + '" stroke="#999" stroke-width="1.4" stroke-dasharray="7,4"/><text x="' + (mL + 50) + '" y="' + (mT + 58) + '" font-size="11" font-family="sans-serif" fill="#333">shared tangent 3&#956;(&#955; &#8722; 1)</text>';
+    if (st.model === 'nh' || st.model === 'mr') {
+      h += '<text x="' + X(0.47) + '" y="' + (Y(sigma(0.45)) - 10) + '" font-size="10.5" font-family="sans-serif" fill="#888">compression: &#963; &#8594; &#8722;&#8734; as &#955; &#8594; 0</text>';
+    }
+    svg.innerHTML = h;
+
+    if (st.model === 'lin') {
+      badge.innerHTML = 'Linear theory does not distinguish &#963; from P &#8212; the small-strain identification &#963; &#8776; P is baked in.';
+    } else {
+      var pct = ((st.lam - 1) * 100).toFixed(0);
+      badge.innerHTML = '&#963;/P = &#955; = ' + st.lam.toFixed(2) + (st.lam > 1 ? ' &#8212; true stress is ' + pct + '% above nominal at this stretch.' : (st.lam < 1 ? ' &#8212; in compression, |P| exceeds |&#963;|.' : '.'));
+    }
+
+    var t = tangent(st.lam);
+    var devTxt;
+    if (Math.abs(st.lam - 1) < 0.02) {
+      devTxt = 'At &#955; &#8776; 1 all curves collapse onto the tangent (deviations are 0/0 here &#8212; move away from 1).';
+    } else {
+      var dS = (sigma(st.lam) - t) / Math.abs(t) * 100;
+      var dP = (nominal(st.lam) - t) / Math.abs(t) * 100;
+      devTxt = 'Deviation from the linear tangent at &#955; = ' + st.lam.toFixed(2) + ': true stress ' + dS.toFixed(1) + '%, nominal ' + dP.toFixed(1) + '%. (Already at &#955; &#8776; 1.05 the nominal curve is ~5% off the tangent while the true curve still agrees to ~0.1% &#8212; &#8220;small strain&#8221; stops being small asymmetrically.)';
+    }
+    var eq;
+    if (st.model === 'lin') {
+      eq = '$\\sigma = 3\\mu(\\lambda - 1) = 3 \\cdot ' + st.mu.toFixed(0) + ' \\cdot ' + (st.lam - 1).toFixed(2) + ' = ' + sg.toFixed(1) + '\\ \\text{kPa}$';
+    } else if (st.model === 'nh') {
+      eq = '$\\sigma = \\mu(\\lambda^2 - 1/\\lambda) = ' + st.mu.toFixed(0) + '(' + (st.lam * st.lam).toFixed(2) + ' - ' + (1 / st.lam).toFixed(3) + ') = ' + sg.toFixed(1) + '\\ \\text{kPa}, \\quad P = \\sigma/\\lambda = ' + Pn.toFixed(1) + '\\ \\text{kPa}$';
+    } else {
+      var C10 = (1 - st.r) * st.mu / 2, C01 = st.r * st.mu / 2;
+      eq = '$\\sigma = 2(C_{10} + C_{01}/\\lambda)(\\lambda^2 - 1/\\lambda) = 2(' + C10.toFixed(1) + ' + ' + C01.toFixed(1) + '/' + st.lam.toFixed(2) + ')(' + (st.lam * st.lam - 1 / st.lam).toFixed(2) + ') = ' + sg.toFixed(1) + '\\ \\text{kPa}, \\quad P = ' + Pn.toFixed(1) + '\\ \\text{kPa}$';
+    }
+    readout.innerHTML = '<div style="margin-bottom:6px;">' + eq + '</div><div style="color:#555;">' + devTxt + '</div>';
+    rm(readout);
+  }
+
+  document.getElementById('use-lam').addEventListener('input', function() { st.lam = parseFloat(this.value); update(); });
+  document.getElementById('use-mu').addEventListener('input', function() { st.mu = parseFloat(this.value); update(); });
+  document.getElementById('use-r').addEventListener('input', function() { st.r = parseFloat(this.value); update(); });
+  document.querySelectorAll('input[name="use-model"]').forEach(function(rb) {
+    rb.addEventListener('change', function() { st.model = this.value; update(); });
+  });
+  update();
+  window.addEventListener('load', update);
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH + FLASHCARDS ===== -->
+<script>
+initWalkthrough('mod1-walkthrough', [
+  {
+    tab: '1. Configure',
+    title: 'Label the body: two configurations',
+    text: 'Give every material particle a name $\\mathbf{X}$ in the known, undeformed reference configuration $\\Omega_0$. The motion $\\mathbf{x} = \\boldsymbol{\\varphi}(\\mathbf{X}, t)$ carries it to the current configuration; the displacement $\\mathbf{u} = \\mathbf{x} - \\mathbf{X}$ is the primary unknown of everything that follows. Uppercase = referential, lowercase = spatial.',
+    insight: 'Solid mechanics is Lagrangian because the reference configuration is known — it is your undeformed mesh — and boundary conditions attach to material particles.'
+  },
+  {
+    tab: '2. Differentiate',
+    title: 'One derivative gives all of kinematics',
+    text: 'The deformation gradient $\\mathbf{F} = \\mathbf{I} + \\nabla_{\\mathbf{X}}\\mathbf{u}$ maps line elements, $d\\mathbf{x} = \\mathbf{F}\\, d\\mathbf{X}$; its determinant $J$ maps volumes, $dv = J\\, dV$; Nanson\u2019s formula maps areas. The polar decomposition $\\mathbf{F} = \\mathbf{R}\\mathbf{U}$ splits every local deformation into pure stretch and rigid rotation.',
+    insight: '$\\mathbf{F}$ contains rotation — every strain measure must filter it back out.'
+  },
+  {
+    tab: '3. Strain',
+    title: 'Strip the rotation',
+    text: '$\\mathbf{C} = \\mathbf{F}^{\\mathsf{T}}\\mathbf{F}$ is rotation-free, so $\\mathbf{E} = \\tfrac{1}{2}(\\mathbf{C} - \\mathbf{I})$ vanishes exactly for rigid motion. The small-strain tensor $\\boldsymbol{\\varepsilon}$ is its linearization — valid only when strains AND rotations are small. A rigid 10\u00b0 rotation makes $\\boldsymbol{\\varepsilon}$ report a spurious \u22121.5% strain.',
+    insight: 'One deformation, many numbers: at $\\lambda = 2$, engineering strain says 1.0, Green\u2013Lagrange 1.5, logarithmic 0.69. Never quote a large strain without naming the measure.'
+  },
+  {
+    tab: '4. Stress',
+    title: 'Bookkeep the internal forces',
+    text: 'Cauchy $\\boldsymbol{\\sigma}$ divides force by current area (the "true" stress); first Piola\u2013Kirchhoff $\\mathbf{P} = J\\boldsymbol{\\sigma}\\mathbf{F}^{-\\mathsf{T}}$ by reference area (what a load cell + initial cross-section reports); second Piola\u2013Kirchhoff $\\mathbf{S} = \\mathbf{F}^{-1}\\mathbf{P}$ is symmetric and material but physically unreadable. Conjugate pairs: $(\\mathbf{P}, \\dot{\\mathbf{F}})$, $(\\mathbf{S}, \\dot{\\mathbf{E}})$, $(\\boldsymbol{\\sigma}, \\mathbf{d})$.',
+    insight: 'Incompressible uniaxial at $\\lambda = 2$: $\\sigma = 2P$. Know which stress your data sheet reports before you fit anything.'
+  },
+  {
+    tab: '5. Material',
+    title: 'Close the loop with a constitutive law',
+    text: 'Small strain: Hooke, $\\boldsymbol{\\sigma} = \\lambda\\,\\mathrm{tr}(\\boldsymbol{\\varepsilon})\\mathbf{I} + 2\\mu\\boldsymbol{\\varepsilon}$ — two constants for isotropy. Finite strain: a strain-energy density $\\Psi$ with $\\mathbf{S} = 2\\,\\partial\\Psi/\\partial\\mathbf{C}$; objectivity forces $\\Psi = \\Psi(\\mathbf{C})$, isotropy reduces it to invariants. Simplest useful model: incompressible neo-Hookean, $\\sigma_{\\text{uni}} = \\mu(\\lambda^2 - 1/\\lambda)$, with initial modulus $E = 3\\mu$.',
+    insight: 'This is the only modeled ingredient. Kinematics and balance are exact; the constitutive law is where all material modeling error lives.'
+  },
+  {
+    tab: '6. Invert',
+    title: 'Run the chain backwards: iFEM',
+    text: 'Measure sparse strains $\\mathbf{y}$, reconstruct the displacement field $\\mathbf{u}$ that best explains them, then read strains, stresses, and contact loads off the reconstruction. Because iFEM parametrizes $\\mathbf{u}$ with FE shape functions, its strains are compatible by construction — the noisy data is projected onto the compatible manifold.',
+    insight: 'Two lessons carry forward: compatibility is the hidden regularizer (Module 4), and rigid rotation is invisible to strain — the reconstruction needs pose anchoring from elsewhere.'
+  }
+]);
+
+initFlashcards('mod1-flashcards', [
+  {
+    q: "Define the deformation gradient and state what it maps.",
+    a: "$\\mathbf{F} = \\partial \\mathbf{x}/\\partial \\mathbf{X} = \\mathbf{I} + \\nabla_{\\mathbf{X}}\\mathbf{u}$. It linearly maps material line elements to spatial ones: $d\\mathbf{x} = \\mathbf{F}\\,d\\mathbf{X}$. It is a two-point tensor containing both stretch and rotation ($\\mathbf{F} = \\mathbf{R}\\mathbf{U}$)."
+  },
+  {
+    q: "Write the Green-Lagrange strain in terms of the displacement gradient. Which term does the small-strain tensor drop?",
+    a: "$\\mathbf{E} = \\tfrac{1}{2}(\\nabla\\mathbf{u} + \\nabla\\mathbf{u}^{\\mathsf{T}} + \\nabla\\mathbf{u}^{\\mathsf{T}}\\nabla\\mathbf{u})$. The small-strain tensor $\\boldsymbol{\\varepsilon}$ drops the quadratic term $\\nabla\\mathbf{u}^{\\mathsf{T}}\\nabla\\mathbf{u}$ — valid only when strains AND rotations are small."
+  },
+  {
+    q: "A body rigidly rotates by 10° with zero deformation. What do E and ε report?",
+    a: "$\\mathbf{E} = \\mathbf{0}$ exactly (since $\\mathbf{C} = \\mathbf{R}^{\\mathsf{T}}\\mathbf{R} = \\mathbf{I}$). But $\\varepsilon_{11} = \\varepsilon_{22} = \\cos 10° - 1 \\approx -0.0152$: a spurious −1.5% strain, roughly $-\\theta^2/2$."
+  },
+  {
+    q: "For uniaxial stretch λ = 1.2, compute engineering, Green-Lagrange, and logarithmic strain.",
+    a: "Engineering: $\\lambda - 1 = 0.200$. Green-Lagrange: $\\tfrac{1}{2}(\\lambda^2 - 1) = \\tfrac{1}{2}(0.44) = 0.220$. Logarithmic: $\\ln 1.2 \\approx 0.182$. Same deformation, three different numbers — always name the measure."
+  },
+  {
+    q: "State the conversion formulas between Cauchy, first PK, and second PK stress, and their work-conjugate partners.",
+    a: "$\\mathbf{P} = J\\boldsymbol{\\sigma}\\mathbf{F}^{-\\mathsf{T}}$, $\\mathbf{S} = \\mathbf{F}^{-1}\\mathbf{P} = J\\mathbf{F}^{-1}\\boldsymbol{\\sigma}\\mathbf{F}^{-\\mathsf{T}}$, $\\boldsymbol{\\sigma} = J^{-1}\\mathbf{F}\\mathbf{S}\\mathbf{F}^{\\mathsf{T}}$. Conjugate pairs per reference volume: $(\\mathbf{P}, \\dot{\\mathbf{F}})$ and $(\\mathbf{S}, \\dot{\\mathbf{E}})$; per current volume: $(\\boldsymbol{\\sigma}, \\mathbf{d})$."
+  },
+  {
+    q: "A tensile test reports force divided by INITIAL cross-section. Which stress is that, and what is the true stress at λ = 2 for an incompressible specimen?",
+    a: "That is nominal stress = the uniaxial first Piola-Kirchhoff component $P$. For incompressible uniaxial deformation the current area is $A_0/\\lambda$, so $\\sigma = \\lambda P$: at $\\lambda = 2$ the true stress is twice the nominal."
+  },
+  {
+    q: "Isotropic Hooke's law, and G and K in terms of E, ν?",
+    a: "$\\boldsymbol{\\sigma} = \\lambda\\,\\mathrm{tr}(\\boldsymbol{\\varepsilon})\\mathbf{I} + 2\\mu\\boldsymbol{\\varepsilon}$ with two independent constants. $G = \\mu = \\dfrac{E}{2(1+\\nu)}$, $K = \\dfrac{E}{3(1-2\\nu)}$. Admissible isotropic range: $-1 < \\nu < 1/2$."
+  },
+  {
+    q: "What happens mechanically and numerically as ν → 0.5?",
+    a: "$K \\to \\infty$ and $\\lambda \\to \\infty$: the material becomes incompressible (silicones: $\\nu \\approx 0.499$, $K/\\mu \\sim 10^3$–$10^5$). Standard displacement-based FEM then locks volumetrically; remedies are mixed u–p formulations or selective reduced integration."
+  },
+  {
+    q: "In Voigt notation, why does the strain vector carry γ₂₃ = 2ε₂₃ instead of ε₂₃?",
+    a: "So the vector product reproduces the tensor work density: $\\boldsymbol{\\sigma}^{\\mathsf{T}}\\boldsymbol{\\varepsilon}_{\\text{Voigt}} = \\boldsymbol{\\sigma}:\\boldsymbol{\\varepsilon}$, because each off-diagonal pair contributes twice. Mixing engineering and tensor shear silently halves or doubles shear response — a classic FE bug."
+  },
+  {
+    q: "Uniaxial true stress for an incompressible neo-Hookean solid, and its initial Young's modulus?",
+    a: "$\\sigma = \\mu(\\lambda^2 - 1/\\lambda)$, from $\\lambda_2 = \\lambda_3 = \\lambda^{-1/2}$ and traction-free lateral faces fixing the pressure. Tangent at $\\lambda = 1$ gives $E = 3\\mu$ (consistent with $E = 2\\mu(1+\\nu)$ at $\\nu = 1/2$)."
+  },
+  {
+    q: "Write the Mooney-Rivlin strain energy and its small-strain shear modulus. What does the I₂ term buy you?",
+    a: "$\\Psi = C_{10}(I_1 - 3) + C_{01}(I_2 - 3)$, $\\mu = 2(C_{10} + C_{01})$. The $I_2$ term barely changes uniaxial response but improves pure-shear/biaxial predictions — which is why fitting to uniaxial data alone leaves parameters non-unique."
+  },
+  {
+    q: "State the 2D Saint-Venant compatibility equation and explain how iFEM enforces compatibility on noisy strain data.",
+    a: "$\\dfrac{\\partial^2\\varepsilon_{11}}{\\partial x_2^2} + \\dfrac{\\partial^2\\varepsilon_{22}}{\\partial x_1^2} = 2\\dfrac{\\partial^2\\varepsilon_{12}}{\\partial x_1 \\partial x_2}$. Measured strains are never exactly compatible; iFEM parametrizes the displacement field with FE shape functions — whose derived strains are compatible by construction — and least-squares-fits them to the measurements, projecting the data onto the compatible manifold."
+  },
+  {
+    q: "Plane stress vs plane strain: which conditions define each, and which one stiffens dramatically as ν → ½?",
+    a: "Plane stress: $\\sigma_{33} = \\sigma_{13} = \\sigma_{23} = 0$ (thin sheet, free faces; thickness free to change), prefactor $E/(1-\\nu^2)$. Plane strain: $\\varepsilon_{33} = \\varepsilon_{13} = \\varepsilon_{23} = 0$ (constrained prismatic body), prefactor $E/((1+\\nu)(1-2\\nu))$ — the $1-2\\nu$ makes plane strain blow up in the incompressible limit while plane stress stays finite. Different assumptions, different reduced matrices."
+  },
+  {
+    q: "What does objectivity (frame indifference) force on a hyperelastic strain energy Ψ(F)?",
+    a: "$\\Psi(\\mathbf{Q}\\mathbf{F}) = \\Psi(\\mathbf{F})$ for all rotations $\\mathbf{Q}$ forces $\\Psi = \\Psi(\\mathbf{C})$: the energy cannot see the rotation part of $\\mathbf{F}$. Adding material isotropy, $\\Psi(\\mathbf{F}\\mathbf{Q}) = \\Psi(\\mathbf{F})$, reduces it further to the invariants $I_1, I_2, I_3$ or the principal stretches."
+  },
+  {
+    q: "What does J = det F measure, and why must J > 0 hold — even for a reconstructed displacement field?",
+    a: "$J$ is the local volume ratio: $dv = J\\,dV$; $J = 1$ means isochoric. $J > 0$ encodes invertibility of the motion — no interpenetration, no local inversion. A reconstructed field with $J \\le 0$ anywhere is unphysical regardless of how small its data residual is."
+  },
+  {
+    q: "Why is simple shear not 'pure' shear, and what does J = 1 tell you about it?",
+    a: "For $x_1 = X_1 + \\gamma X_2$: $J = 1$, so volume is exactly preserved (isochoric) — yet $\\mathbf{C} \\ne \\mathbf{I}$, so the material is genuinely strained, and the polar decomposition of $\\mathbf{F}$ contains a nontrivial rotation $\\mathbf{R} \\ne \\mathbf{I}$. Simple shear = pure shear + embedded rotation."
+  }
+]);
+</script>
+
+</body>
+</html>

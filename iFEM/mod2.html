@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2. The Forward Finite Element Method — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">2. The Forward Finite Element Method</h1>
+    <p class="page-subtitle">Strong vs weak form, virtual work, minimum potential energy, shape functions, isoparametric mapping, Gauss quadrature, B-matrix, assembly, KU=F, convergence, shear locking, Euler-Bernoulli vs Timoshenko, Kirchhoff vs Reissner-Mindlin, section strains</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#strong-form-to-weak-form">1. From Strong Form to Weak Form</a>
+      <a href="#virtual-work-minimum-potential-energy">2. Virtual Work and Minimum Potential Energy</a>
+      <a href="#shape-functions-discretization">3. Discretization: Shape Functions</a>
+      <a href="#isoparametric-mapping-gauss-quadrature">4. Isoparametric Mapping and Gauss Quadrature</a>
+      <a href="#b-matrix-element-stiffness">5. The B-Matrix and Element Stiffness</a>
+      <a href="#assembly-boundary-conditions-solving">6. Assembly, Boundary Conditions, and Solving KU = F</a>
+      <a href="#convergence-patch-test">7. Convergence and the Patch Test</a>
+      <a href="#beam-kinematics-euler-bernoulli-timoshenko">8. Beam Kinematics: Euler-Bernoulli vs Timoshenko</a>
+      <a href="#plate-kinematics-kirchhoff-reissner-mindlin">9. Plate Kinematics: Kirchhoff vs Reissner-Mindlin</a>
+      <a href="#shear-locking">10. Shear Locking: Mechanism and Cures</a>
+      <a href="#section-strains-ifem-bridge">11. Section Strains: The Bridge to iFEM</a>
+      <a class="toc-interactive" href="#fem-lab">Interactive: One Element to Global System</a>
+      <a class="toc-interactive" href="#locking-lab">Interactive: Shear-Locking Laboratory</a>
+      <a class="toc-interactive" href="#fem-walkthrough">Interactive: From Strong Form to KU = F (Walkthrough)</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <p>Every inverse method in this guide is built on top of a forward solver's machinery. In the observation-model framing that organizes the whole course — $y = \mathcal{H}(u, p, f, X_0) + b + \eta$ — this module builds the operator that evaluates the physics: given geometry, material, supports, and loads, produce the displacement field and, from it, anything a sensor could read. Module 3 formalizes what happens when you try to run this map backwards; Module 4 shows how iFEM reuses almost every piece of it, verbatim, with the knowns and unknowns swapped.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given a body $\Omega$ with known elastic properties, prescribed supports, and prescribed loads: compute the displacement field $\mathbf{u}(\mathbf{x})$ — in practice, a finite vector of nodal displacements $\mathbf{U}$ solving $\mathbf{K}\mathbf{U} = \mathbf{F}$ — and understand precisely which parts of the machinery (shape functions, $\mathbf{B}$-operators, section strains) survive unchanged when the problem is inverted.</div>
+    </div>
+
+    <!-- ===== SECTION 1: STRONG TO WEAK ===== -->
+    <h2 class="section-heading" id="strong-form-to-weak-form">1. From Strong Form to Weak Form</h2>
+
+    <p>Start with the simplest structure that has all the ingredients: a 1D elastic bar of length $L$, stiffness $EA$, fixed at $x=0$, with distributed axial load $f(x)$ and an end force $P$ at $x=L$. The <strong>strong form</strong> states equilibrium pointwise:</p>
+
+    <div class="math-block">$$ (EA\,u')' + f = 0 \;\;\text{on } (0,L), \qquad u(0) = 0, \qquad EA\,u'(L) = P $$</div>
+
+    <p>The displacement condition $u(0)=0$ is an <strong>essential</strong> boundary condition; the force condition $EA\,u'(L)=P$ is a <strong>natural</strong> one — the names will earn themselves in a moment. The strong form demands that $u$ be twice differentiable and that equilibrium hold at every point. That is a heavy demand, and piecewise polynomials — the only functions we can cheaply compute with — cannot meet it.</p>
+
+    <h3 class="subsection-heading">The Four-Step Derivation</h3>
+    <ol>
+      <li><strong>Multiply</strong> the residual $(EA\,u')' + f$ by an arbitrary test function $w$ with $w(0)=0$ (zero wherever displacement is prescribed).</li>
+      <li><strong>Integrate</strong> the product over the domain: $\int_0^L \left[(EA\,u')' + f\right] w \, dx = 0$.</li>
+      <li><strong>Integrate by parts</strong> once, transferring one derivative from $u$ onto $w$: $\int_0^L (EA\,u')' w \, dx = \left[EA\,u'\,w\right]_0^L - \int_0^L EA\,u'w' \, dx$.</li>
+      <li><strong>Apply the boundary data.</strong> At $x=0$, $w=0$ kills the boundary term. At $x=L$, $EA\,u'(L) = P$, so the term becomes $P\,w(L)$. The traction condition has entered the equation <em>naturally</em>, through the boundary integral. The displacement condition never appears in the equation at all — it must be built into the space of admissible $u$, <em>essentially</em>.</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Weak Form — 1D Bar</div>
+      <div>Find $u$ with $u(0)=0$ such that
+      $$\int_0^L EA\, u' w'\, dx = \int_0^L f\, w\, dx + P\, w(L) \quad \forall\, w,\; w(0)=0$$
+      Only <em>first</em> derivatives of $u$ and $w$ appear, and equilibrium is enforced in a weighted-average sense rather than pointwise.</div>
+    </div>
+
+    <p>The same construction generalizes directly to 3D linear elasticity. The strong form is</p>
+
+    <div class="math-block">$$ -\nabla\cdot\boldsymbol{\sigma} = \mathbf{b} \;\text{in }\Omega, \qquad \mathbf{u}=\bar{\mathbf{u}} \;\text{on }\Gamma_D, \qquad \boldsymbol{\sigma}\mathbf{n}=\bar{\mathbf{t}} \;\text{on }\Gamma_N $$</div>
+
+    <p>and the weak form is the virtual-work integral: find $\mathbf{u}$ satisfying $\mathbf{u}=\bar{\mathbf{u}}$ on $\Gamma_D$ such that for all admissible $\mathbf{w}$ (zero on $\Gamma_D$),</p>
+
+    <div class="math-block">$$ \int_\Omega \boldsymbol{\varepsilon}(\mathbf{w})^{\mathsf T} \mathbf{D}\, \boldsymbol{\varepsilon}(\mathbf{u})\, d\Omega = \int_\Omega \mathbf{w}^{\mathsf T}\mathbf{b}\, d\Omega + \int_{\Gamma_N} \mathbf{w}^{\mathsf T}\bar{\mathbf{t}}\, d\Gamma $$</div>
+
+    <h3 class="subsection-heading">The Three Payoffs</h3>
+    <ol>
+      <li><strong>The continuity demand drops.</strong> From $C^1$/$C^2$ down to piecewise $C^0$: $u, w \in H^1$ — first derivatives square-integrable is enough. This is exactly what makes piecewise-polynomial approximation legal (Section 3).</li>
+      <li><strong>Neumann data is absorbed automatically.</strong> Tractions enter through the boundary integral; there is no flux matching to enforce at element interfaces.</li>
+      <li><strong>Symmetry and coercivity.</strong> For elasticity the bilinear form $a(\mathbf{u},\mathbf{w}) = \int \boldsymbol{\varepsilon}(\mathbf{w})^{\mathsf T}\mathbf{D}\boldsymbol{\varepsilon}(\mathbf{u})\,d\Omega$ is symmetric and coercive — this is what will make $\mathbf{K}$ symmetric positive definite after constraints (Section 6).</li>
+    </ol>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Why weak and strong are equivalent (when the solution is smooth)</div>
+      <div class="collapsible-body">
+        <p>Any strong solution satisfies the weak form — the derivation above is just multiplication and integration. The converse needs one extra hypothesis: if a weak solution happens to be $C^2$, reverse the integration by parts to get $\int_0^L \left[(EA\,u')' + f\right] w\, dx + \left[EA\,u'(L) - P\right] w(L) = 0$ for all admissible $w$. By the fundamental lemma of the calculus of variations, an integrand that integrates to zero against <em>every</em> test function must vanish pointwise — so the PDE and the natural boundary condition are both recovered. The weak form loses nothing; it only relaxes where the derivatives are allowed to live. This is Hughes ch. 1 and Zienkiewicz&ndash;Taylor&ndash;Zhu ch. 3 material.</p>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 760 210" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <defs><marker id="arr1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#555"/></marker></defs>
+        <!-- boxes -->
+        <g font-family="sans-serif">
+          <rect x="10" y="30" width="160" height="78" rx="5" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/>
+          <text x="90" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="#1565c0">Strong form</text>
+          <text x="90" y="68" text-anchor="middle" font-size="10.5" fill="#333">&#8722;&#8711;&#183;&#963; = b + BCs</text>
+          <text x="90" y="84" text-anchor="middle" font-size="9.5" fill="#777">pointwise equilibrium,</text>
+          <text x="90" y="96" text-anchor="middle" font-size="9.5" fill="#777">C&#178; demanded</text>
+
+          <rect x="205" y="30" width="160" height="78" rx="5" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/>
+          <text x="285" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="#1565c0">Weak form</text>
+          <text x="285" y="68" text-anchor="middle" font-size="10.5" fill="#333">&#8747; &#949;(w):D&#949;(u) = &#8747; w&#183;b + &#8747; w&#183;t&#772;</text>
+          <text x="285" y="84" text-anchor="middle" font-size="9.5" fill="#777">C&#8304; suffices, natural</text>
+          <text x="285" y="96" text-anchor="middle" font-size="9.5" fill="#777">BCs absorbed</text>
+
+          <rect x="400" y="30" width="160" height="78" rx="5" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/>
+          <text x="480" y="50" text-anchor="middle" font-size="12" font-weight="600" fill="#1565c0">Discrete weak form</text>
+          <text x="480" y="68" text-anchor="middle" font-size="10.5" fill="#333">a(u&#8342;, w&#8342;) = &#8467;(w&#8342;)</text>
+          <text x="480" y="84" text-anchor="middle" font-size="9.5" fill="#777">best approximation</text>
+          <text x="480" y="96" text-anchor="middle" font-size="9.5" fill="#777">in energy norm</text>
+
+          <rect x="595" y="30" width="155" height="78" rx="5" fill="#e8f0fe" stroke="#1565c0" stroke-width="2.5"/>
+          <text x="672" y="54" text-anchor="middle" font-size="14" font-weight="700" fill="#1565c0">KU = F</text>
+          <text x="672" y="74" text-anchor="middle" font-size="9.5" fill="#777">sparse, symmetric,</text>
+          <text x="672" y="86" text-anchor="middle" font-size="9.5" fill="#777">pos. definite after BCs</text>
+
+          <!-- arrows -->
+          <line x1="170" y1="69" x2="203" y2="69" stroke="#555" stroke-width="1.3" marker-end="url(#arr1)"/>
+          <line x1="365" y1="69" x2="398" y2="69" stroke="#555" stroke-width="1.3" marker-end="url(#arr1)"/>
+          <line x1="560" y1="69" x2="593" y2="69" stroke="#555" stroke-width="1.3" marker-end="url(#arr1)"/>
+          <text x="187" y="20" text-anchor="middle" font-size="9" fill="#555">multiply by w,</text>
+          <text x="187" y="31" text-anchor="middle" font-size="9" fill="#555">integrate by parts</text>
+          <text x="382" y="20" text-anchor="middle" font-size="9" fill="#555">restrict to finite basis</text>
+          <text x="382" y="31" text-anchor="middle" font-size="9" fill="#555">u&#8342; = &#8721; N&#8342; d&#8342; (Galerkin)</text>
+          <text x="577" y="20" text-anchor="middle" font-size="9" fill="#555">integrate element-wise,</text>
+          <text x="577" y="31" text-anchor="middle" font-size="9" fill="#555">assemble</text>
+
+          <!-- annotation strip -->
+          <line x1="10" y1="135" x2="750" y2="135" stroke="#e0e0e0" stroke-width="1"/>
+          <text x="20" y="155" font-size="9.5" font-weight="600" fill="#888">GUARDIAN CONCEPT:</text>
+          <text x="90" y="175" text-anchor="middle" font-size="10.5" fill="#e67e22">well-posedness</text>
+          <text x="285" y="175" text-anchor="middle" font-size="10.5" fill="#e67e22">coercivity</text>
+          <text x="480" y="175" text-anchor="middle" font-size="10.5" fill="#e67e22">completeness + compatibility</text>
+          <text x="672" y="175" text-anchor="middle" font-size="10.5" fill="#e67e22">conditioning</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The four-stage pipeline of this module. Each stage has a guardian concept that can fail: an ill-posed continuous problem, a non-coercive form, an incomplete or incompatible element, or a badly conditioned system.</div>
+    </div>
+
+    <!-- ===== SECTION 2: PVW & MPE ===== -->
+    <h2 class="section-heading" id="virtual-work-minimum-potential-energy">2. Virtual Work and Minimum Potential Energy</h2>
+
+    <p>The weak form has two classical variational faces. They produce the same equations for linear elasticity, but they are not the same statement — and the difference matters for everything nonlinear that comes later.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Principle of Virtual Work (PVW)</div>
+      <div>A stress field is in equilibrium if and only if, for <em>every</em> kinematically admissible virtual displacement $\delta\mathbf{u}$, internal virtual work equals external virtual work:
+      $$\int_\Omega \delta\boldsymbol{\varepsilon}^{\mathsf T}\boldsymbol{\sigma}\, d\Omega = \int_\Omega \delta\mathbf{u}^{\mathsf T}\mathbf{b}\, d\Omega + \int_{\Gamma_N} \delta\mathbf{u}^{\mathsf T}\bar{\mathbf{t}}\, d\Gamma$$</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>PVW is a statement about <strong>equilibrium, not material law</strong> — no constitutive assumption appears in it. It holds for nonlinear and inelastic materials just as well, which is why it is the more general starting point for FE formulations (Bathe ch. 4). Minimum potential energy, below, is the narrower statement that needs an energy to exist.</div>
+    </div>
+
+    <h3 class="subsection-heading">Aside: Minimum Potential Energy</h3>
+
+    <p>When a strain energy density exists — linear elasticity gives $U = \tfrac{1}{2}\boldsymbol{\varepsilon}^{\mathsf T}\mathbf{D}\boldsymbol{\varepsilon}$ — and the loading is conservative (a load potential exists), define the total potential energy:</p>
+
+    <div class="math-block">$$ \Pi(\mathbf{u}) = \tfrac{1}{2}\int_\Omega \boldsymbol{\varepsilon}^{\mathsf T}\mathbf{D}\,\boldsymbol{\varepsilon}\, d\Omega - \int_\Omega \mathbf{u}^{\mathsf T}\mathbf{b}\, d\Omega - \int_{\Gamma_N} \mathbf{u}^{\mathsf T}\bar{\mathbf{t}}\, d\Gamma, \qquad \delta\Pi = 0 $$</div>
+
+    <p>The first variation $\delta\Pi = 0$ recovers exactly the weak form; the second variation is positive definite (coercivity), so the stationary point is the unique <em>minimizer</em> over kinematically admissible fields. The <strong>Ritz method</strong> minimizes $\Pi$ over a finite-dimensional span of trial functions. FEM is Ritz with locally supported piecewise polynomials — and local support is precisely what makes the resulting equations sparse. Treat MPE as the special case it is: it presupposes conservative loading and a hyperelastic material, while PVW does not.</p>
+
+    <h3 class="subsection-heading">Galerkin Orthogonality and the Best-Approximation Property</h3>
+
+    <p>Because $a(\cdot,\cdot)$ is symmetric and the discrete space $\mathcal{V}_h$ is a subspace of the admissible space, subtracting the discrete weak form from the continuous one gives</p>
+
+    <div class="math-block">$$ a(\mathbf{u}-\mathbf{u}_h,\, \mathbf{w}_h) = 0 \quad \forall\, \mathbf{w}_h \in \mathcal{V}_h $$</div>
+
+    <p>The error is orthogonal to the whole discrete space in the energy inner product: $\mathbf{u}_h$ is the <em>projection</em> of the exact solution onto $\mathcal{V}_h$, hence the <strong>best approximation in the energy norm</strong> that the mesh can express.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — "too stiff" is an energy statement</div>
+      <div>A conforming displacement model with consistent loads <strong>underestimates the strain energy</strong> of the exact solution: the mesh is "too stiff" <em>in the energy sense</em>. Do not read this pointwise — local displacements can overshoot; the theorem constrains the energy norm, and it requires conforming elements and consistent loads. The same property explains why shear locking (Section 10) is so dramatic: the locked answer is not a solver failure but the honest, energy-optimal solution within a badly over-constrained subspace.</div>
+    </div>
+
+    <!-- ===== SECTION 3: SHAPE FUNCTIONS ===== -->
+    <h2 class="section-heading" id="shape-functions-discretization">3. Discretization: Shape Functions</h2>
+
+    <p>Partition $\Omega$ into elements and approximate the displacement field by nodal interpolation:</p>
+
+    <div class="math-block">$$ \mathbf{u}_h(\mathbf{x}) = \sum_a N_a(\mathbf{x})\, \mathbf{d}_a, \qquad N_a(\mathbf{x}_b)=\delta_{ab}, \qquad \sum_a N_a = 1 $$</div>
+
+    <p>Four properties make a set of shape functions usable:</p>
+
+    <table>
+      <tr><th>Property</th><th>Statement</th><th>What it buys</th></tr>
+      <tr><td><strong>Kronecker delta</strong></td><td>$N_a(\mathbf{x}_b) = \delta_{ab}$</td><td>$\mathbf{d}_a$ are physical nodal displacements — BCs and sensors attach to real quantities</td></tr>
+      <tr><td><strong>Partition of unity</strong></td><td>$\sum_a N_a = 1$</td><td>rigid translation represented exactly</td></tr>
+      <tr><td><strong>Completeness</strong></td><td>exact to polynomial degree $p$</td><td>linear completeness &#8658; constant strain representable — the ingredient the patch test checks (Section 7)</td></tr>
+      <tr><td><strong>Compact support</strong></td><td>$N_a \ne 0$ only on elements touching node $a$</td><td>sparse $\mathbf{K}$</td></tr>
+    </table>
+
+    <p>The two workhorses of this course: the 1D two-node bar on $\xi \in [-1,1]$,</p>
+
+    <div class="math-block">$$ N_1 = \tfrac{1-\xi}{2}, \qquad N_2 = \tfrac{1+\xi}{2} $$</div>
+
+    <p>and the 4-node bilinear quadrilateral,</p>
+
+    <div class="math-block">$$ N_a(\xi,\eta) = \tfrac{1}{4}\left(1+\xi_a\xi\right)\left(1+\eta_a\eta\right), \quad \xi_a,\eta_a = \pm 1 $$</div>
+
+    <h3 class="subsection-heading">How Much Continuity Do You Need?</h3>
+
+    <p>For a $2m$-th order problem the weak form contains $m$-th derivatives, so trial functions need $C^{m-1}$ interelement continuity and $H^m$ integrability. Second-order elasticity: $m=1$, so $C^0$ suffices — hat functions are legal. Fourth-order Euler-Bernoulli beams and Kirchhoff plates: $m=2$, so $C^1$ is required. In 1D that is achievable with the two-node Hermite cubic element (4 DOFs: $w_1, \theta_1, w_2, \theta_2$; shape functions $H_1 = 1 - 3s^2 + 2s^3$ and companions). In 2D, conforming $C^1$ triangles need high-order polynomials — a historical pain point that motivated the $C^0$ shear-deformable formulations of Sections 8&ndash;9, which are exactly the formulations iFEM later builds on.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Within one element the interpolation is written in matrix form, $\mathbf{u}_h = \mathbf{N}\,\mathbf{d}^e$ — for a plane quad, $\mathbf{N}$ is the $2\times 8$ shape-function matrix. This matrix is the single object that everything downstream differentiates: the $\mathbf{B}$-matrix of Section 5 is nothing but derivatives of $\mathbf{N}$, and the iFEM strain operators of Module 4 differentiate <em>the same</em> $\mathbf{N}$.</div>
+    </div>
+
+    <!-- ===== SECTION 4: ISOPARAMETRIC & GAUSS ===== -->
+    <h2 class="section-heading" id="isoparametric-mapping-gauss-quadrature">4. Isoparametric Mapping and Gauss Quadrature</h2>
+
+    <p>Real meshes are not unions of squares. The <strong>isoparametric</strong> idea — use the <em>same</em> shape functions for the geometry as for the displacement — is what lets arbitrarily shaped (and curved) elements exist at all (Zienkiewicz&ndash;Taylor&ndash;Zhu ch. 6; the idea entered the literature with Irons and the Swansea school in the 1960s):</p>
+
+    <div class="math-block">$$ \mathbf{x}(\boldsymbol{\xi}) = \sum_a N_a(\boldsymbol{\xi})\,\mathbf{x}_a, \qquad \mathbf{J} = \frac{\partial \mathbf{x}}{\partial \boldsymbol{\xi}}, \qquad \nabla_{\mathbf{x}} N_a = \mathbf{J}^{-\mathsf T}\, \nabla_{\boldsymbol{\xi}} N_a $$</div>
+
+    <p>The Jacobian $\mathbf{J}$ ($2\times 2$ in 2D) converts parent-domain derivatives into physical derivatives, and the volume element transforms as $d\Omega = \det\mathbf{J}\, d\xi\, d\eta$. Note the trap this kills: shape-function derivatives $\nabla_\xi N_a$ live in the parent domain — strains need <em>physical</em> derivatives, and only $\mathbf{J}^{-\mathsf T}$ gets you there.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — distorted and inverted elements</div>
+      <div>The map is valid only where $\det\mathbf{J} &gt; 0$ <em>everywhere</em> in the element: interior angles below 180&deg;, no collapsed or inverted nodes. And validity is not a binary: <strong>near-zero $\det\mathbf{J}$ destroys accuracy before it destroys invertibility</strong>. Drag a node past the opposite diagonal in the lab below and watch $\det\mathbf{J}$ go negative; watch the accuracy indicators degrade well before that.</div>
+    </div>
+
+    <h3 class="subsection-heading">Gauss-Legendre Quadrature</h3>
+
+    <p>The element integrals are evaluated numerically. $n$ Gauss-Legendre points integrate 1D polynomials exactly through degree $2n-1$:</p>
+
+    <table>
+      <tr><th>$n$</th><th>Points $\xi_i$</th><th>Weights $w_i$</th><th>Exact through degree</th></tr>
+      <tr><td>1</td><td>$0$</td><td>$2$</td><td>1</td></tr>
+      <tr><td>2</td><td>$\pm 1/\sqrt{3}$</td><td>$1,\; 1$</td><td>3</td></tr>
+      <tr><td>3</td><td>$0,\; \pm\sqrt{3/5}$</td><td>$8/9,\; 5/9$</td><td>5</td></tr>
+    </table>
+
+    <p>Quads and hexes use tensor products of the 1D rule:</p>
+
+    <div class="math-block">$$ \int_{\Omega_e} f\, d\Omega = \int_{-1}^{1}\!\!\int_{-1}^{1} f(\xi,\eta)\, \det\mathbf{J}\, d\xi\, d\eta \;\approx\; \sum_{i=1}^{n}\sum_{j=1}^{n} w_i w_j\, f(\xi_i,\eta_j)\, \det\mathbf{J}(\xi_i,\eta_j) $$</div>
+
+    <p>"Full integration" for the bilinear quad means the $2\times 2$ rule. The same quadrature loop also builds consistent load vectors and mass matrices — one loop, three products.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — "full integration" is a convention, not a guarantee</div>
+      <div>For a distorted element the stiffness integrand $\mathbf{B}^{\mathsf T}\mathbf{D}\mathbf{B}\,\det\mathbf{J}$ is a <strong>rational</strong> function of $(\xi,\eta)$, because $\mathbf{B}$ contains $\mathbf{J}^{-1}$. No Gauss rule integrates a rational function exactly. "Full" means "exact in the affine (undistorted) limit" — nothing more. Claiming that $2\times 2$ computes the isoparametric stiffness exactly is a classic error.</div>
+    </div>
+
+    <p><strong>Reduced integration</strong> (one order lower) is cheaper and softens the element — genuinely helpful against locking (Section 10) — but it risks rank deficiency: the element stiffness can be written as a sum of rank-limited contributions, so $\operatorname{rank}(\mathbf{k}^e) \le n_{gp} \times (\text{rows of } \mathbf{B})$. A 1-point plane quad has rank $\le 3$ against the $8 - 3 = 5$ independent deformation modes it must resist — leaving <strong>2 spurious zero-energy (hourglass) modes</strong>. You will count them yourself in the lab below.</p>
+
+    <div class="figure-container">
+      <svg id="fig-isopipe" viewBox="0 0 760 330" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;"></svg>
+      <div class="figure-caption">Top: the isoparametric pipeline — parent square with the $2\times2$ Gauss points at $\pm 1/\sqrt{3}$, mapped through $\mathbf{x}(\boldsymbol{\xi}) = \sum N_a \mathbf{x}_a$ to a distorted physical quad with its $\xi$/$\eta$ isolines and mapped Gauss points. Bottom: each $\mathbf{k}^e$ is scatter-added into the sparse global $\mathbf{K}$ via the connectivity array; shared nodes produce overlapping (darker) blocks.</div>
+    </div>
+    <script>
+    (function(){
+      var svg = document.getElementById('fig-isopipe');
+      var NS = 'http://www.w3.org/2000/svg';
+      var g = 1/Math.sqrt(3);
+      var html = '';
+      // parent square: center (110,95), half-side 70
+      var pc = {x:110, y:95, h:70};
+      function pmap(xi,eta){ return [pc.x + xi*pc.h, pc.y - eta*pc.h]; }
+      html += '<rect x="'+(pc.x-pc.h)+'" y="'+(pc.y-pc.h)+'" width="'+(2*pc.h)+'" height="'+(2*pc.h)+'" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/>';
+      var pn = [[-1,-1,'1'],[1,-1,'2'],[1,1,'3'],[-1,1,'4']];
+      pn.forEach(function(n){ var p = pmap(n[0],n[1]);
+        html += '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="#1565c0"/>';
+        html += '<text x="'+(p[0]+(n[0]<0?-14:8))+'" y="'+(p[1]+(n[1]<0?14:-6))+'" font-size="11" font-family="sans-serif" fill="#333">'+n[2]+'</text>';
+      });
+      [[-g,-g],[g,-g],[g,g],[-g,g]].forEach(function(q){ var p = pmap(q[0],q[1]);
+        html += '<path d="M'+(p[0]-5)+','+p[1]+' L'+(p[0]+5)+','+p[1]+' M'+p[0]+','+(p[1]-5)+' L'+p[0]+','+(p[1]+5)+'" stroke="#e67e22" stroke-width="1.6"/>';
+      });
+      html += '<text x="'+pc.x+'" y="'+(pc.y+pc.h+22)+'" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">parent domain (&#958;,&#951;) &#8712; [&#8722;1,1]&#178;</text>';
+      // arrow
+      html += '<line x1="200" y1="95" x2="290" y2="95" stroke="#555" stroke-width="1.3" marker-end="url(#arr1)"/>';
+      html += '<text x="245" y="72" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#555">x(&#958;) = &#8721; N&#8342;(&#958;) x&#8342;</text>';
+      html += '<text x="245" y="86" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#555">J = &#8706;x/&#8706;&#958;, det J &gt; 0</text>';
+      // physical quad (screen coords, node order 1..4 CCW in model = here visually)
+      var q = [[320,160],[540,175],[560,35],[350,60]];
+      function bmap(xi,eta){
+        var x=0,y=0, xa=[-1,1,1,-1], ea=[-1,-1,1,1];
+        for(var a=0;a<4;a++){ var N=0.25*(1+xa[a]*xi)*(1+ea[a]*eta); x+=N*q[a][0]; y+=N*q[a][1]; }
+        return [x,y];
+      }
+      html += '<polygon points="'+q.map(function(p){return p.join(',');}).join(' ')+'" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/>';
+      // isolines
+      [-0.5,0,0.5].forEach(function(c){
+        var a1=bmap(c,-1), a2=bmap(c,1), b1=bmap(-1,c), b2=bmap(1,c);
+        html += '<line x1="'+a1[0]+'" y1="'+a1[1]+'" x2="'+a2[0]+'" y2="'+a2[1]+'" stroke="#b0c4de" stroke-width="0.8"/>';
+        html += '<line x1="'+b1[0]+'" y1="'+b1[1]+'" x2="'+b2[0]+'" y2="'+b2[1]+'" stroke="#b0c4de" stroke-width="0.8"/>';
+      });
+      q.forEach(function(p,i){ html += '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="4" fill="#1565c0"/>'; });
+      [[-g,-g],[g,-g],[g,g],[-g,g]].forEach(function(gp){ var p = bmap(gp[0],gp[1]);
+        html += '<path d="M'+(p[0]-5)+','+p[1]+' L'+(p[0]+5)+','+p[1]+' M'+p[0]+','+(p[1]-5)+' L'+p[0]+','+(p[1]+5)+'" stroke="#e67e22" stroke-width="1.6"/>';
+      });
+      html += '<text x="445" y="196" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">physical element, mapped Gauss points</text>';
+      // bottom row: ke -> K
+      var cell = 10;
+      html += '<text x="100" y="232" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">k&#7497; (8&#215;8)</text>';
+      for(var r=0;r<8;r++)for(var c2=0;c2<8;c2++){
+        html += '<rect x="'+(60+c2*cell)+'" y="'+(240+r*cell)+'" width="'+(cell-1)+'" height="'+(cell-1)+'" fill="#90b4e8"/>';
+      }
+      html += '<line x1="165" y1="280" x2="330" y2="280" stroke="#555" stroke-width="1.3" marker-end="url(#arr1)"/>';
+      html += '<text x="247" y="268" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#555">scatter-add via connectivity</text>';
+      // K sparsity 12x12, two-element mesh conn [[0,1,4,3],[1,2,5,4]]
+      var conn = [[0,1,4,3],[1,2,5,4]];
+      var occ = [];
+      for(var i=0;i<12;i++){ occ.push(new Array(12).fill(0)); }
+      conn.forEach(function(cn,e){
+        cn.forEach(function(na){ cn.forEach(function(nb){
+          for(var ia=0;ia<2;ia++)for(var ib=0;ib<2;ib++) occ[2*na+ia][2*nb+ib] += (e===0?1:2);
+        });});
+      });
+      html += '<text x="410" y="232" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">K (12&#215;12, two elements)</text>';
+      for(var r=0;r<12;r++)for(var c2=0;c2<12;c2++){
+        var v = occ[r][c2], col = v===0 ? '#f2f2f2' : (v===1 ? '#90b4e8' : (v===2 ? '#f0b27a' : '#8e6ba8'));
+        html += '<rect x="'+(350+c2*cell)+'" y="'+(240+r*cell)+'" width="'+(cell-1)+'" height="'+(cell-1)+'" fill="'+col+'"/>';
+      }
+      html += '<rect x="500" y="248" width="9" height="9" fill="#90b4e8"/><text x="514" y="256" font-size="9.5" font-family="sans-serif" fill="#555">element 1 only</text>';
+      html += '<rect x="500" y="264" width="9" height="9" fill="#f0b27a"/><text x="514" y="272" font-size="9.5" font-family="sans-serif" fill="#555">element 2 only</text>';
+      html += '<rect x="500" y="280" width="9" height="9" fill="#8e6ba8"/><text x="514" y="288" font-size="9.5" font-family="sans-serif" fill="#555">both (shared nodes)</text>';
+      html += '<rect x="500" y="296" width="9" height="9" fill="#f2f2f2"/><text x="514" y="304" font-size="9.5" font-family="sans-serif" fill="#555">structural zero (sparse)</text>';
+      svg.innerHTML = html;
+    })();
+    </script>
+
+    <!-- ===== SECTION 5: B-MATRIX ===== -->
+    <h2 class="section-heading" id="b-matrix-element-stiffness">5. The B-Matrix and Element Stiffness</h2>
+
+    <p>For plane problems, strains are collected in Voigt notation: $\boldsymbol{\varepsilon} = [\varepsilon_{xx},\, \varepsilon_{yy},\, \gamma_{xy}]^{\mathsf T}$ with <strong>engineering</strong> shear $\gamma_{xy} = 2\varepsilon_{12}$ — a classic sign-up-for-confusion point carried over from Module 1: mix the tensor and engineering conventions once and every shear term downstream is off by a factor of 2.</p>
+
+    <p>The <strong>strain-displacement matrix</strong> $\mathbf{B}$ maps nodal DOFs to strains, assembled from one $3\times 2$ block per node:</p>
+
+    <div class="math-block">$$ \boldsymbol{\varepsilon} = \mathbf{B}\,\mathbf{d}^{e}, \qquad \mathbf{B}_a = \begin{bmatrix} \partial N_a/\partial x & 0 \\ 0 & \partial N_a/\partial y \\ \partial N_a/\partial y & \partial N_a/\partial x \end{bmatrix} $$</div>
+
+    <p>The constitutive matrix for isotropic plane stress:</p>
+
+    <div class="math-block">$$ \mathbf{D}_{\text{plane stress}} = \frac{E}{1-\nu^2}\begin{bmatrix} 1 & \nu & 0 \\ \nu & 1 & 0 \\ 0 & 0 & (1-\nu)/2 \end{bmatrix} $$</div>
+
+    <p>Plane strain swaps the factors: $E/(1-\nu^2) \to E/((1+\nu)(1-2\nu))$, the diagonal $1 \to 1-\nu$, $\nu$ stays, and the shear entry becomes $(1-2\nu)/2$. (Different reduced matrices — never interchange them silently.)</p>
+
+    <h3 class="subsection-heading">The Element Stiffness Loop</h3>
+
+    <div class="math-block">$$ \mathbf{k}^{e} = \int_{\Omega_e} \mathbf{B}^{\mathsf T}\mathbf{D}\,\mathbf{B}\; t\; d\Omega \;\approx\; \sum_{gp} \mathbf{B}^{\mathsf T}\mathbf{D}\,\mathbf{B}\; t\, \det\mathbf{J}\; w_{gp} $$</div>
+
+    <p>with $t$ the thickness. In code, this is a loop over Gauss points; at each point:</p>
+
+    <ol>
+      <li>Evaluate $\nabla_\xi N_a$, build $\mathbf{J}$, invert it.</li>
+      <li>Form physical derivatives $\nabla_x N_a = \mathbf{J}^{-\mathsf T} \nabla_\xi N_a$ and stack them into $\mathbf{B}$.</li>
+      <li>Accumulate $\mathbf{B}^{\mathsf T}\mathbf{D}\mathbf{B}\, t \det\mathbf{J}\, w_i w_j$.</li>
+    </ol>
+
+    <p>Consistent load vectors come from the same loop: $\mathbf{f}^e = \int \mathbf{N}^{\mathsf T}\mathbf{b}\, d\Omega + \int \mathbf{N}^{\mathsf T}\bar{\mathbf{t}}\, d\Gamma$. Distributed loads become nodal forces <em>through the shape functions</em>, not by ad-hoc lumping.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — the eigenvalue test</div>
+      <div>Three properties of $\mathbf{k}^e$ to check whenever an element implementation misbehaves: it is <strong>symmetric</strong>; it is <strong>positive semi-definite</strong>; and with full integration its null space is <em>exactly</em> the rigid-body modes — 3 in 2D (two translations + one rotation), 6 in 3D. Counting the zero eigenvalues of $\mathbf{k}^e$ is the standard element-verification tool (Cook's tradition; presented in Bathe ch. 4). More zeros than rigid modes &#8658; spurious mechanisms; fewer &#8658; a constraint you did not intend. The lab after Section 6 runs this test live.</div>
+    </div>
+
+    <p>Everything downstream — including the iFEM machinery of later modules — is built from exactly these $\mathbf{B}$-type operators. iFEM replaces the $\mathbf{D}$-weighted energy with least-squares strain matching, but it differentiates the same shape functions.</p>
+
+    <!-- ===== SECTION 6: ASSEMBLY ===== -->
+    <h2 class="section-heading" id="assembly-boundary-conditions-solving">6. Assembly, Boundary Conditions, and Solving KU = F</h2>
+
+    <p>Assembly is scatter-add. A connectivity (LM/location) array maps element-local DOF indices to global ones; each entry of $\mathbf{k}^e$ is added into $\mathbf{K}$ at the mapped row and column. Conceptually,</p>
+
+    <div class="math-block">$$ \mathbf{K} = \sum_e \mathbf{L}_e^{\mathsf T}\, \mathbf{k}^{e}\, \mathbf{L}_e, \qquad \mathbf{F} = \sum_e \mathbf{L}_e^{\mathsf T}\, \mathbf{f}^{e} $$</div>
+
+    <p>with Boolean gather matrices $\mathbf{L}_e$ — but this is implemented as loops, never as matrix products. $\mathbf{K}$ is sparse: nonzeros only couple DOFs that share an element. Bandwidth depends on node numbering; storage is CSR or skyline.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — K is singular until you constrain it</div>
+      <div>Before boundary conditions, $\mathbf{K}$ has a null space: the <strong>rigid-body modes</strong> — 3 in 2D, 6 in 3D. "Matrix is singular" is the single most common solver failure, and it almost always means the model can still translate or rotate freely. Related trap: quoting a penalty factor without noting its trade-off (below) — too small leaks constraint error, too large wrecks conditioning.</div>
+    </div>
+
+    <h3 class="subsection-heading">Three Ways to Impose Essential BCs</h3>
+
+    <table>
+      <tr><th>Method</th><th>Mechanism</th><th>Trade-off</th></tr>
+      <tr><td><strong>Elimination / partitioning</strong></td><td>split DOFs into free ($f$) and constrained ($c$); solve $\mathbf{K}_{ff}\mathbf{U}_f = \mathbf{F}_f - \mathbf{K}_{fc}\bar{\mathbf{U}}_c$</td><td>exact, keeps SPD; needs index bookkeeping</td></tr>
+      <tr><td><strong>Penalty</strong></td><td>add large $\beta$ on the diagonal, $\beta\bar{u}$ to the RHS</td><td>trivially simple; $\beta$ trades constraint error (too small) against conditioning damage (too large)</td></tr>
+      <tr><td><strong>Lagrange multipliers</strong></td><td>append constraint equations with multiplier unknowns</td><td>exact, gives reactions directly; produces an indefinite saddle-point system</td></tr>
+    </table>
+
+    <div class="math-block">$$ \begin{bmatrix} \mathbf{K}_{ff} & \mathbf{K}_{fc} \\ \mathbf{K}_{cf} & \mathbf{K}_{cc} \end{bmatrix} \begin{bmatrix} \mathbf{U}_f \\ \bar{\mathbf{U}}_c \end{bmatrix} = \begin{bmatrix} \mathbf{F}_f \\ \mathbf{F}_c + \mathbf{R} \end{bmatrix} \;\Rightarrow\; \mathbf{K}_{ff}\mathbf{U}_f = \mathbf{F}_f - \mathbf{K}_{fc}\bar{\mathbf{U}}_c $$</div>
+
+    <h3 class="subsection-heading">Solving — and Why You Never Form K&#8315;&#185;</h3>
+
+    <p>Sparse Cholesky (direct) is the default below roughly $10^6$ DOFs; preconditioned conjugate gradients (with algebraic multigrid or incomplete-Cholesky preconditioning) beyond that. The condition number grows like $\operatorname{cond}(\mathbf{K}) = O(h^{-2})$ under uniform refinement, so unpreconditioned CG iteration counts grow as the mesh refines. The entire weak-form&#8594;$\mathbf{KU=F}$ pipeline of this module is directly executable in a few dozen lines of Python in a modern open-source stack such as DOLFINx (Baratta et al. 2023).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — "solve the system", never invert</div>
+      <div>Write $\mathbf{U} = \mathbf{K}^{-1}\mathbf{F}$ on a whiteboard if you must; never in code. Before constraints the inverse does not exist (rigid modes); after constraints, the explicit inverse of a sparse matrix is <strong>dense</strong> — forming it throws away the sparsity that assembly worked to create. Factorize or iterate. Every "inverse" method in this course also solves systems; none of them forms an inverse.</div>
+    </div>
+
+    <h3 class="subsection-heading">Post-Processing and Sanity Checks</h3>
+
+    <p>Reactions follow from the constrained rows: $\mathbf{R} = \mathbf{K}_{cf}\mathbf{U}_f + \mathbf{K}_{cc}\bar{\mathbf{U}}_c - \mathbf{F}_c$. Stresses are evaluated at Gauss points — where they are most accurate (Section 7) — then extrapolated and averaged to nodes for plotting. Two checks worth automating in every solver you ever write: the sum of reactions balances the applied loads, and the energy identity $\tfrac{1}{2}\mathbf{U}^{\mathsf T}\mathbf{K}\mathbf{U} = \tfrac{1}{2}\mathbf{U}^{\mathsf T}\mathbf{F}$ holds. Mind the scope of that second one: it assumes homogeneous essential conditions and configuration-independent loads. With prescribed nonzero displacements the reactions do work, and the identity only closes once $\bar{\mathbf{U}}_c^{\mathsf T}\mathbf{R}_c$ is carried on the right-hand side.</p>
+
+    <h3 class="subsection-heading">From Solution to Outputs: the Response Operator</h3>
+
+    <p>The forward solve defines a map from data to displacement, $(\,p, f\,) \mapsto \mathbf{U}$. But no experiment measures $\mathbf{U}$ everywhere. What an instrument reads is an <strong>output</strong>: a strain gauge reads rows of $\mathbf{B}$ evaluated at its location, a displacement probe reads a few entries of $\mathbf{U}$, a load cell reads reactions. Predicted measurements are an output operator applied to the solution, $\mathbf{y}_{\text{pred}} = \mathbf{Q}\,\mathbf{U}$. This is the bridge to everything that follows: the observation model $y = \mathcal{H}(u, p, f, X_0) + b + \eta$ wraps exactly this forward-solve-plus-output-operator, and Module 3 asks what happens when $y$ is known and one of the arguments is not.</p>
+
+    <!-- ===== INTERACTIVE: FEM LAB ===== -->
+    <div class="interactive-container" id="fem-lab">
+      <div class="interactive-label">Interactive Tool — One Element to Global System</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Drag the blue nodes to distort elements and watch $\mathbf{J}$, $\det\mathbf{J}$, and $\mathbf{B}$ respond. Switch quadrature, clamp or release the left edge, and read the persistent panel: rank, zero-energy modes, conditioning, and a validation check are recomputed live. The presets walk through the failure modes.</p>
+      <div id="fl-preset-btns" style="display:flex;gap:0;margin-bottom:12px;">
+        <button class="fl-preset" data-mode="single" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#1565c0;color:#fff;cursor:pointer;border:1px solid #1565c0;border-right:none;border-radius:4px 0 0 4px;font-weight:600;">1. Single element</button>
+        <button class="fl-preset" data-mode="assembly" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-right:none;">2. Assemble two</button>
+        <button class="fl-preset" data-mode="hourglass" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-right:none;">3. Hourglass</button>
+        <button class="fl-preset" data-mode="locking" style="flex:1;text-align:center;padding:8px 4px;font-size:12px;background:#e8ecf0;color:#888;cursor:pointer;border:1px solid #ddd;border-radius:0 4px 4px 0;">4. Shear-locking strip</button>
+      </div>
+      <div id="fl-controls" style="margin-bottom:10px;"></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <svg id="fl-svg" width="440" height="360" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;flex:1 1 380px;max-width:100%;touch-action:none;"></svg>
+        <div id="fl-panel" style="flex:1 1 240px;min-width:230px;font-size:12px;line-height:1.55;"></div>
+      </div>
+      <div id="fl-readout" style="font-size:13px;margin-top:10px;overflow-x:auto;"></div>
+    </div>
+
+    <!-- ===== SECTION 7: CONVERGENCE & PATCH TEST ===== -->
+    <h2 class="section-heading" id="convergence-patch-test">7. Convergence and the Patch Test</h2>
+
+    <p>When does refining the mesh actually converge to the exact solution? For conforming displacement elements the classical conditions are <strong>completeness</strong> — the element represents all rigid-body modes and all constant-strain states exactly — plus <strong>compatibility</strong> — $C^{m-1}$ interelement continuity for a $2m$-th order problem.</p>
+
+    <h3 class="subsection-heading">A Priori Rates</h3>
+
+    <p>For smooth solutions and complete degree-$p$ elements:</p>
+
+    <div class="math-block">$$ \|\mathbf{u}-\mathbf{u}_h\|_{E(\Omega)} \le C\, h^{p}\, |\mathbf{u}|_{H^{p+1}(\Omega)}, \qquad \|\mathbf{u}-\mathbf{u}_h\|_{L^2} = O(h^{p+1}) $$</div>
+
+    <table>
+      <tr><th>Quantity</th><th>Rate</th><th>Why</th></tr>
+      <tr><td>Energy-norm error</td><td>$O(h^p)$</td><td>best-approximation + interpolation estimate</td></tr>
+      <tr><td>Displacement $L^2$ error</td><td>$O(h^{p+1})$</td><td>one extra order via duality</td></tr>
+      <tr><td>Strains / stresses</td><td>$O(h^p)$</td><td>differentiation loses one order</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — Gauss points are the best sampling sites, not magic</div>
+      <div>Strains sampled at the Gauss points of the <em>reduced</em> rule (the Barlow points) are one order more accurate than anywhere else in the element — this is why codes evaluate stresses at Gauss points and extrapolate outward. But superconvergence is an <strong>optimal-sampling</strong> result with restrictive hypotheses (smooth solution, mildly distorted meshes) — the common claim that stresses are "exact at Gauss points" is false.</div>
+    </div>
+
+    <p>Singular problems break the rates. At a reentrant corner (the L-shaped domain is the canonical case) the solution behaves like $r^\lambda$ with $\lambda &lt; 1$, and the global rate degrades to $O(h^{\min(p,\lambda)})$ under uniform refinement <em>regardless of</em> $p$. This is the motivation for adaptive $h$-refinement and graded meshes: polynomial degree cannot buy back what a singularity takes away.</p>
+
+    <h3 class="subsection-heading">The Patch Test</h3>
+
+    <p>Irons's legacy, with the standard exposition in Zienkiewicz&ndash;Taylor&ndash;Zhu ch. 10: assemble a small arbitrary patch of <em>distorted</em> elements, prescribe boundary displacements from an arbitrary linear field, solve. The interior must reproduce the linear field and its constant strain to machine precision.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — the exact logical status</div>
+      <div>Passing a properly formulated patch test is <strong>necessary</strong> for convergence of nonconforming elements, and — together with stability (no spurious zero-energy modes after assembly) — <strong>practically sufficient</strong>. Presenting it as unconditionally sufficient is a classic error: a patch-test-passing element with spurious mechanisms still fails. For practitioners: the patch test is the first automated regression test any new element implementation must pass, and the eigenvalue test of Section 5 is the second.</div>
+    </div>
+
+    <!-- ===== SECTION 8: BEAM KINEMATICS ===== -->
+    <h2 class="section-heading" id="beam-kinematics-euler-bernoulli-timoshenko">8. Beam Kinematics: Euler-Bernoulli vs Timoshenko</h2>
+
+    <p>The next three sections deal with structures that are thin in one or two directions — beams and plates. iFEM is built on the shear-deformable members of this family, so the kinematic assumptions deserve care. (Full element derivations — forward and inverse — live in Module 5; here we need the kinematics and the section strains they produce.)</p>
+
+    <h3 class="subsection-heading">Euler-Bernoulli: the Rotation Is Enslaved</h3>
+
+    <p><strong>Euler-Bernoulli (EB)</strong> assumes plane cross-sections remain plane <em>and perpendicular</em> to the deformed axis. The rotation is then enslaved to the deflection, $\theta = dw/dx$, and the axial displacement field is $u(x,z) = u_0(x) - z\, dw/dx$. Section strains: membrane $e = u_0'$ and curvature $\kappa = d^2w/dx^2$; the transverse shear strain is identically zero.</p>
+
+    <div class="math-block">$$ \text{EB:}\quad \theta = \frac{dw}{dx}, \qquad \kappa = \frac{d^2 w}{dx^2}, \qquad EI\,\frac{d^4 w}{dx^4} = q $$</div>
+
+    <p>Fourth order &#8658; $C^1$ elements — the Hermite cubics of Section 3, which have the pleasant property that nodal values are exact for point-loaded prismatic EB beams. (Watch the sign convention: $\kappa = +w''$ here; parts of the beam and plate literatures use $-w''$, and Section 11 shows how an inconsistent sign silently flips iFEM's strain recovery.)</p>
+
+    <h3 class="subsection-heading">Timoshenko: the Rotation Is Freed</h3>
+
+    <p><strong>Timoshenko</strong> keeps cross-sections plane but <em>not necessarily normal</em>: $\theta(x)$ becomes an independent field, and the gap between the slope and the rotation is the shear strain. Section strains: $e = u_0'$, $\kappa = d\theta/dx$, $\gamma = dw/dx - \theta$. The section constitutive law:</p>
+
+    <div class="math-block">$$ \text{Timoshenko:}\quad \kappa = \frac{d\theta}{dx}, \quad \gamma = \frac{dw}{dx} - \theta, \qquad N = EA\,e, \quad M = EI\,\kappa, \quad Q = kGA\,\gamma $$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — k is not a universal constant</div>
+      <div>The shear correction factor $k$ exists because the theory assumes <em>uniform</em> shear strain through the thickness while the true distribution is parabolic (zero at the free surfaces). $k = 5/6$ for rectangular sections, $\approx 0.9$ for solid circles — it depends on the cross-section shape <em>and on the matching convention</em> (Section 9 shows Reissner and Mindlin deriving different values for plates). Quoting "$k = 5/6$" as a universal constant is a trap. The correction originates in Timoshenko's 1921 Philosophical Magazine paper on beam vibration, which also showed the shear effect exceeds rotatory inertia.</div>
+    </div>
+
+    <h3 class="subsection-heading">When Does the Difference Matter?</h3>
+
+    <p>For a tip-loaded cantilever, $w(L) = \dfrac{PL^3}{3EI} + \dfrac{PL}{kGA}$, so the shear fraction of the tip deflection is</p>
+
+    <div class="math-block">$$ \frac{w_{\text{shear}}}{w_{\text{bend}}}\bigg|_{\text{tip-loaded cantilever}} = \frac{3EI}{kGA\,L^2} $$</div>
+
+    <p>which for a rectangular section equals $(E/4kG)\,(t/L)^2$ — about 0.8% at $t/L = 1/10$ and 3% at $t/L = 1/5$ in metals ($E/G \approx 2.6$, $k = 5/6$), growing quadratically for stubby beams and for shear-compliant materials. That last clause matters for this course: soft-material structures are exactly where shear compliance stops being negligible.</p>
+
+    <p>FE implications: Timoshenko needs only $C^0$ interpolation — but naively interpolated low-order elements <strong>shear-lock</strong> (Section 10); the anisoparametric Tessler&ndash;Dong family is the clean fix. And a counting exercise that pays off in Module 4: EB has 2 section strains $(e, \kappa)$; planar Timoshenko has 3 $(e, \kappa, \gamma)$; a full 3D Timoshenko frame member has 6 — stretching, torsion, two bendings, two transverse shears — exactly the set the beam iFEM of Gherlone et al. (2012) reconstructs.</p>
+
+    <div class="figure-container">
+      <svg id="fig-beamkin" viewBox="0 0 760 270" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;"></svg>
+      <div class="figure-caption">The same bent beam under both kinematic hypotheses. Left (Euler-Bernoulli): the cross-section stays perpendicular to the deformed midline — $\theta = dw/dx$, $\gamma = 0$. Right (Timoshenko): the section stays plane but rotates less than the midline slope; the shaded wedge is $\gamma = dw/dx - \theta$, carried by $Q = kGA\gamma$. EB: 2 section strains $(e, \kappa)$ — $C^1$ elements. Timoshenko: 3 section strains $(e, \kappa, \gamma)$ — $C^0$ elements, locking risk.</div>
+    </div>
+    <script>
+    (function(){
+      var svg = document.getElementById('fig-beamkin');
+      function panel(x0, timo){
+        var html = '';
+        var W = 300, k = 0.00095;
+        function wfun(x){ return k*x*x; }
+        // undeformed axis
+        html += '<line x1="'+x0+'" y1="60" x2="'+(x0+W)+'" y2="60" stroke="#bbb" stroke-width="1" stroke-dasharray="4,3"/>';
+        html += '<text x="'+(x0+W-4)+'" y="52" text-anchor="end" font-size="9.5" font-family="sans-serif" fill="#999">undeformed axis</text>';
+        // deformed midline
+        var pts = [];
+        for(var x=0;x<=W;x+=10) pts.push((x0+x)+','+(60+wfun(x)));
+        html += '<polyline points="'+pts.join(' ')+'" fill="none" stroke="#1565c0" stroke-width="2"/>';
+        html += '<text x="'+(x0+W-4)+'" y="'+(60+wfun(W)+16)+'" text-anchor="end" font-size="10" font-family="sans-serif" fill="#1565c0">midline w(x)</text>';
+        // cross-section at x1
+        var xs = 190, px = x0+xs, py = 60+wfun(xs);
+        var m = 2*k*xs;                       // slope dw/dx
+        var phi = Math.atan(m);               // slope angle
+        var normal = phi;                     // section along normal => rotated by phi from vertical
+        var gamma = timo ? 0.30 : 0;          // shear angle (rad), exaggerated
+        var sec = normal - gamma;             // section rotation from vertical
+        var hl = 55;
+        function rot(ang, len){ return [px + Math.sin(ang)*len, py - Math.cos(ang)*len]; }
+        // normal to midline (reference), dashed
+        var nTop = rot(normal, hl), nBot = rot(normal, -hl);
+        if(timo){
+          html += '<line x1="'+nBot[0]+'" y1="'+nBot[1]+'" x2="'+nTop[0]+'" y2="'+nTop[1]+'" stroke="#999" stroke-width="1.2" stroke-dasharray="4,3"/>';
+          html += '<text x="'+(nTop[0]+4)+'" y="'+(nTop[1]-4)+'" font-size="9" font-family="sans-serif" fill="#999">normal to midline</text>';
+        }
+        // the section itself
+        var sTop = rot(sec, hl), sBot = rot(sec, -hl);
+        html += '<line x1="'+sBot[0]+'" y1="'+sBot[1]+'" x2="'+sTop[0]+'" y2="'+sTop[1]+'" stroke="#c62828" stroke-width="2.5"/>';
+        // shaded wedge between normal and section (Timoshenko)
+        if(timo){
+          var wTopN = rot(normal, hl*0.82), wTopS = rot(sec, hl*0.82);
+          html += '<path d="M'+px+','+py+' L'+wTopN[0]+','+wTopN[1]+' A'+(hl*0.82)+','+(hl*0.82)+' 0 0 0 '+wTopS[0]+','+wTopS[1]+' z" fill="#e67e22" fill-opacity="0.3" stroke="none"/>';
+          html += '<text x="'+(px+16)+'" y="'+(py-hl*0.9)+'" font-size="11" font-family="sans-serif" fill="#e67e22" font-weight="600">&#947; = dw/dx &#8722; &#952;</text>';
+        }
+        // tangent line hint
+        var tf = 40;
+        html += '<line x1="'+(px-tf)+'" y1="'+(py-tf*m)+'" x2="'+(px+tf)+'" y2="'+(py+tf*m)+'" stroke="#1565c0" stroke-width="1" stroke-dasharray="2,2"/>';
+        // labels
+        if(timo){
+          html += '<text x="'+(x0+10)+'" y="180" font-size="10.5" font-family="sans-serif" fill="#333">&#952;(x) independent field</text>';
+          html += '<text x="'+(x0+10)+'" y="196" font-size="10.5" font-family="sans-serif" fill="#333">Q = kGA&#183;&#947;</text>';
+          html += '<text x="'+(x0+W/2)+'" y="30" text-anchor="middle" font-size="12" font-weight="600" font-family="sans-serif" fill="#333">Timoshenko</text>';
+        } else {
+          html += '<text x="'+(x0+10)+'" y="180" font-size="10.5" font-family="sans-serif" fill="#333">&#952; = dw/dx (enslaved)</text>';
+          html += '<text x="'+(x0+10)+'" y="196" font-size="10.5" font-family="sans-serif" fill="#333">&#947; = 0 everywhere</text>';
+          html += '<text x="'+(x0+W/2)+'" y="30" text-anchor="middle" font-size="12" font-weight="600" font-family="sans-serif" fill="#333">Euler-Bernoulli</text>';
+        }
+        html += '<text x="'+(x0+10)+'" y="216" font-size="10" font-family="sans-serif" fill="#c62828">cross-section stays plane</text>';
+        return html;
+      }
+      svg.innerHTML = panel(30, false) + '<line x1="380" y1="15" x2="380" y2="230" stroke="#eee" stroke-width="1"/>' + panel(420, true) +
+        '<text x="380" y="252" text-anchor="middle" font-size="10.5" font-family="sans-serif" fill="#777">EB: 2 section strains (e, &#954;) &#8212; C&#185; elements &#183; Timoshenko: 3 section strains (e, &#954;, &#947;) &#8212; C&#8304; elements, locking risk</text>';
+    })();
+    </script>
+
+    <!-- ===== SECTION 9: PLATE KINEMATICS ===== -->
+    <h2 class="section-heading" id="plate-kinematics-kirchhoff-reissner-mindlin">9. Plate Kinematics: Kirchhoff vs Reissner-Mindlin</h2>
+
+    <p>The plate story parallels the beam story one dimension up — with the same fork in the road and higher stakes, because $C^1$ continuity in 2D is genuinely hard.</p>
+
+    <h3 class="subsection-heading">Kirchhoff: Thin-Plate Theory</h3>
+
+    <p>Material normals remain straight, unstretched, and <em>normal</em> to the deformed midsurface. The only unknown is $w(x,y)$; curvatures are second derivatives of $w$; the governing equation is biharmonic:</p>
+
+    <div class="math-block">$$ D\,\nabla^4 w = q, \qquad D = \frac{E\,t^3}{12\,(1-\nu^2)} $$</div>
+
+    <p>Fourth order &#8658; $C^1$ continuity of $w$ across element edges — notoriously hard for triangles: conforming $C^1$ triangles require quintic polynomials. That difficulty historically drove nonconforming and discrete-Kirchhoff elements, and ultimately the $C^0$ alternative below.</p>
+
+    <h3 class="subsection-heading">Reissner-Mindlin: First-Order Shear Deformation Theory</h3>
+
+    <p>Normals remain straight but <em>not necessarily normal</em>. The kinematics are $\mathbf{u} = (u_0 + z\theta_x,\; v_0 + z\theta_y,\; w)$ with independent rotations $\theta_x, \theta_y$ — a second-order system, so $C^0$ suffices.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Convention Declared (read before wiring anything)</div>
+      <div>This guide follows the convention used in the iFEM literature (Tessler &amp; Spangler): $\theta_x$ is the rotation of the material normal <em>in the x&ndash;z plane</em> (and $\theta_y$ in the y&ndash;z plane), entering the displacement field as $\mathbf{u} = \mathbf{u}_0 + z\boldsymbol{\theta}$, so that
+      $$\boldsymbol{\varepsilon}(z) = \mathbf{e} + z\boldsymbol{\kappa}, \qquad \boldsymbol{\gamma} = \nabla w + \boldsymbol{\theta}$$
+      Two other conventions are common and both are self-consistent: $\mathbf{u} = \mathbf{u}_0 - z\boldsymbol{\theta}$ with $\boldsymbol{\gamma} = \nabla w - \boldsymbol{\theta}$ (giving $\boldsymbol{\varepsilon} = \mathbf{e} - z\boldsymbol{\kappa}$), and the right-hand-rule convention of rotations <em>about</em> the axes, which swaps the two components and flips a sign. Mixing any two of them silently corrupts the shear $\mathbf{B}$-matrix and every strain-recovery relation downstream &mdash; a plate reconstructed with the wrong curvature sign bends the wrong way. Declare one convention per project and convert at the boundary. Modules 4&ndash;6 use the one declared here.</div>
+    </div>
+
+    <p>The deformation state is captured by <strong>eight section strain measures</strong>: 3 membrane, 3 bending, 2 transverse shear:</p>
+
+    <div class="math-block">$$ \mathbf{e} = \begin{bmatrix} \partial u_0/\partial x \\ \partial v_0/\partial y \\ \partial u_0/\partial y + \partial v_0/\partial x \end{bmatrix}, \qquad \boldsymbol{\kappa} = \begin{bmatrix} \partial\theta_x/\partial x \\ \partial\theta_y/\partial y \\ \partial\theta_x/\partial y + \partial\theta_y/\partial x \end{bmatrix}, \qquad \boldsymbol{\gamma} = \begin{bmatrix} \partial w/\partial x + \theta_x \\ \partial w/\partial y + \theta_y \end{bmatrix} $$</div>
+
+    <p>In the thin limit the physics enforces the Kirchhoff constraint $\boldsymbol{\gamma} \to \mathbf{0}$, and low-order $C^0$ elements shear-lock (Section 10).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — Reissner and Mindlin are not the same theory</div>
+      <div>Reissner (1945) derived a <em>static, stress-based</em> sixth-order theory yielding $k = 5/6$. Mindlin (1951) derived the <em>displacement-based, dynamic</em> theory and chose $k = \pi^2/12$ to match the thickness-shear frequency. The theories agree in engineering practice, but the correction factors differ <em>because the matching criteria differ</em> — one more reason $k$ is not a universal constant.</div>
+    </div>
+
+    <p>Well-behaved $C^0$ Mindlin elements exist: MITC4, the discrete shear gap family, and the anisoparametric 3-node MIN3 of Tessler &amp; Hughes (1985) — quadratic $w$ constrained by continuous edge shear conditions, linear rotations. The anisoparametric treatment traces back to Tessler &amp; Hughes (1983) on the four-node Mindlin quadrilateral. MIN3 is worth remembering by name: it is precisely the element that reappears as <strong>iMIN3</strong> in the iFEM modules.</p>
+
+    <!-- ===== SECTION 10: SHEAR LOCKING ===== -->
+    <h2 class="section-heading" id="shear-locking">10. Shear Locking: Mechanism and Cures</h2>
+
+    <p>Now that the shear-deformable kinematics exist, we can explain the pathology that haunts them. Take the simplest possible shear-deformable element: the 2-node Timoshenko beam element with linear $w$ and linear $\theta$ (DOFs $w_1, \theta_1, w_2, \theta_2$). Its element strains:</p>
+
+    <div class="math-block">$$ \kappa = \frac{d\theta}{dx} \;\;(\text{constant}), \qquad \gamma = \frac{dw}{dx} - \theta \;\;(\text{linear in } x), \qquad U = \tfrac{1}{2}\int_0^{L} \left( EI\,\kappa^2 + kGA\,\gamma^2 \right) dx $$</div>
+
+    <p>$\gamma$ is linear because $\theta$ is linear while $w'$ is constant. Now demand pure bending: $\kappa = \text{const}$ with $\gamma = 0$ everywhere. But $\gamma \equiv 0$ with linear $\theta$ forces $w$ to be <em>quadratic</em> — unavailable in the linear space. The element cannot bend without storing parasitic shear energy, and being the energy-optimal answer (Section 2), it splits the difference: it bends less and pays shear.</p>
+
+    <h3 class="subsection-heading">The Scaling That Kills</h3>
+
+    <p>Work the energies for a bending state with rotation amplitude $\bar\theta$: the parasitic linear-in-$x$ shear contributes $\propto kGA\,L_e\,\bar\theta^2/12$ against bending energy $\propto EI\,\bar\theta^2/L_e$, giving the ratio</p>
+
+    <div class="math-block">$$ \frac{U_{\text{parasitic shear}}}{U_{\text{bending}}} \;\sim\; \frac{kGA\,L_e^2}{12\,EI} \;\propto\; \left(\frac{L_e}{t}\right)^{2} \quad \text{(rectangular section, } I = At^2/12\text{)} $$</div>
+
+    <p>The spurious constraint stiffens without bound as the structure thins: at fixed mesh, $w_{FE}/w_{\text{exact}} \to 0$ like $(t/L)^2$. With $k = 5/6$ and $G = E/2.6$, the ratio $kGA L_e^2/(12EI) = (kG/E)(L_e/t)^2$ is already $\approx 32$ at $L_e/t = 10$ and $\approx 3200$ at $L_e/t = 100$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — locking is not a solver problem</div>
+      <div>The locked linear system is nonsingular and solves cleanly — <strong>the answer is simply wrong</strong>. (Thin elements can be ill-conditioned for unrelated reasons — extreme aspect ratios, badly scaled rotational vs translational DOFs — so a condition number is not a locking diagnostic in either direction.) Babu&#353;ka &amp; Suri's formal definition: locking is <em>loss of uniform convergence with respect to the small parameter</em> $t$; robustness means error bounds uniform in $t$. Diagnosing locking as ill-conditioning sends you to the wrong fix (better solver) instead of the right one (better discrete space).</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — the model limit vs the discrete limit</div>
+      <div>"Euler-Bernoulli = Timoshenko with $\gamma = 0$" is true for the <em>continuum theories</em>: the constraint limit is well-behaved. But imposing $\gamma_h = 0$ on low-order <em>interpolants</em> is precisely the mechanism of locking — the discrete space cannot satisfy the constraint without freezing. Distinguish the model limit from the discrete limit, or the sentence above turns from a theorem into a bug.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Cures, Each With Its Mechanism</h3>
+
+    <ol>
+      <li><strong>Reduced integration of the shear term.</strong> 1-point quadrature samples $\gamma$ only at the midpoint — exactly where the linear parasitic part vanishes. Equivalent to an assumed-constant-shear element. <em>Selective</em> reduced integration generalizes this: full on bending, reduced on shear. Caveat, and it is not optional: <em>uniform</em> reduced integration can introduce spurious zero-energy (hourglass) modes — recall $\operatorname{rank}(\mathbf{k}^e) \le n_{gp}\times(\text{strain rows})$ from Section 4. Preset 3 of the lab shows them; the strip preset shows an entire mesh going singular.</li>
+      <li><strong>Assumed natural strain / MITC:</strong> re-interpolate $\gamma$ from tying points chosen so the parasitic part cannot be represented (Bathe's MITC family).</li>
+      <li><strong>Discrete shear gap:</strong> construct the shear field from nodal gap values rather than from $w' - \theta$ directly.</li>
+      <li><strong>Interdependent (anisoparametric) interpolation</strong> — Tessler &amp; Dong's hierarchy: take $w$ one degree higher than $\theta$ (quadratic $w$, linear $\theta$), then condense the internal DOF via an element-level constant-shear constraint. The result is a locking-free 2-node element with no spurious modes. This idea becomes MIN3 for plates (Tessler &amp; Hughes 1985, after the 1983 quadrilateral treatment) and later <strong>iMIN3</strong> in iFEM.</li>
+      <li><strong>Mixed / B-bar and enhanced-strain methods:</strong> treat the offending strain as an independent field.</li>
+    </ol>
+
+    <p>Shear locking has two siblings: <strong>volumetric locking</strong> (incompressibility, $\nu \to \tfrac12$) and <strong>membrane locking</strong> (curved shells). Bombarde et al. (2024) give the modern comparative map of all three pathologies and their remedies, and Le &amp; Bui (2023) show that locking-free FSDT plate implementation is <em>still</em> an active research topic — a half-century after the problem was identified, the element technology this module teaches (and that iFEM inherits) continues to be refined rather than replaced.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 760 310" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <g font-family="sans-serif">
+          <!-- main panel: element under pure end moments -->
+          <text x="230" y="24" text-anchor="middle" font-size="12" font-weight="600" fill="#333">Single 2-node element, pure end moments</text>
+          <!-- exact quadratic deflection (dashed) -->
+          <path d="M60,150 Q230,70 400,150" fill="none" stroke="#333" stroke-width="1.6" stroke-dasharray="6,4"/>
+          <text x="238" y="100" font-size="10" fill="#333">exact: w quadratic, &#947; = 0</text>
+          <!-- linear FE interpolant (solid chord) -->
+          <line x1="60" y1="150" x2="400" y2="150" stroke="#1565c0" stroke-width="2.5"/>
+          <circle cx="60" cy="150" r="5" fill="#1565c0"/><circle cx="400" cy="150" r="5" fill="#1565c0"/>
+          <text x="230" y="168" text-anchor="middle" font-size="10" fill="#1565c0">FE: w linear &#8212; the quadratic is unavailable</text>
+          <!-- parasitic shear wedges: sections rotate linearly, chord slope = 0 -->
+          <g stroke="#c62828" stroke-width="2">
+            <line x1="120" y1="128" x2="104" y2="172"/>
+            <line x1="230" y1="128" x2="230" y2="172"/>
+            <line x1="340" y1="128" x2="356" y2="172"/>
+          </g>
+          <path d="M112,150 L112,128 A22,22 0 0 1 120,129 z" fill="#e67e22" fill-opacity="0.35"/>
+          <path d="M348,150 L348,128 A22,22 0 0 0 340,129 z" fill="#e67e22" fill-opacity="0.35"/>
+          <text x="118" y="192" text-anchor="middle" font-size="9.5" fill="#e67e22">&#947;&#8342;(x) = w&#8242; &#8722; &#952;&#8342; &#8800; 0</text>
+          <text x="230" y="192" text-anchor="middle" font-size="9.5" fill="#2e7d32">&#947;&#8342; = 0 at midpoint</text>
+          <text x="342" y="192" text-anchor="middle" font-size="9.5" fill="#e67e22">&#947;&#8342; &#8800; 0</text>
+          <!-- remedy annotation -->
+          <line x1="230" y1="200" x2="230" y2="236" stroke="#2e7d32" stroke-width="1.2" marker-end="url(#arr1)"/>
+          <text x="230" y="252" text-anchor="middle" font-size="10" fill="#2e7d32">1-point shear quadrature samples &#947; at the midpoint,</text>
+          <text x="230" y="265" text-anchor="middle" font-size="10" fill="#2e7d32">where the parasitic linear part vanishes</text>
+          <!-- inset bar chart -->
+          <line x1="500" y1="250" x2="740" y2="250" stroke="#999" stroke-width="1"/>
+          <text x="620" y="24" text-anchor="middle" font-size="12" font-weight="600" fill="#333">Energy split (log scale)</text>
+          <!-- group L/t = 10: bending 1, shear ~32 (log10: 0, 1.5) ; L/t=100: 1, ~3200 (0, 3.5) ; bar unit height 45/decade, baseline shift +1 decade -->
+          <rect x="520" y="205" width="30" height="45" fill="#1565c0"/>
+          <rect x="556" y="137" width="30" height="113" fill="#e67e22"/>
+          <text x="571" y="130" text-anchor="middle" font-size="9.5" fill="#e67e22">&#8776;32&#215;</text>
+          <text x="553" y="266" text-anchor="middle" font-size="10" fill="#555">L/t = 10</text>
+          <rect x="630" y="205" width="30" height="45" fill="#1565c0"/>
+          <rect x="666" y="47" width="30" height="203" fill="#e67e22"/>
+          <text x="681" y="40" text-anchor="middle" font-size="9.5" fill="#e67e22">&#8776;3200&#215;</text>
+          <text x="663" y="266" text-anchor="middle" font-size="10" fill="#555">L/t = 100</text>
+          <rect x="520" y="282" width="10" height="10" fill="#1565c0"/><text x="534" y="291" font-size="9.5" fill="#555">bending energy (=1)</text>
+          <rect x="630" y="282" width="10" height="10" fill="#e67e22"/><text x="644" y="291" font-size="9.5" fill="#555">parasitic shear &#8733; (L/t)&#178;</text>
+        </g>
+      </svg>
+      <div class="figure-caption">Why the linear Timoshenko element locks. The exact pure-bending deflection is quadratic with $\gamma = 0$ everywhere; the linear space cannot represent it, so the sections (red) rotate against a chord that stays straight, generating parasitic shear $\gamma_h$ (orange wedges) that is linear in $x$ and vanishes only at the midpoint. Right: the parasitic shear energy dwarfs the bending energy and grows as $(L/t)^2$ (values for $k=5/6$, $G=E/2.6$).</div>
+    </div>
+
+    <!-- ===== INTERACTIVE: LOCKING LAB ===== -->
+    <div class="interactive-container" id="locking-lab">
+      <div class="interactive-label">Interactive Tool — Shear-Locking Laboratory: Timoshenko Cantilever</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A tip-loaded cantilever meshed with 2-node Timoshenko elements. Sweep the slenderness $L/t$, refine the mesh, and switch the shear quadrature. Full integration collapses like $(t/L)^2$; 1-point (reduced) shear stays honest. Overlay Euler-Bernoulli to see what it misses on stubby beams.</p>
+      <div class="slider-group">
+        <div class="slider-control">
+          <label><span>Slenderness $L/t$</span> <span id="ll-lt-val">100</span></label>
+          <input type="range" id="ll-lt" min="0.7" max="3.0" step="0.01" value="2.0">
+        </div>
+        <div class="slider-control">
+          <label><span>Elements $n$</span> <span id="ll-n-val">4</span></label>
+          <input type="range" id="ll-n" min="0" max="6" step="1" value="2">
+        </div>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:12.5px;color:#333;">
+        <span><label><input type="radio" name="ll-quad" value="full" checked> shear quadrature: full (2-pt)</label>
+        &nbsp;<label><input type="radio" name="ll-quad" value="reduced"> reduced (1-pt)</label></span>
+        <label><input type="checkbox" id="ll-eb"> overlay Euler-Bernoulli limit</label>
+      </div>
+      <svg id="ll-svg" width="700" height="300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+      <div id="ll-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 11: BRIDGE ===== -->
+    <h2 class="section-heading" id="section-strains-ifem-bridge">11. Section Strains: The Bridge to iFEM</h2>
+
+    <p>This module chose Timoshenko and Reissner-Mindlin deliberately: <strong>iFEM is built on them</strong>. The FSDT plate/shell displacement field is fully parametrized by $(u_0, v_0, w, \theta_x, \theta_y)$, and its deformation state is captured by the 8 section strain measures of Section 9 — membrane $\mathbf{e}(\mathbf{u})$ (3), bending curvatures $\boldsymbol{\kappa}(\mathbf{u})$ (3), transverse shears $\boldsymbol{\gamma}(\mathbf{u})$ (2). These are exactly the strain measures of Tessler &amp; Spangler's (2005) least-squares variational principle, which reconstructs displacements by matching these analytic measures to experimentally measured ones.</p>
+
+    <h3 class="subsection-heading">The Measurement Link</h3>
+
+    <p>With strain rosettes on the top and bottom surfaces $z = \pm t/2$, the in-plane surface strains under the through-thickness distribution $\boldsymbol{\varepsilon}(z) = \mathbf{e} + z\boldsymbol{\kappa}$ are:</p>
+
+    <div class="math-block">$$ \boldsymbol{\varepsilon}^{\pm} = \mathbf{e} \pm \frac{t}{2}\,\boldsymbol{\kappa} \quad\Rightarrow\quad \mathbf{e} = \frac{\boldsymbol{\varepsilon}^{+}+\boldsymbol{\varepsilon}^{-}}{2}, \qquad \boldsymbol{\kappa} = \frac{\boldsymbol{\varepsilon}^{+}-\boldsymbol{\varepsilon}^{-}}{t} $$</div>
+
+    <p>Semi-sum and semi-difference: a back-to-back sensor pair splits into a membrane part and a bending part. That is the bridge this module exists to build — the forward machinery hands the inverse problem a quantity it can actually measure. The general version (all three membrane strains, all three curvatures, rosette transformations, and what happens when you can only instrument one surface) is derived in <a href="mod5.html#strain-rosettes-membrane-bending">Module 5</a>, which is its canonical home.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — fix the sign convention before wiring sensors</div>
+      <div>The recovery formulas above follow directly from the convention declared in Section 9 ($\mathbf{u} = \mathbf{u}_0 + z\boldsymbol{\theta} \Rightarrow \boldsymbol{\varepsilon}(z) = \mathbf{e} + z\boldsymbol{\kappa}$), which is the form used throughout the iFEM literature and in Modules 4&ndash;6. Adopt the opposite rotation sign ($\mathbf{u} = \mathbf{u}_0 - z\boldsymbol{\theta}$) and the through-thickness distribution becomes $\mathbf{e} - z\boldsymbol{\kappa}$, so the curvature recovery flips to $\boldsymbol{\kappa} = (\boldsymbol{\varepsilon}^{-}-\boldsymbol{\varepsilon}^{+})/t$. Same physics, opposite sign &mdash; and a curvature recovered with the wrong sign reconstructs a plate bending the wrong way. Two habits prevent this: write the convention next to the equation, and check the recovered sign against a known load case before trusting any sensor data. One more thing to pin down before wiring: whether your $t$ is the <em>total</em> thickness (as here, with surfaces at $z=\pm t/2$) or the half-thickness &mdash; that choice is a factor of two on every curvature.</div>
+    </div>
+
+    <p>And a structural observation with a big consequence: <strong>transverse shear strains cannot be measured on the surfaces</strong> — they vanish there in reality, and FSDT models them as constant through the thickness. iFEM handles this by down-weighting the $\boldsymbol{\gamma}$ terms in its least-squares functional. This is a structural reason why FSDT — not 3D elasticity, not Kirchhoff — is the right kinematic frame for shape sensing: it exposes exactly the strain measures that surface sensors can and cannot see. For beams and frames, the analogous set is the 6 Timoshenko section strains used by Gherlone et al. (2012).</p>
+
+    <h3 class="subsection-heading">Forward and Inverse, Side by Side</h3>
+
+    <p>Forward FEM computes $\mathbf{d}$ from loads by minimizing $\Pi = \tfrac12\mathbf{d}^{\mathsf T}\mathbf{K}\mathbf{d} - \mathbf{d}^{\mathsf T}\mathbf{F}$, built from $\mathbf{B}$-operators. iFEM computes $\mathbf{d}$ from measured strains by minimizing a least-squares functional over the same interpolation:</p>
+
+    <div class="math-block">$$ \Phi(\mathbf{d}) = \sum_{i} \left[\, w_e \left\| \mathbf{e}(\mathbf{d}) - \mathbf{e}^{\varepsilon}_i \right\|^2 + w_\kappa \left\| \boldsymbol{\kappa}(\mathbf{d}) - \boldsymbol{\kappa}^{\varepsilon}_i \right\|^2 + w_\gamma \left\| \boldsymbol{\gamma}(\mathbf{d}) - \boldsymbol{\gamma}^{\varepsilon}_i \right\|^2 \,\right] $$</div>
+
+    <table>
+      <tr><th></th><th>Forward FEM</th><th>iFEM (Module 4)</th></tr>
+      <tr><td><strong>Minimizes</strong></td><td>$\Pi(\mathbf{d}) = \tfrac12\mathbf{d}^{\mathsf T}\mathbf{K}\mathbf{d} - \mathbf{d}^{\mathsf T}\mathbf{F}$</td><td>$\Phi(\mathbf{d})$: weighted strain mismatch</td></tr>
+      <tr><td><strong>Needs loads?</strong></td><td>yes — $\mathbf{F}$ drives everything</td><td>no</td></tr>
+      <tr><td><strong>Needs material stiffness?</strong></td><td>yes — $\mathbf{D}$ inside $\mathbf{K}$</td><td>no — only relative weights $w_e, w_\kappa, w_\gamma$</td></tr>
+      <tr><td><strong>Normal equations</strong></td><td>sparse SPD $\mathbf{K}\mathbf{U} = \mathbf{F}$</td><td>same assembled-sparse-SPD structure</td></tr>
+      <tr><td><strong>Element continuity</strong></td><td>$C^0$ (FSDT)</td><td>$C^0$ — interfaces naturally with discrete sensors</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Everything in Sections 3&ndash;6 — shape functions, isoparametric mapping, quadrature, assembly, essential constraints — is reused <em>verbatim</em> by iFEM. What changes is only the functional being minimized: energy with loads becomes least-squares with measurements. If you can implement the forward pipeline of this module, you are one functional away from a shape-sensing code.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 760 280" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <g font-family="sans-serif">
+          <!-- plate cross-section, z axis -->
+          <line x1="60" y1="40" x2="60" y2="220" stroke="#999" stroke-width="1"/>
+          <text x="52" y="34" text-anchor="middle" font-size="10" fill="#555">z</text>
+          <line x1="40" y1="60" x2="700" y2="60" stroke="#ddd" stroke-width="1"/>
+          <line x1="40" y1="200" x2="700" y2="200" stroke="#ddd" stroke-width="1"/>
+          <line x1="40" y1="130" x2="700" y2="130" stroke="#bbb" stroke-width="1" stroke-dasharray="5,4"/>
+          <text x="34" y="64" text-anchor="end" font-size="10" fill="#555">+t/2</text>
+          <text x="34" y="204" text-anchor="end" font-size="10" fill="#555">&#8722;t/2</text>
+          <text x="34" y="134" text-anchor="end" font-size="10" fill="#555">0</text>
+          <!-- profile 1: membrane, constant -->
+          <line x1="150" y1="60" x2="150" y2="200" stroke="#ccc" stroke-width="0.8"/>
+          <line x1="190" y1="60" x2="190" y2="200" stroke="#1565c0" stroke-width="2.5"/>
+          <text x="170" y="228" text-anchor="middle" font-size="10.5" fill="#1565c0">membrane e (constant)</text>
+          <!-- profile 2: bending, linear crossing zero -->
+          <line x1="345" y1="60" x2="345" y2="200" stroke="#ccc" stroke-width="0.8"/>
+          <line x1="395" y1="60" x2="295" y2="200" stroke="#e67e22" stroke-width="2.5"/>
+          <text x="345" y="228" text-anchor="middle" font-size="10.5" fill="#e67e22">bending z&#183;&#954; (zero at midplane)</text>
+          <!-- profile 3: total -->
+          <line x1="545" y1="60" x2="545" y2="200" stroke="#ccc" stroke-width="0.8"/>
+          <line x1="635" y1="60" x2="535" y2="200" stroke="#2e7d32" stroke-width="2.5"/>
+          <circle cx="635" cy="60" r="5" fill="#2e7d32"/>
+          <circle cx="535" cy="200" r="5" fill="#2e7d32"/>
+          <text x="648" y="56" font-size="10.5" fill="#2e7d32">&#949;&#8314; (top sensor)</text>
+          <text x="524" y="216" text-anchor="end" font-size="10.5" fill="#2e7d32">&#949;&#8315; (bottom sensor)</text>
+          <text x="600" y="228" text-anchor="middle" font-size="10.5" fill="#2e7d32">total &#949;(z) = e + z&#183;&#954;</text>
+          <!-- callouts -->
+          <text x="380" y="252" text-anchor="middle" font-size="11" fill="#333">e = (&#949;&#8314; + &#949;&#8315;)/2 &nbsp;&nbsp;&nbsp; &#954; = (&#949;&#8314; &#8722; &#949;&#8315;)/t</text>
+          <text x="380" y="270" text-anchor="middle" font-size="9.5" fill="#888">the two surfaces are exactly where iFEM strain sensors sit; transverse shear &#947; is invisible to them</text>
+          <text x="255" y="100" font-size="14" fill="#888">+</text>
+          <text x="460" y="100" font-size="14" fill="#888">=</text>
+        </g>
+      </svg>
+      <div class="figure-caption">Through-thickness strain decomposition. A constant membrane part plus a linear bending part sum to the total $\varepsilon(z) = e + z\kappa$. Sensors at $z = \pm t/2$ read $\varepsilon^\pm$; semi-sum and semi-difference recover $e$ and $\kappa$ — the section strains iFEM matches.</div>
+    </div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="fem-walkthrough" class="interactive-container" data-title="Walkthrough — From Strong Form to KU = F (and Back Out)"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod2-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Zienkiewicz, O. C.; Taylor, R. L.; Zhu, J. Z. (2013). <em>The Finite Element Method: Its Basis and Fundamentals, 7th Edition</em>. Butterworth-Heinemann (Elsevier).</li>
+      <li>Hughes, Thomas J. R. (2000). <em>The Finite Element Method: Linear Static and Dynamic Finite Element Analysis</em>. Dover Publications (reprint of the 1987 Prentice-Hall edition).</li>
+      <li>Bathe, Klaus-J&uuml;rgen (2014). <em>Finite Element Procedures, Second Edition</em>. K.J. Bathe, Watertown, MA (self-published).</li>
+      <li>Timoshenko, S. P. (1921). <em>LXVI. On the correction for shear of the differential equation for transverse vibrations of prismatic bars</em>. The London, Edinburgh, and Dublin Philosophical Magazine and Journal of Science, Series 6, 41(245), 744-746. doi:10.1080/14786442108636264</li>
+      <li>Reissner, E. (1945). <em>The Effect of Transverse Shear Deformation on the Bending of Elastic Plates</em>. ASME Journal of Applied Mechanics, 12, A69-A77. doi:10.1115/1.4009435</li>
+      <li>Mindlin, R. D. (1951). <em>Influence of Rotatory Inertia and Shear on Flexural Motions of Isotropic, Elastic Plates</em>. ASME Journal of Applied Mechanics, 18, 31-38. doi:10.1115/1.4010217</li>
+      <li>Babu&#353;ka, I.; Suri, M. (1992). <em>On Locking and Robustness in the Finite Element Method</em>. SIAM Journal on Numerical Analysis, 29(5), 1261-1293. doi:10.1137/0729075</li>
+      <li>Tessler, A.; Dong, S. B. (1981). <em>On a hierarchy of conforming Timoshenko beam elements</em>. Computers &amp; Structures, 14(3-4), 335-344. doi:10.1016/0045-7949(81)90017-1</li>
+      <li>Tessler, Alexander; Hughes, Thomas J. R. (1983). <em>An improved treatment of transverse shear in the Mindlin-type four-node quadrilateral element</em>. Computer Methods in Applied Mechanics and Engineering 39(3) 311-335. doi:10.1016/0045-7825(83)90096-8</li>
+      <li>Tessler, A.; Hughes, T. J. R. (1985). <em>A three-node Mindlin plate element with improved transverse shear</em>. Computer Methods in Applied Mechanics and Engineering, 50(1), 71-101. doi:10.1016/0045-7825(85)90114-8</li>
+      <li>Tessler, A.; Spangler, J. L. (2005). <em>A least-squares variational method for full-field reconstruction of elastic deformations in shear-deformable plates and shells</em>. Computer Methods in Applied Mechanics and Engineering, 194(2-5), 327-339. doi:10.1016/j.cma.2004.03.015</li>
+      <li>Gherlone, M.; Cerracchio, P.; Mattone, M.; Di Sciuva, M.; Tessler, A. (2012). <em>Shape sensing of 3D frame structures using an inverse Finite Element Method</em>. International Journal of Solids and Structures, 49(22), 3100-3112. doi:10.1016/j.ijsolstr.2012.06.009</li>
+      <li>Baratta, I. A.; Dean, J. P.; Dokken, J. S.; Habera, M.; Hale, J. S.; Richardson, C. N.; Rognes, M. E.; Scroggs, M. W.; Sime, N.; Wells, G. N. (2023). <em>DOLFINx: The next generation FEniCS problem solving environment</em>. Zenodo (preprint). doi:10.5281/zenodo.10447666</li>
+      <li>Bombarde, Dhiraj S.; Silla, Lakshmi Narayan; Gautam, Sachin S.; Nandy, Arup (2024). <em>A Comprehensive Comparative Review of Various Advanced Finite Elements to Alleviate Shear, Membrane and Volumetric Locking</em>. Archives of Computational Methods in Engineering, 31, 1979-2013. doi:10.1007/s11831-023-10050-x</li>
+      <li>Le, Khanh Chau; Bui, Hoang Giang (2023). <em>Asymptotically accurate and locking-free finite element implementation of first order shear deformation theory for plates</em>. arXiv preprint arXiv:2310.19443. doi:10.48550/arXiv.2310.19443</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod1.html">&larr; 1. Continuum Mechanics Primer</a>
+      <a href="mod3.html">3. Inverse Problems &amp; Regularization &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod2');</script>
+
+<!-- ===== SCRIPT: ONE ELEMENT TO GLOBAL SYSTEM LAB ===== -->
+<script>
+(function() {
+  // --- tiny dense linear algebra (n <= 20) ---
+  function zeros(n, m) { var A = []; for (var i = 0; i < n; i++) A.push(new Array(m).fill(0)); return A; }
+  function jacobiEig(Ain) {
+    var n = Ain.length, A = Ain.map(function(r){ return r.slice(); }), V = zeros(n, n);
+    for (var i = 0; i < n; i++) V[i][i] = 1;
+    for (var sweep = 0; sweep < 100; sweep++) {
+      var off = 0;
+      for (var p = 0; p < n - 1; p++) for (var q = p + 1; q < n; q++) off += A[p][q] * A[p][q];
+      if (off < 1e-24) break;
+      for (var p = 0; p < n - 1; p++) for (var q = p + 1; q < n; q++) {
+        if (Math.abs(A[p][q]) < 1e-30) continue;
+        var th = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+        var t = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+        var c = 1 / Math.sqrt(t * t + 1), s = t * c;
+        for (var k = 0; k < n; k++) { var akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+        for (var k = 0; k < n; k++) { var apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+        for (var k = 0; k < n; k++) { var vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq; }
+      }
+    }
+    var ev = []; for (var i = 0; i < n; i++) ev.push({ val: A[i][i], vec: V.map(function(r){ return r[i]; }) });
+    ev.sort(function(a, b){ return Math.abs(a.val) - Math.abs(b.val); });
+    return ev;
+  }
+  function solveLin(Ain, bin) {
+    var n = Ain.length, A = Ain.map(function(r, i){ return r.concat([bin[i]]); });
+    for (var col = 0; col < n; col++) {
+      var piv = col;
+      for (var r = col + 1; r < n; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+      if (Math.abs(A[piv][col]) < 1e-13) return null;
+      var tmp = A[col]; A[col] = A[piv]; A[piv] = tmp;
+      for (var r = col + 1; r < n; r++) {
+        var f = A[r][col] / A[col][col];
+        for (var c = col; c <= n; c++) A[r][c] -= f * A[col][c];
+      }
+    }
+    var x = new Array(n).fill(0);
+    for (var r = n - 1; r >= 0; r--) {
+      var s = A[r][n];
+      for (var c = r + 1; c < n; c++) s -= A[r][c] * x[c];
+      x[r] = s / A[r][r];
+    }
+    return x;
+  }
+  // --- Q4 plane-stress element (E=1, nu=0.3, t=1) ---
+  var E = 1, nu = 0.3;
+  var Dm = (function(){ var f = E / (1 - nu * nu); return [[f, f * nu, 0], [f * nu, f, 0], [0, 0, f * (1 - nu) / 2]]; })();
+  var XA = [-1, 1, 1, -1], EA = [-1, -1, 1, 1];
+  function jacAt(xy, xi, et) {
+    var dNxi = [], dNet = [];
+    for (var a = 0; a < 4; a++) { dNxi.push(0.25 * XA[a] * (1 + EA[a] * et)); dNet.push(0.25 * EA[a] * (1 + XA[a] * xi)); }
+    var J = [[0, 0], [0, 0]];
+    for (var a = 0; a < 4; a++) {
+      J[0][0] += dNxi[a] * xy[a][0]; J[0][1] += dNxi[a] * xy[a][1];
+      J[1][0] += dNet[a] * xy[a][0]; J[1][1] += dNet[a] * xy[a][1];
+    }
+    return { J: J, det: J[0][0] * J[1][1] - J[0][1] * J[1][0], dNxi: dNxi, dNet: dNet };
+  }
+  function quadK(xy, ng) {
+    var gp = ng === 2 ? [-1 / Math.sqrt(3), 1 / Math.sqrt(3)] : [0];
+    var wt = ng === 2 ? [1, 1] : [2];
+    var k = zeros(8, 8), dets = [], B1 = null, J1 = null;
+    for (var i = 0; i < gp.length; i++) for (var j = 0; j < gp.length; j++) {
+      var jr = jacAt(xy, gp[i], gp[j]), dJ = jr.det;
+      dets.push(dJ);
+      if (Math.abs(dJ) < 1e-12) continue;
+      var Ji = [[jr.J[1][1] / dJ, -jr.J[0][1] / dJ], [-jr.J[1][0] / dJ, jr.J[0][0] / dJ]];
+      var B = zeros(3, 8);
+      for (var a = 0; a < 4; a++) {
+        var dNx = Ji[0][0] * jr.dNxi[a] + Ji[0][1] * jr.dNet[a];
+        var dNy = Ji[1][0] * jr.dNxi[a] + Ji[1][1] * jr.dNet[a];
+        B[0][2 * a] = dNx; B[1][2 * a + 1] = dNy; B[2][2 * a] = dNy; B[2][2 * a + 1] = dNx;
+      }
+      if (B1 === null) { B1 = B; J1 = jr; }
+      for (var r = 0; r < 8; r++) for (var c = 0; c < 8; c++) {
+        var s = 0;
+        for (var p = 0; p < 3; p++) for (var q = 0; q < 3; q++) s += B[p][r] * Dm[p][q] * B[q][c];
+        k[r][c] += s * dJ * wt[i] * wt[j];
+      }
+    }
+    return { k: k, dets: dets, B1: B1, J1: J1 };
+  }
+  function detMinGrid(xy) {
+    var mn = 1e9;
+    for (var xi = -1; xi <= 1.001; xi += 0.5) for (var et = -1; et <= 1.001; et += 0.5) {
+      var d = jacAt(xy, xi, et).det;
+      if (d < mn) mn = d;
+    }
+    return mn;
+  }
+  // --- lab state ---
+  var mode = 'single';
+  var st = { ng: 2, clamp: false, aspect: 20 };
+  var nodes = [], conn = [], clampNodes = [], loadSpec = null, dragIdx = -1;
+  var xform = { s: 1, ox: 0, oy: 0 };
+  var svg = document.getElementById('fl-svg');
+  var panelEl = document.getElementById('fl-panel');
+  var readEl = document.getElementById('fl-readout');
+  var ctrlEl = document.getElementById('fl-controls');
+  var btns = document.querySelectorAll('.fl-preset');
+
+  function setupMode() {
+    if (mode === 'single' || mode === 'hourglass') {
+      nodes = [[0, 0], [2, 0], [2, 2], [0, 2]];
+      conn = [[0, 1, 2, 3]];
+      clampNodes = [0, 3];
+      loadSpec = mode === 'single' ? { type: 'edge', nodes: [1, 2], dir: 0, q: 0.2 } : null;
+      if (mode === 'hourglass') { st.ng = 1; st.clamp = true; }
+    } else if (mode === 'assembly') {
+      nodes = [[0, 0], [2, 0], [4, 0], [0, 2], [2, 2], [4, 2]];
+      conn = [[0, 1, 4, 3], [1, 2, 5, 4]];
+      clampNodes = [0, 3];
+      loadSpec = { type: 'edge', nodes: [2, 5], dir: 0, q: 0.2 };
+    } else { // locking strip
+      var L = 10, t = L / st.aspect, nx = 4;
+      nodes = []; conn = [];
+      for (var c = 0; c <= nx; c++) for (var r = 0; r < 2; r++) nodes.push([L * c / nx, t * r]);
+      for (var e = 0; e < nx; e++) conn.push([2 * e, 2 * (e + 1), 2 * (e + 1) + 1, 2 * e + 1]);
+      clampNodes = [0, 1];
+      loadSpec = { type: 'tip', nodes: [8, 9], dir: 1, P: -1 };
+      st.clamp = true;
+    }
+  }
+
+  function buildControls() {
+    var html = '';
+    if (mode === 'single' || mode === 'assembly') {
+      html += '<span style="font-size:12.5px;color:#333;margin-right:16px;"><label><input type="radio" name="fl-quad" value="2"' + (st.ng === 2 ? ' checked' : '') + '> 2&times;2 full</label> &nbsp;<label><input type="radio" name="fl-quad" value="1"' + (st.ng === 1 ? ' checked' : '') + '> 1&times;1 reduced</label></span>';
+      html += '<label style="font-size:12.5px;color:#333;margin-right:16px;"><input type="checkbox" id="fl-clamp"' + (st.clamp ? ' checked' : '') + '> clamp left edge</label>';
+      html += '<span style="font-size:11.5px;color:#888;">drag the blue nodes; a small tension load on the right edge is applied when clamped</span>';
+    } else if (mode === 'hourglass') {
+      html += '<span style="font-size:12.5px;color:#555;">Forced: 1&times;1 quadrature, left edge clamped. Purple dashed outlines: the surviving zero-energy mode. Drag nodes if you like &mdash; the mechanism does not go away.</span>';
+    } else {
+      html += '<div class="slider-control" style="max-width:280px;display:inline-block;margin-right:16px;"><label><span>Slenderness $L/t$</span> <span id="fl-aspect-val">' + st.aspect + '</span></label><input type="range" id="fl-aspect" min="2" max="50" step="1" value="' + st.aspect + '"></div>';
+      html += '<span style="font-size:12.5px;color:#333;"><label><input type="radio" name="fl-quad" value="2"' + (st.ng === 2 ? ' checked' : '') + '> 2&times;2 full</label> &nbsp;<label><input type="radio" name="fl-quad" value="1"' + (st.ng === 1 ? ' checked' : '') + '> 1&times;1 reduced</label></span>';
+    }
+    ctrlEl.innerHTML = html;
+    if (typeof renderMath === 'function') renderMath(ctrlEl);
+    var radios = ctrlEl.querySelectorAll('input[name="fl-quad"]');
+    radios.forEach(function(r) { r.addEventListener('change', function() { st.ng = parseInt(r.value); update(true); }); });
+    var cl = document.getElementById('fl-clamp');
+    if (cl) cl.addEventListener('change', function() { st.clamp = cl.checked; update(true); });
+    var asp = document.getElementById('fl-aspect');
+    if (asp) asp.addEventListener('input', function() {
+      st.aspect = parseInt(asp.value);
+      document.getElementById('fl-aspect-val').textContent = st.aspect;
+      setupMode(); update(false);
+    });
+    if (asp) asp.addEventListener('change', function() { update(true); });
+  }
+
+  function computeAll() {
+    var res = { ndof: 2 * nodes.length };
+    var kes = conn.map(function(cn) { return quadK(cn.map(function(n) { return nodes[n]; }), st.ng); });
+    res.first = kes[0];
+    res.detmin = Math.min.apply(null, conn.map(function(cn) { return detMinGrid(cn.map(function(n) { return nodes[n]; })); }));
+    var K = zeros(res.ndof, res.ndof);
+    kes.forEach(function(ke, e) {
+      var cn = conn[e];
+      for (var a = 0; a < 4; a++) for (var ia = 0; ia < 2; ia++) for (var b = 0; b < 4; b++) for (var ib = 0; ib < 2; ib++)
+        K[2 * cn[a] + ia][2 * cn[b] + ib] += ke.k[2 * a + ia][2 * b + ib];
+    });
+    res.K = K;
+    var evK = jacobiEig(K);
+    var mx = Math.max.apply(null, evK.map(function(e) { return Math.abs(e.val); })) || 1;
+    var tol = mx * 1e-9;
+    res.evK = evK; res.tol = tol;
+    res.zAll = evK.filter(function(e) { return Math.abs(e.val) < tol; }).length;
+    res.negK = evK.some(function(e) { return e.val < -tol; });
+    if (st.clamp) {
+      var fixed = [];
+      clampNodes.forEach(function(n) { fixed.push(2 * n, 2 * n + 1); });
+      var free = [];
+      for (var d = 0; d < res.ndof; d++) if (fixed.indexOf(d) < 0) free.push(d);
+      res.fixed = fixed; res.free = free;
+      var Kff = free.map(function(r) { return free.map(function(c) { return K[r][c]; }); });
+      var evF = jacobiEig(Kff);
+      res.evF = evF;
+      res.zC = evF.filter(function(e) { return Math.abs(e.val) < tol; }).length;
+      res.spurVecs = evF.filter(function(e) { return Math.abs(e.val) < tol; }).slice(0, 2).map(function(e) {
+        var full = new Array(res.ndof).fill(0);
+        free.forEach(function(d, i) { full[d] = e.vec[i]; });
+        return full;
+      });
+      var lmin = Infinity, lmax = 0;
+      evF.forEach(function(e) { var v = Math.abs(e.val); if (v > tol) { if (v < lmin) lmin = v; } if (v > lmax) lmax = v; });
+      res.cond = res.zC === 0 ? lmax / lmin : Infinity;
+      // loads
+      var F = new Array(free.length).fill(0);
+      var applied = [0, 0];
+      if (loadSpec) {
+        if (loadSpec.type === 'edge') {
+          var n1 = nodes[loadSpec.nodes[0]], n2 = nodes[loadSpec.nodes[1]];
+          var len = Math.hypot(n2[0] - n1[0], n2[1] - n1[1]);
+          loadSpec.nodes.forEach(function(n) {
+            var d = 2 * n + loadSpec.dir, fi = free.indexOf(d);
+            if (fi >= 0) F[fi] += loadSpec.q * len / 2;
+            applied[loadSpec.dir] += loadSpec.q * len / 2;
+          });
+        } else {
+          loadSpec.nodes.forEach(function(n) {
+            var d = 2 * n + loadSpec.dir, fi = free.indexOf(d);
+            if (fi >= 0) F[fi] += loadSpec.P / 2;
+            applied[loadSpec.dir] += loadSpec.P / 2;
+          });
+        }
+      }
+      res.applied = applied;
+      if (res.zC === 0 && loadSpec) {
+        var Uf = solveLin(Kff, F);
+        if (Uf) {
+          var U = new Array(res.ndof).fill(0);
+          free.forEach(function(d, i) { U[d] = Uf[i]; });
+          res.U = U;
+          // reactions on fixed dofs: R = K_c,: * U
+          var sumR = [0, 0];
+          fixed.forEach(function(d) {
+            var r = 0;
+            for (var c = 0; c < res.ndof; c++) r += K[d][c] * U[c];
+            sumR[d % 2] += r;
+          });
+          res.balErr = Math.max(Math.abs(sumR[0] + applied[0]), Math.abs(sumR[1] + applied[1]));
+          if (mode === 'locking') {
+            var wtip = -(U[2 * 8 + 1] + U[2 * 9 + 1]) / 2;
+            var L = 10, t = L / st.aspect, I = t * t * t / 12, A = t, G = E / 2.6, ks = 5 / 6;
+            var wref = 1 * L * L * L / (3 * E * I) + 1 * L / (ks * G * A);
+            res.ratio = wtip / wref;
+          }
+        }
+      }
+    }
+    return res;
+  }
+
+  function fit() {
+    var xs = nodes.map(function(n) { return n[0]; }), ys = nodes.map(function(n) { return n[1]; });
+    var mnx = Math.min.apply(null, xs) - 0.5, mxx = Math.max.apply(null, xs) + 0.5;
+    var mny = Math.min.apply(null, ys) - 0.7, mxy = Math.max.apply(null, ys) + 0.7;
+    var vw = 380, vh = 250, x0 = 35, y0 = 25;
+    var s = Math.min(vw / (mxx - mnx), vh / (mxy - mny));
+    xform.s = s;
+    xform.ox = x0 + (vw - s * (mxx - mnx)) / 2 - s * mnx;
+    xform.oy = y0 + vh - (vh - s * (mxy - mny)) / 2 + s * mny;
+  }
+  function tx(p) { return [xform.ox + p[0] * xform.s, xform.oy - p[1] * xform.s]; }
+
+  function draw(res) {
+    fit();
+    var html = '';
+    var draggable = (mode === 'single' || mode === 'assembly' || mode === 'hourglass');
+    // elements
+    conn.forEach(function(cn) {
+      var xy = cn.map(function(n) { return nodes[n]; });
+      var bad = detMinGrid(xy) <= 0;
+      html += '<polygon points="' + xy.map(function(p) { return tx(p).join(','); }).join(' ') + '" fill="' + (bad ? '#fdecea' : '#e8f0fe') + '" stroke="' + (bad ? '#c62828' : '#1565c0') + '" stroke-width="1.5"/>';
+      // gauss points
+      var gp = st.ng === 2 ? [-1 / Math.sqrt(3), 1 / Math.sqrt(3)] : [0];
+      gp.forEach(function(xi) { gp.forEach(function(et) {
+        var x = 0, y = 0;
+        for (var a = 0; a < 4; a++) { var N = 0.25 * (1 + XA[a] * xi) * (1 + EA[a] * et); x += N * xy[a][0]; y += N * xy[a][1]; }
+        var p = tx([x, y]);
+        html += '<path d="M' + (p[0] - 4) + ',' + p[1] + ' L' + (p[0] + 4) + ',' + p[1] + ' M' + p[0] + ',' + (p[1] - 4) + ' L' + p[0] + ',' + (p[1] + 4) + '" stroke="#e67e22" stroke-width="1.4"/>';
+      }); });
+    });
+    // deformed overlay
+    var overlay = function(U, color) {
+      var mx = Math.max.apply(null, U.map(Math.abs)) || 1;
+      var span = Math.max.apply(null, nodes.map(function(n) { return n[0]; })) || 1;
+      var s = 0.18 * span / mx;
+      conn.forEach(function(cn) {
+        var pts = cn.map(function(n) { return tx([nodes[n][0] + s * U[2 * n], nodes[n][1] + s * U[2 * n + 1]]); });
+        html += '<polygon points="' + pts.map(function(p) { return p.join(','); }).join(' ') + '" fill="none" stroke="' + color + '" stroke-width="1.6" stroke-dasharray="5,4"/>';
+      });
+    };
+    if (res.U) overlay(res.U, '#e67e22');
+    if (res.spurVecs && res.spurVecs.length && (mode === 'hourglass' || res.zC > 0)) res.spurVecs.forEach(function(v) { overlay(v, '#7b1fa2'); });
+    // clamps
+    if (st.clamp) clampNodes.forEach(function(n) {
+      var p = tx(nodes[n]);
+      html += '<path d="M' + p[0] + ',' + p[1] + ' l-13,-8 l0,16 z" fill="#f0f1f3" stroke="#555" stroke-width="1"/>';
+    });
+    // loads
+    if (loadSpec && st.clamp) loadSpec.nodes.forEach(function(n) {
+      var p = tx(nodes[n]);
+      if (loadSpec.dir === 0) html += '<line x1="' + (p[0] + 6) + '" y1="' + p[1] + '" x2="' + (p[0] + 30) + '" y2="' + p[1] + '" stroke="#e67e22" stroke-width="2" marker-end="url(#arr1)"/>';
+      else html += '<line x1="' + p[0] + '" y1="' + (p[1] + 6) + '" x2="' + p[0] + '" y2="' + (p[1] + 30) + '" stroke="#e67e22" stroke-width="2" marker-end="url(#arr1)"/>';
+    });
+    // nodes
+    nodes.forEach(function(nd, i) {
+      var p = tx(nd);
+      html += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="' + (draggable ? 7 : 4) + '" fill="#1565c0"' + (draggable ? ' style="cursor:move"' : '') + '/>';
+      if (nodes.length <= 6) html += '<text x="' + (p[0] + 9) + '" y="' + (p[1] - 8) + '" font-size="10.5" font-family="sans-serif" fill="#555">' + (i + 1) + '</text>';
+    });
+    // eigen spectrum strip
+    var ev = st.clamp && res.evF ? res.evF : res.evK;
+    var label = st.clamp && res.evF ? 'eig(K_ff) after clamping' : 'eig(K) unconstrained';
+    html += '<text x="40" y="298" font-size="10.5" font-family="sans-serif" fill="#555">' + label + ' &mdash; log&#8321;&#8320;|&#955;| (red = zero-energy mode)</text>';
+    html += '<line x1="40" y1="330" x2="420" y2="330" stroke="#999" stroke-width="1"/>';
+    [-12, -8, -4, 0].forEach(function(l) {
+      var x = 40 + (l + 13) / 15 * 380;
+      html += '<line x1="' + x + '" y1="327" x2="' + x + '" y2="333" stroke="#999" stroke-width="1"/><text x="' + x + '" y="346" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#888">' + l + '</text>';
+    });
+    ev.forEach(function(e) {
+      var v = Math.abs(e.val), z = v < res.tol;
+      var l = Math.max(-13, Math.min(2, Math.log10(v + 1e-300)));
+      var x = 40 + (l + 13) / 15 * 380;
+      html += z ? '<rect x="' + (x - 3.5) + '" y="' + 318 + '" width="7" height="7" fill="#c62828"/>' :
+                  '<circle cx="' + x + '" cy="321" r="3.5" fill="#1565c0" fill-opacity="0.75"/>';
+    });
+    svg.innerHTML = html;
+  }
+
+  function panel(res) {
+    var nfree = res.free ? res.free.length : res.ndof;
+    var row = function(label, body, color) {
+      return '<div style="border-left:3px solid ' + (color || '#1565c0') + ';background:#fafbfc;padding:7px 10px;margin-bottom:7px;border-radius:0 4px 4px 0;">' +
+        '<div style="font-size:10px;font-weight:600;color:' + (color || '#1565c0') + ';text-transform:uppercase;letter-spacing:0.3px;">' + label + '</div>' +
+        '<div style="color:#333;">' + body + '</div></div>';
+    };
+    var h = '';
+    h += row('Measured', 'nothing &mdash; this is the <em>forward</em> problem: loads, material and supports are prescribed, no sensor appears. From Module 3 on, this row is where the action is.', '#888');
+    h += row('Unknowns', 'nodal displacements <strong>U</strong>: ' + res.ndof + ' DOFs' + (st.clamp ? ' (' + nfree + ' free after clamping)' : ' (none constrained yet)'));
+    h += row('Assumed known', 'geometry as drawn &middot; E = 1, &nu; = 0.3, plane stress, t = 1 &middot; bilinear Q4 shape functions &middot; ' + st.ng + '&times;' + st.ng + ' Gauss &middot; supports &amp; loads as drawn');
+    var rk = res.ndof - res.zAll;
+    var spurAll = Math.max(0, res.zAll - 3);
+    var stab = 'rank(K) = ' + rk + ' / ' + res.ndof + ' &middot; zero-energy modes: ' + res.zAll + ' (3 rigid' + (spurAll > 0 ? ' + <strong style="color:#c62828">' + spurAll + ' spurious</strong>' : '') + ')';
+    if (st.clamp && res.evF) {
+      stab += '<br>after clamping: ' + (res.zC > 0 ? '<strong style="color:#c62828">' + res.zC + ' spurious mode' + (res.zC > 1 ? 's' : '') + ' survive' + (res.zC === 1 ? 's' : '') + '</strong> &mdash; K<sub>ff</sub> singular' : 'rank full &middot; cond(K<sub>ff</sub>) &asymp; ' + res.cond.toExponential(1));
+    }
+    stab += '<br>min det J = ' + res.detmin.toFixed(3) + (res.detmin <= 0 ? ' <strong style="color:#c62828">&le; 0 &mdash; element inverted, map invalid</strong>' : ' (&gt; 0 &#10003;)');
+    if (res.negK) stab += '<br><strong style="color:#c62828">K indefinite &mdash; negative det J has poisoned the energy</strong>';
+    var stabBad = spurAll > 0 || (st.clamp && res.zC > 0) || res.detmin <= 0;
+    h += row('Rank &amp; stability', stab, stabBad ? '#c62828' : '#2e7d32');
+    var val;
+    if (!st.clamp) val = 'no constraints &rarr; nothing to solve; K alone cannot balance any load (rigid modes). Clamp the left edge to get a solvable system.';
+    else if (res.zC > 0) val = '<strong style="color:#c62828">system singular &mdash; no solution.</strong> The mesh contains a mechanism: a deformation pattern with zero strain energy at every Gauss point. This is the hourglass rank-deficiency of Section 4.';
+    else if (mode === 'locking' && res.ratio !== undefined) {
+      var pct = (100 * (1 - res.ratio)).toFixed(1);
+      val = 'w<sub>FE</sub>/w<sub>ref</sub> = <strong>' + res.ratio.toFixed(3) + '</strong> vs the slender-beam reference &mdash; error ' + pct + '%.' + (st.ng === 2 && st.aspect >= 15 ? ' The system solved cleanly; <strong>the answer is just wrong</strong> (Section 10).' : '');
+    }
+    else if (res.balErr !== undefined) val = 'reaction balance: |&Sigma;R + &Sigma;F| = ' + res.balErr.toExponential(1) + ' &#10003; (equilibrium check of Section 6; deformed shape dashed orange)';
+    else val = 'solved.';
+    h += row('Validation', val, '#e67e22');
+    panelEl.innerHTML = h;
+  }
+
+  function readout(res) {
+    var f = res.first;
+    if (!f || !f.J1) { readEl.innerHTML = ''; return; }
+    var fm = function(v) { return (Math.abs(v) < 1e-10 ? 0 : v).toFixed(3); };
+    var J = f.J1.J;
+    var h = '<strong>Watch $\\mathbf{J}$ and $\\mathbf{B}$</strong> (element 1, first Gauss point): ';
+    h += '$\\mathbf{J} = \\begin{bmatrix}' + fm(J[0][0]) + ' & ' + fm(J[0][1]) + ' \\\\ ' + fm(J[1][0]) + ' & ' + fm(J[1][1]) + '\\end{bmatrix}$, ';
+    h += '$\\det\\mathbf{J}$ at the Gauss points: [' + f.dets.map(function(d) { return d.toFixed(3); }).join(', ') + ']. ';
+    var B = f.B1;
+    h += 'Node-1 block $\\mathbf{B}_1 = \\begin{bmatrix}' + fm(B[0][0]) + ' & ' + fm(B[0][1]) + ' \\\\ ' + fm(B[1][0]) + ' & ' + fm(B[1][1]) + ' \\\\ ' + fm(B[2][0]) + ' & ' + fm(B[2][1]) + '\\end{bmatrix}$ &mdash; the full $\\mathbf{B} = [\\mathbf{B}_1\\,\\mathbf{B}_2\\,\\mathbf{B}_3\\,\\mathbf{B}_4]$ is $3\\times 8$. Distort the element and watch the derivatives shift: strains need <em>physical</em> derivatives, and only $\\mathbf{J}^{-\\mathsf T}$ delivers them.';
+    readEl.innerHTML = h;
+    if (typeof renderMath === 'function') renderMath(readEl);
+  }
+
+  function update(doMath) {
+    var res = computeAll();
+    draw(res);
+    panel(res);
+    if (doMath) readout(res);
+  }
+
+  // preset buttons
+  btns.forEach(function(b) {
+    b.addEventListener('click', function() {
+      mode = b.getAttribute('data-mode');
+      btns.forEach(function(bb) {
+        bb.style.background = '#e8ecf0'; bb.style.color = '#888'; bb.style.borderColor = '#ddd'; bb.style.fontWeight = 'normal';
+      });
+      b.style.background = '#1565c0'; b.style.color = '#fff'; b.style.borderColor = '#1565c0'; b.style.fontWeight = '600';
+      if (mode === 'single') { st.ng = 2; st.clamp = false; }
+      if (mode === 'assembly') { st.ng = 2; st.clamp = true; }
+      setupMode(); buildControls(); update(true);
+    });
+  });
+
+  // dragging
+  function evtPos(e) {
+    var r = svg.getBoundingClientRect();
+    return [(e.clientX - r.left) * 440 / r.width, (e.clientY - r.top) * 360 / r.height];
+  }
+  svg.addEventListener('pointerdown', function(e) {
+    if (mode === 'locking') return;
+    var p = evtPos(e);
+    var best = -1, bd = 14;
+    nodes.forEach(function(nd, i) {
+      var q = tx(nd), d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best >= 0) { dragIdx = best; svg.setPointerCapture(e.pointerId); e.preventDefault(); }
+  });
+  svg.addEventListener('pointermove', function(e) {
+    if (dragIdx < 0) return;
+    var p = evtPos(e);
+    var mxv = (p[0] - xform.ox) / xform.s, myv = (xform.oy - p[1]) / xform.s;
+    nodes[dragIdx] = [Math.max(-1.5, Math.min(8, mxv)), Math.max(-1.5, Math.min(5, myv))];
+    update(false);
+  });
+  svg.addEventListener('pointerup', function() { if (dragIdx >= 0) { dragIdx = -1; update(true); } });
+
+  setupMode(); buildControls();
+  if (document.readyState === 'complete') update(true);
+  else window.addEventListener('load', function() { update(true); });
+})();
+</script>
+
+<!-- ===== SCRIPT: SHEAR-LOCKING LABORATORY ===== -->
+<script>
+(function() {
+  var E = 1, G = E / 2.6, ks = 5 / 6, L = 1, P = 1, b = 1;
+  function solveBeam(nel, Lt, reduced) {
+    var t = L / Lt, I = b * t * t * t / 12, A = b * t;
+    var Le = L / nel, ndof = 2 * (nel + 1);
+    var K = [];
+    for (var i = 0; i < ndof; i++) K.push(new Array(ndof).fill(0));
+    var kga = ks * G * A, c = E * I / Le;
+    for (var e = 0; e < nel; e++) {
+      var kel = [[0,0,0,0],[0,c,0,-c],[0,0,0,0],[0,-c,0,c]];
+      if (reduced) {
+        var bv = [-1 / Le, -0.5, 1 / Le, -0.5];
+        for (var r = 0; r < 4; r++) for (var q = 0; q < 4; q++) kel[r][q] += kga * Le * bv[r] * bv[q];
+      } else {
+        var kf = [[1 / Le, 0.5, -1 / Le, 0.5], [0.5, Le / 3, -0.5, Le / 6], [-1 / Le, -0.5, 1 / Le, -0.5], [0.5, Le / 6, -0.5, Le / 3]];
+        for (var r = 0; r < 4; r++) for (var q = 0; q < 4; q++) kel[r][q] += kga * kf[r][q];
+      }
+      for (var r = 0; r < 4; r++) for (var q = 0; q < 4; q++) K[2 * e + r][2 * e + q] += kel[r][q];
+    }
+    // clamp node 0 (w, theta) -> free dofs 2..ndof-1; solve by Gaussian elimination
+    var n = ndof - 2;
+    var Aug = [];
+    for (var r = 0; r < n; r++) { Aug.push(K[r + 2].slice(2)); Aug[r].push(0); }
+    Aug[n - 2][n] = P; // tip w dof
+    for (var col = 0; col < n; col++) {
+      var piv = col;
+      for (var r = col + 1; r < n; r++) if (Math.abs(Aug[r][col]) > Math.abs(Aug[piv][col])) piv = r;
+      var tmp = Aug[col]; Aug[col] = Aug[piv]; Aug[piv] = tmp;
+      for (var r = col + 1; r < n; r++) {
+        var f = Aug[r][col] / Aug[col][col];
+        for (var cc = col; cc <= n; cc++) Aug[r][cc] -= f * Aug[col][cc];
+      }
+    }
+    var x = new Array(n).fill(0);
+    for (var r = n - 1; r >= 0; r--) {
+      var s = Aug[r][n];
+      for (var cc = r + 1; cc < n; cc++) s -= Aug[r][cc] * x[cc];
+      x[r] = s / Aug[r][r];
+    }
+    var w = [0];
+    for (var i = 0; i < nel; i++) w.push(x[2 * i]); // w at node i+1
+    var wex = P * L * L * L / (3 * E * I) + P * L / (ks * G * A);
+    return { w: w, wex: wex, ratio: w[nel] / wex, I: I, A: A, Le: Le };
+  }
+  var sweeps = {};
+  function getSweep(nel, reduced) {
+    var key = nel + (reduced ? 'r' : 'f');
+    if (sweeps[key]) return sweeps[key];
+    var pts = [];
+    for (var i = 0; i <= 12; i++) {
+      var lg = 0.7 + i * (3.0 - 0.7) / 12;
+      pts.push([lg, solveBeam(nel, Math.pow(10, lg), reduced).ratio]);
+    }
+    sweeps[key] = pts;
+    return pts;
+  }
+  var svg = document.getElementById('ll-svg');
+  var readEl = document.getElementById('ll-readout');
+  function controls() {
+    return {
+      Lt: Math.pow(10, parseFloat(document.getElementById('ll-lt').value)),
+      nel: Math.pow(2, parseInt(document.getElementById('ll-n').value)),
+      reduced: document.querySelector('input[name="ll-quad"]:checked').value === 'reduced',
+      eb: document.getElementById('ll-eb').checked
+    };
+  }
+  function update() {
+    var c = controls();
+    document.getElementById('ll-lt-val').textContent = Math.round(c.Lt);
+    document.getElementById('ll-n-val').textContent = c.nel;
+    var sol = solveBeam(c.nel, c.Lt, c.reduced);
+    var t = L / c.Lt, I = sol.I, A = sol.A;
+    // --- main plot: w(x)/w_ex(L) ---
+    var X0 = 45, X1 = 430, Y0 = 250, Y1 = 25;
+    function mx(x) { return X0 + (x / L) * (X1 - X0); }
+    function my(v) { return Y0 - (v / 1.1) * (Y0 - Y1); }
+    var html = '';
+    html += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X1 + '" y2="' + Y0 + '" stroke="#999" stroke-width="1"/>';
+    html += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X0 + '" y2="' + Y1 + '" stroke="#999" stroke-width="1"/>';
+    [0, 0.5, 1].forEach(function(v) {
+      html += '<line x1="' + (X0 - 4) + '" y1="' + my(v) + '" x2="' + X0 + '" y2="' + my(v) + '" stroke="#999"/><text x="' + (X0 - 8) + '" y="' + (my(v) + 3) + '" text-anchor="end" font-size="9.5" font-family="sans-serif" fill="#888">' + v + '</text>';
+    });
+    html += '<line x1="' + X0 + '" y1="' + my(1) + '" x2="' + X1 + '" y2="' + my(1) + '" stroke="#eee" stroke-width="1"/>';
+    html += '<text x="' + ((X0 + X1) / 2) + '" y="268" text-anchor="middle" font-size="10.5" font-family="sans-serif" fill="#555">x / L</text>';
+    html += '<text x="14" y="' + ((Y0 + Y1) / 2) + '" text-anchor="middle" font-size="10.5" font-family="sans-serif" fill="#555" transform="rotate(-90 14 ' + ((Y0 + Y1) / 2) + ')">w(x) / w_exact(L)</text>';
+    // exact curve (dashed)
+    var pts = [];
+    for (var i = 0; i <= 60; i++) {
+      var x = L * i / 60;
+      var w = P * x * x * (3 * L - x) / (6 * E * I) + P * x / (ks * G * A);
+      pts.push(mx(x) + ',' + my(w / sol.wex));
+    }
+    html += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#333" stroke-width="1.6" stroke-dasharray="6,4"/>';
+    // EB overlay (dotted)
+    if (c.eb) {
+      var pe = [];
+      for (var i = 0; i <= 60; i++) {
+        var x = L * i / 60;
+        pe.push(mx(x) + ',' + my((P * x * x * (3 * L - x) / (6 * E * I)) / sol.wex));
+      }
+      html += '<polyline points="' + pe.join(' ') + '" fill="none" stroke="#e67e22" stroke-width="1.6" stroke-dasharray="2,3"/>';
+    }
+    // FE curve (nodal, solid)
+    var pf = sol.w.map(function(w, i) { return mx(L * i / c.nel) + ',' + my(w / sol.wex); });
+    html += '<polyline points="' + pf.join(' ') + '" fill="none" stroke="#1565c0" stroke-width="2.2"/>';
+    sol.w.forEach(function(w, i) {
+      if (c.nel <= 16 || i % Math.ceil(c.nel / 16) === 0) html += '<circle cx="' + mx(L * i / c.nel) + '" cy="' + my(w / sol.wex) + '" r="3" fill="#1565c0"/>';
+    });
+    // legend
+    html += '<line x1="55" y1="38" x2="80" y2="38" stroke="#1565c0" stroke-width="2.2"/><text x="85" y="41" font-size="9.5" font-family="sans-serif" fill="#555">FE (' + c.nel + ' elem, ' + (c.reduced ? '1-pt' : '2-pt') + ' shear)</text>';
+    html += '<line x1="55" y1="52" x2="80" y2="52" stroke="#333" stroke-width="1.6" stroke-dasharray="6,4"/><text x="85" y="55" font-size="9.5" font-family="sans-serif" fill="#555">exact Timoshenko</text>';
+    if (c.eb) html += '<line x1="55" y1="66" x2="80" y2="66" stroke="#e67e22" stroke-width="1.6" stroke-dasharray="2,3"/><text x="85" y="69" font-size="9.5" font-family="sans-serif" fill="#555">Euler-Bernoulli limit</text>';
+    // --- inset: log-log ratio vs L/t ---
+    var IX0 = 480, IX1 = 680, IY0 = 230, IY1 = 30;
+    function ix(lg) { return IX0 + (lg - 0.7) / 2.3 * (IX1 - IX0); }
+    function iy(r) { var l = Math.max(-4, Math.min(0.1, Math.log10(Math.max(r, 1e-9)))); return IY1 + (-l / 4) * (IY0 - IY1); }
+    html += '<rect x="' + (IX0 - 10) + '" y="' + (IY1 - 12) + '" width="' + (IX1 - IX0 + 30) + '" height="' + (IY0 - IY1 + 40) + '" fill="#fafafa" stroke="#eee"/>';
+    html += '<line x1="' + IX0 + '" y1="' + IY0 + '" x2="' + IX1 + '" y2="' + IY0 + '" stroke="#999"/>';
+    html += '<line x1="' + IX0 + '" y1="' + IY0 + '" x2="' + IX0 + '" y2="' + IY1 + '" stroke="#999"/>';
+    [[1, '10'], [2, '100'], [3, '1000']].forEach(function(tk) {
+      html += '<line x1="' + ix(tk[0]) + '" y1="' + IY0 + '" x2="' + ix(tk[0]) + '" y2="' + (IY0 + 4) + '" stroke="#999"/><text x="' + ix(tk[0]) + '" y="' + (IY0 + 15) + '" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#888">' + tk[1] + '</text>';
+    });
+    [[1, '1'], [0.01, '10&#8315;&#178;'], [0.0001, '10&#8315;&#8308;']].forEach(function(tk) {
+      html += '<text x="' + (IX0 - 4) + '" y="' + (iy(tk[0]) + 3) + '" text-anchor="end" font-size="9" font-family="sans-serif" fill="#888">' + tk[1] + '</text>';
+    });
+    html += '<text x="' + ((IX0 + IX1) / 2) + '" y="' + (IY0 + 27) + '" text-anchor="middle" font-size="9.5" font-family="sans-serif" fill="#555">L/t &nbsp;(tip ratio w_FE/w_exact, n = ' + c.nel + ')</text>';
+    // slope-(-2) guide anchored to full curve
+    var sf = getSweep(c.nel, false), sr = getSweep(c.nel, true);
+    var anchor = sf[7]; // lg ~ 2.04
+    html += '<line x1="' + ix(anchor[0] - 0.5) + '" y1="' + iy(anchor[1] * Math.pow(10, 2 * 0.5) * 0.55) + '" x2="' + ix(anchor[0] + 0.7) + '" y2="' + iy(anchor[1] * Math.pow(10, -2 * 0.7) * 0.55) + '" stroke="#bbb" stroke-width="1" stroke-dasharray="3,3"/>';
+    html += '<text x="' + (ix(anchor[0] + 0.32))+ '" y="' + (iy(anchor[1] * 0.1) + 12) + '" font-size="9" font-family="sans-serif" fill="#999">slope &#8733; (t/L)&#178;</text>';
+    function curve(sw, color, wdt) {
+      return '<polyline points="' + sw.map(function(p) { return ix(p[0]) + ',' + iy(p[1]); }).join(' ') + '" fill="none" stroke="' + color + '" stroke-width="' + wdt + '"/>';
+    }
+    html += curve(sf, c.reduced ? '#ddb0b0' : '#c62828', c.reduced ? 1.2 : 2);
+    html += curve(sr, c.reduced ? '#2e7d32' : '#b9d6bb', c.reduced ? 2 : 1.2);
+    html += '<circle cx="' + ix(Math.log10(c.Lt)) + '" cy="' + iy(sol.ratio) + '" r="4.5" fill="none" stroke="#1565c0" stroke-width="2"/>';
+    html += '<text x="' + (IX0 + 4) + '" y="' + (IY1 + 2) + '" font-size="9" font-family="sans-serif" fill="#c62828">full (2-pt)</text>';
+    html += '<text x="' + (IX0 + 60) + '" y="' + (IY1 + 2) + '" font-size="9" font-family="sans-serif" fill="#2e7d32">reduced (1-pt)</text>';
+    svg.innerHTML = html;
+    // --- readout (plain HTML, no KaTeX in the hot path) ---
+    var Phi = 12 * E * I / (ks * G * A * sol.Le * sol.Le);
+    var h = '<span style="font-size:17px;font-weight:600;color:' + (sol.ratio < 0.9 ? '#c62828' : '#2e7d32') + ';">w<sub>FE</sub>(L)/w<sub>exact</sub>(L) = ' + sol.ratio.toFixed(sol.ratio < 0.01 ? 5 : 3) + '</span>';
+    h += ' &nbsp;&middot;&nbsp; element locking parameter &Phi;<sub>e</sub> = 12EI/(kGA&thinsp;L<sub>e</sub>&sup2;) = ' + (Phi >= 0.01 ? Phi.toFixed(3) : Phi.toExponential(2));
+    h += ' &nbsp;&middot;&nbsp; shear fraction of exact tip deflection: ' + (100 * (P * L / (ks * G * A)) / sol.wex).toFixed(2) + '%';
+    if (!c.reduced && sol.ratio < 0.5) h += '<br><span style="color:#c62828;font-size:12px;">The solver did not fail &mdash; this well-conditioned system produced the energy-optimal answer of an over-constrained space (Babu&#353;ka&ndash;Suri locking).</span>';
+    if (c.reduced) h += '<br><span style="color:#2e7d32;font-size:12px;">1-pt shear quadrature samples &gamma; at the midpoint, where the parasitic linear part vanishes &mdash; equivalent to an assumed-constant-shear element.</span>';
+    if (c.eb && c.Lt < 8) h += '<br><span style="color:#e67e22;font-size:12px;">At L/t = ' + Math.round(c.Lt) + ' the EB overlay visibly underpredicts the deflection: it has no shear compliance (&asymp;3% at L/t = 5).</span>';
+    readEl.innerHTML = h;
+  }
+  ['ll-lt', 'll-n', 'll-eb'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', update);
+  });
+  document.querySelectorAll('input[name="ll-quad"]').forEach(function(r) { r.addEventListener('change', update); });
+  update();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+  initWalkthrough('fem-walkthrough', [
+    {
+      tab: '1. Strong form',
+      title: 'Step 1: The Strong Form',
+      text: 'The PDE plus boundary conditions: $-\\nabla\\cdot\\boldsymbol{\\sigma} = \\mathbf{b}$ in $\\Omega$, displacements prescribed on $\\Gamma_D$, tractions on $\\Gamma_N$. Equilibrium must hold at every point, and the solution must be twice differentiable — a demand piecewise polynomials cannot meet.',
+      visual: '<svg viewBox="0 0 620 90" style="max-width:100%;"><rect x="30" y="25" width="14" height="44" fill="#f0f1f3" stroke="#555"/><rect x="44" y="37" width="440" height="20" fill="#e8f0fe" stroke="#1565c0" stroke-width="1.5"/><line x1="484" y1="47" x2="540" y2="47" stroke="#e67e22" stroke-width="2.5" marker-end="url(#arr1)"/><text x="548" y="51" font-size="12" font-family="sans-serif" fill="#e67e22">P</text><text x="260" y="80" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">(EA u&#8242;)&#8242; + f = 0 pointwise, u(0) = 0, EA u&#8242;(L) = P</text></svg>',
+      insight: 'Essential BC ($u$ prescribed) and natural BC (force prescribed) will be treated completely differently by the weak form — that asymmetry is the point of the names.'
+    },
+    {
+      tab: '2. Weak form',
+      title: 'Step 2: Multiply, Integrate, Shift a Derivative',
+      text: 'Multiply the residual by an arbitrary test function $w$ (zero where displacement is prescribed), integrate over the domain, and integrate by parts once. One derivative moves from $u$ onto $w$; the boundary term becomes $P\\,w(L)$ — the traction enters naturally. Result: $\\int EA\\,u\'w\'\\,dx = \\int f w\\,dx + P w(L)$ for all admissible $w$.',
+      visual: '<svg viewBox="0 0 620 90" style="max-width:100%;"><rect x="44" y="37" width="440" height="20" fill="#e8f0fe" stroke="#1565c0" stroke-width="1.5"/><path d="M60,37 L200,12 L340,37" fill="none" stroke="#e67e22" stroke-width="1.8"/><text x="205" y="10" font-size="11" font-family="sans-serif" fill="#e67e22">test function w</text><text x="260" y="80" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#555">C&#178; demand on u drops to C&#8304;: only u&#8242; and w&#8242; appear</text></svg>',
+      insight: 'The three payoffs: $C^0$ approximation becomes legal, Neumann data is absorbed automatically, and the bilinear form is symmetric and coercive — the seed of an SPD stiffness matrix.'
+    },
+    {
+      tab: '3. Discretize',
+      title: 'Step 3: Restrict to a Finite Basis (Galerkin)',
+      text: 'Write $u_h = \\sum_a N_a d_a$ with locally supported shape functions satisfying $N_a(x_b)=\\delta_{ab}$ and $\\sum_a N_a = 1$, and use the same functions for $w$. Galerkin orthogonality makes $u_h$ the best approximation in the energy norm; compact support makes the equations sparse.',
+      visual: '<svg viewBox="0 0 620 90" style="max-width:100%;"><line x1="40" y1="70" x2="580" y2="70" stroke="#999"/><path d="M40,70 L148,20 L256,70" fill="none" stroke="#ccc" stroke-width="1.5"/><path d="M148,70 L256,20 L364,70" fill="none" stroke="#1565c0" stroke-width="2.2"/><path d="M256,70 L364,20 L472,70" fill="none" stroke="#ccc" stroke-width="1.5"/><path d="M364,70 L472,20 L580,70" fill="none" stroke="#ccc" stroke-width="1.5"/><circle cx="256" cy="70" r="4" fill="#1565c0"/><text x="256" y="86" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#555">node a: N&#8342; = 1 here, 0 at every other node</text></svg>',
+      insight: 'FEM is the Ritz idea with piecewise polynomials: the trial space is spanned by cheap local functions instead of global ones.'
+    },
+    {
+      tab: '4. Integrate',
+      title: 'Step 4: Element Integrals via Isoparametric Map + Gauss',
+      text: 'Each element integral is pulled back to the parent square through $\\mathbf{x}(\\boldsymbol{\\xi}) = \\sum N_a \\mathbf{x}_a$ and evaluated by Gauss quadrature: at each point, build $\\mathbf{J}$, invert, form $\\mathbf{B}$, accumulate $\\mathbf{B}^{\\mathsf T}\\mathbf{D}\\mathbf{B}\\,\\det\\mathbf{J}\\,w_{gp}$. Validity needs $\\det\\mathbf{J} > 0$ everywhere.',
+      visual: '<svg viewBox="0 0 620 90" style="max-width:100%;"><rect x="60" y="15" width="60" height="60" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/><path d="M78,33 h0 M78,33 M74,29 l8,8 m0,-8 l-8,8 M102,29 l8,8 m0,-8 l-8,8 M74,53 l8,8 m0,-8 l-8,8 M102,53 l8,8 m0,-8 l-8,8" stroke="#e67e22" stroke-width="1.3"/><line x1="140" y1="45" x2="230" y2="45" stroke="#555" stroke-width="1.2" marker-end="url(#arr1)"/><text x="185" y="35" text-anchor="middle" font-size="10" font-family="sans-serif" fill="#555">x(&#958;)</text><polygon points="250,20 380,32 360,80 262,68" fill="#f5f8ff" stroke="#1565c0" stroke-width="1.5"/><text x="480" y="50" font-size="11" font-family="sans-serif" fill="#555">k&#7497; = &#8721; B&#7511;DB det J w</text></svg>',
+      insight: 'For distorted elements the integrand is rational — no Gauss rule is exact. "Full integration" means exact in the affine limit; reduced integration is softer but risks hourglass modes.'
+    },
+    {
+      tab: '5. Assemble',
+      title: 'Step 5: Scatter-Add and Constrain',
+      text: 'The connectivity array maps element-local DOFs to global ones; each $\\mathbf{k}^e$ is added into the sparse $\\mathbf{K}$. At this point $\\mathbf{K}$ is singular — the rigid-body modes (3 in 2D, 6 in 3D) live in its null space. Essential BCs by elimination, penalty, or Lagrange multipliers remove them.',
+      visual: '<svg viewBox="0 0 620 90" style="max-width:100%;"><rect x="60" y="25" width="40" height="40" fill="#90b4e8"/><rect x="110" y="25" width="40" height="40" fill="#f0b27a"/><line x1="165" y1="45" x2="245" y2="45" stroke="#555" stroke-width="1.2" marker-end="url(#arr1)"/><g><rect x="270" y="15" width="60" height="60" fill="#f2f2f2" stroke="#ddd"/><rect x="270" y="15" width="38" height="38" fill="#90b4e8"/><rect x="294" y="39" width="36" height="36" fill="#f0b27a"/><rect x="294" y="39" width="14" height="14" fill="#8e6ba8"/></g><text x="460" y="40" font-size="11" font-family="sans-serif" fill="#c62828">K singular until</text><text x="460" y="56" font-size="11" font-family="sans-serif" fill="#c62828">essential BCs applied</text></svg>',
+      insight: '"Matrix is singular" almost always means the model can still translate or rotate freely — check the supports before blaming the solver.'
+    },
+    {
+      tab: '6. Solve + outputs',
+      title: 'Step 6: Solve the System, Extract Outputs',
+      text: 'Factorize (sparse Cholesky) or iterate (preconditioned CG) — never form $\\mathbf{K}^{-1}$. Check that reactions balance loads and $\\tfrac12\\mathbf{U}^{\\mathsf T}\\mathbf{K}\\mathbf{U} = \\tfrac12\\mathbf{U}^{\\mathsf T}\\mathbf{F}$. Then extract what an instrument would see: $\\mathbf{y}_{\\text{pred}} = \\mathbf{Q}\\mathbf{U}$ — strains at gauge sites via rows of $\\mathbf{B}$, displacements at probe points, reactions at supports.',
+      visual: '<svg viewBox="0 0 620 90" style="max-width:100%;"><rect x="50" y="25" width="110" height="40" rx="5" fill="#e8f0fe" stroke="#1565c0" stroke-width="2"/><text x="105" y="50" text-anchor="middle" font-size="13" font-weight="600" font-family="sans-serif" fill="#1565c0">KU = F</text><line x1="170" y1="45" x2="230" y2="45" stroke="#555" stroke-width="1.2" marker-end="url(#arr1)"/><path d="M250,60 Q350,20 450,55" fill="none" stroke="#1565c0" stroke-width="2"/><circle cx="300" cy="42" r="4" fill="#e67e22"/><circle cx="370" cy="34" r="4" fill="#e67e22"/><circle cx="430" cy="49" r="4" fill="#e67e22"/><text x="530" y="40" font-size="11" font-family="sans-serif" fill="#e67e22">y = QU at</text><text x="530" y="55" font-size="11" font-family="sans-serif" fill="#e67e22">sensor sites</text></svg>',
+      insight: 'This forward-solve-plus-output-operator is exactly what the observation model $y = \\mathcal{H}(u, p, f, X_0) + b + \\eta$ wraps. Module 3 asks: what if $y$ is known and one of the arguments is not?'
+    }
+  ]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+  initFlashcards('mod2-flashcards', [
+    {
+      q: "The strong form of the bar problem contains $(EAu')' + f = 0$ — second derivatives of $u$. Why can FEM legally use piecewise-linear ($C^0$) approximations?",
+      a: "The weak form shifts one derivative onto the test function via integration by parts, so only first derivatives need to be square-integrable ($u \\in H^1$). Piecewise-linear functions qualify; the strong form's $C^2$ demand does not apply."
+    },
+    {
+      q: "How many 1D Gauss points are needed to integrate a degree-5 polynomial exactly? What is the general rule?",
+      a: "3 points. $n$ Gauss-Legendre points integrate polynomials exactly through degree $2n-1$."
+    },
+    {
+      q: "Write the element stiffness integral and name each factor.",
+      a: "$\\mathbf{k}^e = \\int_{\\Omega_e} \\mathbf{B}^{\\mathsf T}\\mathbf{D}\\,\\mathbf{B}\\, d\\Omega$ — $\\mathbf{B}$ is the strain-displacement matrix (derivatives of shape functions), $\\mathbf{D}$ the constitutive matrix; evaluated by Gauss quadrature with $\\det\\mathbf{J}$ from the isoparametric map."
+    },
+    {
+      q: "A 4-node plane quad (8 DOFs): how many zero-energy modes with full $2\\times2$ integration? With $1$-point integration?",
+      a: "Full: 3 (the rigid-body modes: 2 translations + 1 rotation). 1-point: rank $\\le 3$ (one Gauss point $\\times$ 3 strain rows), so $8-3=5$ zero-energy modes — the 3 rigid modes plus 2 spurious hourglass modes."
+    },
+    {
+      q: "State the kinematic difference between Euler-Bernoulli and Timoshenko beams, and the Timoshenko shear strain formula.",
+      a: "EB: cross-sections remain plane and perpendicular to the deformed axis, so $\\theta = w'$ and $\\gamma \\equiv 0$. Timoshenko: sections remain plane but rotate independently; $\\gamma = \\dfrac{dw}{dx} - \\theta$, with $Q = kGA\\gamma$."
+    },
+    {
+      q: "Why does $Q = kGA\\gamma$ need a shear correction factor $k$, and what is the standard value for a rectangular section?",
+      a: "FSDT assumes uniform shear strain through the thickness, but the true distribution is parabolic (zero at free surfaces). $k$ corrects the shear energy; $k = 5/6$ for rectangles (Reissner's static matching; Mindlin's dynamic matching gives $\\pi^2/12$)."
+    },
+    {
+      q: "Define shear locking in the Babuška-Suri sense. Is it a conditioning problem?",
+      a: "Locking = loss of uniform convergence as the thickness parameter $t \\to 0$: on a fixed mesh the error of fully-integrated low-order elements grows like $(L/t)^2$. It is not ill-conditioning — the system solves cleanly; the discrete space is over-constrained by $\\gamma_h = 0$."
+    },
+    {
+      q: "What does the patch test check, and what is its exact logical status?",
+      a: "An arbitrary patch of (distorted) elements with boundary displacements from a linear field must reproduce constant strain to machine precision. It verifies completeness in the assembled setting; it is necessary for convergence of nonconforming elements and, together with stability (no spurious modes), practically sufficient — not unconditionally sufficient."
+    },
+    {
+      q: "Convergence rates for conforming degree-$p$ elements on a smooth problem: energy norm, $L^2$ displacement, stresses?",
+      a: "Energy norm $O(h^p)$; displacements in $L^2$ $O(h^{p+1})$; stresses/strains $O(h^p)$ globally but superconvergent at the Barlow (reduced-rule Gauss) points — the reason stresses are sampled there."
+    },
+    {
+      q: "Why do Kirchhoff plates require $C^1$ elements while Reissner-Mindlin plates need only $C^0$?",
+      a: "Kirchhoff is a 4th-order theory ($D\\nabla^4 w = q$): the weak form carries 2nd derivatives of $w$, demanding $C^1$ continuity. Reissner-Mindlin has independent rotations, giving a 2nd-order system with only 1st derivatives in the weak form — $C^0$ suffices (at the price of locking risk in the thin limit)."
+    },
+    {
+      q: "Surface strains $\\varepsilon^+ = +500\\,\\mu\\varepsilon$ (top, $z=+t/2$) and $\\varepsilon^- = -300\\,\\mu\\varepsilon$ (bottom), $t = 2$ mm. Compute the membrane strain $e$ and curvature $\\kappa$.",
+      a: "$e = (\\varepsilon^+ + \\varepsilon^-)/2 = 100\\,\\mu\\varepsilon$; $\\kappa = (\\varepsilon^+ - \\varepsilon^-)/t = 800\\,\\mu\\varepsilon / 2\\,\\text{mm} = 0.4\\ \\text{m}^{-1}$. This semi-sum/semi-difference recovery is exactly how iFEM extracts section strains from sensor data."
+    },
+    {
+      q: "In displacement FEM, which boundary conditions are 'natural' and which 'essential', and why?",
+      a: "Traction (Neumann) BCs are natural: they enter the weak form automatically through the boundary integral $\\int_{\\Gamma_N}\\mathbf{w}^{\\mathsf T}\\bar{\\mathbf{t}}\\,d\\Gamma$. Displacement (Dirichlet) BCs are essential: they must be imposed on the trial space (and zeroed in the test space), enforced in the discrete system by elimination, penalty, or Lagrange multipliers."
+    },
+    {
+      q: "Your script computes $\\mathbf{U} = \\mathbf{K}^{-1}\\mathbf{F}$ by explicitly forming the inverse. Give two reasons this is wrong practice.",
+      a: "(1) Before essential BCs, $\\mathbf{K}$ is singular — its null space holds the rigid-body modes, so no inverse exists. (2) Even after constraining, the explicit inverse of a sparse matrix is dense: you factorize (sparse Cholesky) or iterate (preconditioned CG), never destroy the sparsity assembly created."
+    },
+    {
+      q: "What does 'isoparametric' mean, and what must $\\det\\mathbf{J}$ satisfy for the element to be valid?",
+      a: "The same shape functions interpolate geometry, $\\mathbf{x}(\\boldsymbol{\\xi}) = \\sum N_a \\mathbf{x}_a$, and displacement. Validity requires $\\det\\mathbf{J} > 0$ everywhere in the element (interior angles $< 180°$, no collapsed or inverted nodes) — and near-zero $\\det\\mathbf{J}$ destroys accuracy before it destroys invertibility."
+    },
+    {
+      q: "In what precise sense is the Galerkin FE solution 'optimal' — and why does that make locking worse, not better?",
+      a: "Galerkin orthogonality $a(\\mathbf{u}-\\mathbf{u}_h, \\mathbf{w}_h)=0$ makes $\\mathbf{u}_h$ the projection of the exact solution in the energy inner product: the best approximation in the energy norm within $\\mathcal{V}_h$. So a locked answer is not a solver bug — it is the honest energy-optimal element of a badly over-constrained subspace. The fix is a better space, not a better solver."
+    },
+    {
+      q: "In the observation-model framing $y = \\mathcal{H}(u, p, f, X_0) + b + \\eta$, what exactly does the forward FEM contribute?",
+      a: "The forward operator inside $\\mathcal{H}$: given material $p$, loads $f$ and BCs, solve $\\mathbf{K}\\mathbf{U} = \\mathbf{F}$ for the state, then apply an output operator (rows of $\\mathbf{B}$ at sensor sites, probe entries of $\\mathbf{U}$, reactions) to predict measurements. Inverse methods keep this machinery and swap which arguments are unknown."
+    }
+  ]);
+</script>
+
+</body>
+</html>

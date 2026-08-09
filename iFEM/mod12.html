@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>12. Digital Twins &amp; Frontiers — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">12. Digital Twins &amp; Frontiers</h1>
+    <p class="page-subtitle">structural digital twins, real-time iFEM shape &amp; stress reconstruction, marine/aerospace/wind deployments, soft-robot proprioception, nonlinear &amp; UQ frontiers</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#from-monitoring-to-mirroring">1. From Monitoring to Mirroring: What a Structural Digital Twin Is</a>
+      <a href="#ifem-recap-the-engine">2. The Engine Recap: iFEM in Five Equations</a>
+      <a href="#real-time-by-construction">3. Real-Time by Construction</a>
+      <a href="#stress-recovery-and-damage-indices">4. The Payoff Is Stress: Recovery and Damage Indices</a>
+      <a href="#aerospace-wings">5. Aerospace: Wing Shape Sensing and the Three-Method Shootout</a>
+      <a href="#marine-and-offshore">6. Marine and Offshore: Hull Girders to Ship Twins</a>
+      <a href="#wind-energy-blades">7. Wind Energy: Shape Sensing a 61.5&nbsp;m Composite Blade</a>
+      <a href="#composites-and-stiffened-structures">8. Composites and Stiffened Structures: When FSDT Isn't Enough</a>
+      <a href="#soft-bodies-tactile-and-biomech">9. Frontier: Soft Bodies, Tactile Skins, and Biomechanical Twins</a>
+      <a href="#open-problems-2026">10. Open Problems, 2026 Edition</a>
+      <a href="#build-your-own-twin">11. Practice: Build Your Own Lab-Scale Twin</a>
+      <a class="toc-interactive" href="#twin-simulator">Interactive: "Is It Really a Twin?" Simulator</a>
+      <a class="toc-interactive" href="#budget-explorer">Interactive: Real-Time Budget Explorer</a>
+      <a class="toc-interactive" href="#twin-walkthrough">Interactive: Walkthrough &mdash; Commissioning a Lab-Scale Twin</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1 ===== -->
+    <h2 class="section-heading" id="from-monitoring-to-mirroring">1. From Monitoring to Mirroring: What a Structural Digital Twin Is</h2>
+
+    <p>Everything in this guide converges here. Module 3 gave you the observation model; Modules 4&ndash;6 built the iFEM shape-sensing engine, its elements, and its sensors; Modules 7&ndash;9 mapped the sibling inverse families; Modules 10&ndash;11 supplied the computational and learning machinery. This capstone module assembles the pieces into the thing an operator actually buys: a <strong>structural digital twin</strong> &mdash; and then walks the 2023&ndash;2026 literature to see where the assembly holds, where it is still simulation, and where it breaks.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given a <em>stream</em> of sparse strain measurements from a structure in service, maintain a continuously synchronized estimate of its full mechanical state &mdash; displacement, strain, and stress fields everywhere &mdash; with enough validation, uncertainty awareness, and data-quality guarding that decisions (inspect, derate, alarm, control) can be taken on it.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; structural digital twin</div>
+      <div>A virtual replica of a physical asset whose mechanical state (displacement, strain, stress fields) is continuously synchronized to sensor data from the real structure. The defining property is not the 3D model but the <em>closed loop</em>: synchronization to sensor data, guards on the health of that data, quantified uncertainty, independent validation, and a decision that feeds back. Synchronization alone is necessary but not sufficient &mdash; it is rung 1 of the ladder below, and the word "twin" is worth reserving for rung 3. (The literature has no single agreed definition; the ladder used on this page is the maturity taxonomy this guide declares, in the spirit of Kritzinger et al.'s model/shadow/twin integration levels.) A beautiful FE model that never sees sensor data is a model, not a twin.</div>
+    </div>
+
+    <h3 class="subsection-heading">Two Twin Architectures</h3>
+    <p>There are two ways to keep a mechanical model synchronized to measurements, and they have very different price tags:</p>
+
+    <table>
+      <tr><th></th><th>(1) Model-updating twin</th><th>(2) State-reconstruction twin</th></tr>
+      <tr><td><strong>Per update</strong></td><td>Iteratively recalibrate a forward FE model's loads/parameters until predicted sensor readings match measurements</td><td>Invert the sensor data directly into the full mechanical state, once per time step</td></tr>
+      <tr><td><strong>Cost</strong></td><td>Repeated forward solves inside an optimization loop</td><td>One linear solve (with iFEM: two triangular substitutions, &sect;3)</td></tr>
+      <tr><td><strong>Needs</strong></td><td>Load model, material constants, convergence</td><td>Neither loads nor elastic constants for the displacement field</td></tr>
+      <tr><td><strong>Family</strong></td><td>Parameter identification running online (Module 7's world)</td><td>Shape sensing running online (Module 4's world)</td></tr>
+    </table>
+
+    <p><strong>iFEM is the canonical engine for type (2)</strong> &mdash; and this module is mostly about type (2), with the honest caveat that a long-lived twin eventually needs a slow type-(1) loop running beside it (ageing changes the parameters; &sect;10). These are the two distinct inverse families of Modules 4 and 7 running at different rates, not one method.</p>
+
+    <h3 class="subsection-heading">The Sensing Gap</h3>
+    <p>Why strain-driven state reconstruction at all? Because of an asymmetry in what is measurable in service. You <em>cannot</em> measure displacement or stress densely on a ship hull or a wing in operation &mdash; there is no reference frame hovering next to a hull at sea, and stress is not directly measurable at all. But you <em>can</em> measure strain densely and cheaply: foil rosettes give pointwise surface strain, and a single optical fiber with fiber Bragg gratings (FBGs) yields hundreds of strain channels along its length (Module 6). iFEM closes the gap: sparse discrete strains in, full-field displacement out, then strain and stress everywhere by post-processing (&sect;4).</p>
+
+    <h3 class="subsection-heading">The Twin Ladder</h3>
+    <p>"Digital twin" is the most inflated term in structural monitoring, so this module uses a ladder and insists on rung labels. The application papers below motivate the pipeline stages; none of them <em>defines</em> what a twin is &mdash; the ladder does:</p>
+
+    <table>
+      <tr><th>Rung</th><th>Name</th><th>What it has</th><th>What it lacks</th></tr>
+      <tr><td>0</td><td><strong>Model</strong></td><td>A forward FE model of the asset</td><td>Any live connection to sensor data</td></tr>
+      <tr><td>1</td><td><strong>Digital shadow</strong></td><td>Live sensor stream &rarr; reconstructed state &rarr; visualization; the mirror follows the asset</td><td>Decision feedback: it watches, it does not act</td></tr>
+      <tr><td>2</td><td><strong>Data-driven twin</strong></td><td>Shadow + decisions taken on the reconstructed state (alarms, fatigue ledger, control feedback)</td><td>Independent validation and uncertainty &mdash; you are acting on unverified numbers</td></tr>
+      <tr><td>3</td><td><strong>Operational / synchronized twin</strong></td><td>All of the above + synchronized acquisition, data-quality guards (drift, dropout), an independent validation channel, and stated uncertainty</td><td>Nothing by definition &mdash; but very few published systems sit here</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; live visualization is not a twin</div>
+      <div>A VR rendering of a reconstructed deformation field is spectacular and sits on <em>rung 1</em>. Without synchronized updating (are all channels sampled at the same instant?), uncertainty (how wrong can the field be?), independent validation (does anything besides the input strains confirm it?), and decision feedback (does anyone act on it?), it is a shadow. The "Is It Really a Twin?" simulator after &sect;4 makes you earn each rung &mdash; and shows how injected sensor pathologies silently demote you.</div>
+    </div>
+
+    <h3 class="subsection-heading">2024&ndash;2025: The Pipeline Becomes Real</h3>
+    <p>A concrete instance to anchor the intuition: Wei, Li, Jiang &amp; Wang (JMSE 2024) built a real-time digital twin of a ship structure's deformation field &mdash; iFEM reconstruction coupled to virtual-reality visualization, with an integrated pipeline the authors describe as <em>measurement, reconstruction, analysis, expression, storage, rendering, and interaction</em> (abstract wording). And the experimental corpus is now large enough to review: Esposito, Sorrenti, Biscotti &amp; Gherlone (IWSHM 2025) survey real-time experimental iFEM applications in aerospace engineering &mdash; evidence that this has moved from simulation papers to instrumented hardware, though the review's scope is aerospace, and for each named result in this module you should keep asking which evidence class it belongs to (&sect;8 closes the tour with exactly that table).</p>
+
+    <p>What the twin buys the operator, concretely:</p>
+    <ul>
+      <li><strong>Continuous stress fields</strong> for fatigue-life accounting &mdash; a running ledger instead of periodic inspection (&sect;4).</li>
+      <li><strong>Anomaly and damage localization</strong> against a healthy baseline (&sect;4 &mdash; with sharp caveats).</li>
+      <li><strong>Deformation feedback for control</strong> &mdash; pitch adjustment, load alleviation (&sect;5, &sect;7).</li>
+      <li><strong>Validation data for the design model</strong> &mdash; the twin's reconstructions confront the forward model with reality.</li>
+    </ul>
+
+    <div class="definition-box">
+      <div class="box-label">The observation model, read for a state-reconstruction twin</div>
+      <div>
+        $$\mathbf{y} = \mathcal{H}(\mathbf{u},\, \mathbf{p},\, \mathbf{f},\, \mathbf{X}_0) + \mathbf{b} + \boldsymbol{\eta}$$
+        <table style="margin:10px 0 0;">
+          <tr><th>Slot</th><th>In this module</th></tr>
+          <tr><td>Measured $\mathbf{y}$</td><td>A <em>stream</em> of sparse strain channels (rosettes, FBG lines), tick after tick</td></tr>
+          <tr><td>Unknown</td><td>Fast loop: the state $\mathbf{u}_t$, re-estimated every tick. Slow loop: parameters $\mathbf{p}$ (stiffness ageing, damage) &mdash; a <em>different estimator</em> (&sect;9&ndash;10)</td></tr>
+          <tr><td>Assumed known</td><td>Geometry $\mathbf{X}_0$, kinematic theory, sensor positions and calibration, weights, pose anchors &mdash; loads $\mathbf{f}$ and elastic constants deliberately <em>not</em> needed for $\mathbf{u}_t$</td></tr>
+          <tr><td>Systematics $\mathbf{b}$</td><td>Sensor drift, thermal strain, clock skew between channels &mdash; the twin-killers of &sect;10</td></tr>
+          <tr><td>Unobservable</td><td>Rigid-body pose (strain is blind to it; anchors required); membrane-vs-curvature split under single-sided sensing (&sect;2, &sect;6)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 360" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <defs><marker id="dtl-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+        <marker id="dtl-m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b39ddb"/></marker></defs>
+        <g font-family="sans-serif">
+        <!-- offline branch (muted) -->
+        <rect x="120" y="14" width="460" height="44" rx="6" fill="#f7f4fb" stroke="#b39ddb" stroke-dasharray="4,3"/>
+        <text x="350" y="32" font-size="11.5" text-anchor="middle" fill="#7b6a95" font-weight="600">OFFLINE, ONCE AT COMMISSIONING</text>
+        <text x="350" y="48" font-size="10.5" text-anchor="middle" fill="#8a7ba5">mesh + sensor layout + BCs &rarr; assemble K &rarr; factorize K = LL&#7488; &rarr; record baseline</text>
+        <line x1="350" y1="58" x2="350" y2="150" stroke="#b39ddb" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#dtl-m)"/>
+        <!-- asset -->
+        <rect x="14" y="120" width="140" height="90" rx="6" fill="#f5f7fa" stroke="#666"/>
+        <text x="84" y="140" font-size="12" font-weight="600" text-anchor="middle" fill="#333">Physical asset</text>
+        <path d="M30,178 C50,158 110,158 140,172 L140,192 C110,180 55,180 30,196 Z" fill="#dde6ee" stroke="#667"/>
+        <circle cx="48" cy="172" r="3" fill="#7b1fa2"/><circle cx="72" cy="166" r="3" fill="#7b1fa2"/><circle cx="98" cy="164" r="3" fill="#7b1fa2"/><circle cx="122" cy="168" r="3" fill="#7b1fa2"/>
+        <text x="84" y="206" font-size="9.5" text-anchor="middle" fill="#777">hull with sensor stations</text>
+        <!-- conditioning -->
+        <line x1="154" y1="160" x2="196" y2="160" stroke="#555" stroke-width="1.5" marker-end="url(#dtl-a)"/>
+        <text x="175" y="150" font-size="9" text-anchor="middle" fill="#666">strain channels</text>
+        <rect x="198" y="130" width="112" height="60" rx="6" fill="#fff" stroke="#888"/>
+        <text x="254" y="150" font-size="11" font-weight="600" text-anchor="middle" fill="#333">Conditioning</text>
+        <text x="254" y="164" font-size="9.5" text-anchor="middle" fill="#666">temp compensation,</text>
+        <text x="254" y="176" font-size="9.5" text-anchor="middle" fill="#666">sync, zeroing</text>
+        <!-- solve -->
+        <line x1="310" y1="160" x2="336" y2="160" stroke="#555" stroke-width="1.5" marker-end="url(#dtl-a)"/>
+        <rect x="338" y="126" width="118" height="68" rx="6" fill="#f7f0fb" stroke="#7b1fa2" stroke-width="1.8"/>
+        <text x="397" y="148" font-size="11.5" font-weight="700" text-anchor="middle" fill="#7b1fa2">iFEM solve</text>
+        <text x="397" y="166" font-size="11" text-anchor="middle" fill="#4a3d5c">K U = F(&epsilon;)</text>
+        <text x="397" y="182" font-size="9" text-anchor="middle" fill="#8a7ba5">two triangular solves / tick</text>
+        <!-- state -->
+        <line x1="456" y1="160" x2="482" y2="160" stroke="#555" stroke-width="1.5" marker-end="url(#dtl-a)"/>
+        <rect x="484" y="130" width="120" height="60" rx="6" fill="#fff" stroke="#888"/>
+        <text x="544" y="150" font-size="11" font-weight="600" text-anchor="middle" fill="#333">Full-field state</text>
+        <text x="544" y="164" font-size="9.5" text-anchor="middle" fill="#666">displacement, strain,</text>
+        <text x="544" y="176" font-size="9.5" text-anchor="middle" fill="#666">stress everywhere</text>
+        <!-- decision -->
+        <line x1="544" y1="190" x2="544" y2="228" stroke="#555" stroke-width="1.5" marker-end="url(#dtl-a)"/>
+        <rect x="410" y="230" width="270" height="66" rx="6" fill="#fffaf2" stroke="#e67e22"/>
+        <text x="545" y="250" font-size="11" font-weight="600" text-anchor="middle" fill="#b35c00">Decision &amp; visualization</text>
+        <text x="545" y="266" font-size="9.5" text-anchor="middle" fill="#8a6d3b">fatigue ledger &middot; damage index D&#7522; &middot; VR rendering</text>
+        <text x="545" y="280" font-size="9.5" text-anchor="middle" fill="#8a6d3b">control feedback &middot; operator queries</text>
+        <!-- feedback -->
+        <path d="M410,268 L84,268 L84,214" stroke="#555" stroke-width="1.5" fill="none" marker-end="url(#dtl-a)"/>
+        <text x="240" y="284" font-size="9.5" text-anchor="middle" fill="#666">inspection, load alleviation &mdash; the loop closes on the asset</text>
+        <text x="350" y="330" font-size="10" text-anchor="middle" fill="#999">rung 1 stops at "Full-field state" + rendering &middot; rung 2 adds the decision box &middot; rung 3 adds guards + validation on every arrow</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The digital-twin loop. Online (solid): strain channels &rarr; conditioning &rarr; iFEM solve &rarr; full-field state &rarr; decisions, feeding back to the asset &mdash; the stages Wei et al. (2024) name measurement, reconstruction, analysis, expression, storage, rendering, interaction. Offline (dashed, top): the once-per-commissioning branch that makes the online loop cheap (&sect;3).</div>
+    </div>
+
+    <p><strong>Module map.</strong> &sect;2 recaps the engine in five equations; &sect;3 proves the real-time property; &sect;4 delivers the stress and damage payoff and hands you the twin simulator; &sect;5&ndash;8 tour the deployments (aerospace, marine, wind, composites) with their evidence classes; &sect;9 crosses into soft and biological bodies; &sect;10 states the open problems that define 2026 research; &sect;11 is the capstone recipe: build your own lab-scale twin.</p>
+
+    <!-- ===== SECTION 2 ===== -->
+    <h2 class="section-heading" id="ifem-recap-the-engine">2. The Engine Recap: iFEM in Five Equations</h2>
+
+    <p>This is the condensed, formal statement of the machine everything else in this module runs on. The full derivation lives in Modules 4&ndash;5; the general eight-component section-strain machinery and rosette transforms live in Module 5; instrumentation lives in Module 6. Here: five equations and three properties.</p>
+
+    <p><strong>Kinematics.</strong> First-order shear-deformable (Mindlin) plate/shell theory with nodal DOFs $u, v, w, \theta_x, \theta_y$. The iQS4 inverse element (Kefal, Oterkus, Tessler &amp; Spangler 2016) adds the drilling rotation $\theta_z$, giving a 4-node quadrilateral with 6 DOF/node usable on general built-up shell structures &mdash; which is why it shows up in every ship-scale study below. Section strains are three groups, each a <em>linear</em> operator on element DOFs: membrane $\mathbf{e}(\mathbf{u}) = \mathbf{B}_m \mathbf{u}^e$ (3 components), bending curvatures $\boldsymbol{\kappa}(\mathbf{u}) = \mathbf{B}_b \mathbf{u}^e$ (3), transverse shear $\boldsymbol{\gamma}(\mathbf{u}) = \mathbf{B}_s \mathbf{u}^e$ (2).</p>
+
+    <p><strong>Equation 1 &mdash; the functional.</strong> A weighted least-squares mismatch between analytic and measured section strains, summed over elements (Tessler &amp; Spangler 2005):</p>
+
+    <div class="math-block">$$\Phi(\mathbf{u}) = \sum_{e=1}^{N_e}\Big( w_m\,\lVert \mathbf{e}(\mathbf{u}^e) - \mathbf{e}^{\varepsilon} \rVert^2 + w_b\,\lVert \boldsymbol{\kappa}(\mathbf{u}^e) - \boldsymbol{\kappa}^{\varepsilon} \rVert^2 + w_s\,\lVert \boldsymbol{\gamma}(\mathbf{u}^e) - \boldsymbol{\gamma}^{\varepsilon} \rVert^2 \Big)$$</div>
+
+    <p><strong>Equations 2&ndash;3 &mdash; the norms.</strong> Area-normalized discrete sums over the $n$ sensor stations of the element; in the canonical iQS4 statement the bending-curvature norm carries an additional $(2h)^2$ factor for dimensional consistency (Kefal et al. 2016, Eq. 8c):</p>
+
+    <div class="math-block">$$\lVert \mathbf{e}(\mathbf{u}^e)-\mathbf{e}^{\varepsilon}\rVert^2 = \frac{A_e}{n}\sum_{i=1}^{n} \big[\mathbf{e}(\mathbf{x}_i)-\mathbf{e}^{\varepsilon}_i\big]^{\mathsf T}\big[\mathbf{e}(\mathbf{x}_i)-\mathbf{e}^{\varepsilon}_i\big]$$</div>
+
+    <div class="math-block">$$\lVert \boldsymbol{\kappa}(\mathbf{u}^e)-\boldsymbol{\kappa}^{\varepsilon}\rVert^2 = \frac{(2h)^2 A_e}{n}\sum_{i=1}^{n} \big[\boldsymbol{\kappa}(\mathbf{x}_i)-\boldsymbol{\kappa}^{\varepsilon}_i\big]^{\mathsf T}\big[\boldsymbol{\kappa}(\mathbf{x}_i)-\boldsymbol{\kappa}^{\varepsilon}_i\big]$$</div>
+
+    <p><strong>Equation 4 &mdash; where the data comes from.</strong> Surface gauges on a plate of thickness $2h$: strains $\boldsymbol{\varepsilon}^{+}$ at $z=+h$ and $\boldsymbol{\varepsilon}^{-}$ at $z=-h$ give membrane strain as the mean and curvature as the difference over $2h$:</p>
+
+    <div class="math-block">$$\mathbf{e}^{\varepsilon}_i = \tfrac{1}{2}\big(\boldsymbol{\varepsilon}^{+}_i + \boldsymbol{\varepsilon}^{-}_i\big), \qquad \boldsymbol{\kappa}^{\varepsilon}_i = \tfrac{1}{2h}\big(\boldsymbol{\varepsilon}^{+}_i - \boldsymbol{\varepsilon}^{-}_i\big)$$</div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 250" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <g font-family="sans-serif">
+        <!-- left: two-sided -->
+        <text x="170" y="24" font-size="12" font-weight="600" text-anchor="middle" fill="#333">Two-sided sensing</text>
+        <rect x="40" y="80" width="260" height="70" fill="#eef2f7" stroke="#667"/>
+        <line x1="40" y1="115" x2="300" y2="115" stroke="#999" stroke-dasharray="6,4"/>
+        <text x="308" y="119" font-size="10" fill="#888">midplane</text>
+        <path d="M60,70 h40 v10 h-40 z" fill="#7b1fa2"/><text x="80" y="64" font-size="11" text-anchor="middle" fill="#7b1fa2" font-weight="600">&epsilon;&#8314; at z = +h</text>
+        <path d="M60,150 h40 v10 h-40 z" fill="#7b1fa2"/><text x="80" y="176" font-size="11" text-anchor="middle" fill="#7b1fa2" font-weight="600">&epsilon;&#8315; at z = &minus;h</text>
+        <line x1="320" y1="80" x2="320" y2="150" stroke="#555" stroke-width="1"/>
+        <line x1="315" y1="80" x2="325" y2="80" stroke="#555"/><line x1="315" y1="150" x2="325" y2="150" stroke="#555"/>
+        <text x="330" y="119" font-size="10.5" fill="#555">2h</text>
+        <rect x="130" y="92" width="160" height="46" rx="4" fill="#fff" stroke="#7b1fa2"/>
+        <text x="210" y="110" font-size="11" text-anchor="middle" fill="#333">e = (&epsilon;&#8314; + &epsilon;&#8315;)/2</text>
+        <text x="210" y="128" font-size="11" text-anchor="middle" fill="#333">&kappa; = (&epsilon;&#8314; &minus; &epsilon;&#8315;)/(2h)</text>
+        <!-- right: single-sided -->
+        <text x="530" y="24" font-size="12" font-weight="600" text-anchor="middle" fill="#333">Single-sided sensing (ship hulls)</text>
+        <rect x="410" y="80" width="240" height="70" fill="#eef2f7" stroke="#667"/>
+        <line x1="410" y1="115" x2="650" y2="115" stroke="#999" stroke-dasharray="6,4"/>
+        <path d="M430,70 h40 v10 h-40 z" fill="#7b1fa2"/><text x="450" y="64" font-size="11" text-anchor="middle" fill="#7b1fa2" font-weight="600">&epsilon;&#8314; only</text>
+        <path d="M430,150 h40 v10 h-40 z" fill="#ddd" stroke="#bbb"/><text x="450" y="176" font-size="12" text-anchor="middle" fill="#c62828" font-weight="700">?</text>
+        <text x="483" y="176" font-size="9.5" fill="#999">outer shell is wetted</text>
+        <text x="530" y="106" font-size="10" text-anchor="middle" fill="#c62828" font-weight="600">e and &kappa; not separable</text>
+        <text x="530" y="120" font-size="10" text-anchor="middle" fill="#c62828">without an extra assumption</text>
+        <text x="530" y="136" font-size="9.5" text-anchor="middle" fill="#8a6d3b">document the assumption you choose</text>
+        <!-- bottom note -->
+        <text x="350" y="222" font-size="10.5" text-anchor="middle" fill="#8a6d3b">&#9888; the 1/(2h) division amplifies noise for thin skins: &kappa; is a small difference of noisy signals over a small thickness</text>
+        </g>
+      </svg>
+      <div class="figure-caption">Surface strains to section strains at one station. Left: a top/bottom pair separates membrane strain (mean) from curvature (difference over $2h$). Right: single-sided sensing &mdash; the common case on ship hulls, where the outer surface is under water &mdash; cannot separate the two without a documented assumption (&sect;6). Module 5 owns the general eight-component machinery; this plate-level pair is all &sect;2 needs.</div>
+    </div>
+
+    <p><strong>Weights.</strong> Components with sensor data get weight 1; elements or components without data get a small penalty weight $\lambda$ &mdash; typically quoted on the order of $10^{-4}$ to $10^{-5}$ in the iFEM literature ("small, e.g., $10^{-4}$" in Kefal et al. 2016). This is Tikhonov-style regularization: it keeps the assembled matrix nonsingular and lets sensorless regions interpolate smoothly. It is <em>not</em> a free tuning knob &mdash; giving <em>full</em> weight to a sensorless component instead forces its section strains toward zero, an overstiff, biased reconstruction (Module 4's functional lab lets you feel this; Module 6 owns the weighted-iFEM machinery).</p>
+
+    <p><strong>Equation 5 &mdash; the solve.</strong> Minimizing $\Phi$ with respect to the nodal DOFs gives a linear, symmetric system, positive definite once boundary conditions anchor the rigid modes:</p>
+
+    <div class="math-block">$$\frac{\partial \Phi}{\partial \mathbf{U}} = \mathbf{0} \;\;\Longrightarrow\;\; \mathbf{K}\,\mathbf{U} = \mathbf{F}(\boldsymbol{\varepsilon}^{\text{meas}})$$</div>
+
+    <h3 class="subsection-heading">The Three Properties That Make It a Twin Engine</h3>
+    <ol>
+      <li><strong>No applied loads required.</strong> Wave slamming, gusts, thermal gradients &mdash; the measured strains already contain the structure's response; no $\mathbf{F}(\text{loads})$ appears anywhere.</li>
+      <li><strong>No elastic constants required for displacement.</strong> The matching is purely kinematic. Material enters only later, at stress recovery (&sect;4) &mdash; which is also exactly where material errors start to matter, and not before.</li>
+      <li><strong>$\mathbf{K}$ depends only on mesh, sensor positions, and weights &mdash; not on the data.</strong> It is fixed for the life of the deployment. This third property is the entire subject of &sect;3.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the claim's exact boundary</div>
+      <div>"Load-free and material-free" applies to the <em>displacement reconstruction only</em>. Geometry (including thickness $2h$), the kinematic theory, calibrated strains at known positions, weights, mesh, and pose anchors all remain necessary inputs &mdash; and stress recovery re-imports a constitutive law. Module 4 polices this boundary in detail; every application section below leans on it.</div>
+    </div>
+
+    <!-- ===== SECTION 3 ===== -->
+    <h2 class="section-heading" id="real-time-by-construction">3. Real-Time by Construction</h2>
+
+    <p>The property that makes iFEM <em>the</em> digital-twin engine rather than merely another inverse method: <strong>the left-hand side changes only when the setup does</strong>. Because $\mathbf{K}$ encodes only mesh + sensor layout + weights, you factorize it once, offline, at commissioning:</p>
+
+    <div class="math-block">$$\mathbf{K} = \mathbf{L}\mathbf{L}^{\mathsf T} \quad \text{(once, offline)}$$</div>
+
+    <p>Every subsequent twin update is: read the strain vector, assemble $\mathbf{F}$, then one forward and one back substitution:</p>
+
+    <div class="math-block">$$\mathbf{U}_t = \mathbf{L}^{-\mathsf T}\big(\mathbf{L}^{-1}\mathbf{F}_t\big) \quad \text{(each tick, } O(\mathrm{nnz}(\mathbf{L}))\text{)}$$</div>
+
+    <p>And $\mathbf{F}$ is <em>linear</em> in the measured strains &mdash; each instrumented element contributes $\mathbf{B}^{\mathsf T}\mathbf{W}$ terms times its strain readings, gathered by the element assembly operator $\mathbf{T}_e$:</p>
+
+    <div class="math-block">$$\mathbf{F}_t = \sum_{e\,\in\,\text{instrumented}} \mathbf{T}_e^{\mathsf T}\Big( w_m \mathbf{B}_m^{\mathsf T}\mathbf{e}^{\varepsilon}_t + w_b \mathbf{B}_b^{\mathsf T}\boldsymbol{\kappa}^{\varepsilon}_t \Big)_e$$</div>
+
+    <p>Cost per tick is $O(\mathrm{nnz}(\mathbf{L}))$ &mdash; for shell meshes with $10^3$&ndash;$10^5$ DOF this is microseconds to milliseconds on commodity hardware. <em>Synthesis, not a cited benchmark:</em> in practice the strain interrogator's sample rate and network latency bound the twin's update rate, not the solve. The grounded claims are that real-time experimental deployments exist &mdash; Esposito et al.'s IWSHM 2025 paper is literally titled "Real-Time Structural Monitoring Using the Inverse Finite Element Method: A Review of Experimental Applications in Aerospace Engineering", and Wei et al. (2024) demonstrate a real-time ship deformation-field twin.</p>
+
+    <h3 class="subsection-heading">Against the Alternatives</h3>
+    <table>
+      <tr><th>Approach</th><th>Per-tick cost</th><th>Hidden inputs</th></tr>
+      <tr><td><strong>Model-updating twin</strong></td><td>Re-solve a forward FEM inside an optimization loop, each step</td><td>Load model, material constants, convergence tolerance</td></tr>
+      <tr><td><strong>Load identification &rarr; forward solve</strong></td><td>Invert an ill-conditioned transfer matrix (Module 8's regularization problem), then a forward solve</td><td>Material constants; heavy regularization of the load</td></tr>
+      <tr><td><strong>Modal method</strong></td><td>Small least squares &mdash; also fast</td><td>The mode basis comes from a forward model: material + mass knowledge sneak back in (&sect;5)</td></tr>
+      <tr><td><strong>iFEM</strong></td><td>Two triangular solves</td><td>None beyond geometry, sensors, weights, anchors (&sect;2)</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">The Offline/Online Split, Explicitly</h3>
+    <ul>
+      <li><strong>Offline (commissioning):</strong> mesh, sensor placement, $\mathbf{K}$ assembly, boundary conditions, sparse Cholesky factorization, healthy-baseline recording.</li>
+      <li><strong>Online (every tick):</strong> read strains &rarr; assemble $\mathbf{F}_t$ &rarr; two triangular solves &rarr; stress recovery &rarr; render/log. This is Wei et al. (2024)'s pipeline &mdash; measurement, reconstruction, analysis, expression, storage, rendering, interaction &mdash; with the expensive linear algebra permanently parked on the offline side.</li>
+    </ul>
+
+    <!-- ===== INTERACTIVE: REAL-TIME BUDGET EXPLORER ===== -->
+    <div class="interactive-container" id="budget-explorer">
+      <div class="interactive-label">Interactive Tool &mdash; Real-Time Budget Explorer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">One twin tick on a log-time axis: F assembly &rarr; triangular solves &rarr; stress recovery &rarr; render, against the sensor period $1/f_s$. Grow the model, crank the interrogator, and &mdash; the point of the whole widget &mdash; tick "naive re-factorize" to see what happens when you ignore the fixed-$\mathbf{K}$ property. Costs are representative scalings for 2D-shell sparsity ($c_f\, n^{1.5}$ factorize, $c_s\, n\, b$ solve), <em>not benchmarks</em>; the exponent gap is the lesson.</p>
+      <div class="slider-group">
+        <div class="slider-control">
+          <label><span>Model size $n_{\text{dof}}$</span> <span id="be-n-val">10,000</span></label>
+          <input type="range" id="be-n" min="2" max="6" step="0.1" value="4">
+        </div>
+        <div class="slider-control">
+          <label><span>Interrogator rate $f_s$ (Hz)</span> <span id="be-fs-val">100</span></label>
+          <input type="range" id="be-fs" min="0" max="3.7" step="0.1" value="2">
+        </div>
+        <div class="slider-control" style="min-width:130px;">
+          <label><span>Render budget</span> <span></span></label>
+          <select id="be-render" style="font-size:12px;padding:4px;width:100%;">
+            <option value="16">16 ms (60 fps)</option>
+            <option value="33">33 ms (30 fps)</option>
+            <option value="0">off</option>
+          </select>
+        </div>
+        <div style="min-width:220px;align-self:flex-end;">
+          <label style="font-size:12px;color:#c62828;cursor:pointer;font-weight:600;"><input type="checkbox" id="be-naive" style="vertical-align:-2px;"> naive: re-factorize K every tick<br><span style="font-size:10.5px;color:#999;font-weight:400;">(what NOT to do)</span></label>
+        </div>
+      </div>
+      <svg id="be-svg" viewBox="0 0 700 300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;"></svg>
+      <div id="be-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 4 ===== -->
+    <h2 class="section-heading" id="stress-recovery-and-damage-indices">4. The Payoff Is Stress: Recovery and Damage Indices</h2>
+
+    <p>Shape is the headline; operators buy twins for stress and damage. Once $\mathbf{U}$ is known, section strains follow <em>anywhere on the structure</em> &mdash; not just at sensors &mdash; via the element operators: $\mathbf{e}(\mathbf{x}) = \mathbf{B}_m \mathbf{u}^e$, $\boldsymbol{\kappa}(\mathbf{x}) = \mathbf{B}_b \mathbf{u}^e$. Through-thickness in-plane strain at height $z$, and &mdash; now, and only now &mdash; the material entering through the plane-stress constitutive law:</p>
+
+    <div class="math-block">$$\boldsymbol{\varepsilon}(\mathbf{x},z) = \mathbf{e}(\mathbf{x}) + z\,\boldsymbol{\kappa}(\mathbf{x}), \qquad \boldsymbol{\sigma}(\mathbf{x},z) = \mathbf{C}(z)\,\boldsymbol{\varepsilon}(\mathbf{x},z)$$</div>
+
+    <p>with $\mathbf{C}(z)$ piecewise per lamina for composites. For isotropic metallic structures, the plane-stress von Mises stress closes the fatigue-relevant chain:</p>
+
+    <div class="math-block">$$\sigma_{vM} = \sqrt{\sigma_x^2 - \sigma_x\sigma_y + \sigma_y^2 + 3\tau_{xy}^2}$$</div>
+
+    <p>This ordering is important pedagogy: <strong>iFEM displacement reconstruction is material-free; stress recovery is exactly as good as your constitutive knowledge.</strong> The founding marine application was framed this way from the start &mdash; Kefal &amp; Oterkus's 2016 Ocean Engineering paper is titled "Displacement and <em>stress</em> monitoring of a Panamax containership using inverse finite element method": both quantities, delivered from strain data alone plus a constitutive law for the second.</p>
+
+    <h3 class="subsection-heading">Damage Indices</h3>
+    <p>With a healthy-state baseline field recorded at commissioning, a localized anomaly in the reconstructed equivalent strain/stress field flags and locates damage. The generic relative-anomaly index &mdash; <em>a synthesis pattern distilled from the marine iFEM SHM literature, not a single canonical formula</em> &mdash; is:</p>
+
+    <div class="math-block">$$D_i = \frac{\varepsilon^{vM}_i - \varepsilon^{vM}_{i,\text{baseline}}}{\varepsilon^{vM}_{i,\text{baseline}}}$$</div>
+
+    <p>Three cautions to internalize immediately, because they are the difference between a damage index and a false-alarm generator:</p>
+    <ol>
+      <li><strong>Resolution.</strong> The index localizes only to the resolution of the inverse mesh and sensor density. A coarse iQS4 mesh with sparse sensors flags a <em>region</em>, not a crack tip.</li>
+      <li><strong>Drift is indistinguishable from damage.</strong> Anything that shifts sensor calibration &mdash; gauge drift, uncompensated temperature &mdash; shifts $D_i$ identically to real damage (&sect;10, front 4). Baseline management is part of the algorithm, not an implementation detail.</li>
+      <li><strong>Baseline validity.</strong> The comparison assumes unchanged boundary conditions and mass distribution. A shifted support or new equipment mass moves the whole field and poisons every $D_i$.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; shape reconstruction &ne; damage diagnosis</div>
+      <div>Reconstruction is kinematics: strains in, compatible displacement field out, no claims about health. Diagnosis stacks three <em>additional</em> commitments on top &mdash; a trusted baseline, a threshold, and (for stress-based indices) a constitutive law &mdash; and each is a place to be wrong that the reconstruction itself never was. When Bardiani, Faure Ragani, Manes, Sbarufatti &amp; Kefal (Ocean Engineering 2026) add machine-learning layers to iFEM for real-time damage detection and localization in ship structures, the learned classifier inherits training-distribution assumptions on top of all three &mdash; Module 11's warning applies verbatim: learned damage layers must not inherit iFEM's "material-free" halo.</div>
+    </div>
+
+    <!-- ===== MAIN INTERACTIVE: IS IT REALLY A TWIN? ===== -->
+    <div class="interactive-container" id="twin-simulator">
+      <div class="interactive-label">Interactive Tool &mdash; "Is It Really a Twin?" Simulator</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A cantilever under a slowly varying load, streamed through the full pipeline: acquisition &rarr; calibration &rarr; assimilation (iFEM, 3 inverse elements, 5 curvature-pair stations) &rarr; reconstruction &rarr; decision. Press play, then inject pathologies &mdash; clock skew, drift, dropout, a contact change, ageing &mdash; and watch two things: the reconstruction (which often stays plausible!) and the <strong>ladder verdict</strong>, which tells you what you are actually running. The panel keeps the honest ledger: measurements, unknowns, assumptions, rank/conditioning, validation.</p>
+
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
+        <button id="ts-play" style="border:1px solid #7b1fa2;color:#fff;background:#7b1fa2;padding:7px 18px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">&#9654; Stream</button>
+        <button id="ts-reset" style="border:1px solid #999;color:#555;background:none;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Reset</button>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Clock skew between channels (ms)</span> <span id="ts-skew-val">0</span></label>
+          <input type="range" id="ts-skew" min="0" max="300" step="10" value="0">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Drift on channel 1 (%/min)</span> <span id="ts-drift-val">0</span></label>
+          <input type="range" id="ts-drift" min="0" max="20" step="1" value="0">
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:#555;">
+        <label style="cursor:pointer;"><input type="checkbox" id="ts-drop" style="vertical-align:-2px;"> dropout: channel 3 dies (hold last value)</label>
+        <label style="cursor:pointer;"><input type="checkbox" id="ts-contact" style="vertical-align:-2px;"> contact change: prop appears at x = 0.55</label>
+        <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: stiffness decays slowly</label>
+        <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on $|D_i| &gt; 12\%$)</label>
+        <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-val" style="vertical-align:-2px;"> independent validation (laser at tip)</label>
+      </div>
+
+      <div id="ts-ladder" style="margin-bottom:10px;"></div>
+
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
+        <div style="flex:1 1 400px;min-width:300px;">
+          <svg id="ts-svg" viewBox="0 0 560 300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;"></svg>
+        </div>
+        <div id="ts-panel" style="flex:1 1 250px;min-width:250px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+      </div>
+      <div id="ts-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 5 ===== -->
+    <h2 class="section-heading" id="aerospace-wings">5. Aerospace: Wing Shape Sensing and the Three-Method Shootout</h2>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 260" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <g font-family="sans-serif">
+        <!-- panel 1: stiffened wing panel -->
+        <rect x="12" y="12" width="162" height="236" rx="6" fill="#fdfdfd" stroke="#ddd"/>
+        <rect x="30" y="34" width="126" height="80" fill="#eef2f7" stroke="#667"/>
+        <line x1="30" y1="60" x2="156" y2="60" stroke="#889" stroke-width="2.5"/>
+        <line x1="30" y1="88" x2="156" y2="88" stroke="#889" stroke-width="2.5"/>
+        <line x1="34" y1="56" x2="152" y2="56" stroke="#7b1fa2" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <line x1="34" y1="84" x2="152" y2="84" stroke="#7b1fa2" stroke-width="1.2" stroke-dasharray="3,2"/>
+        <circle cx="70" cy="46" r="3.5" fill="none" stroke="#7b1fa2" stroke-width="1.5"/>
+        <circle cx="120" cy="102" r="3.5" fill="none" stroke="#7b1fa2" stroke-width="1.5"/>
+        <text x="93" y="132" font-size="10" font-weight="600" text-anchor="middle" fill="#333">Stiffened wing panel</text>
+        <text x="93" y="146" font-size="8.8" text-anchor="middle" fill="#666">hybrid shell&ndash;beam iFEM,</text>
+        <text x="93" y="158" font-size="8.8" text-anchor="middle" fill="#666">experimental (Esposito et al. 2023)</text>
+        <text x="93" y="176" font-size="8.8" text-anchor="middle" fill="#7b1fa2">rosettes + fiber lines on stiffeners</text>
+        <text x="93" y="230" font-size="9" text-anchor="middle" fill="#888">reconstructs: shape, stress</text>
+        <!-- panel 2: containership -->
+        <rect x="184" y="12" width="162" height="236" rx="6" fill="#fdfdfd" stroke="#ddd"/>
+        <path d="M200,96 L216,72 L316,72 L332,96 L316,110 L216,110 Z" fill="#eef2f7" stroke="#667"/>
+        <g stroke="#7b1fa2" stroke-width="0.8" fill="none">
+          <line x1="216" y1="72" x2="216" y2="110"/><line x1="241" y1="72" x2="241" y2="110"/><line x1="266" y1="72" x2="266" y2="110"/><line x1="291" y1="72" x2="291" y2="110"/><line x1="316" y1="72" x2="316" y2="110"/>
+          <line x1="208" y1="84" x2="324" y2="84" /><line x1="206" y1="98" x2="326" y2="98"/>
+        </g>
+        <text x="265" y="132" font-size="10" font-weight="600" text-anchor="middle" fill="#333">Containership hull</text>
+        <text x="265" y="146" font-size="8.8" text-anchor="middle" fill="#666">displacement + stress monitoring</text>
+        <text x="265" y="158" font-size="8.8" text-anchor="middle" fill="#666">(Kefal &amp; Oterkus 2016);</text>
+        <text x="265" y="170" font-size="8.8" text-anchor="middle" fill="#666">real-time VR twin (Wei et al. 2024)</text>
+        <text x="265" y="230" font-size="9" text-anchor="middle" fill="#888">reconstructs: shape, stress, damage</text>
+        <!-- panel 3: wind turbine -->
+        <rect x="356" y="12" width="162" height="236" rx="6" fill="#fdfdfd" stroke="#ddd"/>
+        <line x1="437" y1="115" x2="437" y2="190" stroke="#889" stroke-width="4"/>
+        <line x1="437" y1="115" x2="437" y2="40" stroke="#7b1fa2" stroke-width="3.5"/>
+        <circle cx="437" cy="42" r="2.5" fill="#7b1fa2"/><circle cx="437" cy="62" r="2.5" fill="#7b1fa2"/><circle cx="437" cy="82" r="2.5" fill="#7b1fa2"/><circle cx="437" cy="100" r="2.5" fill="#7b1fa2"/>
+        <line x1="437" y1="115" x2="490" y2="150" stroke="#aab" stroke-width="3"/>
+        <line x1="437" y1="115" x2="384" y2="150" stroke="#aab" stroke-width="3"/>
+        <text x="437" y="206" font-size="10" font-weight="600" text-anchor="middle" fill="#333">NREL 5 MW blade</text>
+        <text x="437" y="219" font-size="8.8" text-anchor="middle" fill="#666">BEMT loads, full vs reduced</text>
+        <text x="437" y="230" font-size="8.8" text-anchor="middle" fill="#666">sensors (Li et al. 2023)</text>
+        <text x="437" y="243" font-size="9" text-anchor="middle" fill="#888">reconstructs: shape</text>
+        <!-- panel 4: soft finger -->
+        <rect x="528" y="12" width="160" height="236" rx="6" fill="#fdfdfd" stroke="#ddd"/>
+        <path d="M560,60 q50,-14 92,12 q8,26 -14,40 q-46,16 -78,-8 q-10,-24 0,-44 z" fill="#f3e8f8" stroke="#7b1fa2" stroke-width="1.5"/>
+        <rect x="580" y="70" width="16" height="10" rx="2" fill="#7b1fa2" opacity="0.65"/>
+        <rect x="612" y="82" width="16" height="10" rx="2" fill="#7b1fa2" opacity="0.65"/>
+        <circle cx="600" cy="100" r="7" fill="none" stroke="#8a6d3b" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <text x="608" y="122" font-size="8.5" fill="#8a6d3b">pressure chamber</text>
+        <text x="608" y="146" font-size="10" font-weight="600" text-anchor="middle" fill="#333">Soft robotic finger</text>
+        <text x="608" y="160" font-size="8.8" text-anchor="middle" fill="#666">FEM-based shape + force</text>
+        <text x="608" y="172" font-size="8.8" text-anchor="middle" fill="#666">estimation (Escaida Navarro</text>
+        <text x="608" y="184" font-size="8.8" text-anchor="middle" fill="#666">et al. 2020)</text>
+        <text x="608" y="230" font-size="9" text-anchor="middle" fill="#888">reconstructs: shape, contact</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The application map, 2023&ndash;2026: four domains, one engine idea, four different evidence classes. The tour of &sect;5&ndash;8 (and the frontier of &sect;9) visits each.</div>
+    </div>
+
+    <p>Aerospace is where shape sensing was born: morphing wings, load alleviation, and aeroelastic feedback all need real-time deflection. The field-defining reference is Gherlone, Cerracchio &amp; Mattone's 2018 Progress in Aerospace Sciences review, which both surveys shape-sensing methods and compares them <em>experimentally</em> on a wing-shaped plate. Module 4 derived the three families and their comparison box; here they reappear as what they are in deployment &mdash; a procurement decision. The one-line refresher:</p>
+
+    <table>
+      <tr><th>Family</th><th>Idea</th><th>Deployment profile</th></tr>
+      <tr><td><strong>Ko's displacement theory</strong></td><td>Integrate measured bending strain twice along beam-like lines</td><td>Minimal sensors; tailored to beam-like bending and specific load classes</td></tr>
+      <tr><td><strong>Modal method</strong></td><td>$\mathbf{u} \approx \boldsymbol{\Phi}\mathbf{q}$, modal coordinates from strain-mode least squares</td><td>Compact and fast &mdash; but the mode basis comes from a forward model, so material and mass knowledge sneak back in</td></tr>
+      <tr><td><strong>iFEM</strong></td><td>Least-squares compatibility matching (&sect;2)</td><td>Heavier instrumentation; no load model, no material constants, arbitrary BCs, full-field output including stress</td></tr>
+    </table>
+
+    <div class="math-block">$$\mathbf{u}(\mathbf{x},t) \approx \boldsymbol{\Phi}(\mathbf{x})\,\mathbf{q}(t), \qquad \mathbf{q}(t) = \big(\boldsymbol{\Psi}^{\mathsf T}\boldsymbol{\Psi}\big)^{-1}\boldsymbol{\Psi}^{\mathsf T}\,\boldsymbol{\varepsilon}^{\text{meas}}(t)$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the honest sales pitch</div>
+      <div>iFEM wins on <em>generality and full-field stress</em>, not on minimal sensor count. If your structure is genuinely a beam and you only need deflection, Ko's theory with a handful of gauges is the cheaper twin. The moment you need stress fields, unknown load classes, or arbitrary boundary conditions, the balance tips &mdash; that is the deployment logic behind every study below.</div>
+    </div>
+
+    <h3 class="subsection-heading">2023: The Hybrid Shell&ndash;Beam State of Practice</h3>
+    <p>Esposito, Roy, Surace &amp; Gherlone (Sensors 2023) introduce a hybrid shell&ndash;beam inverse discretization for stiffened thin-walled structures: stiffeners are modeled with inverse <em>beam</em> elements coupled to inverse <em>shell</em> elements for the skin. Quoting the abstract's claims, this enables "more accurate shape-sensing of geometrically complex structures using fewer sensor measurements and lower computational effort" &mdash; validated experimentally on a composite wing-shaped stiffened panel instrumented with strain rosettes and fiber-optic sensors under bending and torsion, with the authors explicitly positioning it as "an efficient digital twin for online structural monitoring and control".</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; element choice is a sensor-budget decision</div>
+      <div>Modeling every stringer with shell elements explodes both the DOF count <em>and the sensor demand</em>, because sensorless inverse elements lean on the $\lambda$-prior. The hybrid discretization is not (just) a numerics refinement &mdash; it is a way to need fewer instrumented elements for the same reconstruction quality. In inverse FEM, the mesh and the instrumentation plan are one design problem (&sect;11, step 2&ndash;3).</div>
+    </div>
+
+    <h3 class="subsection-heading">2024&ndash;2026: Scale and Twin Framing</h3>
+    <p>Two verified recent markers of where aerospace iFEM is heading. Dong, Yuan &amp; Huang (Composite Structures 2024) push scale: real-time shape sensing of <em>large-scale honeycomb antenna</em> structures with a displacement-gradient-based variable-size iFEM &mdash; element sizing adapted to the deformation field rather than uniform. And Chen et al. (Aerospace Science and Technology 2026, online 2025) target deformation digital-twin monitoring of thin-walled aircraft structures explicitly, coupling high-accuracy shape sensing with Bayesian inference and Gaussian-process modeling &mdash; one of the first aerospace papers to bolt an uncertainty layer (&sect;10, front 3) onto the twin pipeline rather than treating reconstruction as deterministic.</p>
+
+    <!-- ===== SECTION 6 ===== -->
+    <h2 class="section-heading" id="marine-and-offshore">6. Marine and Offshore: Hull Girders to Ship Twins</h2>
+
+    <p>Marine structures are the flagship large-scale iFEM domain, for a structural reason: <strong>wave loads are stochastic and poorly known in service</strong>, so a method that reconstructs state without load knowledge is exactly what a hull needs. Nobody has a trustworthy real-time model of the sea; the strains, however, are right there in the steel.</p>
+
+    <p><strong>The template study.</strong> Kefal &amp; Oterkus (Ocean Engineering 2016) modeled a full Panamax containership with iQS4 inverse shell elements and demonstrated displacement and stress monitoring of the hull under wave-induced loading &mdash; the template for ship-scale iFEM SHM. Be precise about what it was, though: a numerical study in which high-fidelity FEM <em>generated</em> the strains that iFEM then consumed. There was no instrumented hull in the loop, so it is a digital-twin-enabling state-reconstruction study rather than a twin. Full-field state, driven by strain data, load-blind. It is also, evidence-class-wise, a <em>numerical</em> study &mdash; keep that flag raised.</p>
+
+    <h3 class="subsection-heading">The Single-Sided Reality</h3>
+    <p>Hull instrumentation is usually single-sided: sensors go on the inner surface, because the outer shell is wetted. Recall &sect;2's extraction formulas &mdash; separating membrane strain $\mathbf{e}$ from curvature $\boldsymbol{\kappa}$ at a station <em>requires</em> both surfaces. With one surface you have one equation and two unknowns per component: an ill-posed split that must be closed by a through-thickness assumption (e.g., a known bending-to-membrane ratio for the load regime) or by additional sensors. Whatever you choose, document it; the assumption silently shapes every reconstructed field downstream.</p>
+
+    <h3 class="subsection-heading">The 2024&ndash;2026 Wave</h3>
+    <p>Wei, Li, Jiang &amp; Wang (JMSE 2024) close the loop into an operator-facing twin: real-time iFEM deformation-field reconstruction of a ship structure fused with virtual-reality rendering, data storage, and interaction (&sect;1, &sect;3). Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025) push into the regime linear iFEM cannot reach: a <em>nonlinear</em> inverse finite element method for large-deformation reconstruction of hull structures &mdash; the technical content belongs to &sect;10, but its existence marks that marine groups hit the linearity ceiling in practice, not in principle. And Bardiani et al. (Ocean Engineering 2026) layer machine learning on iFEM for real-time damage detection and localization in ship structures (&sect;4's caveats apply).</p>
+
+    <p><em>Synthesis &mdash; why classification societies care:</em> hull-girder bending moment limits, fatigue accumulation in stiffener details, and slamming events are all stress-field quantities a twin can log continuously &mdash; replacing sparse periodic inspection with condition-based maintenance. This is the economic argument for the whole enterprise; treat it as motivation, not as a cited result.</p>
+
+    <!-- ===== SECTION 7 ===== -->
+    <h2 class="section-heading" id="wind-energy-blades">7. Wind Energy: Shape Sensing a 61.5&nbsp;m Composite Blade</h2>
+
+    <p>Wind turbine blades are rotating, twisted, tapered composite cantilevers operating in turbulent inflow &mdash; a hostile case for any method needing load knowledge, hence a natural iFEM target. The core study: Li, Dirik, Oterkus &amp; Oterkus (Ocean Engineering 2023) performed shape sensing of a blade of the NREL 5&nbsp;MW reference offshore turbine using iFEM under realistic loading conditions.</p>
+
+    <p>The setup, verifiable from the paper's abstract, is the worked example for how to run a <em>numerical</em> twin experiment honestly:</p>
+    <ul>
+      <li>Aerodynamic forces computed with <strong>Blade Element Momentum Theory (BEMT)</strong> &mdash; these drive a reference forward FEM to produce the "truth" fields and the synthetic strains. The iFEM branch never sees the loads; only the forward branch does. That is the point of the exercise: the reconstruction must recover what the loads did without knowing them.</li>
+      <li>iFEM reconstructions with <strong>full sensor coverage and with reduced sensor sets</strong>, compared against the reference forward-FEM solution to quantify accuracy, with practical distributions of sensor-equipped elements explored &mdash; the empirical handle on the sensor-count question every deployment asks.</li>
+      <li><strong>Multiple wind velocities</strong> tested &mdash; necessary, because strain magnitude (hence signal-to-noise) scales with loading; a reconstruction error quoted at one wind speed is not a specification.</li>
+      <li>Conclusion, in the abstract's wording: iFEM is a suitable technique for shape sensing of offshore wind turbines.</li>
+    </ul>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; "error vs reference FEM" is not "error vs truth"</div>
+      <div>When the synthetic strains and the reference solution come from the <em>same</em> forward model, the comparison proves consistency, not accuracy &mdash; the <strong>inverse crime</strong> of Module 3. This is not a flaw specific to the blade study; it is the standard structure of every numerical validation in this field, blade-scale ones included. The stronger evidence class is experimental validation against an independent measurement (&sect;8's table, &sect;11 step 7).</div>
+    </div>
+
+    <p><em>Synthesis &mdash; the wind-specific twin payoffs:</em> per-blade deflection feedback for individual pitch control and tower-clearance margins, continuous fatigue-damage accumulation per blade section, and anomaly detection for erosion- or icing-induced load asymmetry. Motivation, not yet demonstrated capability.</p>
+
+    <p><strong>Do not overclaim deployment.</strong> The blade study is numerical; instrumented-blade field validation at multi-megawatt scale remains an open engineering effort. The 2026 direction is visible though: Hong et al. (Ocean Engineering 2026) integrate graph neural networks with iFEM for high-resolution shape sensing <em>and stress reconstruction</em> of offshore wind-turbine towers &mdash; a learning-enhanced twin in Module 11's sense, with that module's caveats (the learned component reintroduces training-distribution and constitutive assumptions that the bare iFEM core does not carry).</p>
+
+    <!-- ===== SECTION 8 ===== -->
+    <h2 class="section-heading" id="composites-and-stiffened-structures">8. Composites and Stiffened Structures: When FSDT Isn't Enough</h2>
+
+    <p>Two structural realities complicate iFEM beyond the isotropic thin shell: thick or sandwich laminates, and stiffened thin-walled construction.</p>
+
+    <h3 class="subsection-heading">Thick and Sandwich Laminates: Swap the Kinematics</h3>
+    <p>First-order shear-deformation kinematics &mdash; the basis of the standard inverse shell &mdash; cannot represent the <em>zigzag</em> distribution of in-plane displacement through the thickness of sandwich sections with soft cores. Both the reconstructed deformation and, especially, the recovered through-thickness stresses degrade. The fix with provenance: Cerracchio, Gherlone, Di&nbsp;Sciuva &amp; Tessler (Composite Structures 2015) reformulated iFEM on the <strong>Refined Zigzag Theory (RZT)</strong>, whose kinematics augment the FSDT field with zigzag amplitude DOFs, and demonstrated displacement <em>and stress</em> monitoring of sandwich structures within the same least-squares variational framework. Module 5 owns the RZT formulation; what matters here is the result and its structural lesson:</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the functional is kinematics-agnostic</div>
+      <div>The iFEM machinery &mdash; weighted least-squares matching, sensor-to-section-strain mapping, one linear solve &mdash; never asked <em>which</em> displacement theory generates the analytic section strains. Swap FSDT for RZT and everything in &sect;2&ndash;3 survives, zigzag DOFs and all. This is why iFEM keeps absorbing new element formulations (Module 5) without changing its identity: the variational statement is the invariant, the kinematics are a plug-in.</div>
+    </div>
+
+    <h3 class="subsection-heading">Stiffened Construction: the Hybrid Answer</h3>
+    <p>Modeling every stringer with shell elements explodes the DOF count and the sensor demand. The hybrid shell&ndash;beam discretization of Esposito et al. (2023) &mdash; inverse beams for stiffeners coupled to inverse shells for skin, &sect;5 &mdash; is the composite-panel answer, validated on a composite stiffened wing panel with rosettes and fiber optics, cutting both sensor count and compute.</p>
+
+    <h3 class="subsection-heading">Composite Sensing Practice</h3>
+    <p>Fiber-optic strain lines run naturally along spar caps and stiffener feet &mdash; the geometry of composite construction and the geometry of FBG sensing agree. <em>Synthesis &mdash; practical considerations, not cited results:</em> embedding FBGs between plies raises strain-transfer and spectral-distortion questions (Module 6 covers the observation-equation side); surface bonding after cure avoids them at the cost of measuring one surface only.</p>
+
+    <p>One diagnostic asymmetry is worth teaching explicitly: stress recovery is per-lamina via $\mathbf{C}(z)$, so <strong>layup documentation errors corrupt recovered stress while leaving displacement untouched</strong>. A twin whose displacement validation stays green while its stress ledger drifts is telling you to audit the constitutive inputs, not the sensors &mdash; the fast state loop and the slow parameter loop fail independently (&sect;1, &sect;10).</p>
+
+    <h3 class="subsection-heading">Closing the Tour: Which Evidence Class Is Each Result?</h3>
+    <p>The single most common overclaim in secondary literature on this field is flattening the simulation/experiment distinction. The tour's named results, sorted honestly (per the source abstracts):</p>
+
+    <table>
+      <tr><th>Result</th><th>Scale</th><th>Evidence class</th></tr>
+      <tr><td>Panamax containership monitoring (Kefal &amp; Oterkus 2016)</td><td>Full ship model</td><td><strong>Numerical</strong> (wave-induced load cases)</td></tr>
+      <tr><td>NREL 5 MW blade shape sensing (Li et al. 2023)</td><td>61.5 m blade model</td><td><strong>Numerical</strong> (BEMT loads, reference-FEM comparison)</td></tr>
+      <tr><td>Hybrid shell&ndash;beam wing panel (Esposito et al. 2023)</td><td>Lab panel</td><td><strong>Experimental</strong> (rosettes + fiber optics, bending &amp; torsion)</td></tr>
+      <tr><td>Ship deformation-field VR twin (Wei et al. 2024)</td><td>Ship structure</td><td><strong>Real-time integrated system</strong> (measurement-to-interaction pipeline)</td></tr>
+      <tr><td>Aerospace real-time applications (Esposito et al. 2025)</td><td>Review</td><td><strong>Survey of experimental deployments</strong>, aerospace-focused</td></tr>
+    </table>
+
+    <!-- ===== SECTION 9 ===== -->
+    <h2 class="section-heading" id="soft-bodies-tactile-and-biomech">9. Frontier: Soft Bodies, Tactile Skins, and Biomechanical Twins</h2>
+
+    <p>Crossing from steel to silicone breaks three iFEM assumptions at once: strains are no longer infinitesimal, rotations are large, and the material is hyperelastic. So the linear operators $\mathbf{B}_m, \mathbf{B}_b, \mathbf{B}_s$, the $\mathbf{e} + z\boldsymbol{\kappa}$ split, and the linear-elastic stress recovery <em>all</em> fail &mdash; in that order of onset (finite rotations invalidate the kinematics well before hyperelasticity matters). Finite-strain kinematics needs the Green&ndash;Lagrange measure of Module 1:</p>
+
+    <div class="math-block">$$\mathbf{E} = \tfrac{1}{2}\big(\mathbf{F}^{\mathsf T}\mathbf{F} - \mathbf{I}\big)$$</div>
+
+    <p>Yet the <em>inverse-problem structure</em> &mdash; sparse embedded measurements + mechanical model &rarr; full state &mdash; transfers intact, and soft robotics has built its own versions of it.</p>
+
+    <h3 class="subsection-heading">Model-Based Proprioception</h3>
+    <p>The cleanest published blueprint of "iFEM philosophy on a hyperelastic body": Escaida Navarro et al. (IEEE RA-L 2020) fuse soft capacitive sensing (contact localization) with pneumatic sensing (force intensity and deformation) through a <em>real-time FEM model</em> of the soft body, reconstructing the shape of a soft finger and estimating external force on a soft pad. Measurements constrain a numerical mechanical model that fills in the unmeasured state &mdash; exactly the state-reconstruction pattern, with the forward model doing the compatibility work the linear functional can no longer do.</p>
+
+    <p>The 2023&ndash;2024 wave diversified the sensing modality while keeping the FEM in the loop: Tian et al. (IEEE RA-L 2024) show that multi-tap resistive sensing combined with FEM modeling enables shape <em>and force</em> estimation in soft robots; M&eacute;nager et al. (ICRA 2023) learn a <em>condensed</em> FEM model that supports both direct and inverse modeling of soft robots &mdash; a compressed twin engine in Module 11's surrogate sense; and Hu et al. (Nature Machine Intelligence 2023) pair a stretchable e-skin with a transformer for high-resolution morphological reconstruction of soft robots &mdash; the fully learned end of the spectrum.</p>
+
+    <h3 class="subsection-heading">Vision-Based Tactile Sensing</h3>
+    <p>The connection to this site's home field: Sferrazza, Wahlsten, Trueeb &amp; D'Andrea (IEEE Access 2019) use FEM of the hyperelastic sensor gel to generate dense ground-truth three-dimensional contact force distributions for learning-based tactile sensing. The camera observes surface deformation; the network learns the deformation-to-force inverse map that the FEM defines. <em>Synthesis framing:</em> read this as the same inverse problem with a learned surrogate replacing the explicit least-squares solve &mdash; regularization is implicit in the training distribution rather than explicit in a $\lambda$. Module 8 owns the contact-inversion mechanics; Module 11 owns the learned-map angle and its OOD failure modes.</p>
+
+    <h3 class="subsection-heading">The Terminology Fork You Must Not Fall Into</h3>
+    <p>In the biomechanics literature, "inverse finite element method" usually means something else entirely: <strong>parameter identification</strong>. Seshaiyer &amp; Humphrey (J. Biomech. Eng. 2003) estimate hyperelastic material parameters of soft-tissue membranes from measured deformations via a sub-domain inverse FEM. Same phrase, different unknown: <em>state</em> (Tessler line) vs <em>constitutive parameters</em> (Humphrey line). Citing one literature for the other's claims is a category error &mdash; and it happens in print.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 330" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <defs><marker id="fk-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>
+        <g font-family="sans-serif">
+        <rect x="230" y="16" width="240" height="44" rx="6" fill="#f5f7fa" stroke="#667"/>
+        <text x="350" y="35" font-size="12" font-weight="600" text-anchor="middle" fill="#333">measured deformation data + FE model</text>
+        <text x="350" y="51" font-size="10" text-anchor="middle" fill="#888">"inverse finite element method"</text>
+        <line x1="290" y1="60" x2="185" y2="96" stroke="#555" stroke-width="1.5" marker-end="url(#fk-a)"/>
+        <line x1="410" y1="60" x2="515" y2="96" stroke="#555" stroke-width="1.5" marker-end="url(#fk-a)"/>
+        <!-- left branch -->
+        <rect x="30" y="100" width="310" height="164" rx="6" fill="#f7f0fb" stroke="#7b1fa2" stroke-width="1.6"/>
+        <text x="185" y="122" font-size="12" font-weight="700" text-anchor="middle" fill="#7b1fa2">state reconstruction (shape sensing)</text>
+        <text x="44" y="144" font-size="10.5" fill="#333"><tspan font-weight="600">unknown:</tspan> displacement field U</text>
+        <text x="44" y="162" font-size="10.5" fill="#333"><tspan font-weight="600">known:</tspan> geometry, sensor positions, weights</text>
+        <text x="44" y="180" font-size="10.5" fill="#333"><tspan font-weight="600">material:</tspan> NOT needed until stress recovery</text>
+        <text x="44" y="198" font-size="10.5" fill="#333"><tspan font-weight="600">solve:</tspan> K U = F(&epsilon;), once per tick, linear</text>
+        <text x="44" y="226" font-size="10" fill="#7b1fa2" font-style="italic">Tessler &amp; Spangler 2005 &rarr; iQS4 &rarr; digital twins</text>
+        <text x="44" y="246" font-size="10" fill="#8a7ba5">runs FAST: the twin's every tick</text>
+        <!-- right branch -->
+        <rect x="360" y="100" width="310" height="164" rx="6" fill="#fff8f0" stroke="#e67e22" stroke-width="1.6"/>
+        <text x="515" y="122" font-size="12" font-weight="700" text-anchor="middle" fill="#b35c00">parameter identification</text>
+        <text x="374" y="144" font-size="10.5" fill="#333"><tspan font-weight="600">unknown:</tspan> constitutive parameters (e.g. hyperelastic)</text>
+        <text x="374" y="162" font-size="10.5" fill="#333"><tspan font-weight="600">known:</tspan> full-field deformation, loads</text>
+        <text x="374" y="180" font-size="10.5" fill="#333"><tspan font-weight="600">material:</tspan> IS the unknown</text>
+        <text x="374" y="198" font-size="10.5" fill="#333"><tspan font-weight="600">solve:</tspan> iterative optimization over forward solves</text>
+        <text x="374" y="226" font-size="10" fill="#b35c00" font-style="italic">biomechanics: Seshaiyer &amp; Humphrey 2003; Module 7</text>
+        <text x="374" y="246" font-size="10" fill="#b3906b">runs SLOW: recalibration, ageing, patient-specificity</text>
+        <text x="350" y="300" font-size="11" text-anchor="middle" fill="#555" font-weight="600">a patient-specific or robot-skin twin needs both: parameters slowly, state fast</text>
+        <text x="350" y="316" font-size="9.5" text-anchor="middle" fill="#999">(synthesis &mdash; the two-estimator architecture is this guide's framing, not a cited system)</text>
+        </g>
+      </svg>
+      <div class="figure-caption">Two meanings of "inverse FEM". Same phrase, different unknowns, different literatures, different rates in a twin. Never cite one branch for the other's claims.</div>
+    </div>
+
+    <p><em>Synthesis &mdash; the closing bridge:</em> for an instrumented robot skin, an iFEM-style model-based layer over embedded strain sensing is the <em>interpretable</em> alternative to end-to-end learned proprioception &mdash; explicit assumptions, explicit failure modes, a rank you can inspect. Hybrid schemes &mdash; model-based state reconstruction with learned residual correction &mdash; are essentially unexplored territory. Flagged as synthesis; it is also this site's research agenda.</p>
+
+    <!-- ===== SECTION 10 ===== -->
+    <h2 class="section-heading" id="open-problems-2026">10. Open Problems, 2026 Edition</h2>
+
+    <p>Four fronts, each with its grounded anchor. These are not embarrassments; they are the map of where the field's 2026 papers are being written.</p>
+
+    <h3 class="subsection-heading">Front 1 &mdash; Geometric Nonlinearity</h3>
+    <p>The operators $\mathbf{B}_m, \mathbf{B}_b, \mathbf{B}_s$ are <em>linear</em> strain&ndash;displacement maps: valid for infinitesimal rotations. Hulls in extreme seas, 60-meter blades, and soft bodies all leave that regime, and the superposition $\mathbf{e} + z\boldsymbol{\kappa}$ fails with it. The remedies mirror forward nonlinear FEM &mdash; incremental linearization about the current configuration, and co-rotational decomposition of rigid rotation from strain-producing deformation &mdash; but now inside a least-squares inverse formulation, where linearization error feeds directly into the reconstructed state. Grounded marker that this front is active: Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025), "Nonlinear inverse finite element method for large deformation reconstruction of hull structures". The generic incremental schema (<em>synthesis &mdash; a schema, not the paper's specific algorithm</em>):</p>
+
+    <div class="math-block">$$\mathbf{K}(\mathbf{U}_k)\,\Delta\mathbf{U}_{k+1} = \mathbf{F}\big(\boldsymbol{\varepsilon}^{\text{meas}}\big) - \mathbf{F}\big(\boldsymbol{\varepsilon}(\mathbf{U}_k)\big)$$</div>
+
+    <p>Note what iteration costs the twin: the fixed-$\mathbf{K}$ real-time argument of &sect;3 weakens once $\mathbf{K}$ depends on the current state.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 300" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <g font-family="sans-serif">
+        <text x="180" y="26" font-size="12" font-weight="600" text-anchor="middle" fill="#333">Small deflections: linear iFEM valid</text>
+        <line x1="40" y1="120" x2="40" y2="60" stroke="#999" stroke-width="6"/>
+        <line x1="40" y1="90" x2="300" y2="90" stroke="#ccc" stroke-width="2" stroke-dasharray="5,4"/>
+        <path d="M40,90 C130,92 230,102 300,116" stroke="#1565c0" stroke-width="2.5" fill="none"/>
+        <path d="M40,90 C130,92 230,101 300,114" stroke="#7b1fa2" stroke-width="2" stroke-dasharray="6,3" fill="none"/>
+        <text x="180" y="140" font-size="10" text-anchor="middle" fill="#555">linear B operators valid; e + z&kappa; superposition holds</text>
+        <text x="180" y="155" font-size="10" text-anchor="middle" fill="#2e7d32">reconstruction (dashed) tracks truth</text>
+        <text x="530" y="26" font-size="12" font-weight="600" text-anchor="middle" fill="#333">Large deflections: linear map invalid</text>
+        <line x1="390" y1="120" x2="390" y2="60" stroke="#999" stroke-width="6"/>
+        <line x1="390" y1="90" x2="650" y2="90" stroke="#ccc" stroke-width="2" stroke-dasharray="5,4"/>
+        <path d="M390,90 C460,95 520,130 555,185 C570,210 578,225 582,235" stroke="#1565c0" stroke-width="2.5" fill="none"/>
+        <path d="M390,90 C480,95 590,120 665,150" stroke="#c62828" stroke-width="2" stroke-dasharray="6,3" fill="none"/>
+        <text x="536" y="212" font-size="10" fill="#1565c0">actual shape (tip rotated ~60&deg;)</text>
+        <text x="556" y="140" font-size="10" fill="#c62828">linear iFEM: overshoots horizontally</text>
+        <text x="530" y="250" font-size="10" text-anchor="middle" fill="#555">finite rotations: linear strain&ndash;displacement map invalid</text>
+        <text x="530" y="264" font-size="10" text-anchor="middle" fill="#8a6d3b">remedies: incremental updates, co-rotational frames (Cui et al. 2025 for hulls)</text>
+        <!-- strain magnitude bar -->
+        <rect x="60" y="278" width="580" height="8" fill="url(#lg1)"/>
+        <defs><linearGradient id="lg1" x1="0" x2="1"><stop offset="0" stop-color="#e8f0e8"/><stop offset="0.5" stop-color="#f0d9a8"/><stop offset="1" stop-color="#e8b4c8"/></linearGradient></defs>
+        <text x="70" y="274" font-size="9" fill="#666">small strain</text>
+        <text x="352" y="274" font-size="9" fill="#8a6d3b">finite rotation</text>
+        <text x="560" y="274" font-size="9" fill="#a04c6e">hyperelastic soft bodies: open frontier</text>
+        </g>
+      </svg>
+      <div class="figure-caption">Where linear iFEM breaks. Left: the regime every equation of &sect;2 assumes. Right: at finite rotations the linear reconstruction is systematically wrong &mdash; and soft robotics lives far to the right of both sketches on the strain axis.</div>
+    </div>
+
+    <h3 class="subsection-heading">Front 2 &mdash; Dynamics</h3>
+    <p>The functional has no inertial term &mdash; but be careful about what that does and does not imply. Displacement-from-strain reconstruction is <em>kinematic</em>, so per-snapshot reconstruction of a vibrating structure is legitimate <em>provided all strain channels are sampled synchronously</em>. <em>Synthesis-flagged, all of it:</em> the true obstacles are channel synchronization (multiplexed FBG interrogators stagger samples &mdash; you felt this in the twin simulator's skew slider), aliasing of high-frequency content, and the absence of any temporal smoothing or error dynamics: each snapshot is estimated fresh, so noise is never filtered over time. A Kalman-style fusion of iFEM with a dynamic model is an open research direction.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; "real-time" is not "dynamic"</div>
+      <div>&sect;3's real-time property is about <em>compute latency</em>; it says nothing about dynamics. iFEM handles a vibrating structure as a sequence of independent static snapshots &mdash; valid kinematics, zero temporal statistics. Asynchronously sampled channels during fast transients produce a strain vector no single instant ever exhibited, and the least-squares solve will happily reconstruct a state that never existed.</div>
+    </div>
+
+    <h3 class="subsection-heading">Front 3 &mdash; Uncertainty Quantification</h3>
+    <p>Esposito &amp; Gherlone (MSSP 2021) quantify how material-property and strain-sensing uncertainties propagate into wing-box shape-sensing error &mdash; the grounded starting point for iFEM UQ. For the linear pipeline $\mathbf{U} = \mathbf{K}^{-1}\mathbf{F}(\boldsymbol{\varepsilon})$, first-order covariance propagation applies:</p>
+
+    <div class="math-block">$$\operatorname{Cov}(\mathbf{U}) = \mathbf{J}\,\boldsymbol{\Sigma}_{\varepsilon}\,\mathbf{J}^{\mathsf T}, \qquad \mathbf{J} = \frac{\partial \mathbf{U}}{\partial \boldsymbol{\varepsilon}^{\text{meas}}} = \mathbf{K}^{-1}\frac{\partial \mathbf{F}}{\partial \boldsymbol{\varepsilon}^{\text{meas}}}$$</div>
+
+    <p><em>Synthesis-flagged open questions:</em> choosing the weights $w$ as inverse noise variances &mdash; which would turn iFEM into a generalized least-squares/BLUE estimator instead of a heuristic; Bayesian posteriors over the reconstructed field; and UQ under <em>model error</em> rather than just sensor noise. The 2026 aerospace twin of Chen et al. (&sect;5), coupling shape sensing with Bayesian inference and Gaussian processes, is a first published step in this direction.</p>
+
+    <h3 class="subsection-heading">Front 4 &mdash; Sensor Drift and Temperature</h3>
+    <p>Gauge drift and FBG thermal cross-sensitivity shift measured strain <em>identically</em> to real deformation; a drifted channel is indistinguishable from local damage in the $D_i$ index (&sect;4, and the simulator's most insidious lesson). <em>Synthesis-flagged:</em> the mitigations &mdash; reference/dummy gauges, athermal packaging, periodic re-zeroing against a known state, redundancy-based outlier rejection &mdash; are engineering practice, not solved theory. There is no principled estimator that separates drift from damage using the strain stream alone; that separation currently lives in hardware and procedure.</p>
+
+    <h3 class="subsection-heading">Watchlist: 2026 Preprints</h3>
+    <p>Three arXiv preprints &mdash; <strong>not yet peer-reviewed; watch, don't build on</strong> &mdash; that mark where the frontier is probing:</p>
+    <ul>
+      <li><strong>Regazzoni (2026, arXiv:2603.26517)</strong> &mdash; "The internal law of a material can be discovered from its boundary": a claim about identifying constitutive behavior from boundary data alone, squarely on the parameter branch of &sect;9's fork.</li>
+      <li><strong>Choi, Moon &amp; Ryu (2026, arXiv:2606.03210)</strong> &mdash; a critical evaluation of PINNs for FWD inverse analysis, proposing differentiable FEM as the alternative &mdash; Module 10's gradient-route debate arriving in deployment-shaped problems.</li>
+      <li><strong>Politis, Zurbr&uuml;gg &amp; Cavinato (2026, arXiv:2606.09451)</strong> &mdash; dense force estimation with an <em>event-based</em> optical tactile sensor: the vision-based tactile inverse problem of &sect;9 at microsecond timescales.</li>
+    </ul>
+
+    <!-- ===== SECTION 11 ===== -->
+    <h2 class="section-heading" id="build-your-own-twin">11. Practice: Build Your Own Lab-Scale Twin</h2>
+
+    <p>The capstone recipe &mdash; written to be followed for a lab plate, a wing panel, or an instrumented skin sample. Seven steps; the walkthrough below rehearses them interactively.</p>
+
+    <ol>
+      <li><strong>Forward model.</strong> Build a conventional FE model of the asset. You will use it for sensor-placement studies and to generate synthetic validation strains &mdash; <em>never</em> as the twin itself.</li>
+      <li><strong>Inverse mesh.</strong> Choose an inverse discretization far coarser than the forward mesh: iQS4-type shells for skin, inverse beams for stiffeners, hybrid where both (Esposito et al. 2023). Accuracy is bounded by sensor information <em>and</em> by discretization &mdash; refining the inverse mesh without adding sensors adds unknowns, not knowledge, and the extra directions get decided by the $\lambda$-weighted prior rather than by data. The simulator above runs the good end of that trade: 5 curvature stations on a 3-element inverse mesh (6 free DOF) reconstruct the clean tip deflection to about $0.02\%$, with 5 of the 6 directions fixed by measurement. Rebuild the same model with 8 elements (16 free DOF) and, on identical sensor data, the tip error grows to $55\%$ &mdash; 11 of the 16 directions are then decided by the prior rather than by a sensor. So check mesh convergence like you would in forward FEM, then stop refining at the point where added modes stop being observable &mdash; and read the rank panel, which tells you how many directions the data actually fixed.</li>
+      <li><strong>Sensor layout.</strong> Decide which elements are instrumented. Where bending matters, plan top/bottom pairs &mdash; or accept single-sided assumptions and <em>document them</em> (&sect;2, &sect;6). Rosettes give the three in-plane components a shell element wants; fiber lines give dense uniaxial data along their path (Module 6 owns placement optimization).</li>
+      <li><strong>Calibration.</strong> Gauge factors, temperature-compensation channels, time synchronization across interrogators, and a recorded zero-load baseline. Every &sect;10-front-4 pathology is fought here, before the first tick.</li>
+      <li><strong>Offline assembly.</strong> Build $\mathbf{K}$ with measured-component weights 1 and sensorless penalty $\lambda \sim 10^{-4}$ (the typical literature value &mdash; hedged, &sect;2). Apply boundary conditions, sparse-Cholesky factorize, store $\mathbf{L}$.</li>
+      <li><strong>Online loop.</strong> Read strains &rarr; temperature-compensate &rarr; element section strains (mean/difference formulas) &rarr; assemble $\mathbf{F}$ &rarr; two triangular solves &rarr; stress recovery via $\mathbf{C}(z)$ &rarr; render and log &mdash; Wei et al. (2024)'s pipeline: reconstruction, analysis, expression, storage, rendering, interaction.</li>
+      <li><strong>Validate honestly.</strong> Report percent-difference norms on displacement <em>and</em> stress,
+      <div class="math-block">$$\text{PD}_u = 100 \times \frac{\lVert \mathbf{u}^{\text{iFEM}} - \mathbf{u}^{\text{ref}} \rVert}{\lVert \mathbf{u}^{\text{ref}} \rVert}$$</div>
+      against (a) the forward FEM under matched loads and (b) an <em>independent</em> measurement: DIC, laser triangulation, dial gauges.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; the inverse crime, one last time</div>
+      <div>Validating only against synthetic strains generated by the same model that defines your reference solution proves consistency, not accuracy. Experimental validation like the rosette + fiber-optic bending/torsion campaign of Esposito et al. (2023) is the standard to aim for. If your twin has never disagreed with your forward model, you have not yet tested the twin &mdash; you have tested your ability to run the same model twice.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Printed pitfalls checklist &mdash; the module's traps, in commissioning order</div>
+      <div class="collapsible-body">
+        <ul>
+          <li>&#9744; Are you citing the right "inverse FEM"? State reconstruction (Tessler) vs parameter identification (biomech) &mdash; &sect;9.</li>
+          <li>&#9744; Does any claim say iFEM needs loads or material data for <em>displacement</em>? It needs neither; constitutive data enters at stress recovery only &mdash; &sect;2, &sect;4.</li>
+          <li>&#9744; Single-sided sensing anywhere? Write down the membrane/curvature assumption &mdash; &sect;2, &sect;6.</li>
+          <li>&#9744; Thin skins: remember $\kappa = (\varepsilon^+ - \varepsilon^-)/(2h)$ divides a noisy difference by a small thickness &mdash; &sect;2.</li>
+          <li>&#9744; Sensorless components at weight 1? That's a zero-strain prior at full confidence &mdash; use $\lambda$ &mdash; &sect;2.</li>
+          <li>&#9744; Tempted to refine the inverse mesh for accuracy? Add sensors instead &mdash; step 2.</li>
+          <li>&#9744; All channels synchronized? Asynchronous snapshots reconstruct states that never existed &mdash; &sect;10.</li>
+          <li>&#9744; Validation independent? Same-model synthetic tests are the inverse crime &mdash; step 7.</li>
+          <li>&#9744; Damage index armed? Drift and temperature shift $D_i$ exactly like damage; baseline management is part of the algorithm &mdash; &sect;4, &sect;10.</li>
+          <li>&#9744; Claiming "deployed"? Check the evidence class: numerical, experimental, or operational &mdash; &sect;8.</li>
+          <li>&#9744; Large rotations expected? Linear iFEM will be systematically wrong; plan incremental/co-rotational &mdash; &sect;10.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== INTERACTIVE WALKTHROUGH ===== -->
+    <div id="twin-walkthrough" class="interactive-container" data-title="Walkthrough — Commissioning a Lab-Scale Twin"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod12-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Tessler, Alexander; Spangler, Jan L. (2005). <em>A least-squares variational method for full-field reconstruction of elastic deformations in shear-deformable plates and shells</em>. Computer Methods in Applied Mechanics and Engineering. doi:10.1016/j.cma.2004.03.015</li>
+      <li>Kefal, Adnan; Oterkus, Erkan; Tessler, Alexander; Spangler, Jan L. (2016). <em>A quadrilateral inverse-shell element with drilling degrees of freedom for shape sensing and structural health monitoring</em>. Engineering Science and Technology, an International Journal. doi:10.1016/j.jestch.2016.03.006</li>
+      <li>Kefal, Adnan; Oterkus, Erkan (2016). <em>Displacement and stress monitoring of a Panamax containership using inverse finite element method</em>. Ocean Engineering. doi:10.1016/j.oceaneng.2016.04.025</li>
+      <li>Cerracchio, Priscilla; Gherlone, Marco; Di Sciuva, Marco; Tessler, Alexander (2015). <em>A novel approach for displacement and stress monitoring of sandwich structures based on the inverse Finite Element Method</em>. Composite Structures. doi:10.1016/j.compstruct.2015.02.081</li>
+      <li>Gherlone, Marco; Cerracchio, Priscilla; Mattone, Massimiliano (2018). <em>Shape sensing methods: Review and experimental comparison on a wing-shaped plate</em>. Progress in Aerospace Sciences. doi:10.1016/j.paerosci.2018.04.001</li>
+      <li>Esposito, Marco; Gherlone, Marco (2021). <em>Material and strain sensing uncertainties quantification for the shape sensing of a composite wing box</em>. Mechanical Systems and Signal Processing. doi:10.1016/j.ymssp.2021.107875</li>
+      <li>Esposito, Marco; Roy, Rinto; Surace, Cecilia; Gherlone, Marco (2023). <em>Hybrid Shell-Beam Inverse Finite Element Method for the Shape Sensing of Stiffened Thin-Walled Structures: Formulation and Experimental Validation on a Composite Wing-Shaped Panel</em>. Sensors. doi:10.3390/s23135962</li>
+      <li>Li, Mingyang; Dirik, Yildirim; Oterkus, Erkan; Oterkus, Selda (2023). <em>Shape sensing of NREL 5 MW offshore wind turbine blade using iFEM methodology</em>. Ocean Engineering. doi:10.1016/j.oceaneng.2023.114036</li>
+      <li>Wei, Pengyu; Li, Chuntong; Jiang, Ze; Wang, Deyu (2024). <em>Real-Time Digital Twin of Ship Structure Deformation Field Based on the Inverse Finite Element Method</em>. Journal of Marine Science and Engineering. doi:10.3390/jmse12020257</li>
+      <li>Dong, Tianyu; Yuan, Shenfang; Huang, Tianxiang (2024). <em>Real-time shape sensing of large-scale honeycomb antennas with a displacement-gradient-based variable-size inverse finite element method</em>. Composite Structures, 344:118320. doi:10.1016/j.compstruct.2024.118320</li>
+      <li>Cui, Rongpeng; Li, Chuntong; Wei, Pengyu; Luo, Xiaomeng; Wang, Deyu (2025). <em>Nonlinear inverse finite element method for large deformation reconstruction of hull structures</em>. Ocean Engineering. doi:10.1016/j.oceaneng.2025.121530</li>
+      <li>Esposito, Marco; Sorrenti, Matteo; Biscotti, Vincenzo; Gherlone, Marco (2025). <em>Real-Time Structural Monitoring Using the Inverse Finite Element Method: A Review of Experimental Applications in Aerospace Engineering</em>. Proceedings of the 15th International Workshop on Structural Health Monitoring. doi:10.12783/shm2025/37277</li>
+      <li>Chen, Qihang; Zhang, Yang; Dong, Xin; Cui, Jiacheng; Lu, Yongkang; Zheng, Pai; Liu, Wei (2026). <em>A high-accuracy shape sensing method for deformation digital twin monitoring of thin-walled aircraft structures</em>. Aerospace Science and Technology, 168:110960 (online 2025). doi:10.1016/j.ast.2025.110960</li>
+      <li>Hong, Kai; Zhan, Jiazhen; Guo, Yuhao; Liu, Lei; Zhu, Dongxu; Liu, Gang (2026). <em>High-resolution shape sensing and stress reconstruction for offshore wind-turbine towers: A framework integrating graph neural networks with the inverse finite element method</em>. Ocean Engineering, 356:125358. doi:10.1016/j.oceaneng.2026.125358</li>
+      <li>Bardiani, Jacopo; Faure Ragani, Roberto; Manes, Andrea; Sbarufatti, Claudio; Kefal, Adnan (2026). <em>Real-time damage detection and localization in ship structures using iFEM and machine learning techniques</em>. Ocean Engineering, 343:123379. doi:10.1016/j.oceaneng.2025.123379</li>
+      <li>Sferrazza, Carmelo; Wahlsten, Adam; Trueeb, Camill; D'Andrea, Raffaello (2019). <em>Ground Truth Force Distribution for Learning-Based Tactile Sensing: A Finite Element Approach</em>. IEEE Access. doi:10.1109/access.2019.2956882</li>
+      <li>Escaida Navarro, Stefan; Nagels, Steven; Alagi, Hosam; Faller, Lisa-Marie; Goury, Olivier; Morales-Bieze, Thor; Zangl, Hubert; Hein, Bjorn; Ramakers, Raf; Deferme, Wim; Zheng, Gang; Duriez, Christian (2020). <em>A Model-Based Sensor Fusion Approach for Force and Shape Estimation in Soft Robotics</em>. IEEE Robotics and Automation Letters. doi:10.1109/lra.2020.3008120</li>
+      <li>Hu, Delin; Giorgio-Serchi, Francesco; Zhang, Shiming; Yang, Yunjie (2023). <em>Stretchable e-skin and transformer enable high-resolution morphological reconstruction for soft robots</em>. Nature Machine Intelligence, 5:261&ndash;272. doi:10.1038/s42256-023-00622-8</li>
+      <li>M&eacute;nager, Etienne; Navez, Tanguy; Goury, Olivier; Duriez, Christian (2023). <em>Direct and inverse modeling of soft robots by learning a condensed FEM model</em>. 2023 IEEE International Conference on Robotics and Automation (ICRA), pp. 530&ndash;536. doi:10.1109/ICRA48891.2023.10161537</li>
+      <li>Tian, Sizhe; Cangan, Barnabas Gavin; Escaida Navarro, Stefan; Beger, Artem; Duriez, Christian; Katzschmann, Robert K. (2024). <em>Multi-Tap Resistive Sensing and FEM Modeling Enables Shape and Force Estimation in Soft Robots</em>. IEEE Robotics and Automation Letters, 9(3):2830&ndash;2837. doi:10.1109/LRA.2023.3339434</li>
+      <li>Seshaiyer, Padmanabhan; Humphrey, Jay D. (2003). <em>A Sub-Domain Inverse Finite Element Characterization of Hyperelastic Membranes Including Soft Tissues</em>. Journal of Biomechanical Engineering. doi:10.1115/1.1574333</li>
+      <li>Regazzoni, Francesco (2026). <em>The internal law of a material can be discovered from its boundary</em>. arXiv preprint arXiv:2603.26517 (preprint, not peer-reviewed).</li>
+      <li>Choi, Yongjin; Moon, Hyeonbin; Ryu, Seunghwa (2026). <em>Critical evaluation of PINN for FWD inverse analysis and differentiable FEM as an alternative</em>. arXiv preprint arXiv:2606.03210 (preprint, not peer-reviewed).</li>
+      <li>Politis, Agis; Zurbr&uuml;gg, Ren&eacute;; Cavinato, Valentina (2026). <em>Dense Force Estimation with an Event-based Optical Tactile Sensor</em>. arXiv preprint arXiv:2606.09451 (preprint, not peer-reviewed).</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod11.html">&larr; 11. Learning-Enhanced Inversion</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod12');</script>
+
+<!-- ===== SCRIPT: REAL-TIME BUDGET EXPLORER ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  function fmt(n) { return n >= 1000 ? Math.round(n).toLocaleString('en-US') : (n >= 100 ? Math.round(n) : n.toPrecision(3)); }
+  function fmtMs(ms) {
+    if (ms >= 1000) return (ms / 1000).toPrecision(3) + ' s';
+    if (ms >= 1) return ms.toPrecision(3) + ' ms';
+    return (ms * 1000).toPrecision(3) + ' µs';
+  }
+
+  function update() {
+    var n = Math.pow(10, parseFloat(el('be-n').value));
+    var fs = Math.pow(10, parseFloat(el('be-fs').value));
+    var render = parseFloat(el('be-render').value);
+    var naive = el('be-naive').checked;
+    el('be-n-val').textContent = Math.round(n).toLocaleString('en-US');
+    el('be-fs-val').textContent = fmt(fs);
+
+    // representative scalings (stated on-screen as such): 2D-shell sparsity
+    var tFact = Math.pow(n, 1.5) / 2e5;   // c_f * n^1.5
+    var tAsm  = n * 2e-6;                 // linear in n
+    var tSolve = n * 30 / 1e6;            // c_s * n * b, b ~ bandwidth factor
+    var tRec  = n * 4e-6;
+    var tTick = tAsm + tSolve + tRec + render + (naive ? tFact : 0);
+    var rate = 1000 / tTick;
+    var period = 1000 / fs;
+
+    // verdict
+    var verdict, vcol;
+    if (rate >= fs) { verdict = 'SENSOR-LIMITED &mdash; the interrogator is the bottleneck, not the solve'; vcol = '#2e7d32'; }
+    else if (naive) { verdict = 'NOT REAL-TIME &mdash; re-factorizing a fixed matrix every tick'; vcol = '#c62828'; }
+    else { verdict = 'SOLVE-LIMITED &mdash; compute bounds the update rate'; vcol = '#b36118'; }
+
+    // log-time axis: 1e-3 ms .. 1e4 ms mapped to x in [150, 660]
+    var x0 = 150, x1 = 660, lgMin = -3, lgMax = 4;
+    function X(ms) { return x0 + (Math.log10(Math.max(ms, 1.2e-3)) - lgMin) / (lgMax - lgMin) * (x1 - x0); }
+
+    var stages = [
+      { name: 'F assembly', ms: tAsm, col: '#9575cd' },
+      { name: 'triangular solves', ms: tSolve, col: '#7b1fa2' },
+      { name: 'stress recovery', ms: tRec, col: '#9575cd' },
+      { name: 'render', ms: render, col: '#b39ddb' }
+    ];
+    if (naive) stages.unshift({ name: 're-factorize K (!)', ms: tFact, col: '#c62828' });
+
+    var s = '<g font-family="sans-serif">';
+    // axis
+    s += '<line x1="' + x0 + '" y1="215" x2="' + x1 + '" y2="215" stroke="#999"/>';
+    for (var d = lgMin; d <= lgMax; d++) {
+      var xx = X(Math.pow(10, d));
+      s += '<line x1="' + xx + '" y1="212" x2="' + xx + '" y2="218" stroke="#999"/>';
+      s += '<text x="' + xx + '" y="230" font-size="9.5" text-anchor="middle" fill="#888">' + (d < 0 ? '10<tspan baseline-shift="super" font-size="7">' + d + '</tspan>' : (d === 0 ? '1' : '10<tspan baseline-shift="super" font-size="7">' + d + '</tspan>')) + '</text>';
+    }
+    s += '<text x="' + ((x0 + x1) / 2) + '" y="246" font-size="10" text-anchor="middle" fill="#666">latency per stage (ms, log axis)</text>';
+    // stage bars
+    var y = 26;
+    stages.forEach(function(st) {
+      var w = Math.max(2, X(st.ms) - x0);
+      s += '<text x="' + (x0 - 8) + '" y="' + (y + 11) + '" font-size="10.5" text-anchor="end" fill="#444">' + st.name + '</text>';
+      s += '<rect x="' + x0 + '" y="' + y + '" width="' + w + '" height="15" rx="2" fill="' + st.col + '" opacity="0.85"/>';
+      s += '<text x="' + (x0 + w + 6) + '" y="' + (y + 11) + '" font-size="9.5" fill="#555">' + fmtMs(st.ms) + '</text>';
+      y += 24;
+    });
+    // sensor period line
+    var xp = X(period);
+    s += '<line x1="' + xp + '" y1="18" x2="' + xp + '" y2="215" stroke="#1565c0" stroke-width="1.5" stroke-dasharray="5,3"/>';
+    s += '<text x="' + Math.min(xp + 4, 600) + '" y="16" font-size="9.5" fill="#1565c0">sensor period 1/f<tspan baseline-shift="sub" font-size="7">s</tspan> = ' + fmtMs(period) + '</text>';
+    // total tick marker
+    var xt = X(tTick);
+    s += '<line x1="' + xt + '" y1="18" x2="' + xt + '" y2="215" stroke="' + vcol + '" stroke-width="1.5"/>';
+    s += '<text x="' + Math.max(xt - 4, 160) + '" y="' + (xt > xp ? 200 : 190) + '" font-size="9.5" fill="' + vcol + '" text-anchor="end">tick total ' + fmtMs(tTick) + '</text>';
+    // offline vs online comparison
+    var yc = 262;
+    s += '<text x="' + (x0 - 8) + '" y="' + (yc + 10) + '" font-size="10" text-anchor="end" fill="#8a7ba5">offline: K = LL&#7488; (once)</text>';
+    s += '<rect x="' + x0 + '" y="' + yc + '" width="' + Math.max(2, X(tFact) - x0) + '" height="12" rx="2" fill="#b39ddb" opacity="0.7"/>';
+    s += '<text x="' + (x0 + Math.max(2, X(tFact) - x0) + 6) + '" y="' + (yc + 10) + '" font-size="9" fill="#8a7ba5">' + fmtMs(tFact) + ' &mdash; paid once, amortized over every tick</text>';
+    s += '</g>';
+    el('be-svg').innerHTML = s;
+
+    // readout
+    var dom = naive ? '\\underbrace{c_f\\, n^{1.5}}_{\\text{re-factorize}}' : (tSolve >= render && tSolve >= tAsm + tRec ? '\\underbrace{c_s\\, n\\, b}_{\\text{solves}}' : '\\text{render budget}');
+    var ro = el('be-readout');
+    ro.innerHTML =
+      '<div style="display:inline-block;padding:4px 12px;border-radius:12px;background:' + vcol + ';color:#fff;font-size:12px;font-weight:700;margin-bottom:8px;">' + verdict + '</div>' +
+      '<div>Achieved twin rate $\\approx$ <strong>' + fmt(rate) + ' Hz</strong> vs interrogator $f_s = ' + fmt(fs) + '$ Hz. ' +
+      (naive ? 'The factorization $\\mathbf{K} = \\mathbf{L}\\mathbf{L}^{\\mathsf T}$ costs $\\sim n^{1.5}$ and is being repaid <em>every tick</em> for a matrix that has not changed &mdash; the defining mistake this module exists to prevent.' :
+        'Offline: $\\mathbf{K} = \\mathbf{L}\\mathbf{L}^{\\mathsf T}$ once. Online: $\\mathbf{U}_t = \\mathbf{L}^{-\\mathsf T}(\\mathbf{L}^{-1}\\mathbf{F}_t)$, dominated here by $' + dom + '$.') + '</div>';
+    renderMath(ro);
+  }
+
+  ['be-n', 'be-fs'].forEach(function(id) { el(id).addEventListener('input', update); });
+  el('be-render').addEventListener('change', update);
+  el('be-naive').addEventListener('change', update);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: IS IT REALLY A TWIN? SIMULATOR ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  // Inverse mesh sized to the sensor budget: 3 elements -> 6 free DOF against
+  // 5 curvature stations. Refining it further does NOT buy accuracy -- it hands
+  // the extra directions to the zero-curvature prior (8 elements => 55% error).
+  var NE = 3, NN = 4, hE = 1 / 3, LAM = 1e-4, A = 0.55; // prop position
+  var XS = [0.08, 0.28, 0.48, 0.68, 0.88];              // sensor stations
+  var t = 0, playing = false, timer = null;
+  var lastVals = [null, null, null, null, null];
+  function randn() { var u = Math.random(), v = Math.random(); return Math.sqrt(-2 * Math.log(u + 1e-12)) * Math.cos(2 * Math.PI * v); }
+
+  // ---- truth (analytic cantilever, optional prop at x=A, stiffness ageing) ----
+  function loadP(tt) { return 0.55 + 0.3 * Math.sin(0.9 * tt) + 0.13 * Math.sin(2.7 * tt + 1); }
+  function ageEI(tt) { return el('ts-age').checked ? Math.max(0.7, 1 - 0.02 * tt) : 1; }
+  function propR(P) { return -P * (3 - A) / (2 * A); } // reaction so that w(A)=0
+  function kTrue(x, tt) {
+    var P = loadP(tt), M = P * (1 - x);
+    if (el('ts-contact').checked && x < A) M += propR(P) * (A - x);
+    return M / ageEI(tt);
+  }
+  function wTrue(x, tt) {
+    var P = loadP(tt), w = P * x * x * (3 - x) / 6;
+    if (el('ts-contact').checked) {
+      var R = propR(P);
+      w += (x <= A) ? R * x * x * (3 * A - x) / 6 : R * A * A * (3 * x - A) / 6;
+    }
+    return w / ageEI(tt);
+  }
+
+  // ---- sensing: skew, drift, dropout, noise ----
+  function readSensors(tt) {
+    var skew = parseFloat(el('ts-skew').value) / 1000; // s per channel index
+    var drift = parseFloat(el('ts-drift').value);      // % of full-scale per minute, channel 1
+    var out = [];
+    for (var i = 0; i < 5; i++) {
+      var v = kTrue(XS[i], Math.max(0, tt - i * skew)) + 0.01 * randn();
+      if (i === 0 && drift > 0) v += (drift / 100) * (tt / 60) * 1.0;
+      if (i === 2 && el('ts-drop').checked) { v = (lastVals[2] !== null) ? lastVals[2] : v; out.push(v); continue; }
+      lastVals[i] = v;
+      out.push(v);
+    }
+    return out;
+  }
+
+  // ---- inverse solve: NE Hermite elements, curvature matching ----
+  function bRow(xi, h) { // second-derivative row, factor 1/h^2
+    return [(-6 + 12 * xi) / (h * h), (-4 + 6 * xi) / h, (6 - 12 * xi) / (h * h), (-2 + 6 * xi) / h];
+  }
+  // Symmetric eigenvalues by cyclic Jacobi — used to report an honest rank and
+  // condition number instead of a pivot ratio.
+  function symEig(Ain, nn) {
+    var A = Ain.map(function(r) { return r.slice(); }), i, j, k, sweep;
+    for (sweep = 0; sweep < 80; sweep++) {
+      var off = 0;
+      for (i = 0; i < nn; i++) for (j = i + 1; j < nn; j++) off += A[i][j] * A[i][j];
+      if (off < 1e-30) break;
+      for (i = 0; i < nn; i++) for (j = i + 1; j < nn; j++) {
+        if (Math.abs(A[i][j]) < 1e-22) continue;
+        var th = (A[j][j] - A[i][i]) / (2 * A[i][j]);
+        var t = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+        var c = 1 / Math.sqrt(t * t + 1), s = t * c, a1, a2;
+        for (k = 0; k < nn; k++) { a1 = A[i][k]; a2 = A[j][k]; A[i][k] = c * a1 - s * a2; A[j][k] = s * a1 + c * a2; }
+        for (k = 0; k < nn; k++) { a1 = A[k][i]; a2 = A[k][j]; A[k][i] = c * a1 - s * a2; A[k][j] = s * a1 + c * a2; }
+      }
+    }
+    var ev = [];
+    for (i = 0; i < nn; i++) ev.push(A[i][i]);
+    return ev.sort(function(a, b) { return b - a; });
+  }
+  function solve(meas) {
+    var n = 2 * NN, K = [], Km = [], F = [], i, j;
+    for (i = 0; i < n; i++) { K.push(new Array(n).fill(0)); Km.push(new Array(n).fill(0)); F.push(0); }
+    for (var e = 0; e < NE; e++) {
+      var x0 = e * hE;
+      // EVERY element carries the soft zero-curvature prior; measured elements
+      // add their data rows on top. Priming only the sensorless elements leaves
+      // the assembled system rank-deficient (5 data rows + 2 prior rows per
+      // sensorless element cannot span 2*(NE+1)-2 free DOF).
+      var rows = [{ xi: 0.2113, v: 0, w: LAM }, { xi: 0.7887, v: 0, w: LAM }];
+      for (i = 0; i < 5; i++) if (XS[i] >= x0 && XS[i] < x0 + hE) rows.push({ xi: (XS[i] - x0) / hE, v: meas[i], w: 1 });
+      var dof = [2 * e, 2 * e + 1, 2 * e + 2, 2 * e + 3];
+      rows.forEach(function(r) {
+        var B = bRow(r.xi, hE), wq = r.w * hE / rows.length;
+        for (i = 0; i < 4; i++) {
+          F[dof[i]] += wq * B[i] * r.v;
+          for (j = 0; j < 4; j++) {
+            K[dof[i]][dof[j]] += wq * B[i] * B[j];
+            if (r.w === 1) Km[dof[i]][dof[j]] += B[i] * B[j];   // measurement-only Gram
+          }
+        }
+      });
+    }
+    // clamp root: drop DOFs 0,1
+    var m = n - 2, Kr = [], Kr0 = [], Kmr = [], Fr = [];
+    for (i = 0; i < m; i++) {
+      Kr.push(new Array(m)); Kr0.push(new Array(m)); Kmr.push(new Array(m)); Fr.push(F[i + 2]);
+      for (j = 0; j < m; j++) { Kr[i][j] = K[i + 2][j + 2]; Kr0[i][j] = K[i + 2][j + 2]; Kmr[i][j] = Km[i + 2][j + 2]; }
+    }
+    // Honest diagnostics, computed before elimination destroys Kr.
+    // evK: spectrum of the penalised system -> kappa_2. evM: spectrum of the
+    // measurement-only Gram -> how many directions the DATA actually fixes.
+    var evK = symEig(Kr0, m), evM = symEig(Kmr, m);
+    var tolM = Math.max(evM[0], 1e-300) * 1e-9, rankMeas = 0;
+    for (i = 0; i < m; i++) if (evM[i] > tolM) rankMeas++;
+    var kappa = evK[m - 1] > 0 ? evK[0] / evK[m - 1] : Infinity;
+    // gaussian elimination w/ partial pivoting
+    var pmax = 0, pmin = Infinity;
+    for (var c = 0; c < m; c++) {
+      var p = c;
+      for (i = c + 1; i < m; i++) if (Math.abs(Kr[i][c]) > Math.abs(Kr[p][c])) p = i;
+      if (p !== c) { var tm = Kr[c]; Kr[c] = Kr[p]; Kr[p] = tm; tm = Fr[c]; Fr[c] = Fr[p]; Fr[p] = tm; }
+      var pv = Math.abs(Kr[c][c]);
+      pmax = Math.max(pmax, pv); pmin = Math.min(pmin, pv);
+      if (pv < 1e-14) return null;
+      for (i = c + 1; i < m; i++) {
+        var f = Kr[i][c] / Kr[c][c];
+        for (j = c; j < m; j++) Kr[i][j] -= f * Kr[c][j];
+        Fr[i] -= f * Fr[c];
+      }
+    }
+    var q = new Array(m).fill(0);
+    for (i = m - 1; i >= 0; i--) {
+      var s = Fr[i];
+      for (j = i + 1; j < m; j++) s -= Kr[i][j] * q[j];
+      q[i] = s / Kr[i][i];
+    }
+    return { q: [0, 0].concat(q), cond: kappa, rankMeas: rankMeas, rankTot: m };
+  }
+  function wRec(q, x) {
+    var e = Math.min(NE - 1, Math.floor(x / hE)), xi = (x - e * hE) / hE;
+    var N = [1 - 3 * xi * xi + 2 * xi * xi * xi, hE * (xi - 2 * xi * xi + xi * xi * xi), 3 * xi * xi - 2 * xi * xi * xi, hE * (-xi * xi + xi * xi * xi)];
+    return N[0] * q[2 * e] + N[1] * q[2 * e + 1] + N[2] * q[2 * e + 2] + N[3] * q[2 * e + 3];
+  }
+  function kRec(q, x) {
+    var e = Math.min(NE - 1, Math.floor(x / hE)), xi = (x - e * hE) / hE, B = bRow(xi, hE);
+    return B[0] * q[2 * e] + B[1] * q[2 * e + 1] + B[2] * q[2 * e + 2] + B[3] * q[2 * e + 3];
+  }
+
+  // ---- damage index vs baseline SHAPE (tip-load profile 1-x) ----
+  function anomaly(meas) {
+    var num = 0, den = 0, i;
+    for (i = 0; i < 5; i++) { num += meas[i] * (1 - XS[i]); den += (1 - XS[i]) * (1 - XS[i]); }
+    var c = num / den, mx = 0, at = 0;
+    if (Math.abs(c) < 0.05) return { max: 0, at: 0 };
+    for (i = 0; i < 5; i++) {
+      var d = Math.abs((meas[i] - c * (1 - XS[i])) / (c * (1 - XS[i])));
+      if (d > mx) { mx = d; at = i; }
+    }
+    return { max: mx, at: at };
+  }
+
+  function tick() { t += 0.12; update(); }
+
+  function update() {
+    el('ts-skew-val').textContent = el('ts-skew').value;
+    el('ts-drift-val').textContent = el('ts-drift').value;
+    var meas = readSensors(t);
+    var sol = solve(meas);
+    var q = sol.q;
+    var skew = parseFloat(el('ts-skew').value), drift = parseFloat(el('ts-drift').value);
+    var drop = el('ts-drop').checked, contact = el('ts-contact').checked, age = el('ts-age').checked;
+    var decide = el('ts-decide').checked, valOn = el('ts-val').checked;
+    // Rung 3 requires that nothing is silently broken: an unguarded pathology
+    // disqualifies the twin even while the validation channel happens to agree.
+    var unhandled = [];
+    if (Math.abs(skew) > 0) unhandled.push('channels are not time-aligned (' + skew + ' ms skew)');
+    if (Math.abs(drift) > 0) unhandled.push('channel 1 is drifting uncorrected');
+    if (drop) unhandled.push('a stale channel is still being trusted');
+    if (age) unhandled.push('stiffness has aged away from the commissioning model');
+    if (contact) unhandled.push('a new contact has changed the structure the model assumes');
+    var an = anomaly(meas), alarm = decide && an.max > 0.12;
+
+    // validation channel
+    var laser = wTrue(1, t) * (1 + 0.005 * randn());
+    var valErr = Math.abs(wRec(q, 1) - laser) / Math.max(0.05, Math.abs(laser)) * 100;
+
+    // ---- ladder verdict ----
+    var rung, rcol, rtext;
+    if (!playing) { rung = 'RUNG 0 — OFFLINE MODEL'; rcol = '#888'; rtext = 'No stream: a mechanical model exists, nothing is synchronized. Press Stream.'; }
+    else if (!decide) { rung = 'RUNG 1 — DIGITAL SHADOW'; rcol = '#1565c0'; rtext = 'The mirror follows the asset, but nothing acts on it. Enable decision feedback to climb.'; }
+    else if (!valOn) { rung = 'RUNG 2 — DATA-DRIVEN TWIN (UNVALIDATED)'; rcol = '#b36118'; rtext = 'Decisions are being taken on the reconstruction with no independent check. Enable validation to climb.'; }
+    else if (valErr < 6 && !unhandled.length) { rung = 'RUNG 3 — SYNCHRONIZED TWIN'; rcol = '#2e7d32'; rtext = 'Stream + decisions + independent validation agreeing, and no unhandled channel pathology. This is the rung the term "digital twin" should be reserved for.'; }
+    else if (valErr < 6) { rung = 'RUNG 2 — DEMOTED: UNHANDLED PATHOLOGY'; rcol = '#b36118'; rtext = 'Validation currently agrees, but ' + unhandled.join(', ') + ' — an unguarded channel that happens to look fine is not a synchronized twin, it is a twin waiting to be wrong. Synchronization, channel health and uncertainty are entry conditions for rung 3, not bonuses.'; }
+    else { rung = 'RUNG 2 — DEMOTED: VALIDATION FAILING'; rcol = '#c62828'; rtext = 'The independent channel contradicts the reconstruction (error ' + valErr.toFixed(1) + '%). Decisions are running on numbers the physics disputes — find the pathology before trusting anything.'; }
+    el('ts-ladder').innerHTML = '<span style="display:inline-block;padding:5px 14px;border-radius:14px;background:' + rcol + ';color:#fff;font-size:12px;font-weight:700;">' + rung + '</span> <span style="font-size:12px;color:#555;margin-left:8px;">' + rtext + '</span>';
+
+    // ---- SVG ----
+    var W = 560, sc = 170, y0 = 96;
+    var s = '<g font-family="sans-serif">';
+    s += '<text x="14" y="20" font-size="11" fill="#666">t = ' + t.toFixed(1) + ' s &nbsp;&middot;&nbsp; load P(t) = ' + loadP(t).toFixed(2) + (age ? ' &nbsp;&middot;&nbsp; EI decayed to ' + (ageEI(t) * 100).toFixed(0) + '%' : '') + '</text>';
+    if (alarm) {
+      var atag = contact ? 'shape change detected — prop or damage? the index cannot tell' : (drift > 0 ? 'FALSE POSITIVE — drift, not damage' : 'anomaly');
+      s += '<rect x="330" y="8" width="222" height="30" rx="4" fill="#fdecea" stroke="#c62828"/><text x="441" y="21" font-size="10.5" font-weight="700" text-anchor="middle" fill="#c62828">ALARM max|D&#7522;| = ' + (an.max * 100).toFixed(0) + '% at x = ' + XS[an.at] + '</text><text x="441" y="33" font-size="9" text-anchor="middle" fill="#c62828">' + atag + '</text>';
+    } else if (decide) {
+      s += '<text x="552" y="20" font-size="10" text-anchor="end" fill="#2e7d32">no alarm (max|D&#7522;| = ' + (an.max * 100).toFixed(0) + '%)</text>';
+    }
+    // wall + beam axis
+    s += '<rect x="26" y="' + (y0 - 42) + '" width="8" height="84" fill="#bbb"/>';
+    s += '<line x1="34" y1="' + y0 + '" x2="' + (34 + 480) + '" y2="' + y0 + '" stroke="#ddd" stroke-width="1"/>';
+    function px(x) { return 34 + 480 * x; }
+    // curves
+    var pT = '', pR = '';
+    for (var k = 0; k <= 48; k++) {
+      var x = k / 48, yT = y0 + sc * wTrue(x, t), yR = y0 + sc * wRec(q, x);
+      pT += (k ? 'L' : 'M') + px(x).toFixed(1) + ',' + yT.toFixed(1);
+      pR += (k ? 'L' : 'M') + px(x).toFixed(1) + ',' + yR.toFixed(1);
+    }
+    s += '<path d="' + pT + '" stroke="#1565c0" stroke-width="2.5" fill="none"/>';
+    s += '<path d="' + pR + '" stroke="#7b1fa2" stroke-width="2" stroke-dasharray="6,3" fill="none"/>';
+    if (contact) {
+      var xa = px(A), ya = y0 + sc * 0; // prop drawn at undeformed axis height, symbol below true curve
+      s += '<path d="M' + xa + ',' + (y0 + sc * wTrue(A, t)) + ' l-8,14 l16,0 z" fill="none" stroke="#c62828" stroke-width="1.5"/><text x="' + xa + '" y="' + (y0 + sc * wTrue(A, t) + 28) + '" font-size="9" text-anchor="middle" fill="#c62828">prop (truth only)</text>';
+    }
+    // sensors
+    for (k = 0; k < 5; k++) {
+      var col = '#2e7d32', tag = '';
+      if (k === 0 && drift > 0) { col = '#b36118'; tag = 'drifting'; }
+      if (k === 2 && drop) { col = '#c62828'; tag = 'stale'; }
+      s += '<circle cx="' + px(XS[k]) + '" cy="' + (y0 + sc * wTrue(XS[k], t)) + '" r="4.5" fill="' + col + '"/>';
+      if (tag) s += '<text x="' + px(XS[k]) + '" y="' + (y0 + sc * wTrue(XS[k], t) - 9) + '" font-size="8.5" text-anchor="middle" fill="' + col + '" font-weight="700">' + tag + '</text>';
+    }
+    // legend
+    s += '<line x1="40" y1="238" x2="70" y2="238" stroke="#1565c0" stroke-width="2.5"/><text x="76" y="242" font-size="10.5" fill="#333">true w(x,t)</text>';
+    s += '<line x1="160" y1="238" x2="190" y2="238" stroke="#7b1fa2" stroke-width="2" stroke-dasharray="6,3"/><text x="196" y="242" font-size="10.5" fill="#333">twin reconstruction</text>';
+    s += '<circle cx="330" cy="238" r="4" fill="#2e7d32"/><text x="340" y="242" font-size="10.5" fill="#333">curvature-pair station</text>';
+    // recovered moment strip
+    s += '<text x="40" y="262" font-size="9.5" fill="#666">recovered |M| = EI&#8320;|&kappa;<tspan baseline-shift="sub" font-size="7">rec</tspan>| (commissioning stiffness):</text>';
+    for (k = 0; k < 40; k++) {
+      var xm = (k + 0.5) / 40, mag = Math.min(1, Math.abs(kRec(q, xm)) / 1.1);
+      s += '<rect x="' + (34 + 480 * k / 40) + '" y="268" width="' + (480 / 40 + 0.5) + '" height="12" fill="rgba(123,31,162,' + (0.06 + 0.9 * mag).toFixed(2) + ')"/>';
+    }
+    s += '<text x="34" y="296" font-size="8.5" fill="#999">root</text><text x="514" y="296" font-size="8.5" fill="#999">tip</text>';
+    s += '</g>';
+    el('ts-svg').innerHTML = s;
+
+    // ---- persistent panel ----
+    var chans = [];
+    for (k = 0; k < 5; k++) {
+      var st = 'live';
+      if (k === 0 && drift > 0) st = '<span style="color:#b36118;font-weight:600;">drifting</span>';
+      if (k === 2 && drop) st = '<span style="color:#c62828;font-weight:600;">stale (holding last value)</span>';
+      chans.push('ch' + (k + 1) + ': ' + st);
+    }
+    var assume = '<li>linear beam kinematics, small strain</li><li>geometry known (thickness, length)</li>';
+    assume += '<li>synchronous sampling: ' + (skew > 0 ? '<span style="color:#b36118;font-weight:600;">VIOLATED — channels staggered by ' + skew + ' ms each</span>' : 'holds') + '</li>';
+    assume += '<li>baseline BCs unchanged: ' + (contact ? '<span style="color:#c62828;font-weight:600;">VIOLATED — truth has a prop the twin\'s model lacks</span>' : 'holds') + '</li>';
+    assume += '<li>commissioning-era C for stress: ' + (age ? '<span style="color:#b36118;font-weight:600;">STALE — stiffness has decayed ' + ((1 - ageEI(t)) * 100).toFixed(0) + '%</span>' : 'holds') + '</li>';
+    assume += '<li>zero-curvature prior at &lambda; = 10<sup>&minus;4</sup> on every element (soft, non-physical: it is what fills directions the 5 sensors cannot see)</li>';
+    var valLine = valOn
+      ? ((valErr < 6 ? '<span style="color:#2e7d32;font-weight:700;">' : '<span style="color:#c62828;font-weight:700;">') + valErr.toFixed(1) + '%</span> <span style="font-size:11px;color:#888;">tip laser vs reconstruction</span>')
+      : '<span style="color:#c62828;">&mdash; no independent channel</span> <span style="font-size:11px;color:#888;">cannot rank above rung 2</span>';
+    el('ts-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the twin sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> 5 curvature channels (top/bottom pairs) @ ~8 Hz<br><span style="font-size:11px;color:#666;">' + chans.join(' &middot; ') + '</span></div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> 8 nodal DOFs (4 nodes &times; (w, &theta;)), 2 anchored at the root &rarr; 6 free</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank:</strong> ' + sol.rankMeas + ' / ' + sol.rankTot + ' directions fixed by <em>measurement</em>; the other ' + (sol.rankTot - sol.rankMeas) + ' are fixed by the soft zero-curvature prior &nbsp;&middot;&nbsp; <strong>&kappa;<sub>2</sub>(K):</strong> ' + sol.cond.toExponential(1) + ' <span style="font-size:11px;color:#666;">(normal-equations matrix, so this is the <em>square</em> of the underlying operator&rsquo;s conditioning)</span></div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation:</strong> ' + valLine + '</div>' +
+      '<div style="font-size:11px;font-weight:700;color:#2e7d32;border-top:1px solid #ddd;padding-top:6px;">E: not used for shape &nbsp;&middot;&nbsp; loads: never seen</div>';
+
+    // ---- readout ----
+    var notes = [];
+    if (drift > 0 && !alarm) notes.push('<strong>Drift is active and nothing is alarming:</strong> the bias bends the whole reconstruction smoothly &mdash; indistinguishable from a load change (&sect;10, front 4).');
+    if (drift > 0 && alarm && !contact) notes.push('<strong>That alarm is the drifted channel,</strong> not damage &mdash; the $D_i$ index cannot know the difference.');
+    if (skew > 0) notes.push('<strong>Skew:</strong> during load swings the five channels describe five different instants; the least-squares solve fuses them into a state that never existed (&sect;10, front 2).');
+    if (age) notes.push('<strong>Ageing:</strong> a uniform stiffness decay preserves the strain <em>shape</em>, so the anomaly index is blind to it &mdash; and the recovered moment strip above overestimates the actual moment by ' + ((1 / ageEI(t) - 1) * 100).toFixed(0) + '% because it uses commissioning-era stiffness. The fast state loop cannot see what only the slow parameter loop can fix (&sect;1, &sect;9).');
+    if (drop) notes.push('<strong>Stale channel:</strong> ch3 keeps reporting an old strain as if fresh &mdash; a dropout guard should reweight it to &lambda;, not trust it.');
+    var ro = el('ts-readout');
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\mathbf{K}\\,\\mathbf{U}_t = \\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}}_t) \\quad \\text{— } \\mathbf{K} \\text{ fixed, } \\mathbf{F} \\text{ rebuilt every tick}$$</div>' + (notes.length ? '<div>' + notes.join(' ') + '</div>' : '<div>Clean stream: reconstruction tracks truth from 5 strain stations, no loads, no material constants. Now break it.</div>');
+    renderMath(ro);
+  }
+
+  el('ts-play').addEventListener('click', function() {
+    playing = !playing;
+    this.innerHTML = playing ? '&#10074;&#10074; Pause' : '&#9654; Stream';
+    if (playing) timer = setInterval(tick, 120); else { clearInterval(timer); update(); }
+  });
+  el('ts-reset').addEventListener('click', function() {
+    t = 0; lastVals = [null, null, null, null, null];
+    playing = false; clearInterval(timer);
+    el('ts-play').innerHTML = '&#9654; Stream';
+    update();
+  });
+  ['ts-skew', 'ts-drift'].forEach(function(id) { el(id).addEventListener('input', update); });
+  ['ts-drop', 'ts-contact', 'ts-age', 'ts-decide', 'ts-val'].forEach(function(id) {
+    el(id).addEventListener('change', function() { if (!el('ts-drop').checked) lastVals[2] = null; update(); });
+  });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+  <script>
+  initFlashcards('mod12-flashcards', [
+    {
+      q: "Why is iFEM 'real-time by construction' as a digital-twin engine?",
+      a: "The system matrix $\\mathbf{K}$ depends only on mesh, sensor layout, and weights \u2014 never on the data. Factorize $\\mathbf{K}=\\mathbf{L}\\mathbf{L}^{\\mathsf T}$ once offline; each twin update is only assembling $\\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}})$ (linear in the strains) plus two triangular solves, cost $O(\\mathrm{nnz}(\\mathbf{L}))$."
+    },
+    {
+      q: "Which two inputs of forward FEM does iFEM NOT need for displacement reconstruction?",
+      a: "Applied loads and elastic material constants. The least-squares matching of section strains is purely kinematic. Material properties enter only afterwards, at stress recovery via $\\boldsymbol{\\sigma}=\\mathbf{C}(z)\\,\\boldsymbol{\\varepsilon}$."
+    },
+    {
+      q: "Give the formulas converting a top/bottom surface-gauge pair (plate thickness $2h$) into experimental membrane strain and curvature.",
+      a: "$\\mathbf{e}^{\\varepsilon}=\\tfrac{1}{2}(\\boldsymbol{\\varepsilon}^{+}+\\boldsymbol{\\varepsilon}^{-})$ and $\\boldsymbol{\\kappa}^{\\varepsilon}=\\tfrac{1}{2h}(\\boldsymbol{\\varepsilon}^{+}-\\boldsymbol{\\varepsilon}^{-})$. Note the $1/(2h)$ difference amplifies sensor noise for thin skins, and single-sided sensing cannot separate the two without extra assumptions."
+    },
+    {
+      q: "What role does the small weight $\\lambda$ (typically quoted around $10^{-4}$) play where sensors are missing?",
+      a: "It supplies a <em>soft zero-strain prior</em>: a finite-weight pseudo-observation with target $\\mathbf{0}$. It buys rank \u2014 keeping $\\mathbf{K}$ nonsingular in directions no sensor constrains \u2014 and pays bias, pulling those directions toward zero section strain. Raising it to full weight would force the reconstruction flat there; removing it entirely leaves the system singular. It is a trade, not a free fix, and the honest readout names how many directions it (not the data) decided."
+    },
+    {
+      q: "Gherlone et al. (2018) compared three shape-sensing families on a wing-shaped plate. Name them and iFEM's distinctive advantage.",
+      a: "Ko's displacement theory (curvature integration along beam-like lines), the Modal Method ($\\mathbf{u}\\approx\\boldsymbol{\\Phi}\\mathbf{q}$ with $\\mathbf{q}$ from strain-mode least squares), and iFEM. iFEM alone needs no load model and no material/mode basis, handles arbitrary BCs, and returns full-field stress \u2014 at the price of more instrumentation."
+    },
+    {
+      q: "What did Kefal & Oterkus (2016, Ocean Engineering) demonstrate, and why is it the marine iFEM template?",
+      a: "Displacement AND stress monitoring of a full Panamax containership modeled with iQS4 inverse shell elements under wave-induced loads \u2014 showing ship-scale, load-blind reconstruction of hull response from strain data: effectively a structural digital twin before the term was standard."
+    },
+    {
+      q: "What is the loading and validation setup of the NREL 5 MW blade iFEM study (Li et al. 2023)?",
+      a: "Aerodynamic forces from Blade Element Momentum Theory (BEMT); iFEM reconstructions with full and reduced sensor sets compared against a reference forward-FEM solution, across several wind velocities; conclusion (abstract wording): iFEM is a suitable technique for shape sensing of offshore wind turbines."
+    },
+    {
+      q: "Why does linear iFEM fail on soft robots, in order of what breaks first?",
+      a: "Finite rotations invalidate the linear strain\u2013displacement operators (kinematics fail before material does); the $\\mathbf{e}+z\\boldsymbol{\\kappa}$ through-thickness split loses meaning at large strain; and stress recovery needs a hyperelastic law, e.g. built on $\\mathbf{E}=\\tfrac12(\\mathbf{F}^{\\mathsf T}\\mathbf{F}-\\mathbf{I})$. Remedies: incremental/co-rotational reformulation."
+    },
+    {
+      q: "The phrase 'inverse finite element method' names two different problems. Distinguish them.",
+      a: "State reconstruction (Tessler line): unknown is the displacement field, solved per tick from measured strains, material-free. Parameter identification (biomech line, e.g. Seshaiyer & Humphrey 2003): unknowns are constitutive parameters, found by iterative optimization over forward solves given measured deformations. Same name, different unknowns."
+    },
+    {
+      q: "How does iFEM-based damage detection work, and what is its most insidious false positive?",
+      a: "Compare the reconstructed equivalent strain/stress field to a healthy baseline, e.g. $D_i=(\\varepsilon^{vM}_i-\\varepsilon^{vM}_{i,\\text{base}})/\\varepsilon^{vM}_{i,\\text{base}}$; a localized anomaly flags damage. Sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
+    },
+    {
+      q: "Per-snapshot iFEM has no inertial term. Is reconstructing a vibrating structure therefore invalid?",
+      a: "No \u2014 displacement-from-strain matching is kinematic, so each synchronous snapshot is legitimate. The real dynamic-regime obstacles are channel synchronization (multiplexed interrogators), aliasing, and the absence of temporal filtering: each estimate is fresh, so noise is never smoothed over time."
+    },
+    {
+      q: "What is the 'inverse crime' in iFEM validation and how do you avoid it?",
+      a: "Validating the reconstruction only against synthetic strains generated by the same model that supplies the reference solution \u2014 this proves self-consistency, not accuracy. Avoid it with experimental campaigns (e.g. rosettes + fiber optics under bending/torsion, Esposito et al. 2023) or at least an independent measurement such as DIC."
+    }
+  ]);
+  </script>
+
+</body>
+</html>

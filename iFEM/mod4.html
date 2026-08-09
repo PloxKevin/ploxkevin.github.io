@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4. The iFEM Principle — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">4. The iFEM Principle</h1>
+    <p class="page-subtitle">Shape sensing, the Tessler&ndash;Spangler functional, section strains, weighted least squares, no-material no-load reconstruction, Ko displacement theory, modal methods, real-time SHM</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#why-shape-sensing">1. Why Shape Sensing: The Helios Lesson</a>
+      <a href="#forward-vs-inverse">2. Forward vs Inverse: What Makes Shape Sensing Hard</a>
+      <a href="#fsdt-kinematics">3. Kinematic Scaffold: First-Order Shear Deformation Theory</a>
+      <a href="#section-strains-from-sensors">4. From Surface Strains to Section Strains</a>
+      <a href="#the-variational-functional">5. The Tessler&ndash;Spangler Functional</a>
+      <a href="#discretization-and-solution">6. Discretization, Pose Anchoring, and the Real-Time Solve</a>
+      <a href="#no-material-no-loads">7. Why No Material Properties, No Loads</a>
+      <a href="#rivals-comparison">8. The Rivals: Ko Displacement Theory and Modal Methods</a>
+      <a href="#practice-weights-sensors">9. Practice: Weights, Sensor Economy, Element Accuracy</a>
+      <a href="#applications-frontier">10. Applications and the 2023&ndash;2026 Frontier</a>
+      <a class="toc-interactive" href="#ifem-lab">Interactive: iFEM Functional Lab</a>
+      <a class="toc-interactive" href="#ko-lab">Interactive: Ko Cantilever Reconstructor</a>
+      <a class="toc-interactive" href="#ifem-walkthrough">Interactive: Walkthrough &mdash; Surface Strain to Shape</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: WHY SHAPE SENSING ===== -->
+    <h2 class="section-heading" id="why-shape-sensing">1. Why Shape Sensing: The Helios Lesson</h2>
+
+    <p>NASA's Helios was a solar-electric flying wing with a 247&nbsp;ft wingspan &mdash; longer than a C-5 transport (222&nbsp;ft) or a Boeing 747 (195&ndash;215&nbsp;ft) &mdash; built around a carbon-fiber tubular main spar of 4&nbsp;in radius. Being ultralight and extremely flexible, it routinely flew with wingtip deflections of up to 40&nbsp;ft; the deformed wing approached a 72-degree circular arc of 197&nbsp;ft radius. In 2003 it broke up in midair at roughly 3000&nbsp;ft. The mishap is attributed to undamped pitch oscillations of the highly deformed wing (Ko, Richards &amp; Tran, NASA/TP-2007-214612).</p>
+
+    <p>The engineering conclusion was blunt: a structure flexible enough to change its own aerodynamics needs real-time knowledge of its own deformed shape &mdash; displayed to the operator, or fed directly into the control loop. That requirement has a name.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem — Shape Sensing</div>
+      <div>Reconstruct the displacement field $\mathbf{u}(\mathbf{x})$ everywhere on a structure from a finite set of discrete strain measurements taken on its surface &mdash; in real time, during operation, while the loads acting on the structure and its exact material state are unknown.</div>
+    </div>
+
+    <h3 class="subsection-heading">Why Strain Sensors, Not Cameras</h3>
+    <p>Electro-optical deflection systems &mdash; cameras tracking wing-mounted targets &mdash; exist, but they are too heavy for weight-critical vehicles. Conventional strain-gauge networks fail on wiring weight alone. What made dense in-flight strain sensing practical was fiber optics: FBG arrays are hair-thin and highly multiplexable, so one fiber can carry hundreds of strain stations. This is the same sensing-modality trade the tactile-skin world faces: the sensor budget is set by weight, wiring, and integration constraints, not by what would be informationally ideal.</p>
+
+    <h3 class="subsection-heading">Why Not Just Run a Forward FEM</h3>
+    <p>The obvious idea &mdash; model the wing, apply the loads, solve for displacements &mdash; dies on its inputs. In flight, the aerodynamic loads are unknown and unmeasurable. The material state is uncertain too: aging, damage, temperature all shift the stiffness away from the design values. The forward problem's inputs are simply missing. Shape sensing must work from what <em>is</em> measurable: strains on the surface.</p>
+
+    <div class="insight-box">
+      <div class="box-label">The module's punchline</div>
+      <div>The inverse Finite Element Method of Tessler &amp; Spangler (NASA Langley; NASA/TM-2003-212445, archival version CMAME 2005) reconstructs full-field displacements from measured strains using only geometry, a kinematic model, and boundary restraints &mdash; <strong>no loads, no elastic constants</strong> &mdash; and its linear-algebra structure makes it real-time capable. The applications now range from aerospace wings to marine hulls, wind turbines, and any strain-instrumented elastic body.</div>
+    </div>
+
+    <!-- ===== SECTION 2: FORWARD VS INVERSE ===== -->
+    <h2 class="section-heading" id="forward-vs-inverse">2. Forward vs Inverse: What Makes Shape Sensing Hard</h2>
+
+    <p>Forward structural analysis runs: given geometry, a material matrix, loads, and boundary conditions, solve $\mathbf{K}(E,\nu)\,\mathbf{U} = \mathbf{F}$ for displacements, then differentiate for strains. Shape sensing inverts the last arrow: given strains at scattered points, recover the displacements.</p>
+
+    <div class="math-block">$$\underbrace{\mathbf{K}(E,\nu)\,\mathbf{U} = \mathbf{F}(\text{loads})}_{\text{forward FEM}} \qquad \text{vs} \qquad \underbrace{\boldsymbol{\varepsilon}^{\text{meas}} \;\longrightarrow\; \mathbf{U}}_{\text{inverse problem}}$$</div>
+
+    <p>In the observation-model language of <a href="mod3.html">Module 3</a>, $\mathbf{y} = \mathcal{H}(\mathbf{u}, p, f, X_0) + b + \eta$: here the data $\mathbf{y}$ are surface strains, the unknown is the displacement field $\mathbf{u}$ itself, the assumed-known set is geometry, mesh, sensor positions, and boundary restraints &mdash; and, remarkably, the material parameters $p$ and loads $f$ drop out of the problem entirely. What remains fundamentally unobservable from strain is the rigid-body pose (Section 6).</p>
+
+    <h3 class="subsection-heading">Intuition in 1D First</h3>
+    <p>For a slender beam, the surface bending strain at half-depth $c$ is</p>
+    <div class="math-block">$$\varepsilon^{\text{surf}}(x) = c\,\frac{d^2 w}{dx^2}$$</div>
+    <p>so shape recovery is a <strong>double integration</strong> of measured strain, with two integration constants fixed by boundary conditions. Three difficulties appear immediately:</p>
+    <ol>
+      <li><strong>Discreteness.</strong> Measurements exist only at stations, so an interpolation assumption between stations is unavoidable.</li>
+      <li><strong>Noise accumulation.</strong> Measurement noise is integrated twice and accumulates toward the free end.</li>
+      <li><strong>No integration path in 2D.</strong> In plates and shells there is no single line to integrate along &mdash; eight coupled section-strain measures (membrane, bending, transverse shear) interact under arbitrary boundary conditions, and naive path integration becomes hopeless with sparse sensors.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Why shape sensing is only mildly ill-posed</div>
+      <div>Compared to the other inverse problems in this guide, shape sensing is the gentle one. Going from strain to displacement is an <em>integrating</em>, smoothing map &mdash; the opposite of load or material inversion, where the data must effectively be differentiated and noise is amplified. The ill-posedness here is of a milder kind: discreteness, noise, and undetermined integration constants. iFEM's move is to convert this ill-posed integration problem into a <strong>well-posed overdetermined fitting problem</strong>, where the finite element kinematic field supplies the smoothness regularization and weights handle missing data. Module 3 covers the generic machinery; this module is the iFEM-specific instance.</div>
+    </div>
+
+    <h3 class="subsection-heading">Three Families of Solutions</h3>
+    <p>The field converged on three families, compared head-to-head in Section 8:</p>
+    <ul>
+      <li><strong>(a) Direct integration</strong> &mdash; Ko displacement theory: assume a piecewise-linear strain profile between stations and integrate the beam equation in closed form.</li>
+      <li><strong>(b) Modal / basis-function expansion</strong> &mdash; write $\mathbf{u} = \boldsymbol{\Phi}\mathbf{q}$ in a truncated basis of mode shapes from an FE model and least-squares fit the amplitudes.</li>
+      <li><strong>(c) Variational full-field methods</strong> &mdash; the iFEM: discretize the structure with finite elements whose nodal DOFs are found by minimizing a weighted-least-squares mismatch between the element's analytic section strains and their measured counterparts.</li>
+    </ul>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 860 340" style="max-width:100%;background:#fff;border:1px solid #eee;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#1565c0"/></marker>
+          <marker id="arrO" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#e67e22"/></marker>
+          <marker id="arrG" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#999"/></marker>
+        </defs>
+        <text x="20" y="28" font-size="13" font-weight="700" fill="#1565c0" font-family="sans-serif">Forward FEM</text>
+        <!-- forward inputs -->
+        <rect x="20" y="42" width="118" height="34" rx="4" fill="#eef3fa" stroke="#1565c0"/>
+        <text x="79" y="63" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">Geometry + mesh</text>
+        <rect x="20" y="84" width="118" height="34" rx="4" fill="#eef3fa" stroke="#1565c0"/>
+        <text x="79" y="100" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">Material C(E, &nu;)</text>
+        <text x="79" y="113" font-size="10" text-anchor="middle" fill="#888" font-family="sans-serif">constitutive law</text>
+        <rect x="158" y="42" width="90" height="34" rx="4" fill="#eef3fa" stroke="#1565c0"/>
+        <text x="203" y="63" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">Loads F</text>
+        <rect x="158" y="84" width="90" height="34" rx="4" fill="#eef3fa" stroke="#1565c0"/>
+        <text x="203" y="105" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">BCs</text>
+        <line x1="248" y1="80" x2="300" y2="80" stroke="#1565c0" stroke-width="1.5" marker-end="url(#arrB)"/>
+        <rect x="302" y="60" width="120" height="40" rx="4" fill="#fff" stroke="#1565c0" stroke-width="2"/>
+        <text x="362" y="84" font-size="12" text-anchor="middle" fill="#1565c0" font-weight="600" font-family="sans-serif">solve K U = F</text>
+        <line x1="422" y1="80" x2="474" y2="80" stroke="#1565c0" stroke-width="1.5" marker-end="url(#arrB)"/>
+        <rect x="476" y="60" width="118" height="40" rx="4" fill="#fff" stroke="#1565c0"/>
+        <text x="535" y="84" font-size="12" text-anchor="middle" fill="#333" font-family="sans-serif">displacements U</text>
+        <line x1="594" y1="80" x2="646" y2="80" stroke="#1565c0" stroke-width="1.5" marker-end="url(#arrB)"/>
+        <text x="620" y="72" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">differentiate</text>
+        <rect x="648" y="60" width="90" height="40" rx="4" fill="#fff" stroke="#1565c0"/>
+        <text x="693" y="84" font-size="12" text-anchor="middle" fill="#333" font-family="sans-serif">strains</text>
+
+        <line x1="20" y1="150" x2="840" y2="150" stroke="#ddd" stroke-dasharray="4,4"/>
+
+        <text x="20" y="178" font-size="13" font-weight="700" fill="#e67e22" font-family="sans-serif">Inverse FEM (shape sensing)</text>
+        <!-- inverse inputs -->
+        <rect x="20" y="192" width="118" height="34" rx="4" fill="#fdf3ea" stroke="#e67e22"/>
+        <text x="79" y="213" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">Geometry + mesh</text>
+        <rect x="20" y="234" width="118" height="34" rx="4" fill="#fdf3ea" stroke="#e67e22"/>
+        <text x="79" y="250" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">Measured strains</text>
+        <text x="79" y="263" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">&epsilon;&#7504;&#7497;&#7491;&#738;</text>
+        <rect x="158" y="192" width="90" height="34" rx="4" fill="#fdf3ea" stroke="#e67e22"/>
+        <text x="203" y="213" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">BCs (pose)</text>
+        <!-- not-required boxes -->
+        <rect x="158" y="234" width="90" height="30" rx="4" fill="#f5f5f5" stroke="#bbb" stroke-dasharray="3,3"/>
+        <text x="203" y="247" font-size="10" text-anchor="middle" fill="#999" font-family="sans-serif">Material C(E, &nu;)</text>
+        <line x1="166" y1="258" x2="240" y2="240" stroke="#c62828" stroke-width="1.3"/>
+        <text x="203" y="260" font-size="9" text-anchor="middle" fill="#c62828" font-family="sans-serif">not required</text>
+        <rect x="158" y="272" width="90" height="30" rx="4" fill="#f5f5f5" stroke="#bbb" stroke-dasharray="3,3"/>
+        <text x="203" y="285" font-size="10" text-anchor="middle" fill="#999" font-family="sans-serif">Loads F</text>
+        <line x1="166" y1="296" x2="240" y2="278" stroke="#c62828" stroke-width="1.3"/>
+        <text x="203" y="298" font-size="9" text-anchor="middle" fill="#c62828" font-family="sans-serif">not required</text>
+
+        <line x1="248" y1="222" x2="300" y2="222" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrO)"/>
+        <rect x="302" y="200" width="120" height="46" rx="4" fill="#fff" stroke="#e67e22" stroke-width="2"/>
+        <text x="362" y="219" font-size="11" text-anchor="middle" fill="#e67e22" font-weight="600" font-family="sans-serif">minimize &Phi;(u) =</text>
+        <text x="362" y="234" font-size="10" text-anchor="middle" fill="#e67e22" font-family="sans-serif">&Sigma; w &Vert;strain(u) &minus; &epsilon;&#7504;&#7497;&#7491;&#738;&Vert;&sup2;</text>
+        <line x1="422" y1="222" x2="474" y2="222" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrO)"/>
+        <text x="448" y="214" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">same shape:</text>
+        <text x="448" y="238" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">K U = F</text>
+        <rect x="476" y="202" width="118" height="40" rx="4" fill="#fff" stroke="#e67e22"/>
+        <text x="535" y="226" font-size="12" text-anchor="middle" fill="#333" font-family="sans-serif">displacements U</text>
+        <line x1="594" y1="222" x2="646" y2="222" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrO)"/>
+        <rect x="648" y="202" width="100" height="40" rx="4" fill="#fff" stroke="#e67e22"/>
+        <text x="698" y="219" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">full-field strains</text>
+        <text x="698" y="233" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">everywhere</text>
+        <line x1="698" y1="242" x2="698" y2="278" stroke="#999" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#arrG)"/>
+        <rect x="620" y="280" width="156" height="40" rx="4" fill="#fafafa" stroke="#999" stroke-dasharray="4,3"/>
+        <text x="698" y="297" font-size="10" text-anchor="middle" fill="#666" font-family="sans-serif">stresses &sigma; = C &epsilon;</text>
+        <text x="698" y="311" font-size="10" text-anchor="middle" fill="#666" font-family="sans-serif">optional &mdash; only if C is known</text>
+      </svg>
+      <div class="figure-caption">Forward vs inverse pipelines. Both end in the same linear-algebra shape &mdash; a sparse symmetric system $\mathbf{K}\mathbf{U}=\mathbf{F}$ &mdash; but the inverse pipeline builds it from geometry and measured strains alone. Material and load boxes appear only as a grayed, optional post-processing branch.</div>
+    </div>
+
+    <!-- ===== SECTION 3: FSDT KINEMATICS ===== -->
+    <h2 class="section-heading" id="fsdt-kinematics">3. Kinematic Scaffold: First-Order Shear Deformation Theory</h2>
+
+    <p>iFEM needs a kinematic model that connects a small set of mid-plane variables to strains everywhere in the plate. Tessler &amp; Spangler chose Mindlin first-order shear deformation theory (FSDT). This section gives the intuition and the two equations the rest of the module leans on; the formal element-level machinery lives in <a href="mod5.html">Module 5</a>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Thickness convention — read this before anything else</div>
+      <div>Tessler's plate spans $z \in [-h, +h]$, so the <strong>total thickness is $2h$</strong> and $h$ is the half-thickness. Many other papers define a thickness $t$ with surfaces at $\pm t/2$. The two conventions describe the same plate ($t = 2h$), but every formula that divides by a thickness must state which symbol it uses &mdash; mixing them doubles or halves every curvature. This page uses Tessler's $2h$ throughout.</div>
+    </div>
+
+    <p>Five kinematic variables live on the mid-plane: in-plane translations $u(x,y)$, $v(x,y)$, the deflection $w(x,y)$, and two rotations $\theta_x$, $\theta_y$ of the normal. In the Tessler&ndash;Spangler convention (NASA/TM-2003-212445, eq.&nbsp;1), $\theta_x$ and $\theta_y$ are rotations of the normal about the <em>negative</em> $x$ and <em>positive</em> $y$ axes respectively &mdash; which is why $\theta_y$ accompanies $z$ in $u_x$ and $\theta_x$ in $u_y$:</p>
+
+    <div class="math-block">$$u_x = u + z\,\theta_y, \qquad u_y = v + z\,\theta_x, \qquad u_z = w, \qquad z \in [-h, +h]$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Trap — rotation sign conventions</div>
+      <div>Sign and axis conventions for $\theta_x, \theta_y$ differ across the literature. The iQS4 paper, for instance, defines counterclockwise rotations about the <em>positive</em> axes and writes $u_y = v - z\theta_x$. Neither is wrong; mixing them is. State one convention and derive everything in it &mdash; a silent mix swaps subscripts and flips signs in the curvatures and shear strains.</div>
+    </div>
+
+    <p>Differentiating the displacement field separates the strains into <strong>eight section-strain measures</strong>: three membrane strains $\mathbf{e}$ (mid-plane stretching), three bending curvatures $\mathbf{k}$ (the linear-in-$z$ part), and two transverse shear strains $\mathbf{g}$ (constant through the thickness in FSDT). The structural fact that carries the whole method is that the in-plane strain at height $z$ is</p>
+
+    <div class="math-block">$$\boldsymbol{\varepsilon}(x,y,z) = \mathbf{e}(x,y) + z\,\mathbf{k}(x,y)$$</div>
+
+    <p>&mdash; <em>linear through the thickness</em>. This is exactly what lets two surface measurements, top and bottom, determine both $\mathbf{e}$ and $\mathbf{k}$ in the next section.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">The eight section strains written out (formal treatment in Module 5)</div>
+      <div class="collapsible-body">
+        <div class="math-block">$$\mathbf{e}(\mathbf{u}) = \begin{pmatrix} u_{,x} \\ v_{,y} \\ u_{,y} + v_{,x} \end{pmatrix}, \quad \mathbf{k}(\mathbf{u}) = \begin{pmatrix} \theta_{y,x} \\ \theta_{x,y} \\ \theta_{x,x} + \theta_{y,y} \end{pmatrix}, \quad \mathbf{g}(\mathbf{u}) = \begin{pmatrix} w_{,x} + \theta_y \\ w_{,y} + \theta_x \end{pmatrix}$$</div>
+        <p>All eight are functions of the five mid-plane kinematic variables only, written in the Tessler&ndash;Spangler rotation convention above. Module 5 develops the general eight-section-strain machinery, the rosette transforms, and the inverse elements built on it.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Why FSDT and Not Kirchhoff Thin-Plate Theory</h3>
+    <ul>
+      <li><strong>$C^0$ elements suffice.</strong> The functional then contains only first derivatives of the kinematic variables, so simple, robust $C^0$-continuous inverse elements can be built &mdash; no curvature continuity requirements.</li>
+      <li><strong>Thickness range.</strong> Transverse shear flexibility covers moderately thick plates and sandwich constructions, not just thin skins.</li>
+      <li><strong>Conditioning.</strong> The least-squares problem stays well-conditioned.</li>
+    </ul>
+
+    <div class="insight-box">
+      <div class="box-label">The epistemic role of FSDT</div>
+      <div>FSDT is the <em>model content</em> of iFEM. The method is not model-free; it is <strong>load-free and constitutive-free</strong>. Everything the reconstruction "knows" about mechanics enters here &mdash; through strain&ndash;displacement (compatibility) relations only. Choose the kinematic theory badly and no amount of data fixes it.</div>
+    </div>
+
+    <!-- ===== SECTION 4: SECTION STRAINS FROM SENSORS ===== -->
+    <h2 class="section-heading" id="section-strains-from-sensors">4. From Surface Strains to Section Strains</h2>
+
+    <p>Now the measured side of the story. A three-gauge strain rosette at one surface point yields the full in-plane strain state $(\varepsilon_{xx}, \varepsilon_{yy}, \gamma_{xy})$ at that point. Instrument the top surface ($z=+h$) and the bottom surface ($z=-h$) at the same in-plane location $\mathbf{x}_j$, and call the readings $\boldsymbol{\varepsilon}^{+}$ and $\boldsymbol{\varepsilon}^{-}$.</p>
+
+    <p>Because the in-plane strain is linear in $z$, averaging and differencing the pair isolates the section strains &mdash; the membrane strain is the mean of top and bottom, the curvature is the difference divided by the full thickness $2h$ (exactly as used in the experimental iFEM literature, e.g. Oboe et al., Sensors 2021):</p>
+
+    <div class="math-block">$$\mathbf{e}^{\varepsilon}_j = \frac{1}{2}\begin{pmatrix} \varepsilon^{+}_{xx} + \varepsilon^{-}_{xx} \\ \varepsilon^{+}_{yy} + \varepsilon^{-}_{yy} \\ \gamma^{+}_{xy} + \gamma^{-}_{xy} \end{pmatrix}_j, \qquad \mathbf{k}^{\varepsilon}_j = \frac{1}{2h}\begin{pmatrix} \varepsilon^{+}_{xx} - \varepsilon^{-}_{xx} \\ \varepsilon^{+}_{yy} - \varepsilon^{-}_{yy} \\ \gamma^{+}_{xy} - \gamma^{-}_{xy} \end{pmatrix}_j$$</div>
+
+    <p>This is pure kinematics &mdash; no material constant enters at any point. (In the $t = 2h$ convention the curvature formula reads $\mathbf{k}^{\varepsilon} = (\boldsymbol{\varepsilon}^{+} - \boldsymbol{\varepsilon}^{-})/t$: same equation, different symbol. That is the factor-of-2 hazard from Section 3 in its natural habitat.)</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 860 320" style="max-width:100%;background:#fff;border:1px solid #eee;" xmlns="http://www.w3.org/2000/svg">
+        <!-- plate cross-section -->
+        <rect x="60" y="100" width="360" height="90" fill="#f2f2f2" stroke="#333"/>
+        <line x1="60" y1="145" x2="420" y2="145" stroke="#555" stroke-dasharray="6,4"/>
+        <text x="428" y="149" font-size="11" fill="#555" font-family="sans-serif">mid-plane, z = 0</text>
+        <!-- z axis -->
+        <line x1="40" y1="200" x2="40" y2="90" stroke="#333" stroke-width="1.2"/>
+        <path d="M40,90 L36,98 L44,98 z" fill="#333"/>
+        <text x="30" y="86" font-size="11" fill="#333" font-family="sans-serif">z</text>
+        <text x="428" y="104" font-size="11" fill="#333" font-family="sans-serif">z = +h (top)</text>
+        <text x="428" y="194" font-size="11" fill="#333" font-family="sans-serif">z = &minus;h (bottom)</text>
+        <!-- thickness brace -->
+        <line x1="52" y1="100" x2="52" y2="190" stroke="#e67e22" stroke-width="1.4"/>
+        <line x1="48" y1="100" x2="56" y2="100" stroke="#e67e22" stroke-width="1.4"/>
+        <line x1="48" y1="190" x2="56" y2="190" stroke="#e67e22" stroke-width="1.4"/>
+        <text x="14" y="150" font-size="12" fill="#e67e22" font-weight="600" font-family="sans-serif">2h</text>
+        <!-- rosettes top and bottom -->
+        <g transform="translate(240,100)">
+          <line x1="-14" y1="0" x2="14" y2="0" stroke="#e67e22" stroke-width="2"/>
+          <line x1="-7" y1="-9" x2="7" y2="9" stroke="#e67e22" stroke-width="2" transform="rotate(15)"/>
+          <line x1="-7" y1="9" x2="7" y2="-9" stroke="#e67e22" stroke-width="2" transform="rotate(-15)"/>
+          <circle cx="0" cy="0" r="3" fill="#e67e22"/>
+        </g>
+        <text x="240" y="82" font-size="12" text-anchor="middle" fill="#e67e22" font-weight="600" font-family="sans-serif">rosette: &epsilon;&#8314;</text>
+        <g transform="translate(240,190)">
+          <line x1="-14" y1="0" x2="14" y2="0" stroke="#e67e22" stroke-width="2"/>
+          <line x1="-7" y1="-9" x2="7" y2="9" stroke="#e67e22" stroke-width="2" transform="rotate(15)"/>
+          <line x1="-7" y1="9" x2="7" y2="-9" stroke="#e67e22" stroke-width="2" transform="rotate(-15)"/>
+          <circle cx="0" cy="0" r="3" fill="#e67e22"/>
+        </g>
+        <text x="240" y="214" font-size="12" text-anchor="middle" fill="#e67e22" font-weight="600" font-family="sans-serif">rosette: &epsilon;&#8315;</text>
+        <line x1="240" y1="104" x2="240" y2="186" stroke="#bbb" stroke-dasharray="3,3"/>
+        <text x="248" y="132" font-size="10" fill="#999" font-family="sans-serif">same x&#11388;, collocated</text>
+        <!-- strain profile -->
+        <line x1="600" y1="90" x2="600" y2="200" stroke="#333" stroke-width="1.2"/>
+        <text x="596" y="82" font-size="11" fill="#333" font-family="sans-serif">z</text>
+        <line x1="540" y1="145" x2="700" y2="145" stroke="#999" stroke-width="1"/>
+        <text x="706" y="149" font-size="10" fill="#999" font-family="sans-serif">&epsilon;</text>
+        <!-- slanted profile line: eps(z) = e + z k -->
+        <line x1="620" y1="190" x2="680" y2="100" stroke="#e67e22" stroke-width="2.5"/>
+        <circle cx="680" cy="100" r="4" fill="#e67e22"/>
+        <circle cx="620" cy="190" r="4" fill="#e67e22"/>
+        <circle cx="650" cy="145" r="4" fill="#1565c0"/>
+        <text x="688" y="98" font-size="11" fill="#333" font-family="sans-serif">&epsilon;&#8314; = e + h&kappa;</text>
+        <text x="560" y="196" font-size="11" fill="#333" font-family="sans-serif" text-anchor="end"></text>
+        <text x="614" y="206" font-size="11" fill="#333" font-family="sans-serif">&epsilon;&#8315; = e &minus; h&kappa;</text>
+        <text x="658" y="140" font-size="11" fill="#1565c0" font-weight="600" font-family="sans-serif">e = (&epsilon;&#8314;+&epsilon;&#8315;)/2</text>
+        <text x="700" y="170" font-size="11" fill="#e67e22" font-weight="600" font-family="sans-serif">slope: &kappa; = (&epsilon;&#8314;&minus;&epsilon;&#8315;)/(2h)</text>
+        <text x="620" y="62" font-size="12" fill="#333" font-family="sans-serif">linear profile &epsilon;(z) = e + z&kappa;</text>
+        <!-- crossed-out mid-surface gauge note -->
+        <g transform="translate(120,262)">
+          <line x1="0" y1="0" x2="20" y2="0" stroke="#999" stroke-width="2"/>
+          <line x1="10" y1="-8" x2="10" y2="8" stroke="#999" stroke-width="2"/>
+          <line x1="-4" y1="10" x2="24" y2="-10" stroke="#c62828" stroke-width="2"/>
+        </g>
+        <text x="156" y="266" font-size="11.5" fill="#555" font-family="sans-serif">transverse shear g: no surface-measurable counterpart &rarr; set g&#7511; = 0 with small weight &lambda; (Section 5)</text>
+      </svg>
+      <div class="figure-caption">Section-strain extraction from a collocated top/bottom rosette pair. The linear-through-thickness profile $\varepsilon(z) = e + z\kappa$ means the pair's mean is the membrane strain and its slope &mdash; difference over $2h$ &mdash; is the curvature. Transverse shear has no surface-measurable counterpart at all.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Crucial Asymmetry: Transverse Shear Is Never Measured</h3>
+    <p>The transverse shear section strains $\mathbf{g}$ have <strong>no measurable surface counterpart</strong>. Surface-mounted gauges read only in-plane strain, and the transverse shear stress vanishes on traction-free faces anyway. So $\mathbf{g}^{\varepsilon}$ cannot be built from surface data:</p>
+
+    <div class="math-block">$$\mathbf{g}^{\varepsilon}_j \;\text{not measurable from surface strains} \;\Rightarrow\; \mathbf{g}^{\varepsilon}_j = \mathbf{0} \;\text{with small weight } w_s = \lambda \ll 1$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Trap — $\mathbf{g}^{\varepsilon}$ is not data</div>
+      <div>Never present the transverse-shear "measurement" as measured. It is a placeholder: iFEM sets $\mathbf{g}^{\varepsilon} = \mathbf{0}$ and gives the shear term a small weight, while the <em>analytic</em> $\mathbf{g}(\mathbf{u})$ term stays in the functional. Keeping it maintains consistent FSDT kinematics; dropping the term entirely changes the element behavior. But be precise about what the small weight does: with the target set to zero, $w_s\lVert\mathbf{g}(\mathbf{u}) - \mathbf{0}\rVert^2$ is a <strong>soft zero-shear prior</strong> &mdash; a finite-weight pseudo-observation, not the absence of one. It buys rank (it constrains directions the rosettes never see) and pays in bias (it pulls the reconstruction toward zero transverse shear wherever the true shear is not small). $w_s$ is the exchange rate between the two, and the honest reading of a converged solve is <em>this direction was fixed by the prior, not by data</em> &mdash; the same rank&ndash;bias trade you meet again for uninstrumented regions in Module 6 and for learned strain completion in Module 11.</div>
+    </div>
+
+    <h3 class="subsection-heading">Practical Notes for the Lab</h3>
+    <ul>
+      <li><strong>Collocation and alignment.</strong> Gauge pairs must be collocated and aligned top/bottom &mdash; misalignment aliases membrane strain into bending.</li>
+      <li><strong>Thickness accuracy.</strong> $2h$ divides the curvature estimate; survey it, don't assume it.</li>
+      <li><strong>FBG fibers</strong> measure only the axial strain component along the fiber, so rosette-equivalent information requires crossed fiber runs or reduced instrumentation plans &mdash; instrumentation details in <a href="mod6.html">Module 6</a>.</li>
+      <li><strong>One-sided access</strong> (common on skins, tanks, in-service hulls): a single surface cannot separate $\mathbf{e}$ from $\mathbf{k}$ at a point &mdash; one reading, two unknowns. Any one-sided scheme must add an assumption (e.g. zero membrane strain) or an extrapolation model, and that assumption can bias the shape. The Functional Lab below lets you watch this happen.</li>
+    </ul>
+
+    <!-- ===== SECTION 5: THE FUNCTIONAL ===== -->
+    <h2 class="section-heading" id="the-variational-functional">5. The Tessler&ndash;Spangler Functional</h2>
+
+    <p>The heart of the method (Tessler &amp; Spangler, NASA/TM-2003-212445; CMAME 2005, vol. 194, pp. 327&ndash;339). Over each inverse element with area $A_e$ and $n$ instrumented stations, define a weighted-least-squares error functional comparing the analytic section strains &mdash; functions of the unknown kinematic field $\mathbf{u}$ &mdash; to their measured counterparts:</p>
+
+    <div class="math-block">$$\Phi(\mathbf{u}) = \sum_{e=1}^{n_{el}} \Big( w_m\,\|\mathbf{e}(\mathbf{u})-\mathbf{e}^{\varepsilon}\|^2 + w_b\,\|\mathbf{k}(\mathbf{u})-\mathbf{k}^{\varepsilon}\|^2 + w_s\,\|\mathbf{g}(\mathbf{u})-\mathbf{g}^{\varepsilon}\|^2 \Big)$$</div>
+
+    <p>The norms are area-averaged squared mismatches evaluated over the element (as written in the applied literature, e.g. Oboe et al. 2021 and Kefal et al. 2016):</p>
+
+    <div class="math-block">$$\|\mathbf{e}(\mathbf{u})-\mathbf{e}^{\varepsilon}\|^2 = \frac{1}{n}\iint_{A_e} \sum_{j=1}^{n} \big[\mathbf{e}(\mathbf{u})_j - \mathbf{e}^{\varepsilon}_j\big]^2\, dx\,dy$$</div>
+    <div class="math-block">$$\|\mathbf{k}(\mathbf{u})-\mathbf{k}^{\varepsilon}\|^2 = \frac{(2h)^2}{n}\iint_{A_e} \sum_{j=1}^{n} \big[\mathbf{k}(\mathbf{u})_j - \mathbf{k}^{\varepsilon}_j\big]^2\, dx\,dy$$</div>
+
+    <h3 class="subsection-heading">Dimensional Scaling: The $(2h)^2$ Factor</h3>
+    <p>Look at the units. Membrane strains and transverse shear strains are dimensionless; curvature has units of 1/length. Squaring and integrating over the element area, the membrane and shear terms carry units of strain&sup2;&thinsp;&times;&thinsp;area &mdash; but the raw curvature term would carry strain&sup2;&thinsp;&times;&thinsp;area/length&sup2;. Multiplying the curvature norm by $(2h)^2$ renders every term <strong>dimensionally commensurate</strong> (strain&sup2;&thinsp;&times;&thinsp;area) and balances the physical influence of bending against stretching. Omitting the factor silently down-weights bending &mdash; worst in exactly the thin structures where bending dominates.</p>
+
+    <h3 class="subsection-heading">The Weights: One Motivating Paragraph</h3>
+    <p>The weights $w_m, w_b, w_s$ are set per component and per element: $1.0$ where a measured value exists, and a small penalty value $\lambda$ (typically $10^{-4}$&ndash;$10^{-5}$ in numerical studies) where the measurement is missing &mdash; always for the shear term under surface-only instrumentation, and for entire elements that carry no sensors:</p>
+
+    <div class="math-block">$$w_{(\cdot)} = \begin{cases} 1.0 & \text{measurement available} \\ \lambda \approx 10^{-4}\text{–}10^{-5} & \text{measurement missing (incl. all } \mathbf{g}^{\varepsilon}) \end{cases}$$</div>
+
+    <p>With small weights, the analytic strain terms still enter the minimization, which does two jobs at once: (a) it maintains the interelement connectivity of the kinematic field across sensorless regions, and (b) it acts as Tikhonov-style regularization keeping the system nonsingular. The full missing-data machinery &mdash; weight tuning, strain pre-extrapolation, sensor-pattern design &mdash; is the business of <a href="mod6.html">Module 6</a>; here we only need the principle.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap — what $\lambda$ is and is not</div>
+      <div>The small weight is a <strong>soft zero-strain prior</strong> on the unmeasured components, not a missing-data likelihood and not a noise filter. Three failure modes follow directly: weight exactly $0$ can make the system singular (a DOF becomes unreachable); weight near $1$ drags the reconstruction toward the false "zero strain" datum and biases the shape; and no universal value exists &mdash; $\lambda$ is a modeling dial, not a constant of nature (Section 9).</div>
+    </div>
+
+    <p>The total functional $\Phi = \sum_e \Phi_e$ is quadratic and convex in the nodal DOFs. The contrast with forward FEM in one sentence: <strong>FEM minimizes potential energy</strong> (physics: equilibrium, constitutive law, loads); <strong>iFEM minimizes strain mismatch</strong> (geometry: compatibility only). Everything else &mdash; assembly, boundary conditions, sparse solve &mdash; mirrors standard FEM machinery, which is exactly why the method inherited the name.</p>
+
+    <!-- ===== SECTION 6: DISCRETIZATION AND SOLUTION ===== -->
+    <h2 class="section-heading" id="discretization-and-solution">6. Discretization, Pose Anchoring, and the Real-Time Solve</h2>
+
+    <p>Interpolate the kinematic field over each inverse element with shape functions, $\mathbf{u}^e = \mathbf{N}\mathbf{q}^e$, so the analytic section strains become linear in the nodal DOFs via strain&ndash;displacement matrices: $\mathbf{e} = \mathbf{B}_m\mathbf{q}^e$, $\mathbf{k} = \mathbf{B}_b\mathbf{q}^e$, $\mathbf{g} = \mathbf{B}_s\mathbf{q}^e$. Substituting into $\Phi_e$ gives a quadratic form; stationarity $\partial\Phi_e/\partial\mathbf{q}^e = \mathbf{0}$ yields the element system:</p>
+
+    <div class="math-block">$$\mathbf{k}^e \mathbf{q}^e = \mathbf{f}^e, \qquad \mathbf{k}^e = \iint_{A_e} \Big( w_m \mathbf{B}_m^T\mathbf{B}_m + w_b (2h)^2 \mathbf{B}_b^T\mathbf{B}_b + w_s \mathbf{B}_s^T\mathbf{B}_s \Big)\, dA$$</div>
+
+    <div class="math-block">$$\mathbf{f}^e = \frac{A_e}{n} \sum_{j=1}^{n} \Big( w_m \mathbf{B}_m^T(\mathbf{x}_j)\, \mathbf{e}^{\varepsilon}_j + w_b (2h)^2 \mathbf{B}_b^T(\mathbf{x}_j)\, \mathbf{k}^{\varepsilon}_j + w_s \mathbf{B}_s^T(\mathbf{x}_j)\, \mathbf{g}^{\varepsilon}_j \Big)$$</div>
+
+    <p>The matrix $\mathbf{k}^e$ is built from $\mathbf{B}^T\mathbf{B}$ products weighted by $w$ and $(2h)^2$; the vector $\mathbf{f}^e$ is built from $\mathbf{B}^T$ times the <em>measured</em> section strains at the station locations (all three terms &mdash; the shear one simply vanishes numerically once $\mathbf{g}^{\varepsilon} = \mathbf{0}$). Note carefully: $\mathbf{k}^e$ contains no elastic constants. Its entries are geometric.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap — this is not a stiffness matrix</div>
+      <div>The literature calls $\mathbf{k}^e$ a "pseudo-stiffness" matrix because assembly and solution mirror FEM, but do not read physics into it: it is a dimensionally-mixed weighting/geometry matrix from $\mathbf{B}^T\mathbf{B}$ products. It enforces no equilibrium and contains no elastic constants, and the right-hand side $\mathbf{f}^e$ is <em>not</em> a load vector &mdash; it is projected measurement data. iFEM solves a compatibility fit, not a boundary-value problem.</div>
+    </div>
+
+    <h3 class="subsection-heading">Pose Anchoring: What Strain Can Never Tell You</h3>
+    <p>Assemble the element systems over the mesh in standard FEM fashion, and you hit the one genuine unobservability of shape sensing. Strain is a <em>derivative</em> of displacement: rigid-body translations and rotations produce exactly zero strain, so they lie in the nullspace of the assembled, unconstrained system. No amount of strain data &mdash; noiseless, dense, perfect &mdash; can recover the rigid-body pose.</p>
+
+    <p>The cure is problem-dependent displacement boundary conditions: at minimum, enough restraints to eliminate the rigid-body modes. This is where knowledge of the supports enters iFEM. After imposing them, the reduced system is symmetric positive definite:</p>
+
+    <div class="math-block">$$\mathbf{K}\,\mathbf{U} = \mathbf{F} \quad\Rightarrow\quad \mathbf{U} = \underbrace{\mathbf{K}^{-1}}_{\text{via a factorization }\mathbf{K}=\mathbf{L}\mathbf{L}^{\mathsf T}\text{ computed once, offline}}\;\underbrace{\mathbf{F}(\boldsymbol{\varepsilon}^{\text{meas}})}_{\text{updated every frame}}$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Trap — anchor enough, but not more</div>
+      <div>Too little anchoring leaves the system singular: rigid modes are unobservable from strain, full stop. But <em>excessive</em> anchoring is the subtler error: every restraint is a hard statement about the structure's pose, imposed with infinite weight. Clamp a boundary that in reality moves, and the least-squares fit must distort the deformation field to satisfy your false constraint &mdash; the measured strains get overruled by the anchor. Anchor exactly what you know, and nothing you don't. The Functional Lab below has a "clamp both ends" mode that makes the bias visible.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Real-Time Argument, Made Precise</h3>
+    <p>Split the computation by what depends on what. $\mathbf{K}$ depends only on the mesh, the sensor positions, and the weights &mdash; none of which change during operation &mdash; so it is assembled and factorized (e.g. $\mathbf{K} = \mathbf{L}\mathbf{L}^T$) <strong>once, offline</strong>. Each new strain snapshot only rebuilds $\mathbf{F}$, which is linear in the measurements, followed by a cheap back-substitution. That is the entire per-frame cost.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Trap — why it's real-time (it's not "because the system is small")</div>
+      <div>The real-time capability comes from the <em>measurement-independent left-hand side</em>: the expensive factorization is amortized offline, and the per-frame work is a right-hand-side rebuild plus back-substitution. That is a genuine asymptotic win over re-assembling and re-factorizing each frame &mdash; but it is not free: the per-frame cost is right-hand-side assembly plus two triangular solves, and both grow with the DOF count and the factor fill. "Real-time" is a claim about a specific mesh, sparsity pattern, and processor, and it should be quoted with a measured latency, never asserted from the structure of the algorithm alone. And the same machinery covers statics and dynamics identically &mdash; each strain frame is processed independently, with no mass or damping matrices, because inertial effects are already imprinted in the measured strains.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 860 330" style="max-width:100%;background:#fff;border:1px solid #eee;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrC" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#00838f"/></marker>
+          <marker id="arrW" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#e67e22"/></marker>
+        </defs>
+        <!-- OFFLINE box -->
+        <rect x="20" y="30" width="820" height="96" rx="6" fill="#f0f7f8" stroke="#00838f" stroke-width="1.5"/>
+        <text x="36" y="52" font-size="13" font-weight="700" fill="#00838f" font-family="sans-serif">OFFLINE &mdash; done once</text>
+        <circle cx="196" cy="47" r="9" fill="none" stroke="#00838f" stroke-width="1.5"/>
+        <line x1="196" y1="47" x2="196" y2="41" stroke="#00838f" stroke-width="1.5"/>
+        <line x1="196" y1="47" x2="200" y2="49" stroke="#00838f" stroke-width="1.5"/>
+        <text x="212" y="51" font-size="10" fill="#00838f" font-family="sans-serif">once</text>
+        <rect x="40" y="64" width="200" height="46" rx="4" fill="#fff" stroke="#00838f"/>
+        <text x="140" y="83" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">mesh + sensor positions</text>
+        <text x="140" y="98" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">+ weights + pose anchors</text>
+        <line x1="240" y1="87" x2="300" y2="87" stroke="#00838f" stroke-width="1.5" marker-end="url(#arrC)"/>
+        <rect x="302" y="64" width="150" height="46" rx="4" fill="#fff" stroke="#00838f"/>
+        <text x="377" y="92" font-size="12" text-anchor="middle" fill="#333" font-family="sans-serif">assemble K</text>
+        <line x1="452" y1="87" x2="512" y2="87" stroke="#00838f" stroke-width="1.5" marker-end="url(#arrC)"/>
+        <rect x="514" y="64" width="180" height="46" rx="4" fill="#fff" stroke="#00838f" stroke-width="2"/>
+        <text x="604" y="92" font-size="12" text-anchor="middle" fill="#00838f" font-weight="600" font-family="sans-serif">factorize K = L L&#7488;</text>
+        <text x="712" y="80" font-size="10" fill="#666" font-family="sans-serif">K contains no E, &nu;</text>
+        <text x="712" y="94" font-size="10" fill="#666" font-family="sans-serif">and no loads: nothing</text>
+        <text x="712" y="108" font-size="10" fill="#666" font-family="sans-serif">to re-assemble, ever</text>
+        <!-- arrow down -->
+        <line x1="604" y1="110" x2="604" y2="158" stroke="#888" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrW)"/>
+        <!-- ONLINE loop -->
+        <rect x="20" y="160" width="820" height="120" rx="6" fill="#fdf6ee" stroke="#e67e22" stroke-width="1.5"/>
+        <text x="36" y="182" font-size="13" font-weight="700" fill="#e67e22" font-family="sans-serif">ONLINE &mdash; every frame (e.g. 100 Hz)</text>
+        <rect x="40" y="200" width="160" height="50" rx="4" fill="#fff" stroke="#e67e22"/>
+        <text x="120" y="221" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">strain snapshot</text>
+        <text x="120" y="237" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">&epsilon;(t) from gauges/FBG</text>
+        <line x1="200" y1="225" x2="252" y2="225" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrW)"/>
+        <rect x="254" y="200" width="150" height="50" rx="4" fill="#fff" stroke="#e67e22"/>
+        <text x="329" y="221" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">build F(t)</text>
+        <text x="329" y="237" font-size="10" text-anchor="middle" fill="#888" font-family="sans-serif">linear in measurements</text>
+        <line x1="404" y1="225" x2="456" y2="225" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrW)"/>
+        <rect x="458" y="200" width="170" height="50" rx="4" fill="#fff" stroke="#e67e22" stroke-width="2"/>
+        <text x="543" y="221" font-size="11" text-anchor="middle" fill="#e67e22" font-weight="600" font-family="sans-serif">back-substitute</text>
+        <text x="543" y="237" font-size="11" text-anchor="middle" fill="#e67e22" font-family="sans-serif">U(t) = K&#8315;&sup1; F(t)</text>
+        <line x1="628" y1="225" x2="680" y2="225" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrW)"/>
+        <rect x="682" y="200" width="140" height="50" rx="4" fill="#fff" stroke="#e67e22"/>
+        <text x="752" y="221" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">deformed shape</text>
+        <text x="752" y="237" font-size="11" text-anchor="middle" fill="#333" font-family="sans-serif">display / SHM check</text>
+        <!-- loop-back arrow -->
+        <path d="M752,250 L752,266 L120,266 L120,254" fill="none" stroke="#e67e22" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#arrW)"/>
+        <text x="436" y="263" font-size="10" text-anchor="middle" fill="#b36118" font-family="sans-serif">next frame</text>
+        <!-- mini mesh sketch -->
+        <g transform="translate(60,292)">
+          <text x="0" y="10" font-size="10" fill="#666" font-family="sans-serif">mesh:</text>
+          <g transform="translate(46,-6)">
+            <rect x="0" y="0" width="24" height="20" fill="#fff" stroke="#888"/><circle cx="12" cy="10" r="3" fill="#e67e22"/>
+            <rect x="24" y="0" width="24" height="20" fill="#eee" stroke="#888"/>
+            <rect x="48" y="0" width="24" height="20" fill="#fff" stroke="#888"/><circle cx="60" cy="10" r="3" fill="#e67e22"/>
+            <rect x="72" y="0" width="24" height="20" fill="#eee" stroke="#888"/>
+            <rect x="96" y="0" width="24" height="20" fill="#fff" stroke="#888"/><circle cx="108" cy="10" r="3" fill="#e67e22"/>
+          </g>
+          <text x="176" y="10" font-size="10" fill="#666" font-family="sans-serif">&#9679; instrumented element &nbsp;&nbsp; shaded: sensorless, w = &lambda;</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The two-phase iFEM workflow. Everything measurement-independent &mdash; assembly and factorization of $\mathbf{K}$ &mdash; happens once, offline. The online loop per strain frame is a linear right-hand-side rebuild and a back-substitution.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Element Zoo (Preview of Module 5)</h3>
+    <ul>
+      <li><strong>Original 3-node inverse plate element</strong> with anisoparametric interpolation (Tessler &amp; Spangler 2005).</li>
+      <li><strong>iQS4</strong> &mdash; 4-node quadrilateral inverse shell with hierarchical drilling rotations, 6 DOF/node, 24 DOF total, enabling general built-up shell structures (Kefal, Oterkus, Tessler &amp; Spangler 2016).</li>
+      <li><strong>Inverse Timoshenko beam/frame elements</strong> covering stretching, bending, transverse shear and torsion with $C^0$ continuity (Gherlone et al. 2014).</li>
+    </ul>
+
+    <!-- ===== MAIN INTERACTIVE: IFEM FUNCTIONAL LAB ===== -->
+    <div class="interactive-container" id="ifem-lab">
+      <div class="interactive-label">Interactive Tool &mdash; iFEM Functional Lab</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A 1D inverse-FEM testbed: a cantilever discretized into 8 inverse elements with stretching + bending DOFs. Top/bottom surface strains are "measured" on the elements you toggle on, converted to section strains $e^{\varepsilon}, \kappa^{\varepsilon}$, and least-squares fitted. Toggle sensors, change $\lambda$, break the pose anchoring, go one-sided &mdash; and watch the panel: measurements, unknowns, assumptions, rank, validation.</p>
+
+      <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:4px;">Sensored elements (click to toggle)</div>
+      <div id="il-chips" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;"></div>
+
+      <div class="slider-group" style="display:flex;gap:18px;flex-wrap:wrap;">
+        <div class="slider-control" style="min-width:200px;">
+          <label><span>Missing-data weight $\log_{10}\lambda$</span> <span id="il-lam-val">&minus;4</span></label>
+          <input type="range" id="il-lam" min="-6" max="0" step="0.5" value="-4">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Noise $\sigma$ (% of max strain)</span> <span id="il-noise-val">1.0</span></label>
+          <input type="range" id="il-noise" min="0" max="5" step="0.25" value="1">
+        </div>
+        <div style="min-width:170px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Load case (truth)</div>
+          <select id="il-load" style="font-size:12px;padding:4px;width:100%;">
+            <option value="tip">Tip transverse force</option>
+            <option value="uniform">Uniform pressure</option>
+            <option value="axial">Tip force + axial pull</option>
+          </select>
+        </div>
+        <div style="min-width:190px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Sensing mode</div>
+          <select id="il-sensing" style="font-size:12px;padding:4px;width:100%;">
+            <option value="both">Top + bottom pairs</option>
+            <option value="top">Top only (assume e = 0)</option>
+          </select>
+        </div>
+        <div style="min-width:190px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Pose anchoring</div>
+          <select id="il-bc" style="font-size:12px;padding:4px;width:100%;">
+            <option value="clamp">Clamped root (correct)</option>
+            <option value="free">No anchor (rank-deficient!)</option>
+            <option value="both">Clamp both ends (over-anchored)</option>
+          </select>
+        </div>
+        <div style="min-width:210px;align-self:flex-end;">
+          <label style="font-size:12px;color:#555;cursor:pointer;"><input type="checkbox" id="il-extrap" style="vertical-align:-2px;"> pre-extrapolate strains into gaps<br><span style="font-size:10.5px;color:#999;">(Oboe et al. 2021 practice, weight &lambda;)</span></label>
+        </div>
+        <div style="align-self:flex-end;">
+          <button id="il-reroll" style="border:1px solid #e67e22;color:#e67e22;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reroll noise</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-top:10px;">
+        <svg id="il-svg" width="560" height="330" viewBox="0 0 560 330" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;flex:1 1 420px;"></svg>
+        <div id="il-panel" style="flex:1 1 240px;min-width:240px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+      </div>
+      <div id="il-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 7: NO MATERIAL, NO LOADS ===== -->
+    <h2 class="section-heading" id="no-material-no-loads">7. Why No Material Properties, No Loads</h2>
+
+    <p>The section that earns the module its title. The functional contains <em>only</em> strain&ndash;displacement (compatibility) relations: nowhere does a constitutive matrix $\mathbf{C}(E,\nu)$ appear, and nowhere is equilibrium enforced. The measured strains already <em>are</em> the structure's response to whatever loads, material state, damage, and temperature it experiences &mdash; iFEM merely finds the smoothest FSDT-compatible displacement field consistent with them.</p>
+
+    <div class="math-block">$$\text{FEM: } \delta\Pi = 0, \quad \Pi = \tfrac{1}{2}\mathbf{U}^T \mathbf{K}(E,\nu)\,\mathbf{U} - \mathbf{U}^T\mathbf{F}(\text{loads})$$</div>
+    <div class="math-block">$$\text{iFEM: } \delta\Phi = 0, \quad \Phi = \Phi\big(\mathbf{u};\; \boldsymbol{\varepsilon}^{\text{meas}},\; \text{geometry, weights}\big) \;\; \text{— no } \mathbf{C}, \text{ no loads}$$</div>
+
+    <h3 class="subsection-heading">The Consequences, Precisely</h3>
+    <ol>
+      <li><strong>Material-free.</strong> Elastic constants, their degradation with age or damage, composite layup uncertainty &mdash; none affect the displacement reconstruction.</li>
+      <li><strong>Load-free.</strong> Aerodynamic pressure, wave slamming, thermal gradients need not be known or measured; there is no $\mathbf{F}(\text{loads})$ anywhere.</li>
+      <li><strong>Time-agnostic.</strong> Static and dynamic events are handled identically, snapshot by snapshot &mdash; no mass, damping, or excitation model.</li>
+    </ol>
+
+    <h3 class="subsection-heading">Policing the Claim's Boundaries</h3>
+    <p>Overclaiming is the #1 error in the secondary literature, so draw the fence precisely. iFEM <em>does</em> require: the geometry (including the thickness $2h$), a kinematic model (FSDT and its small-strain linearity), a mesh, calibrated strains at known sensor positions, the weights, and knowledge of the boundary restraints (pose anchors).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — say it correctly</div>
+      <div>iFEM is <strong>constitutive-free and load-free, not model-free</strong> &mdash; and even that applies only to the <em>displacement reconstruction</em>. Geometry, kinematic theory, calibrated strains, weights, mesh, and pose constraints all remain necessary inputs. Anyone selling iFEM as "model-free monitoring" is selling something else.</div>
+    </div>
+
+    <p><strong>Second boundary: stress sensing.</strong> The moment you want stresses or failure indices, the constitutive law returns. With $\mathbf{u}$ reconstructed, strains follow anywhere by kinematics &mdash; but</p>
+
+    <div class="math-block">$$\text{post-processing only: } \boldsymbol{\sigma} = \mathbf{C}\,\boldsymbol{\varepsilon}(\mathbf{u}) \;\;\text{(stress sensing reintroduces material data)}$$</div>
+
+    <p>This is exactly the "displacement and stress monitoring" pipeline Kefal &amp; Oterkus ran on marine hulls (Ocean Engineering 2016): displacement reconstruction material-free, stress maps only as good as the assumed $\mathbf{C}$.</p>
+
+    <p><strong>Third boundary: temperature.</strong> Measured strain includes thermal strain, so iFEM reconstructs the <em>total</em> deformation, thermal expansion included. That is a feature &mdash; it is the true shape &mdash; but do not sell it as temperature immunity: sensor-level thermal drift is a different problem and must be handled at the gauge/FBG level (<a href="mod6.html">Module 6</a>).</p>
+
+    <div class="insight-box">
+      <div class="box-label">The SHM implication</div>
+      <div>Because the reconstruction is independent of material state, comparing reconstructed strain fields against a healthy baseline localizes stiffness anomalies &mdash; <strong>anomaly screening without a damage model</strong>. This is the damage-assessment framing consolidated in the 2025 review literature (Khalid et al., Progress in Aerospace Sciences 2025). But note the boundary again: the <em>detection</em> is material-free; interpreting an anomaly as a specific crack size or failure risk is not.</div>
+    </div>
+
+    <!-- ===== SECTION 8: RIVALS ===== -->
+    <h2 class="section-heading" id="rivals-comparison">8. The Rivals: Ko Displacement Theory and Modal Methods</h2>
+
+    <p>iFEM did not win by default. Two rival families solve the same problem with less machinery, and knowing exactly what they trade away is the fastest route to understanding what iFEM buys. This section presents both as compact summaries &mdash; the working comparison, not competing derivations.</p>
+
+    <h3 class="subsection-heading">Rival I — Ko Displacement Theory (NASA Dryden, 2007)</h3>
+
+    <p>The lightest-weight competitor, developed at NASA Dryden for exactly the Helios class of problems (Ko, Richards &amp; Tran, NASA/TP-2007-214612). For a uniform cantilever with outer-fiber half-depth $c$ and $n+1$ equally spaced strain stations along a surface line (spacing $\Delta l = l/n$), the whole method fits in one box:</p>
+
+    <div class="definition-box">
+      <div class="box-label">Ko recursions — closed-form shape from strain</div>
+      <div>
+        The classical beam equation with the moment written through the outer-fiber strain $\varepsilon = Mc/EI$:
+        $$\frac{d^2 y}{dx^2} = \frac{M(x)}{EI} = \frac{\varepsilon(x)}{c} \qquad (EI \text{ cancels identically; only the half-depth } c \text{ remains})$$
+        Assuming strain varies piecewise-linearly between stations and integrating twice with slope/deflection continuity:
+        $$\tan\theta_i = \frac{\Delta l}{2c}\big(\varepsilon_{i-1} + \varepsilon_i\big) + \tan\theta_{i-1}, \qquad
+        y_i = \frac{(\Delta l)^2}{6c}\big(2\varepsilon_{i-1} + \varepsilon_i\big) + y_{i-1} + \Delta l\,\tan\theta_{i-1}$$
+        seeded by the cantilever root conditions $y_0 = \tan\theta_0 = 0$. Summing gives the closed-form tip deflection:
+        $$y_n = \frac{(\Delta l)^2}{6c}\left[(3n-1)\,\varepsilon_0 + 6\sum_{i=1}^{n-1}(n-i)\,\varepsilon_i + \varepsilon_n\right]$$
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">The derivation in four moves, plus torsion and extensions</div>
+      <div class="collapsible-body">
+        <p><strong>Move 1.</strong> Classical beam equation $d^2y/dx^2 = M(x)/EI$.</p>
+        <p><strong>Move 2.</strong> Write the moment via the outer-fiber strain, $\varepsilon = Mc/EI$, so $d^2y/dx^2 = \varepsilon(x)/c$ &mdash; $EI$ cancels <em>identically</em>. This is Ko's version of the no-material property.</p>
+        <p><strong>Move 3.</strong> Assume the bending moment &mdash; hence strain &mdash; varies piecewise-linearly between adjacent stations: $\varepsilon(x) = \varepsilon_{i-1} - (\varepsilon_{i-1}-\varepsilon_i)(x-x_{i-1})/\Delta l$.</p>
+        <p><strong>Move 4.</strong> Integrate twice analytically, enforcing slope and deflection continuity at each station &mdash; the recursions above.</p>
+        <p><strong>Torsion.</strong> Cross-sectional twist accumulates from measured surface distortion angles, $\phi_i = (\Delta l/c)\sum_{j=0}^{i-1}\gamma_j$, with $\gamma$ obtained from 45&deg; helical-direction principal strain.</p>
+        <p><strong>Extensions in the TP.</strong> Tapered and stepwise-tapered beams, two-point supported beams, wing boxes (front + rear sensing lines differenced to extract twist), plates via networks of sensing lines.</p>
+        <p><strong>Boundaries of validity.</strong> The seeds $\tan\theta_0 = y_0 = 0$ encode a <em>clamped root</em> &mdash; a two-point supported beam needs a nonzero $\tan\theta_0$ determined separately. The piecewise-linear strain assumption degrades near concentrated loads. And the theory delivers deflections along sensing lines, not full fields.</p>
+      </div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 860 300" style="max-width:100%;background:#fff;border:1px solid #eee;" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrK" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#e67e22"/></marker>
+        </defs>
+        <!-- clamp hatching -->
+        <line x1="60" y1="120" x2="60" y2="230" stroke="#333" stroke-width="2"/>
+        <g stroke="#333" stroke-width="1">
+          <line x1="60" y1="130" x2="48" y2="142"/><line x1="60" y1="150" x2="48" y2="162"/><line x1="60" y1="170" x2="48" y2="182"/>
+          <line x1="60" y1="190" x2="48" y2="202"/><line x1="60" y1="210" x2="48" y2="222"/>
+        </g>
+        <!-- beam -->
+        <rect x="60" y="185" width="600" height="24" fill="#f0f0f0" stroke="#333"/>
+        <text x="672" y="182" font-size="11" fill="#333" font-family="sans-serif">half-depth c</text>
+        <line x1="666" y1="185" x2="666" y2="197" stroke="#e67e22" stroke-width="1.5"/>
+        <line x1="662" y1="185" x2="670" y2="185" stroke="#e67e22" stroke-width="1.5"/>
+        <line x1="662" y1="197" x2="670" y2="197" stroke="#e67e22" stroke-width="1.5"/>
+        <!-- length label -->
+        <line x1="60" y1="250" x2="660" y2="250" stroke="#999" stroke-width="1"/>
+        <text x="360" y="266" font-size="11" text-anchor="middle" fill="#666" font-family="sans-serif">length l, stations x&#8320; &hellip; x&#8345; spaced &Delta;l = l/n</text>
+        <!-- stations + strain bars -->
+        <g font-family="sans-serif">
+          <line x1="60" y1="209" x2="60" y2="216" stroke="#333"/><rect x="56" y="216" width="8" height="22" fill="#2e7d32" opacity="0.75"/><text x="60" y="248" font-size="9" text-anchor="middle" fill="#555">&epsilon;&#8320;</text>
+          <line x1="180" y1="209" x2="180" y2="216" stroke="#333"/><rect x="176" y="216" width="8" height="18" fill="#2e7d32" opacity="0.75"/><text x="180" y="248" font-size="9" text-anchor="middle" fill="#555">&epsilon;&#8321;</text>
+          <line x1="300" y1="209" x2="300" y2="216" stroke="#333"/><rect x="296" y="216" width="8" height="13" fill="#2e7d32" opacity="0.75"/><text x="300" y="248" font-size="9" text-anchor="middle" fill="#555">&epsilon;&#8322;</text>
+          <line x1="420" y1="209" x2="420" y2="216" stroke="#333"/><rect x="416" y="216" width="8" height="9" fill="#2e7d32" opacity="0.75"/><text x="420" y="248" font-size="9" text-anchor="middle" fill="#555">&epsilon;&#8323;</text>
+          <line x1="540" y1="209" x2="540" y2="216" stroke="#333"/><rect x="536" y="216" width="8" height="5" fill="#2e7d32" opacity="0.75"/><text x="540" y="248" font-size="9" text-anchor="middle" fill="#555">&epsilon;&#8324;</text>
+          <line x1="660" y1="209" x2="660" y2="216" stroke="#333"/><rect x="656" y="216" width="8" height="2" fill="#2e7d32" opacity="0.75"/><text x="660" y="248" font-size="9" text-anchor="middle" fill="#555">&epsilon;&#8325;</text>
+        </g>
+        <!-- deformed shape curve -->
+        <path d="M60,185 Q 300,182 480,150 T 660,92" fill="none" stroke="#1565c0" stroke-width="2.5"/>
+        <!-- ladder arrows along curve -->
+        <g font-family="sans-serif">
+          <circle cx="60" cy="185" r="4" fill="#e67e22"/>
+          <circle cx="180" cy="180" r="4" fill="#e67e22"/>
+          <circle cx="300" cy="170" r="4" fill="#e67e22"/>
+          <circle cx="420" cy="152" r="4" fill="#e67e22"/>
+          <circle cx="540" cy="126" r="4" fill="#e67e22"/>
+          <circle cx="660" cy="92" r="4" fill="#e67e22"/>
+          <path d="M66,181 Q 120,181 174,178" fill="none" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrK)"/>
+          <path d="M186,177 Q 240,175 294,168" fill="none" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrK)"/>
+          <path d="M306,167 Q 360,162 414,151" fill="none" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrK)"/>
+          <path d="M426,149 Q 480,140 534,127" fill="none" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrK)"/>
+          <path d="M546,123 Q 600,110 654,95" fill="none" stroke="#e67e22" stroke-width="1.5" marker-end="url(#arrK)"/>
+          <text x="240" y="158" font-size="10.5" fill="#b36118">each rung carries (tan&theta;&#7522;&#8331;&#8321;, y&#7522;&#8331;&#8321;) forward:</text>
+          <text x="240" y="142" font-size="10.5" fill="#b36118">tan&theta;&#7522; = (&Delta;l/2c)(&epsilon;&#7522;&#8331;&#8321;+&epsilon;&#7522;) + tan&theta;&#7522;&#8331;&#8321;</text>
+          <text x="240" y="126" font-size="10.5" fill="#b36118">y&#7522; = (&Delta;l&sup2;/6c)(2&epsilon;&#7522;&#8331;&#8321;+&epsilon;&#7522;) + y&#7522;&#8331;&#8321; + &Delta;l&middot;tan&theta;&#7522;&#8331;&#8321;</text>
+        </g>
+        <!-- seed + tip annotations -->
+        <text x="66" y="168" font-size="10.5" fill="#333" font-family="sans-serif">seed: tan&theta;&#8320; = 0, y&#8320; = 0</text>
+        <text x="66" y="154" font-size="10" fill="#888" font-family="sans-serif">(cantilever BC baked in)</text>
+        <text x="660" y="74" font-size="10.5" text-anchor="end" fill="#333" font-family="sans-serif">tip: y&#8345; = (&Delta;l)&sup2;/(6c) [(3n&minus;1)&epsilon;&#8320; + 6&Sigma;(n&minus;i)&epsilon;&#7522; + &epsilon;&#8345;]</text>
+        <text x="60" y="30" font-size="12" font-weight="600" fill="#333" font-family="sans-serif">Ko recursion ladder: strain bars in, deflection ladder out &mdash; no EI anywhere</text>
+      </svg>
+      <div class="figure-caption">The Ko recursion as a ladder: each station hands its slope and deflection to the next, accumulating the double integral of the piecewise-linear strain profile. The clamped-root seed is baked into the first rung.</div>
+    </div>
+
+    <p><strong>Honest scorecard vs iFEM:</strong> inputs are just strains and $c(x)$ &mdash; even less than iFEM needs; closed-form and trivially real-time. But it is one-dimensional kinematics along sensing lines (deflection only &mdash; no full field, no membrane/shear coupling), bending-dominated, and the boundary condition is hard-coded into the recursion seed. The FSDT-based iFEM subsumes all of it, at the cost of a mesh.</p>
+
+    <!-- ===== INTERACTIVE: KO CANTILEVER RECONSTRUCTOR ===== -->
+    <div class="interactive-container" id="ko-lab">
+      <div class="interactive-label">Interactive Tool &mdash; Ko Cantilever Reconstructor</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Recover a cantilever's shape from discrete surface strains by the Ko recursions. Increase the station count, blend the load case, add noise &mdash; and notice what integration does to errors that the iFEM lab above handled locally.</p>
+      <div class="slider-group" style="display:flex;gap:18px;flex-wrap:wrap;">
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Stations $n$</span> <span id="ko-n-val">6</span></label>
+          <input type="range" id="ko-n" min="2" max="20" step="1" value="6">
+        </div>
+        <div class="slider-control" style="min-width:200px;">
+          <label><span>Load mix (tip &rarr; uniform)</span> <span id="ko-t-val">0.0</span></label>
+          <input type="range" id="ko-t" min="0" max="1" step="0.05" value="0">
+        </div>
+        <div class="slider-control" style="min-width:180px;">
+          <label><span>Noise $\sigma$ (% of max strain)</span> <span id="ko-noise-val">0.0</span></label>
+          <input type="range" id="ko-noise" min="0" max="5" step="0.25" value="0">
+        </div>
+        <div style="align-self:flex-end;display:flex;gap:10px;align-items:center;">
+          <button id="ko-reroll" style="border:1px solid #e67e22;color:#e67e22;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Reroll noise</button>
+          <span style="font-size:11px;font-weight:700;color:#2e7d32;border:1.5px solid #2e7d32;border-radius:3px;padding:3px 8px;">EI: not used</span>
+        </div>
+      </div>
+      <svg id="ko-svg" width="700" height="330" viewBox="0 0 700 330" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;margin-top:8px;"></svg>
+      <div id="ko-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <h3 class="subsection-heading">Rival II — Modal (Basis-Function) Methods</h3>
+
+    <p>Approximate the displacement field in a truncated basis of structural mode shapes computed from a finite element model of the structure (the modal-transformation approach of Bogert, Haugse &amp; Gehrki, AIAA 2003):</p>
+
+    <div class="math-block">$$\mathbf{u}(\mathbf{x}) \approx \sum_{k=1}^{m} \varphi_k(\mathbf{x})\, q_k = \boldsymbol{\Phi}\,\mathbf{q}$$</div>
+
+    <p>Each mode implies a strain pattern at the sensor locations; stacking these gives the strain-mode matrix $\boldsymbol{\Psi}$. With more sensors than retained modes, the amplitudes follow from linear least squares:</p>
+
+    <div class="math-block">$$\mathbf{q} = \big(\boldsymbol{\Psi}^T\boldsymbol{\Psi}\big)^{-1}\boldsymbol{\Psi}^T\,\boldsymbol{\varepsilon}^{\text{meas}}$$</div>
+
+    <p><strong>Strengths:</strong> extreme data compression (a handful of amplitudes), tolerance of very sparse sensing when the deformation truly lies in the retained subspace, trivially real-time.</p>
+
+    <div class="insight-box">
+      <div class="box-label">The hidden cost that disqualifies the headline claim</div>
+      <div>Computing $\boldsymbol{\Phi}$ requires mass <em>and</em> stiffness matrices &mdash; i.e. material properties, density distribution, and a trusted FE model. Model error, damage (which shifts the very modes you are expanding in &mdash; the exact scenario SHM targets), and deformation components outside the truncated basis all corrupt the reconstruction. And the truncation order $m$ is a hyperparameter with no internal error signal. Modal methods are <em>not</em> "equally model-light": they are load-free but decidedly not material-free.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Three-Way Comparison</h3>
+
+    <p>Gherlone, Cerracchio &amp; Mattone reviewed and experimentally compared the three families on a wing-shaped plate (Progress in Aerospace Sciences 99, 2018, pp. 14&ndash;26) &mdash; the standard citation for method selection:</p>
+
+    <table>
+      <tr><th></th><th>iFEM (Tessler&ndash;Spangler 2003&ndash;2005)</th><th>Ko displacement theory (2007)</th><th>Modal methods</th></tr>
+      <tr><td><strong>Inputs</strong></td><td>strains + geometry/mesh + BCs</td><td>strains + half-depth $c(x)$</td><td>strains + full FE modal model (mass + stiffness)</td></tr>
+      <tr><td><strong>Reconstructed quantity</strong></td><td>full 2D/3D displacement field</td><td>deflection along sensing lines</td><td>field within modal subspace</td></tr>
+      <tr><td><strong>Material-free</strong></td><td>yes</td><td>yes</td><td><strong>no</strong></td></tr>
+      <tr><td><strong>Load knowledge</strong></td><td>none</td><td>none</td><td>none directly, but load path must excite retained modes</td></tr>
+      <tr><td><strong>Robust to damage / model error</strong></td><td>best &mdash; kinematics only</td><td>good for slender bending</td><td>worst &mdash; modes shift</td></tr>
+      <tr><td><strong>Generality (topology, BCs)</strong></td><td>best</td><td>beams and beam-like assemblies</td><td>tied to the specific model</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 860 360" style="max-width:100%;background:#fff;border:1px solid #eee;" xmlns="http://www.w3.org/2000/svg">
+        <g font-family="sans-serif">
+        <!-- Column 1: Ko -->
+        <rect x="20" y="20" width="260" height="290" rx="6" fill="#fafafa" stroke="#bbb"/>
+        <text x="150" y="44" font-size="12.5" font-weight="700" text-anchor="middle" fill="#333">Ko displacement theory</text>
+        <text x="150" y="60" font-size="10.5" text-anchor="middle" fill="#888">2007, NASA Dryden</text>
+        <!-- cantilever icon -->
+        <line x1="60" y1="80" x2="60" y2="120" stroke="#333" stroke-width="2"/>
+        <path d="M60,100 Q 150,98 240,74" fill="none" stroke="#333" stroke-width="2"/>
+        <circle cx="100" cy="99" r="3" fill="#e67e22"/><circle cx="150" cy="96" r="3" fill="#e67e22"/><circle cx="200" cy="86" r="3" fill="#e67e22"/><circle cx="238" cy="75" r="3" fill="#e67e22"/>
+        <text x="40" y="146" font-size="10.5" fill="#555">in: strains along line, half-depth c(x)</text>
+        <text x="40" y="162" font-size="10.5" fill="#555">out: deflection along sensing lines</text>
+        <text x="40" y="192" font-size="10.5" fill="#2e7d32">material-free: YES &nbsp;&middot;&nbsp; load-free: YES</text>
+        <text x="40" y="210" font-size="10.5" fill="#c62828">full-field: NO</text>
+        <text x="40" y="228" font-size="10.5" fill="#2e7d32">closed-form: YES</text>
+        <!-- Column 2: Modal -->
+        <rect x="300" y="20" width="260" height="290" rx="6" fill="#fafafa" stroke="#bbb"/>
+        <text x="430" y="44" font-size="12.5" font-weight="700" text-anchor="middle" fill="#333">Modal methods</text>
+        <text x="430" y="60" font-size="10.5" text-anchor="middle" fill="#888">Bogert, Haugse &amp; Gehrki 2003</text>
+        <!-- mode shapes icon -->
+        <path d="M330,100 Q 430,60 530,100" fill="none" stroke="#333" stroke-width="1.8"/>
+        <path d="M330,100 Q 380,130 430,100 T 530,100" fill="none" stroke="#888" stroke-width="1.5"/>
+        <path d="M330,100 Q 363,72 396,100 T 462,100 T 528,100" fill="none" stroke="#bbb" stroke-width="1.3"/>
+        <text x="320" y="146" font-size="10.5" fill="#555">in: strains, FE modal model (mass + stiffness)</text>
+        <text x="320" y="162" font-size="10.5" fill="#555">out: field in modal subspace</text>
+        <text x="320" y="192" font-size="10.5" fill="#c62828">material-free: NO</text>
+        <text x="320" y="210" font-size="10.5" fill="#2e7d32">load-free: YES*</text>
+        <text x="320" y="228" font-size="10.5" fill="#b36118">full-field: limited &nbsp;&middot;&nbsp; real-time: YES</text>
+        <text x="320" y="248" font-size="9.5" fill="#999">*load path must excite retained modes</text>
+        <!-- Column 3: iFEM -->
+        <rect x="580" y="20" width="260" height="290" rx="6" fill="#fdf6ee" stroke="#e67e22" stroke-width="2"/>
+        <text x="710" y="44" font-size="12.5" font-weight="700" text-anchor="middle" fill="#e67e22">iFEM</text>
+        <text x="710" y="60" font-size="10.5" text-anchor="middle" fill="#888">Tessler&ndash;Spangler 2003&ndash;2005, NASA Langley</text>
+        <!-- shell mesh icon -->
+        <g stroke="#e67e22" stroke-width="1.2" fill="none">
+          <path d="M615,110 Q 660,80 710,84 Q 765,88 800,72"/>
+          <path d="M620,128 Q 665,100 712,103 Q 766,106 803,92"/>
+          <line x1="615" y1="110" x2="620" y2="128"/><line x1="662" y1="90" x2="666" y2="109"/><line x1="710" y1="84" x2="712" y2="103"/><line x1="758" y1="84" x2="761" y2="102"/><line x1="800" y1="72" x2="803" y2="92"/>
+        </g>
+        <circle cx="662" cy="90" r="3.5" fill="#e67e22"/><circle cx="712" cy="103" r="3.5" fill="#e67e22"/><circle cx="758" cy="84" r="3.5" fill="#e67e22"/>
+        <text x="600" y="146" font-size="10.5" fill="#555">in: strains, geometry + mesh, BCs</text>
+        <text x="600" y="162" font-size="10.5" fill="#555">out: full displacement field, any topology</text>
+        <text x="600" y="192" font-size="10.5" fill="#2e7d32">material-free: YES &nbsp;&middot;&nbsp; load-free: YES</text>
+        <text x="600" y="210" font-size="10.5" fill="#2e7d32">full-field: YES &nbsp;&middot;&nbsp; real-time: YES</text>
+        <!-- winner row -->
+        <rect x="20" y="322" width="820" height="26" rx="4" fill="#f4f4f4" stroke="#ddd"/>
+        <text x="430" y="339" font-size="11" text-anchor="middle" fill="#555">Experimental three-way comparison on a wing-shaped plate: Gherlone, Cerracchio &amp; Mattone, Progress in Aerospace Sciences 99 (2018)</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The shape-sensing family tree. Ko: least input, line deflections only. Modal: sparse-data tolerant but needs a trusted, material-dependent FE model. iFEM: full-field, material-free, load-free &mdash; at the cost of a mesh and pose anchors.</div>
+    </div>
+
+    <!-- ===== SECTION 9: PRACTICE ===== -->
+    <h2 class="section-heading" id="practice-weights-sensors">9. Practice: Weights, Sensor Economy, Element Accuracy</h2>
+
+    <p>The gap between the clean functional and a working system is sensor economy. This section is a preview &mdash; the canonical treatment of weighting, placement, and pre-extrapolation is <a href="mod6.html">Module 6</a> &mdash; but the module would be dishonest without the headline numbers.</p>
+
+    <p><strong>Weight values in the wild.</strong> $w = 1.0$ for measured components is universal. For missing data, $10^{-4}$&ndash;$10^{-5}$ is typical in clean numerical studies &mdash; but Oboe et al. (Sensors 2021) used $w = 0.1$ for <em>pre-extrapolated</em> strains in their noisy experimental application, because extrapolated values carry genuine information and earn more weight than pure regularization placeholders:</p>
+
+    <div class="math-block">$$w_{\text{measured}} = 1.0, \qquad w_{\text{missing}} = \lambda \in [10^{-5},\, 10^{-1}] \;\;\text{(context-dependent)}$$</div>
+
+    <p>The lesson: $\lambda$ is a modeling dial, not a magic constant. Too small wastes information; too large lets a wrong assumption (e.g. zero strain in an unsensed element) bias the shape.</p>
+
+    <p><strong>Sparse-sensor strategies</strong>, in escalating sophistication (details and mechanisms in Module 6):</p>
+    <ol>
+      <li><strong>Exploit structure</strong> &mdash; place sensors along load-carrying directions, pair top/bottom.</li>
+      <li><strong>Strain pre-extrapolation</strong> &mdash; fit a smooth field to the measured strains and feed extrapolated values to sensorless elements at reduced weight (Oboe et al. 2021, experimentally); complementarily, Roy, Tessler, Surace &amp; Gherlone (Sensors 2020) mapped how reconstruction quality decays near and far from the sensors using small-weight penalization alone, no extrapolation.</li>
+      <li><strong>Formal optimization</strong> &mdash; Del Priore &amp; Lampani (Sensors 2024) couple NSGA-II multi-objective genetic sensor placement with pre-extrapolation: on a cantilevered plate, optimized layouts hold maximum reconstruction errors below 1% for the first two mode shapes and around 2.6% for the third, beating uniform placements at the same sensor count. The clamped square plate stays harder &mdash; worst-mode errors of order 10%, with only modest gains from optimization.</li>
+    </ol>
+
+    <p><strong>Element-level accuracy matters too.</strong> On distorted or curved meshes the standard iQS4 loses accuracy. Yan &amp; Tang's iFEM-H (Sensors 2024) relocates the element-local coordinate frames from nodes to Gauss integration points, cutting displacement reconstruction error from 5.04% to 1.20% on a twisted plate and from 5.53% to 1.87% on a hemispherical shell, staying under 2.4% on a containership model. The message: the variational principle is not the accuracy bottleneck &mdash; element numerics is.</p>
+
+    <p><strong>Model selection, one line each:</strong> beams/frames &rarr; inverse Timoshenko elements; panels/shells &rarr; iQS4-class; stiffened structures &rarr; shell&ndash;beam combinations.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Pre-flight checklist</div>
+      <div>
+        <ul>
+          <li>Rigid-body modes restrained &mdash; and nothing over-restrained.</li>
+          <li>$\mathbf{K}$ nonsingular after weighting: every DOF reachable from data or regularization.</li>
+          <li>Thickness and sensor coordinates surveyed, not assumed.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 10: APPLICATIONS AND FRONTIER ===== -->
+    <h2 class="section-heading" id="applications-frontier">10. Applications and the 2023&ndash;2026 Frontier</h2>
+
+    <h3 class="subsection-heading">What the Method Actually Monitors</h3>
+    <p><strong>Aerospace.</strong> iFEM originated at NASA Langley for aerospace vehicle SHM. It has been experimentally validated on beams and frames under static and dynamic loading &mdash; a single inverse element already reliable, with convergence under mesh refinement (Gherlone et al. 2014) &mdash; on wing-shaped plates (the Gherlone et al. 2018 comparison campaign), and on complex aeronautical panel structures with real strain data (Oboe et al. 2021).</p>
+
+    <p><strong>Marine.</strong> Kefal &amp; Oterkus ran displacement-and-stress monitoring of a chemical tanker mid-ship, modeled as a long barge with a typical tanker cross-section, with sensor strains simulated from high-fidelity FEM across three iFEM case studies (Ocean Engineering 112, 2016, pp. 33&ndash;46), and extended the same pipeline to a Panamax containership. Hull girders are exactly the unknown-load, harsh-environment regime iFEM targets.</p>
+
+    <p><strong>Large deformations &mdash; the soft-structure bridge.</strong> Vanilla iFEM assumes linear, small-strain FSDT kinematics. Tessler, Roy, Esposito, Surace &amp; Gherlone (Shock and Vibration 2018) extended it incrementally: at each load step, incremental strains give incremental displacements that update the deformed geometry, validated on a cantilevered wing-shaped plate and a clamped plate. This is the door through which iFEM connects to soft, highly deformable bodies &mdash; directly relevant to soft robotic skin: the linear small-strain assumption is the binding constraint, and incremental updating is the canonical workaround.</p>
+
+    <h3 class="subsection-heading">2023&ndash;2026: Consolidation into Deployable SHM</h3>
+    <p>Three confirmed threads define the current frontier. <strong>(1) Field consolidation:</strong> Khalid, Qureshi, Oterkus &amp; Oterkus published the first Progress-in-Aerospace-Sciences-level review devoted specifically to iFEM (2025), surveying the inverse-element families with benchmark comparisons for formulation selection, treating uncertainty in real-world implementations, and framing a damage-assessment methodology &mdash; comparing reconstructed fields against healthy baselines to localize material discontinuities and degradation. <strong>(2) Precision reformulation:</strong> iFEM-H (Yan &amp; Tang 2024) attacks accuracy on curved and distorted meshes at the element level (numbers in Section 9) &mdash; evidence that element numerics, not the variational principle, is the bottleneck. <strong>(3) Sensor economy via formal optimization:</strong> NSGA-II placement plus strain pre-extrapolation (Del Priore &amp; Lampani 2024), continuing the sparse-sensing line opened by Roy et al. (2020) and the pre-extrapolation practice of Oboe et al. (2021). Net reading: the core Tessler&ndash;Spangler functional is stable and unchallenged; the active frontier is mesh-robust inverse elements, optimized sparse instrumentation, and integration into damage-assessment pipelines.</p>
+
+    <div class="insight-box">
+      <div class="box-label">The three-sentence elevator pitch</div>
+      <div>Measure surface strains. Least-squares-match an FSDT-kinematic finite element field to them. Read off the full displacement field in milliseconds &mdash; with no knowledge of loads or material.</div>
+    </div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="ifem-walkthrough" class="interactive-container" data-title="Walkthrough — From Surface Strain to Shape"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div id="mod4-flashcards" class="flashcard-container"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Tessler, A.; Spangler, J. L. (2003). <em>A Variational Principle for Reconstruction of Elastic Deformations in Shear Deformable Plates and Shells</em>. NASA/TM-2003-212445, NASA Langley Research Center.</li>
+      <li>Tessler, A.; Spangler, J. L. (2005). <em>A least-squares variational method for full-field reconstruction of elastic deformations in shear-deformable plates and shells</em>. Computer Methods in Applied Mechanics and Engineering, vol. 194, pp. 327&ndash;339. doi:10.1016/j.cma.2004.03.015</li>
+      <li>Bogert, P.; Haugse, E.; Gehrki, R. (2003). <em>Structural Shape Identification from Experimental Strains Using a Modal Transformation Technique</em>. 44th AIAA/ASME/ASCE/AHS/ASC Structures, Structural Dynamics, and Materials Conference (AIAA 2003-1626). doi:10.2514/6.2003-1626</li>
+      <li>Ko, W. L.; Richards, W. L.; Tran, V. T. (2007). <em>Displacement Theories for In-Flight Deformed Shape Predictions of Aerospace Structures</em>. NASA/TP-2007-214612, NASA Dryden Flight Research Center.</li>
+      <li>Gherlone, M.; Cerracchio, P.; Mattone, M.; Di Sciuva, M.; Tessler, A. (2014). <em>An inverse finite element method for beam shape sensing: theoretical framework and experimental validation</em>. Smart Materials and Structures, vol. 23, no. 4, 045027. doi:10.1088/0964-1726/23/4/045027</li>
+      <li>Kefal, A.; Oterkus, E.; Tessler, A.; Spangler, J. L. (2016). <em>A quadrilateral inverse-shell element with drilling degrees of freedom for shape sensing and structural health monitoring</em>. Engineering Science and Technology, an International Journal, vol. 19, no. 3, pp. 1299&ndash;1313. doi:10.1016/j.jestch.2016.03.006</li>
+      <li>Kefal, A.; Oterkus, E. (2016). <em>Displacement and stress monitoring of a chemical tanker based on inverse finite element method</em>. Ocean Engineering, vol. 112, pp. 33&ndash;46. doi:10.1016/j.oceaneng.2015.11.032</li>
+      <li>Gherlone, M.; Cerracchio, P.; Mattone, M. (2018). <em>Shape sensing methods: Review and experimental comparison on a wing-shaped plate</em>. Progress in Aerospace Sciences, vol. 99, pp. 14&ndash;26. doi:10.1016/j.paerosci.2018.04.001</li>
+      <li>Tessler, A.; Roy, R.; Esposito, M.; Surace, C.; Gherlone, M. (2018). <em>Shape Sensing of Plate and Shell Structures Undergoing Large Displacements Using the Inverse Finite Element Method</em>. Shock and Vibration, vol. 2018, article 8076085. doi:10.1155/2018/8076085</li>
+      <li>Roy, R.; Tessler, A.; Surace, C.; Gherlone, M. (2020). <em>Shape Sensing of Plate Structures Using the Inverse Finite Element Method: Investigation of Efficient Strain-Sensor Patterns</em>. Sensors, vol. 20, no. 24, 7049. doi:10.3390/s20247049</li>
+      <li>Oboe, D.; Colombo, L.; Sbarufatti, C.; Giglio, M. (2021). <em>Shape Sensing of a Complex Aeronautical Structure with Inverse Finite Element Method</em>. Sensors, vol. 21, no. 4, 1388. doi:10.3390/s21041388</li>
+      <li>Del Priore, E.; Lampani, L. (2024). <em>Shape Sensing in Plate Structures through Inverse Finite Element Method Enhanced by Multi-Objective Genetic Optimization of Sensor Placement and Strain Pre-Extrapolation</em>. Sensors, vol. 24, no. 2, 608. doi:10.3390/s24020608</li>
+      <li>Yan, H.; Tang, J. (2024). <em>A High-Precision Inverse Finite Element Method for Shape Sensing and Structural Health Monitoring</em>. Sensors, vol. 24, no. 19, 6338. doi:10.3390/s24196338</li>
+      <li>Khalid, I.; Qureshi, Z. A.; Oterkus, S.; Oterkus, E. (2025). <em>Progress in inverse finite element method for aerospace structural health monitoring applications</em>. Progress in Aerospace Sciences, vol. 157, 101132. doi:10.1016/j.paerosci.2025.101132</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod3.html">&larr; 3. Inverse Problems &amp; Regularization</a>
+      <a href="mod5.html">5. iFEM Elements &amp; Formulations &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod4');</script>
+
+<!-- ===== SCRIPT: IFEM FUNCTIONAL LAB ===== -->
+<script>
+(function() {
+  var NE = 8, NN = 9, L = 1, h = 0.05, ell = L / NE, NDOF = 27;
+  var GP = [0.2113248654, 0.7886751346];
+  var sensored = [true, true, false, true, false, true, false, true];
+  var noisePool = [];
+
+  function rerollNoise() {
+    noisePool = [];
+    for (var i = 0; i < NE * 2 * 2; i++) {
+      var u1 = Math.random(), u2 = Math.random();
+      noisePool.push(Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2));
+    }
+  }
+  rerollNoise();
+
+  function truth(caseId) {
+    var P = 0.6, q = 1.6, e0 = (caseId === 'axial') ? 0.02 : 0;
+    function wT(x) {
+      if (caseId === 'uniform') return q * (x*x*x*x - 4*x*x*x + 6*x*x) / 24;
+      return P * (3*x*x - x*x*x) / 6;
+    }
+    function kT(x) {
+      if (caseId === 'uniform') return q * (1 - x) * (1 - x) / 2;
+      return P * (1 - x);
+    }
+    return { w: wT, k: kT, e: function(x) { return e0; }, uAx: function(x) { return e0 * x; } };
+  }
+
+  function gaussSolve(Ain, bin) {
+    var n = bin.length, A = [], b = bin.slice(), i, j, k;
+    for (i = 0; i < n; i++) A.push(Ain[i].slice());
+    var maxPiv = 0, minPiv = Infinity, rank = 0, maxDiag = 0;
+    for (i = 0; i < n; i++) maxDiag = Math.max(maxDiag, Math.abs(A[i][i]));
+    var tol = maxDiag * 1e-10;
+    for (k = 0; k < n; k++) {
+      var p = k, pv = Math.abs(A[k][k]);
+      for (i = k + 1; i < n; i++) if (Math.abs(A[i][k]) > pv) { pv = Math.abs(A[i][k]); p = i; }
+      if (p !== k) { var t = A[p]; A[p] = A[k]; A[k] = t; var tb = b[p]; b[p] = b[k]; b[k] = tb; }
+      pv = Math.abs(A[k][k]);
+      if (pv > tol) { rank++; maxPiv = Math.max(maxPiv, pv); minPiv = Math.min(minPiv, pv); }
+      else continue;
+      for (i = k + 1; i < n; i++) {
+        var f = A[i][k] / A[k][k];
+        if (f === 0) continue;
+        for (j = k; j < n; j++) A[i][j] -= f * A[k][j];
+        b[i] -= f * b[k];
+      }
+    }
+    if (rank < n) return { x: null, rank: rank, n: n };
+    var x = new Array(n).fill(0);
+    for (i = n - 1; i >= 0; i--) {
+      var s = b[i];
+      for (j = i + 1; j < n; j++) s -= A[i][j] * x[j];
+      x[i] = s / A[i][i];
+    }
+    return { x: x, rank: rank, n: n };
+  }
+
+  function matVec(A, v) {
+    var n = v.length, r = new Array(n).fill(0);
+    for (var i = 0; i < n; i++) { var s = 0, Ai = A[i]; for (var j = 0; j < n; j++) s += Ai[j] * v[j]; r[i] = s; }
+    return r;
+  }
+  function nrm(v) { var s = 0; for (var i = 0; i < v.length; i++) s += v[i] * v[i]; return Math.sqrt(s); }
+
+  function condEst(A) {
+    var n = A.length, i;
+    var v = []; for (i = 0; i < n; i++) v.push(Math.sin(i * 2.3) + 0.5);
+    var lmax = 1;
+    for (i = 0; i < 40; i++) { v = matVec(A, v); lmax = nrm(v); if (lmax === 0) return Infinity; for (var j = 0; j < n; j++) v[j] /= lmax; }
+    var u = []; for (i = 0; i < n; i++) u.push(Math.cos(i * 1.7) + 0.5);
+    var lmin = 1;
+    for (i = 0; i < 15; i++) {
+      var sol = gaussSolve(A, u);
+      if (!sol.x) return Infinity;
+      var nz = nrm(sol.x); if (nz === 0) return Infinity;
+      for (var j2 = 0; j2 < n; j2++) u[j2] = sol.x[j2] / nz;
+      lmin = 1 / nz;
+    }
+    return lmax / lmin;
+  }
+
+  function hermiteW(q, x) {
+    var e = Math.min(NE - 1, Math.floor(x / ell)), xi = (x - e * ell) / ell;
+    var a = e, b = e + 1;
+    var w1 = q[3*a+1], t1 = q[3*a+2], w2 = q[3*b+1], t2 = q[3*b+2];
+    var N1 = 1 - 3*xi*xi + 2*xi*xi*xi, N2 = ell * (xi - 2*xi*xi + xi*xi*xi);
+    var N3 = 3*xi*xi - 2*xi*xi*xi, N4 = ell * (xi*xi*xi - xi*xi);
+    return N1*w1 + N2*t1 + N3*w2 + N4*t2;
+  }
+
+  var el = function(id) { return document.getElementById(id); };
+
+  function buildChips() {
+    var host = el('il-chips'), html = '';
+    for (var e = 0; e < NE; e++) {
+      html += '<button data-e="' + e + '" style="flex:0 0 auto;padding:5px 10px;font-size:12px;border-radius:3px;cursor:pointer;border:1.5px solid ' +
+        (sensored[e] ? '#e67e22;background:#e67e22;color:#fff;font-weight:600;' : '#ccc;background:#f4f4f4;color:#999;') + '">el ' + (e + 1) + '</button>';
+    }
+    host.innerHTML = html;
+    host.querySelectorAll('button').forEach(function(b) {
+      b.addEventListener('click', function() {
+        var e = parseInt(b.getAttribute('data-e'));
+        sensored[e] = !sensored[e];
+        buildChips(); update();
+      });
+    });
+  }
+
+  function update() {
+    var lam = Math.pow(10, parseFloat(el('il-lam').value));
+    var sig = parseFloat(el('il-noise').value);
+    var caseId = el('il-load').value;
+    var sensing = el('il-sensing').value;
+    var bcMode = el('il-bc').value;
+    el('il-lam-val').innerHTML = parseFloat(el('il-lam').value).toFixed(1).replace('-', '&minus;');
+    el('il-noise-val').textContent = sig.toFixed(2);
+
+    var T = truth(caseId);
+
+    // strain scale for noise
+    var escale = 0;
+    for (var e0i = 0; e0i < NE; e0i++) for (var g0 = 0; g0 < GP.length; g0++) {
+      var x0 = (e0i + GP[g0]) * ell;
+      escale = Math.max(escale, Math.abs(T.e(x0) + h * T.k(x0)), Math.abs(T.e(x0) - h * T.k(x0)));
+    }
+
+    // measurements per element per gauss point
+    var extrap = el('il-extrap').checked;
+    var meas = [];
+    for (var e = 0; e < NE; e++) {
+      var mg = [];
+      for (var g = 0; g < GP.length; g++) {
+        var x = (e + GP[g]) * ell;
+        if (!sensored[e]) { mg.push({ em: 0, km: 0, w: lam }); continue; }
+        var ep = T.e(x) + h * T.k(x) + (sig / 100) * escale * noisePool[(e * 2 + g) * 2];
+        var em2 = T.e(x) - h * T.k(x) + (sig / 100) * escale * noisePool[(e * 2 + g) * 2 + 1];
+        if (sensing === 'top') mg.push({ em: 0, km: ep / h, w: 1 });
+        else mg.push({ em: (ep + em2) / 2, km: (ep - em2) / (2 * h), w: 1 });
+      }
+      meas.push(mg);
+    }
+    // optional pre-extrapolation: fill gap elements with linearly interpolated
+    // section strains from the nearest sensored elements (still at weight lambda)
+    var sensList = [];
+    for (var es = 0; es < NE; es++) if (sensored[es]) sensList.push(es);
+    if (extrap && sensList.length > 0) {
+      var xc = [], kb = [], eb = [];
+      for (var is = 0; is < sensList.length; is++) {
+        var se = sensList[is];
+        xc.push((se + 0.5) * ell);
+        kb.push((meas[se][0].km + meas[se][1].km) / 2);
+        eb.push((meas[se][0].em + meas[se][1].em) / 2);
+      }
+      function interp(x, arr) {
+        if (x <= xc[0]) return arr[0];
+        if (x >= xc[xc.length - 1]) return arr[arr.length - 1];
+        for (var k2 = 0; k2 < xc.length - 1; k2++) {
+          if (x >= xc[k2] && x <= xc[k2 + 1]) {
+            var f = (x - xc[k2]) / (xc[k2 + 1] - xc[k2]);
+            return arr[k2] * (1 - f) + arr[k2 + 1] * f;
+          }
+        }
+        return arr[0];
+      }
+      for (var eg = 0; eg < NE; eg++) {
+        if (sensored[eg]) continue;
+        for (var gg = 0; gg < GP.length; gg++) {
+          var xg = (eg + GP[gg]) * ell;
+          meas[eg][gg] = { em: interp(xg, eb), km: interp(xg, kb), w: lam };
+        }
+      }
+    }
+
+    // assemble
+    var A = [], b = new Array(NDOF).fill(0), i, j;
+    for (i = 0; i < NDOF; i++) A.push(new Array(NDOF).fill(0));
+    var th2 = (2 * h) * (2 * h);
+    for (var e2 = 0; e2 < NE; e2++) {
+      var a = e2, c = e2 + 1;
+      for (var g2 = 0; g2 < GP.length; g2++) {
+        var xi = GP[g2], wg = ell / 2, we = meas[e2][g2].w;
+        // membrane: dofs 3a, 3c
+        var bm = [-1 / ell, 1 / ell], mdof = [3 * a, 3 * c];
+        for (i = 0; i < 2; i++) for (j = 0; j < 2; j++) A[mdof[i]][mdof[j]] += we * wg * bm[i] * bm[j];
+        for (i = 0; i < 2; i++) b[mdof[i]] += we * wg * bm[i] * meas[e2][g2].em;
+        // bending: dofs 3a+1, 3a+2, 3c+1, 3c+2
+        var bb = [(-6 + 12 * xi) / (ell * ell), (-4 + 6 * xi) / ell, (6 - 12 * xi) / (ell * ell), (-2 + 6 * xi) / ell];
+        var bdof = [3 * a + 1, 3 * a + 2, 3 * c + 1, 3 * c + 2];
+        for (i = 0; i < 4; i++) for (j = 0; j < 4; j++) A[bdof[i]][bdof[j]] += we * th2 * wg * bb[i] * bb[j];
+        for (i = 0; i < 4; i++) b[bdof[i]] += we * th2 * wg * bb[i] * meas[e2][g2].km;
+      }
+    }
+
+    // BCs
+    var fixed = [];
+    if (bcMode === 'clamp') fixed = [0, 1, 2];
+    else if (bcMode === 'both') fixed = [0, 1, 2, 24, 25, 26];
+    var free = [];
+    for (i = 0; i < NDOF; i++) if (fixed.indexOf(i) < 0) free.push(i);
+    var Ar = [], br = [];
+    for (i = 0; i < free.length; i++) {
+      var row = [];
+      for (j = 0; j < free.length; j++) row.push(A[free[i]][free[j]]);
+      Ar.push(row); br.push(b[free[i]]);
+    }
+
+    var sol = gaussSolve(Ar, br);
+    var q = null, cond = Infinity;
+    if (sol.x) {
+      q = new Array(NDOF).fill(0);
+      for (i = 0; i < free.length; i++) q[free[i]] = sol.x[i];
+      cond = condEst(Ar);
+    }
+
+    // validation
+    var rms = null, wmax = 0;
+    if (q) {
+      var s2 = 0, np = 101;
+      for (i = 0; i < np; i++) {
+        var xv = i / (np - 1);
+        var d = hermiteW(q, xv) - T.w(xv);
+        s2 += d * d; wmax = Math.max(wmax, Math.abs(T.w(xv)));
+      }
+      rms = Math.sqrt(s2 / np) / wmax * 100;
+    }
+
+    // per-element curvature mismatch
+    var mis = [], mmax = 1e-12;
+    for (var e3 = 0; e3 < NE; e3++) {
+      var m = 0;
+      if (q) {
+        for (var g3 = 0; g3 < GP.length; g3++) {
+          var xi3 = GP[g3];
+          var bb3 = [(-6 + 12 * xi3) / (ell * ell), (-4 + 6 * xi3) / ell, (6 - 12 * xi3) / (ell * ell), (-2 + 6 * xi3) / ell];
+          var bd3 = [3 * e3 + 1, 3 * e3 + 2, 3 * e3 + 4, 3 * e3 + 5];
+          var kr = 0;
+          for (i = 0; i < 4; i++) kr += bb3[i] * q[bd3[i]];
+          m += Math.abs(kr - meas[e3][g3].km) / GP.length;
+        }
+      }
+      mis.push(m); mmax = Math.max(mmax, m);
+    }
+
+    draw(q, T, mis, mmax, bcMode, extrap);
+    panel(q, sol, cond, rms, lam, sig, sensing, bcMode, extrap);
+    readout(q, T, rms, lam, caseId, extrap);
+  }
+
+  function draw(q, T, mis, mmax, bcMode, extrap) {
+    var X0 = 45, X1 = 525, Y0 = 205, WS = 430;
+    function px(x) { return X0 + x * (X1 - X0); }
+    function py(w) { return Y0 - w * WS; }
+    var s = '';
+    // baseline
+    s += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X1 + '" y2="' + Y0 + '" stroke="#ccc" stroke-dasharray="4,4"/>';
+    // element bar with sensor shading + mismatch strip
+    for (var e = 0; e < NE; e++) {
+      var xa = px(e / NE), xb = px((e + 1) / NE);
+      s += '<rect x="' + xa + '" y="240" width="' + (xb - xa) + '" height="18" fill="' + (sensored[e] ? '#fff' : '#e2e2e2') + '" stroke="#999"/>';
+      if (sensored[e]) s += '<circle cx="' + ((xa + xb) / 2) + '" cy="249" r="3.5" fill="#e67e22"/>';
+      else s += '<text x="' + ((xa + xb) / 2) + '" y="253" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">' + (extrap ? 'ext&middot;&lambda;' : '&lambda;') + '</text>';
+      var al = mis[e] / mmax;
+      s += '<rect x="' + xa + '" y="262" width="' + (xb - xa) + '" height="8" fill="rgba(198,40,40,' + (0.08 + 0.85 * al).toFixed(3) + ')" stroke="#ddd"/>';
+    }
+    s += '<text x="' + X0 + '" y="290" font-size="10" fill="#666" font-family="sans-serif">beam elements (&#9679; = sensored, &lambda; = zero-strain prior) &mdash; red strip: per-element curvature mismatch |&kappa;(u) &minus; &kappa;&#7499;|</text>';
+    // clamps
+    function hatch(xc, dir) {
+      var hh = '<line x1="' + xc + '" y1="140" x2="' + xc + '" y2="230" stroke="#333" stroke-width="2"/>';
+      for (var k = 0; k < 5; k++) {
+        var y = 150 + k * 18;
+        hh += '<line x1="' + xc + '" y1="' + y + '" x2="' + (xc - 10 * dir) + '" y2="' + (y + 10) + '" stroke="#333"/>';
+      }
+      return hh;
+    }
+    if (bcMode !== 'free') s += hatch(X0, 1);
+    if (bcMode === 'both') s += hatch(X1, -1);
+    if (bcMode === 'free') s += '<text x="' + X0 + '" y="150" font-size="11" fill="#c62828" font-family="sans-serif">no anchor: rigid-body modes free</text>';
+    // true curve
+    var p = '';
+    for (var i = 0; i <= 100; i++) { var x = i / 100; p += (i ? 'L' : 'M') + px(x).toFixed(1) + ',' + py(T.w(x)).toFixed(1); }
+    s += '<path d="' + p + '" fill="none" stroke="#1565c0" stroke-width="2.5"/>';
+    // reconstruction
+    if (q) {
+      var pr = '';
+      for (var i2 = 0; i2 <= 100; i2++) { var x2 = i2 / 100; pr += (i2 ? 'L' : 'M') + px(x2).toFixed(1) + ',' + py(hermiteW(q, x2)).toFixed(1); }
+      s += '<path d="' + pr + '" fill="none" stroke="#e67e22" stroke-width="2" stroke-dasharray="6,3"/>';
+      for (var n = 0; n < NN; n++) s += '<circle cx="' + px(n / NE) + '" cy="' + py(q[3 * n + 1]) + '" r="3.5" fill="#e67e22"/>';
+    } else {
+      s += '<text x="285" y="120" font-size="13" text-anchor="middle" fill="#c62828" font-weight="600" font-family="sans-serif">System singular &mdash; solve refused</text>';
+      s += '<text x="285" y="138" font-size="11" text-anchor="middle" fill="#c62828" font-family="sans-serif">strain cannot see rigid translation or rotation; add an anchor</text>';
+    }
+    // legend
+    s += '<line x1="60" y1="28" x2="92" y2="28" stroke="#1565c0" stroke-width="2.5"/><text x="98" y="32" font-size="11" fill="#333" font-family="sans-serif">true w(x)</text>';
+    s += '<line x1="180" y1="28" x2="212" y2="28" stroke="#e67e22" stroke-width="2" stroke-dasharray="6,3"/><text x="218" y="32" font-size="11" fill="#333" font-family="sans-serif">iFEM reconstruction</text>';
+    s += '<text x="380" y="32" font-size="10.5" font-weight="700" fill="#2e7d32" font-family="sans-serif">E, &nu;: not used &nbsp;&middot;&nbsp; loads: not used</text>';
+    el('il-svg').innerHTML = s;
+  }
+
+  function panel(q, sol, cond, rms, lam, sig, sensing, bcMode, extrap) {
+    var ns = sensored.filter(function(x) { return x; }).length;
+    var surf = (sensing === 'top') ? 1 : 2;
+    var readings = ns * 2 * surf;
+    var samples = ns * 2 * 2;
+    var nfix = (bcMode === 'clamp') ? 3 : (bcMode === 'both') ? 6 : 0;
+    var rankStr = sol.x ? (sol.rank + ' / ' + sol.n + ' &mdash; full rank')
+      : '<span style="color:#c62828;font-weight:700;">' + sol.rank + ' / ' + sol.n + ' &mdash; deficient by ' + (sol.n - sol.rank) + ' (rigid modes)</span>';
+    var condStr = (cond === Infinity) ? '<span style="color:#c62828;font-weight:700;">&infin;</span>'
+      : (cond > 1e8 ? '<span style="color:#b36118;font-weight:700;">' : '<span style="color:#2e7d32;">') + cond.toExponential(1) + '</span>';
+    var valStr = (rms === null) ? '<span style="color:#c62828;">&mdash;</span>'
+      : (rms < 2 ? '<span style="color:#2e7d32;font-weight:700;">' : rms < 10 ? '<span style="color:#b36118;font-weight:700;">' : '<span style="color:#c62828;font-weight:700;">') + rms.toFixed(2) + '%</span>';
+    var assume = '<li>linear beam kinematics, small strain</li><li>geometry known: half-depth h</li>';
+    assume += '<li>pose anchor: ' + (bcMode === 'clamp' ? 'root clamped (matches truth)' : bcMode === 'both' ? '<span style="color:#b36118;font-weight:600;">both ends clamped &mdash; tip anchor contradicts the data</span>' : '<span style="color:#c62828;font-weight:600;">none</span>') + '</li>';
+    assume += '<li>' + (NE - ns) + ' sensorless elements: ' + (extrap ? 'pre-extrapolated section strains (linear, from sensored neighbors)' : 'zero-strain prior') + ' at weight &lambda; = 10<sup>' + Math.round(Math.log10(lam) * 10) / 10 + '</sup></li>';
+    if (sensing === 'top') assume += '<li><span style="color:#b36118;font-weight:600;">one-sided sensing: e = 0 assumed at full weight</span></li>';
+    el('il-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the solver sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + readings + ' surface strain readings (' + ns + ' elements &times; 2 stations &times; ' + surf + ' surface' + (surf > 1 ? 's' : '') + ') &rarr; ' + samples + ' section-strain samples</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> 27 nodal DOFs (9 nodes &times; (u, w, &theta;)), ' + nfix + ' anchored &rarr; ' + (27 - nfix) + ' free</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank:</strong> ' + rankStr + '<br><strong>cond(K):</strong> ' + condStr + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation (RMS w error):</strong> ' + valStr + '<br><span style="font-size:11px;color:#888;">vs known truth &mdash; a luxury of simulation; in the field, use withheld sensors</span></div>' +
+      '<div style="font-size:11px;font-weight:700;color:#2e7d32;border-top:1px solid #ddd;padding-top:6px;">E, &nu;: not used &nbsp;&middot;&nbsp; loads: not used</div>';
+  }
+
+  function readout(q, T, rms, lam, caseId, extrap) {
+    var r = '$$\\Phi(\\mathbf{u}) = \\sum_e w_e \\Big( \\|e(\\mathbf{u})-e^{\\varepsilon}\\|^2 + (2h)^2\\|\\kappa(\\mathbf{u})-\\kappa^{\\varepsilon}\\|^2 \\Big), \\quad w_e = 1 \\text{ (sensored)}, \\; \\lambda = ' + lam.toExponential(1).replace('e-', '\\times 10^{-').replace('e+', '\\times 10^{+') + '} \\text{ (sensorless)}$$';
+    var ro = el('il-readout');
+    var tip = q ? ('Reconstructed tip deflection $w(L) = ' + hermiteW(q, 1).toFixed(4) + '$ vs true $' + T.w(1).toFixed(4) + '$.') : 'No solution &mdash; anchor the pose first.';
+    var ax = (caseId === 'axial' && q) ? (' Axial tip displacement $u(L) = ' + q[24].toFixed(4) + '$ vs true $' + T.uAx(1).toFixed(4) + '$' + (el('il-sensing').value === 'top' ? ' (one-sided mode forces this toward 0 and biases $\\kappa$ by $e/h$)' : '') + '.') : '';
+    var gaps = sensored.filter(function(x) { return !x; }).length;
+    var note = '';
+    if (q && gaps > 0 && !extrap) {
+      note = ' <strong>Note the gap bias:</strong> the sensorless elements carry a zero-strain prior and nothing competes with it there, so they bridge with straight segments <em>whatever the value of</em> $\\lambda$ &mdash; a small weight cannot conjure missing information; it only keeps the system connected and nonsingular (watch cond($\\mathbf{K}$) climb as $\\lambda \\to 10^{-6}$). Filling the gaps with real information is the job of pre-extrapolation &mdash; tick the checkbox.';
+    } else if (q && gaps > 0 && extrap) {
+      note = ' With pre-extrapolation on, the gaps are filled with interpolated section strains at weight $\\lambda$ &mdash; genuine (if imperfect) information, which is why Oboe et al. (2021) gave such values $w = 0.1$ rather than $10^{-5}$.';
+    }
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">' + r + '</div><div>' + tip + ax + note + '</div>';
+    renderMath(ro);
+  }
+
+  buildChips();
+  ['il-lam', 'il-noise'].forEach(function(id) { el(id).addEventListener('input', update); });
+  ['il-load', 'il-sensing', 'il-bc'].forEach(function(id) { el(id).addEventListener('change', function() { rerollNoise(); update(); }); });
+  el('il-extrap').addEventListener('change', update);
+  el('il-reroll').addEventListener('click', function() { rerollNoise(); update(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: KO CANTILEVER RECONSTRUCTOR ===== -->
+<script>
+(function() {
+  var c = 0.05, L = 1;
+  var el = function(id) { return document.getElementById(id); };
+  var noisePool = [];
+  function reroll() {
+    noisePool = [];
+    for (var i = 0; i < 21; i++) {
+      var u1 = Math.random(), u2 = Math.random();
+      noisePool.push(Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2));
+    }
+  }
+  reroll();
+
+  function wTrue(x, t) {
+    return (1 - t) * 0.6 * (3*x*x - x*x*x) / 6 + t * 1.6 * (x*x*x*x - 4*x*x*x + 6*x*x) / 24;
+  }
+  function kTrue(x, t) {
+    return (1 - t) * 0.6 * (1 - x) + t * 1.6 * (1 - x) * (1 - x) / 2;
+  }
+
+  function update() {
+    var n = parseInt(el('ko-n').value);
+    var t = parseFloat(el('ko-t').value);
+    var sig = parseFloat(el('ko-noise').value);
+    el('ko-n-val').textContent = n;
+    el('ko-t-val').textContent = t.toFixed(2);
+    el('ko-noise-val').textContent = sig.toFixed(2);
+
+    var dl = L / n, emax = c * kTrue(0, t);
+    var eps = [];
+    for (var i = 0; i <= n; i++) {
+      eps.push(c * kTrue(i * dl, t) + (sig / 100) * emax * noisePool[i]);
+    }
+    // Ko recursions
+    var tanTh = [0], y = [0];
+    for (var i2 = 1; i2 <= n; i2++) {
+      tanTh.push(dl / (2 * c) * (eps[i2 - 1] + eps[i2]) + tanTh[i2 - 1]);
+      y.push(dl * dl / (6 * c) * (2 * eps[i2 - 1] + eps[i2]) + y[i2 - 1] + dl * tanTh[i2 - 1]);
+    }
+    var tipErr = Math.abs(y[n] - wTrue(1, t)) / wTrue(1, t) * 100;
+
+    // draw
+    var X0 = 50, X1 = 650, Y0 = 215, WS = 480;
+    function px(x) { return X0 + x * (X1 - X0); }
+    function py(w) { return Y0 - w * WS; }
+    var s = '';
+    s += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X1 + '" y2="' + Y0 + '" stroke="#ccc" stroke-dasharray="4,4"/>';
+    // clamp
+    s += '<line x1="' + X0 + '" y1="100" x2="' + X0 + '" y2="245" stroke="#333" stroke-width="2"/>';
+    for (var k = 0; k < 7; k++) {
+      var yy = 108 + k * 20;
+      s += '<line x1="' + X0 + '" y1="' + yy + '" x2="' + (X0 - 10) + '" y2="' + (yy + 10) + '" stroke="#333"/>';
+    }
+    // gray beam bar
+    s += '<rect x="' + X0 + '" y="' + (Y0 - 5) + '" width="' + (X1 - X0) + '" height="10" fill="#f0f0f0" stroke="#bbb"/>';
+    // strain bars
+    for (var i3 = 0; i3 <= n; i3++) {
+      var xb = px(i3 * dl), hb = Math.max(1, eps[i3] / (c * kTrue(0, 0) + 1e-12) * 45);
+      s += '<rect x="' + (xb - 3) + '" y="' + (Y0 + 14) + '" width="6" height="' + Math.abs(hb) + '" fill="#2e7d32" opacity="0.7"/>';
+    }
+    s += '<text x="' + X0 + '" y="' + (Y0 + 78) + '" font-size="10" fill="#666" font-family="sans-serif">measured surface strains &epsilon;&#7522; at ' + (n + 1) + ' stations, &Delta;l = ' + dl.toFixed(3) + '</text>';
+    // true curve
+    var p = '';
+    for (var i4 = 0; i4 <= 100; i4++) { var x = i4 / 100; p += (i4 ? 'L' : 'M') + px(x).toFixed(1) + ',' + py(wTrue(x, t)).toFixed(1); }
+    s += '<path d="' + p + '" fill="none" stroke="#1565c0" stroke-width="2.5"/>';
+    // reconstructed polyline + dots
+    var pr = '';
+    for (var i5 = 0; i5 <= n; i5++) pr += (i5 ? 'L' : 'M') + px(i5 * dl).toFixed(1) + ',' + py(y[i5]).toFixed(1);
+    s += '<path d="' + pr + '" fill="none" stroke="#e67e22" stroke-width="1.8" stroke-dasharray="5,3"/>';
+    for (var i6 = 0; i6 <= n; i6++) s += '<circle cx="' + px(i6 * dl) + '" cy="' + py(y[i6]) + '" r="4" fill="#e67e22"/>';
+    // legend
+    s += '<line x1="70" y1="30" x2="102" y2="30" stroke="#1565c0" stroke-width="2.5"/><text x="108" y="34" font-size="11" fill="#333" font-family="sans-serif">true w(x)</text>';
+    s += '<circle cx="200" cy="30" r="4" fill="#e67e22"/><text x="210" y="34" font-size="11" fill="#333" font-family="sans-serif">Ko reconstruction y&#7522;</text>';
+    el('ko-svg').innerHTML = s;
+
+    var ro = el('ko-readout');
+    ro.innerHTML =
+      '<div class="math-block" style="margin:6px 0;">$$\\tan\\theta_i = \\underbrace{' + (dl / (2 * c)).toFixed(2) + '}_{\\Delta l / 2c}\\,(\\varepsilon_{i-1}+\\varepsilon_i) + \\tan\\theta_{i-1}, \\qquad y_i = \\underbrace{' + (dl * dl / (6 * c)).toFixed(3) + '}_{(\\Delta l)^2 / 6c}\\,(2\\varepsilon_{i-1}+\\varepsilon_i) + y_{i-1} + ' + dl.toFixed(3) + '\\tan\\theta_{i-1}$$</div>' +
+      '<div>Tip error $|y_n - w(L)|/w(L) = ' + tipErr.toFixed(2) + '\\%$. For the pure tip force the strain profile is linear, so the piecewise-linear assumption is exact and the error is $\\approx 0$ at any $n$; blend in distributed load and the discretization error falls roughly quadratically as $n$ grows. With noise, the double integration makes the reconstruction wander increasingly toward the tip (reroll a few times) &mdash; contrast with the iFEM lab, where noise stays local to the sensored region. Change the load mix: the strain profile changes shape, the same recursion still works &mdash; no stiffness constant anywhere.</div>';
+    renderMath(ro);
+  }
+
+  ['ko-n', 'ko-t', 'ko-noise'].forEach(function(id) { el(id).addEventListener('input', update); });
+  el('ko-reroll').addEventListener('click', function() { reroll(); update(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+  initWalkthrough('ifem-walkthrough', [
+    {
+      tab: '1. Instrument',
+      title: 'Step 1: Instrument the Surface',
+      text: 'Bond strain rosettes (or run FBG fibers) on the structure. For full section-strain information, place collocated, aligned pairs on the top ($z=+h$) and bottom ($z=-h$) surfaces. Survey the sensor coordinates and the thickness $2h$ &mdash; both enter the reconstruction as hard geometric data.',
+      visual: '<div class="definition-box"><div class="box-label">What one station delivers</div><div>A three-gauge rosette at one surface point: the full in-plane strain state $(\\varepsilon_{xx}, \\varepsilon_{yy}, \\gamma_{xy})$ at $z = \\pm h$.</div></div>',
+      insight: 'Misaligned or non-collocated pairs alias membrane strain into bending before any mathematics begins. Instrumentation quality is part of the model.'
+    },
+    {
+      tab: '2. Section strains',
+      title: 'Step 2: Convert to Section Strains',
+      text: 'The FSDT strain profile is linear through the thickness, $\\boldsymbol{\\varepsilon}(z) = \\mathbf{e} + z\\mathbf{k}$. Average the top/bottom pair for the membrane strain, difference over $2h$ for the curvature. Transverse shear has no surface counterpart: set $\\mathbf{g}^{\\varepsilon} = \\mathbf{0}$ and flag it for a small weight.',
+      visual: '<div class="definition-box"><div class="box-label">Extraction</div><div>$$\\mathbf{e}^{\\varepsilon} = \\tfrac{1}{2}(\\boldsymbol{\\varepsilon}^{+} + \\boldsymbol{\\varepsilon}^{-}), \\qquad \\mathbf{k}^{\\varepsilon} = \\tfrac{1}{2h}(\\boldsymbol{\\varepsilon}^{+} - \\boldsymbol{\\varepsilon}^{-}), \\qquad \\mathbf{g}^{\\varepsilon} = \\mathbf{0} \\;(w_s = \\lambda)$$</div></div>',
+      insight: 'Pure kinematics: no material constant has entered, and none will until someone asks for stresses.'
+    },
+    {
+      tab: '3. Functional',
+      title: 'Step 3: Write the Weighted-Least-Squares Functional',
+      text: 'Over each inverse element, penalize the mismatch between the analytic section strains &mdash; functions of the unknown kinematic field &mdash; and their measured counterparts. Weight 1.0 where data exists, small $\\lambda$ where it does not (always the shear term; whole elements without sensors).',
+      visual: '<div class="definition-box"><div class="box-label">Tessler&ndash;Spangler functional</div><div>$$\\Phi_e = w_m\\|\\mathbf{e}(\\mathbf{u})-\\mathbf{e}^{\\varepsilon}\\|^2 + w_b\\|\\mathbf{k}(\\mathbf{u})-\\mathbf{k}^{\\varepsilon}\\|^2 + w_s\\|\\mathbf{g}(\\mathbf{u})-\\mathbf{g}^{\\varepsilon}\\|^2$$ with the $(2h)^2$ factor inside the curvature norm keeping all terms dimensionally commensurate.</div></div>',
+      insight: 'FEM minimizes potential energy (equilibrium + constitutive law + loads). iFEM minimizes strain mismatch (compatibility only). That one substitution is the whole method.'
+    },
+    {
+      tab: '4. Discretize',
+      title: 'Step 4: Discretize into Inverse Elements',
+      text: 'Interpolate the kinematic field with shape functions, $\\mathbf{u}^e = \\mathbf{N}\\mathbf{q}^e$; the section strains become linear in the nodal DOFs through the $\\mathbf{B}$ matrices. Stationarity of the quadratic functional gives an element system whose matrix is purely geometric.',
+      visual: '<div class="definition-box"><div class="box-label">Element system</div><div>$$\\mathbf{k}^e \\mathbf{q}^e = \\mathbf{f}^e, \\qquad \\mathbf{k}^e = \\iint_{A_e}\\big(w_m \\mathbf{B}_m^T\\mathbf{B}_m + w_b (2h)^2 \\mathbf{B}_b^T\\mathbf{B}_b + w_s \\mathbf{B}_s^T\\mathbf{B}_s\\big)\\,dA$$ No elastic constants anywhere; $\\mathbf{f}^e$ carries the measured strains.</div></div>',
+      insight: 'The literature calls $\\mathbf{k}^e$ a pseudo-stiffness matrix, but it enforces no equilibrium: it is a weighting/geometry matrix, and its right-hand side is projected data, not loads.'
+    },
+    {
+      tab: '5. Anchor + factorize',
+      title: 'Step 5: Anchor the Pose, Assemble, Factorize — Offline',
+      text: 'Assemble over the mesh, then impose displacement restraints that eliminate the rigid-body modes &mdash; strain data cannot see rigid translation or rotation. Anchor exactly what you know about the supports, no more. The reduced system is SPD; factorize it once.',
+      visual: '<div class="definition-box"><div class="box-label">Offline phase</div><div>$$\\mathbf{K} = \\mathbf{L}\\mathbf{L}^T \\quad \\text{(depends on mesh, sensors, weights, anchors — not on measurements)}$$</div></div>',
+      insight: 'Under-anchoring leaves a singular system. Over-anchoring is worse in disguise: a false restraint is a wrong measurement with infinite weight, and the fit will distort the deformation to honor it.'
+    },
+    {
+      tab: '6. Stream',
+      title: 'Step 6: Stream Strain Frames in Real Time',
+      text: 'Per frame: rebuild $\\mathbf{F}$ (linear in the measurements), back-substitute, read off the full displacement field. Statics and dynamics are identical &mdash; inertial effects are already in the measured strains. Validate against withheld sensors, and compare reconstructed strain fields against a healthy baseline for damage screening.',
+      visual: '<div class="definition-box"><div class="box-label">Online phase, every frame</div><div>$$\\mathbf{U}(t) = \\mathbf{K}^{-1}\\,\\mathbf{F}\\big(\\boldsymbol{\\varepsilon}^{\\text{meas}}(t)\\big)$$</div></div>',
+      insight: 'The real-time property is structural, not a matter of system size: the expensive factorization is measurement-independent and amortized offline; the per-frame cost is a right-hand side and a back-substitution.'
+    }
+  ]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+  initFlashcards('mod4-flashcards', [
+    {
+      q: 'What does the inverse Finite Element Method reconstruct, and from what inputs?',
+      a: 'The full displacement field of a structure, from discrete surface strain measurements plus geometry (incl. thickness), a mesh, sensor positions, and boundary restraints. It needs no applied loads and no material elastic constants.'
+    },
+    {
+      q: 'Write the per-element Tessler&ndash;Spangler functional.',
+      a: '$\\Phi_e = w_m\\|\\mathbf{e}(\\mathbf{u})-\\mathbf{e}^{\\varepsilon}\\|^2 + w_b\\|\\mathbf{k}(\\mathbf{u})-\\mathbf{k}^{\\varepsilon}\\|^2 + w_s\\|\\mathbf{g}(\\mathbf{u})-\\mathbf{g}^{\\varepsilon}\\|^2$ &mdash; a weighted least-squares mismatch between analytic FSDT section strains and their measured counterparts.'
+    },
+    {
+      q: 'How are membrane strain and curvature extracted from top/bottom surface rosettes?',
+      a: '$\\mathbf{e}^{\\varepsilon} = \\tfrac{1}{2}(\\boldsymbol{\\varepsilon}^{+}+\\boldsymbol{\\varepsilon}^{-})$ and $\\mathbf{k}^{\\varepsilon} = \\tfrac{1}{2h}(\\boldsymbol{\\varepsilon}^{+}-\\boldsymbol{\\varepsilon}^{-})$, exploiting the linear-in-$z$ strain profile $\\boldsymbol{\\varepsilon}(z) = \\mathbf{e} + z\\mathbf{k}$ of FSDT. Plate thickness is $2h$.'
+    },
+    {
+      q: 'Why does the curvature norm carry a factor $(2h)^2$?',
+      a: 'Curvature has units of 1/length while membrane and shear strains are dimensionless; $(2h)^2$ makes all three terms dimensionally commensurate (strain$^2\\times$area) so bending is not silently under-weighted in thin structures.'
+    },
+    {
+      q: 'Why is the transverse shear strain $\\mathbf{g}^{\\varepsilon}$ never measured, and how does iFEM handle it?',
+      a: 'Surface gauges read only in-plane strain and transverse shear stress vanishes on traction-free faces. iFEM keeps the analytic $\\mathbf{g}(\\mathbf{u})$ term, sets $\\mathbf{g}^{\\varepsilon}=\\mathbf{0}$, and assigns it a small weight $\\lambda$ (e.g. $10^{-4}$&ndash;$10^{-5}$).'
+    },
+    {
+      q: 'What two jobs do the small weights $\\lambda$ on sensorless components do?',
+      a: '(1) Maintain interelement connectivity of the kinematic field across regions without sensors; (2) regularize the least-squares system so it stays nonsingular &mdash; while keeping measured data dominant. Values are context-dependent: $10^{-5}$ typical numerically, up to $0.1$ for pre-extrapolated strains in noisy experiments.'
+    },
+    {
+      q: 'Why is iFEM real-time capable?',
+      a: 'The system matrix $\\mathbf{K}$ depends only on mesh, sensor positions, and weights &mdash; not on measurements &mdash; so it is factorized once offline. Each strain frame only rebuilds $\\mathbf{F}$ (linear in measurements) followed by a back-substitution: $\\mathbf{U} = \\mathbf{K}^{-1}\\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}})$.'
+    },
+    {
+      q: 'Precisely which model ingredients does iFEM still require, despite being &ldquo;material-free and load-free&rdquo;?',
+      a: 'Geometry including thickness $2h$, the kinematic model (first-order shear deformation theory, small strains), a mesh of inverse elements, sensor locations, and boundary restraints sufficient to remove rigid-body modes. It is constitutive-free and load-free, not model-free.'
+    },
+    {
+      q: 'State the Ko displacement theory slope and deflection recursions for a uniform cantilever.',
+      a: '$\\tan\\theta_i = \\frac{\\Delta l}{2c}(\\varepsilon_{i-1}+\\varepsilon_i) + \\tan\\theta_{i-1}$, $\\; y_i = \\frac{(\\Delta l)^2}{6c}(2\\varepsilon_{i-1}+\\varepsilon_i) + y_{i-1} + \\Delta l\\tan\\theta_{i-1}$, seeded by $\\tan\\theta_0 = y_0 = 0$ at the clamped root; stations equally spaced by $\\Delta l = l/n$.'
+    },
+    {
+      q: 'Why does Ko theory need no bending stiffness $EI$?',
+      a: 'Writing the moment through the outer-fiber strain, $\\varepsilon = Mc/EI$, turns the beam equation $y\'\' = M/EI$ into $y\'\' = \\varepsilon(x)/c$: $EI$ cancels identically and only the geometric half-depth $c$ survives &mdash; but it assumes piecewise-linear strain between stations and 1D bending kinematics.'
+    },
+    {
+      q: 'Modal shape sensing: core equations and the hidden cost that iFEM avoids.',
+      a: '$\\mathbf{u} \\approx \\boldsymbol{\\Phi}\\mathbf{q}$ with $\\mathbf{q} = (\\boldsymbol{\\Psi}^T\\boldsymbol{\\Psi})^{-1}\\boldsymbol{\\Psi}^T\\boldsymbol{\\varepsilon}^{\\text{meas}}$. The mode shapes come from a finite element model requiring mass AND stiffness &mdash; i.e. material properties &mdash; and damage or truncation error corrupts the basis. iFEM uses only strain&ndash;displacement relations.'
+    },
+    {
+      q: 'When do material properties re-enter an iFEM monitoring pipeline?',
+      a: 'In post-processing: once $\\mathbf{u}$ is reconstructed, strains follow anywhere by kinematics, but stresses require $\\boldsymbol{\\sigma} = \\mathbf{C}\\boldsymbol{\\varepsilon}$ &mdash; so &ldquo;stress sensing&rdquo; (e.g. Kefal &amp; Oterkus\'s tanker monitoring) needs the constitutive matrix, while displacement reconstruction does not.'
+    },
+    {
+      q: 'What can strain measurements never determine about the deformed structure, and what does iFEM do about it?',
+      a: 'The rigid-body pose: rigid translations and rotations produce zero strain, so they span the nullspace of the unconstrained system. iFEM removes them with displacement boundary restraints (pose anchors). Anchor only what is actually known &mdash; a false restraint is a wrong measurement imposed with infinite weight, and it biases the reconstructed deformation.'
+    },
+    {
+      q: 'Compared to load or material inversion, why is shape sensing only mildly ill-posed?',
+      a: 'The strain-to-displacement map is an integrating, smoothing map &mdash; noise is not amplified the way differentiation-based inversions amplify it. The remaining difficulties are discreteness, noise accumulation, and undetermined integration constants; iFEM converts them into a well-posed overdetermined least-squares fit, once the rigid-body modes are anchored.'
+    },
+    {
+      q: 'Why can gauges on a single surface not separate membrane strain from curvature?',
+      a: 'The surface reading is $\\varepsilon^{\\pm} = \\mathbf{e} \\pm h\\mathbf{k}$: one equation, two unknowns per component. One-sided sensing needs an added assumption (e.g. $\\mathbf{e}=\\mathbf{0}$) or an extrapolation model &mdash; and if the assumption is wrong, membrane strain aliases into curvature as $e/h$, biasing the reconstructed shape.'
+    },
+    {
+      q: 'Which 2003 mishap motivates real-time shape sensing, and what is its lesson?',
+      a: 'NASA\'s Helios flying wing (247 ft span, wingtip deflections up to 40 ft) broke up in 2003; the mishap is attributed to undamped pitch oscillations of the highly deformed wing. Lesson: very flexible structures need real-time knowledge of their own deformed shape &mdash; and on weight-critical vehicles that means multiplexed strain sensing (FBG fibers), not cameras or heavy gauge wiring.'
+    }
+  ]);
+</script>
+</body>
+</html>

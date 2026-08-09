@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>7. Material Identification — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">7. Material Identification</h1>
+    <p class="page-subtitle">Finite element model updating, the virtual fields method, DIC full-field measurement, sensitivity and identifiability, hyperelastic soft materials, constitutive model discovery</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#why-inverse-identification">1. Why Inverse Identification: From Standard Tests to Material Testing 2.0</a>
+      <a href="#full-field-measurement-dic">2. The Data: Full-Field Measurement by Digital Image Correlation</a>
+      <a href="#identification-problem-and-method-map">3. Problem Statement and the Map of Identification Methods</a>
+      <a href="#femu">4. FEMU: Finite Element Model Updating</a>
+      <a href="#vfm-linear">5. The Virtual Fields Method: Linear Case</a>
+      <a href="#nonlinear-vfm">6. Nonlinear VFM and Sensitivity-Based Virtual Fields</a>
+      <a href="#hyperelastic-soft-materials">7. Inverse Hyperelastic Characterization of Soft Materials</a>
+      <a href="#identifiability-noise-test-design">8. Identifiability, Noise, and Test Design</a>
+      <a href="#femu-vs-vfm">9. FEMU vs VFM: An Honest Comparison</a>
+      <a href="#model-discovery">10. Beyond Parameters: Constitutive Model Discovery</a>
+      <a href="#practical-workflow">11. A Practical Identification Workflow for a Silicone Skin</a>
+      <a class="toc-interactive" href="#vsg-explorer">Interactive: VSG Bias&ndash;Variance Explorer</a>
+      <a class="toc-interactive" href="#ident-lab">Interactive: Identifiability Landscape Lab (FEMU vs VFM)</a>
+      <a class="toc-interactive" href="#skin-walkthrough">Interactive: Walkthrough &mdash; An Identification Campaign for a Silicone Skin</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1 ===== -->
+    <h2 class="section-heading" id="why-inverse-identification">1. Why Inverse Identification: From Standard Tests to Material Testing 2.0</h2>
+
+    <p>Every forward simulation in this guide silently assumed that somebody, somewhere, measured the material. Given constitutive parameters $\boldsymbol{\theta}$, a geometry, and boundary conditions, the finite element method predicts the displacement field. This module is about the day you are that somebody: the material in front of you &mdash; say, the silicone skin you cast for a vision-based tactile sensor &mdash; has no datasheet worth trusting, and the parameters must come out of an experiment.</p>
+
+    <div class="math-block">$$\mathbf{u} = \mathcal{F}(\boldsymbol{\theta};\ \text{geometry},\ \text{BCs}) \quad \text{(forward)}$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given a measured kinematic field (displacements or strains over a region) and one or more measured load resultants, find the constitutive parameters $\boldsymbol{\theta}$ inside $\boldsymbol{\sigma} = f(\boldsymbol{\varepsilon};\, \boldsymbol{\theta})$ that make the material model consistent with what was observed:
+      $$\hat{\boldsymbol{\theta}} = \arg\min_{\boldsymbol{\theta}}\ d\big(\mathbf{u}_{\mathrm{meas}},\ \mathcal{F}(\boldsymbol{\theta})\big) \quad \text{(inverse identification)}$$</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; a distinct member of the inverse-FEM family</div>
+      <div>This is <em>not</em> a variant of the shape sensing of Modules 4&ndash;6. There, the elastic constants were deliberately irrelevant: iFEM minimized a compatibility mismatch and never asked for $E$. Here the roles rotate: the kinematic field becomes the <em>data</em>, the constitutive law becomes the <em>unknown</em> &mdash; and, as we will see, at least one measured force becomes mandatory. Different residual, different unknowns, different failure modes.</div>
+    </div>
+
+    <h3 class="subsection-heading">Material Testing 1.0: Engineer the Stress State Away</h3>
+    <p>The classical approach never inverts anything. It <em>engineers</em> the experiment so that the stress state is statically determinate and homogeneous: in a dogbone uniaxial test, $\sigma = F/A$ everywhere in the gauge section, strain comes from an extensometer, and the stress&ndash;strain curve is read off directly. The price is that each such test probes exactly <strong>one</strong> stress state. An anisotropic or multi-parameter law then needs a battery of separate tests &mdash; off-axis tension, shear rails, biaxial rigs &mdash; and soft or small specimens rarely achieve homogeneity at all: grip effects, self-weight sag, bulging.</p>
+
+    <h3 class="subsection-heading">Material Testing 2.0: Invert the Philosophy</h3>
+    <p>Material Testing 2.0 (Pierron &amp; Gr&eacute;diac 2021) turns the logic around. Deliberately design a <strong>heterogeneous</strong> test so that a single experiment activates many stress states at once; measure the full displacement field with a camera &mdash; $10^4$&ndash;$10^6$ data points per frame via digital image correlation &mdash; and extract all parameters simultaneously with an inverse method. Pierron's 2023 brief review surveys how far this program has come and what still blocks routine adoption.</p>
+
+    <table>
+      <tr><th></th><th>Material Testing 1.0</th><th>Material Testing 2.0</th></tr>
+      <tr><td><strong>Stress state</strong></td><td>Homogeneous, statically determinate by design</td><td>Deliberately heterogeneous &mdash; many states in one field</td></tr>
+      <tr><td><strong>Data</strong></td><td>One force, one strain (extensometer / gauge)</td><td>Full displacement field ($10^4$&ndash;$10^6$ points/frame) + load resultant</td></tr>
+      <tr><td><strong>Extraction</strong></td><td>Read $\sigma$&ndash;$\varepsilon$ curve directly</td><td>Inverse method (FEMU, VFM, &hellip;)</td></tr>
+      <tr><td><strong>Multi-parameter laws</strong></td><td>Many separate tests</td><td>One experiment, all parameters at once</td></tr>
+      <tr><td><strong>Soft / small specimens</strong></td><td>Homogeneity rarely achievable</td><td>Heterogeneity is the design goal, not a defect</td></tr>
+    </table>
+
+    <p>Two inverse families dominate. <strong>Finite Element Model Updating (FEMU)</strong> iterates a forward FE model of the test until it reproduces the measurements; the idea dates back to Kavanagh &amp; Clough (1971), who characterized elastic solids by matching FE predictions to measured response. The <strong>Virtual Fields Method (VFM)</strong> &mdash; introduced by Gr&eacute;diac in 1989 and developed comprehensively in Pierron &amp; Gr&eacute;diac's 2012 book &mdash; bypasses the forward solve entirely by writing the principle of virtual work with the <em>measured</em> strain field.</p>
+
+    <p>For this site's audience the motivation is concrete: characterizing the silicone skin of a vision-based tactile sensor is precisely this problem, and the camera infrastructure is already sitting in the sensor. The module arc: measurement (DIC, &sect;2) &rarr; problem statement and method map (&sect;3) &rarr; FEMU (&sect;4) &rarr; VFM linear (&sect;5) &rarr; VFM nonlinear (&sect;6) &rarr; soft materials (&sect;7) &rarr; identifiability and test design (&sect;8) &rarr; honest comparison (&sect;9) &rarr; model discovery (&sect;10) &rarr; lab workflow (&sect;11).</p>
+
+    <!-- ===== SECTION 2 ===== -->
+    <h2 class="section-heading" id="full-field-measurement-dic">2. The Data: Full-Field Measurement by Digital Image Correlation</h2>
+
+    <p>Everything downstream is only as good as the measured field, so we start with the measurement. Digital image correlation (DIC) is the workhorse; the standard reference is the book by Sutton, Orteu &amp; Schreier (2009), and Hild &amp; Roux (2006) review the path from displacement measurement to elastic-property identification. The principle: apply a random <strong>speckle pattern</strong> to the specimen, photograph it before and during loading, and assume gray-level conservation between the reference image $f$ and the deformed image $g$:</p>
+
+    <div class="math-block">$$f(\mathbf{x}) = g\big(\mathbf{x} + \mathbf{u}(\mathbf{x})\big)$$</div>
+
+    <h3 class="subsection-heading">Subset Matching</h3>
+    <p>Around each point of a regular grid, take a <em>subset</em> &mdash; typically a 21&ndash;41&nbsp;px square &mdash; and parametrize its motion with a shape function, usually affine (translation plus gradient terms). The subset's displacement is found by minimizing a correlation criterion; the <strong>zero-normalized sum of squared differences (ZNSSD)</strong> is standard because it is insensitive to uniform lighting offset and scale changes:</p>
+
+    <div class="math-block">$$C_{\mathrm{ZNSSD}} = \sum_{i \in \text{subset}} \left[ \frac{f(\mathbf{x}_i) - \bar{f}}{\sqrt{\sum_j (f(\mathbf{x}_j)-\bar{f})^2}} - \frac{g(\mathbf{x}_i') - \bar{g}}{\sqrt{\sum_j (g(\mathbf{x}_j')-\bar{g})^2}} \right]^2$$</div>
+
+    <p>Subpixel accuracy comes from gray-level interpolation (bicubic splines): displacement resolution on the order of <strong>0.01&nbsp;px is routine</strong>, around 0.005&nbsp;px under good conditions. The <em>step size</em> &mdash; the grid spacing, often 1/3 to 1/2 of the subset size &mdash; sets the data density.</p>
+
+    <div class="figure-container">
+      <svg id="dic-subset-svg" viewBox="0 0 700 300" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;"></svg>
+      <div class="figure-caption">DIC subset matching: a speckled subset (21&ndash;41&nbsp;px) around point $P$ in the reference image is located, warped by an affine shape function, in the deformed image at $P'$. Displacement resolution $\sim$0.01&nbsp;px. Strain then comes from a local polynomial fit over the <em>virtual strain gauge</em> (dashed circle): bigger = smoother, but blurs gradients.</div>
+    </div>
+
+    <h3 class="subsection-heading">From Displacements to Strains: the Virtual Strain Gauge</h3>
+    <p>Identification needs strains, and strain is a <em>derivative</em> of noisy displacement data:</p>
+
+    <div class="math-block">$$\boldsymbol{\varepsilon} = \tfrac{1}{2}\left( \nabla\mathbf{u} + \nabla\mathbf{u}^{\mathsf{T}} \right), \qquad \sigma_{\varepsilon} \sim \frac{\sigma_u}{L_{\mathrm{VSG}}}$$</div>
+
+    <p>Differentiation <strong>amplifies</strong> noise. In practice strain is therefore computed by fitting a local polynomial over a window of grid points &mdash; the <strong>virtual strain gauge (VSG)</strong> of size $L_{\mathrm{VSG}}$. That window is the fundamental trade of the whole measurement chain: a large window averages the noise down but smears gradients, biasing the strain near holes and notches &mdash; exactly where a well-designed heterogeneous test puts its information. A small window follows the gradients faithfully but is noisy. Typical engineering strain noise floors sit in the $10^{-4}$&ndash;$10^{-3}$ range depending on smoothing &mdash; treat these as typical orders, and <em>measure</em> the actual floor for your setup from static image pairs.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the VSG is a modeling decision, not a software default</div>
+      <div>The strain field your identification consumes has already been filtered by the subset, step, and VSG choices. Noise in it is spatially <em>correlated</em>, and bias in it concentrates at strain gradients. Both properties propagate straight into the identified parameters (&sect;8). Choosing the VSG is part of the identification, not a preprocessing detail.</div>
+    </div>
+
+    <!-- ===== INTERACTIVE: VSG EXPLORER ===== -->
+    <div class="interactive-container" id="vsg-explorer">
+      <div class="interactive-label">Interactive Tool &mdash; VSG Bias&ndash;Variance Explorer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A 1D strain profile with a concentration peak (as next to a hole). Noisy displacement data are differentiated by local linear fits over a virtual strain gauge of adjustable size. Grow the window: noise falls as $\sigma_u / L_{\mathrm{VSG}}$, then the peak starts to flatten &mdash; bias replacing variance.</p>
+      <div class="slider-group">
+        <div class="slider-control">
+          <label><span>Displacement noise $\sigma_u$ (&times;10&#8315;&#8308;&nbsp;L)</span> <span id="vsg-noise-val">1.0</span></label>
+          <input type="range" id="vsg-noise" min="0" max="3" step="0.1" value="1">
+        </div>
+        <div class="slider-control">
+          <label><span>VSG window (points)</span> <span id="vsg-win-val">9</span></label>
+          <input type="range" id="vsg-win" min="3" max="41" step="2" value="9">
+        </div>
+        <div class="slider-control" style="flex:0 0 auto;min-width:auto;">
+          <button id="vsg-reroll" style="border:1px solid #00838f;color:#00838f;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;margin-top:14px;">Reroll noise</button>
+        </div>
+      </div>
+      <svg id="vsg-svg" viewBox="0 0 700 260" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;"></svg>
+      <div id="vsg-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <h3 class="subsection-heading">2D, Stereo, and Volumetric Variants</h3>
+    <p><strong>Stereo-DIC</strong> uses two calibrated cameras to measure the 3D surface displacement field. For soft materials it is essential: elastomers move out of plane, and a single-camera <strong>2D-DIC</strong> setup converts out-of-plane motion $\Delta z$ into <em>fake</em> in-plane strain of order $\Delta z / z$, with $z$ the standoff distance. <strong>Digital Volume Correlation (DVC)</strong> extends the idea to volumetric images (&micro;CT, confocal) and is the relevant variant for tissue.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the surface is not the bulk</div>
+      <div>Surface DIC sees exactly one plane of the specimen. Through-thickness gradients and interior heterogeneity are invisible to it. Every 2D identification therefore carries an implicit thin-specimen (plane-stress) assumption &mdash; justify it, or measure volumetrically with DVC. And for elastomers, treat stereo-DIC as the default: a single camera plus a bulging specimen fabricates strains of order $\Delta z/z$ that no identification can undo.</div>
+    </div>
+
+    <h3 class="subsection-heading">Practicalities and Systematic Errors</h3>
+    <ul>
+      <li><strong>Speckle:</strong> feature size 3&ndash;5&nbsp;px at the working magnification, roughly 50% coverage.</li>
+      <li><strong>Stereo calibration:</strong> use a calibration target, calibrate immediately before testing.</li>
+      <li><strong>Systematics:</strong> gray-level interpolation bias, lens distortion, and pattern degradation at large stretch on elastomers &mdash; speckle patterns crack, and a continuous paint film can locally stiffen a thin soft specimen (more in &sect;11).</li>
+      <li><strong>Noise floor:</strong> acquire static image pairs and measure it; never assume it.</li>
+    </ul>
+
+    <!-- ===== SECTION 3 ===== -->
+    <h2 class="section-heading" id="identification-problem-and-method-map">3. Problem Statement and the Map of Identification Methods</h2>
+
+    <p>Formalize the problem. Given: a domain $\Omega$ (the imaged region); measured displacements $\mathbf{u}_{\mathrm{m}}$ at the DIC grid points, hence strains $\boldsymbol{\varepsilon}_{\mathrm{m}}$; and boundary information that is typically <strong>incomplete</strong> &mdash; a load cell gives the resultant $F$ on the grips, but never the traction <em>distribution</em>. Find $\boldsymbol{\theta} \in \mathbb{R}^p$ parametrizing the constitutive law:</p>
+
+    <div class="math-block">$$\hat{\boldsymbol{\theta}} = \arg\min_{\boldsymbol{\theta}}\ \mathcal{R}\big(\boldsymbol{\varepsilon}_{\mathrm{m}},\ F_{\mathrm{m}};\ \boldsymbol{\theta}\big), \qquad \boldsymbol{\sigma} = f(\boldsymbol{\varepsilon};\ \boldsymbol{\theta})$$</div>
+
+    <p>Any solution must reconcile three ingredients: <strong>kinematic compatibility</strong> (supplied by the measurement), <strong>equilibrium</strong> ($\nabla\!\cdot\!\boldsymbol{\sigma} + \mathbf{b} = \mathbf{0}$, or its weak form), and the <strong>constitutive relation</strong> (the unknown). Identification methods differ in <em>which residual</em> $\mathcal{R}$ they minimize and whether a forward boundary-value problem is solved along the way.</p>
+
+    <div class="definition-box">
+      <div class="box-label">The observation model, read for material identification</div>
+      <div>
+        $$\mathbf{y} = \mathcal{H}(\mathbf{u},\, \mathbf{p},\, \mathbf{f},\, \mathbf{X}_0) + \mathbf{b} + \boldsymbol{\eta}$$
+        <table style="margin:10px 0 0;">
+          <tr><th>Slot</th><th>In this module</th></tr>
+          <tr><td>Measured $\mathbf{y}$</td><td>DIC displacement/strain fields ($10^4$&ndash;$10^6$ points) + load-cell resultants</td></tr>
+          <tr><td>Unknown $\mathbf{p}$</td><td>$\boldsymbol{\theta}$: the constitutive parameters (&sect;10: possibly the model form itself; below: possibly a spatial <em>field</em>)</td></tr>
+          <tr><td>Assumed known</td><td>Geometry $\mathbf{X}_0$; the state $\mathbf{u}$ is (nearly) directly observed &mdash; the luxury of full-field data; loads $\mathbf{f}$ known as resultants only</td></tr>
+          <tr><td>Systematics $\mathbf{b}$, noise $\boldsymbol{\eta}$</td><td>DIC interpolation bias, BC idealization, model-form error; spatially correlated DIC noise</td></tr>
+          <tr><td>Unobservable</td><td>The global stiffness scale, if no force is measured; the hydrostatic pressure field, under incompressibility (&sect;6)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">The Five Methods</h3>
+    <p>The authoritative overview by Avril et al. (2008) catalogues the full-field identification methods side by side. In compressed form:</p>
+
+    <table>
+      <tr><th>Method</th><th>Residual minimized</th><th>Iterative / direct</th><th>FE solves?</th><th>Boundary data needed</th></tr>
+      <tr><td><strong>FEMU</strong></td><td>Misfit between FE-predicted and measured fields/forces</td><td>Iterative</td><td>Yes, repeatedly</td><td>Full BC model (or measured-displacement BCs + force)</td></tr>
+      <tr><td><strong>VFM</strong></td><td>Virtual-work imbalance with measured strains</td><td>Direct when parameters enter linearly</td><td>None</td><td>Load resultants only, where $\mathbf{u}^*$ is nonzero</td></tr>
+      <tr><td><strong>CEGM</strong></td><td>Energy-norm gap between a statically admissible stress field and the stress from measured strain</td><td>Iterative</td><td>Auxiliary computations</td><td>Partial</td></tr>
+      <tr><td><strong>EGM</strong></td><td>Discretized equilibrium residual of the stress reconstructed from measurements</td><td>Direct/linear in favorable cases</td><td>None</td><td>Partial</td></tr>
+      <tr><td><strong>RGM</strong></td><td>Maxwell&ndash;Betti reciprocity gap with adjoint fields</td><td>Direct</td><td>Adjoint fields</td><td><strong>Complete</strong> boundary data</td></tr>
+    </table>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 350" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <defs>
+          <marker id="m3arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#666"/></marker>
+        </defs>
+        <!-- inputs -->
+        <rect x="18" y="60" width="150" height="78" rx="6" fill="#f5f7fa" stroke="#999"/>
+        <text x="93" y="78" font-size="12" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">DIC fields</text>
+        <text x="93" y="92" font-size="10.5" text-anchor="middle" fill="#666" font-family="sans-serif">displacements / strains</text>
+        <g>
+          <rect x="63" y="99" width="15" height="15" fill="#00838f"/><rect x="78" y="99" width="15" height="15" fill="#4fb3be"/><rect x="93" y="99" width="15" height="15" fill="#9adbe2"/><rect x="108" y="99" width="15" height="15" fill="#4fb3be"/>
+          <rect x="63" y="114" width="15" height="15" fill="#4fb3be"/><rect x="78" y="114" width="15" height="15" fill="#9adbe2"/><rect x="93" y="114" width="15" height="15" fill="#d3f0f3"/><rect x="108" y="114" width="15" height="15" fill="#9adbe2"/>
+        </g>
+        <rect x="18" y="170" width="150" height="52" rx="6" fill="#f5f7fa" stroke="#999"/>
+        <text x="93" y="192" font-size="12" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">Load cell</text>
+        <text x="93" y="208" font-size="10.5" text-anchor="middle" fill="#666" font-family="sans-serif">resultant F (sets the scale)</text>
+        <!-- method boxes -->
+        <g font-family="sans-serif">
+          <rect x="240" y="22" width="230" height="46" rx="5" fill="#e6f4f5" stroke="#00838f" stroke-width="1.5"/>
+          <text x="252" y="41" font-size="12" font-weight="700" fill="#00565e">FEMU</text>
+          <text x="252" y="56" font-size="10" fill="#555">model-vs-measured fields/forces</text>
+          <rect x="380" y="28" width="82" height="15" rx="7" fill="#e67e22"/><text x="421" y="39" font-size="9" text-anchor="middle" fill="#fff">iterative &middot; FE solves</text>
+          <rect x="240" y="80" width="230" height="46" rx="5" fill="#e6f4f5" stroke="#00838f" stroke-width="1.5"/>
+          <text x="252" y="99" font-size="12" font-weight="700" fill="#00565e">VFM</text>
+          <text x="252" y="114" font-size="10" fill="#555">virtual-work imbalance</text>
+          <rect x="380" y="86" width="82" height="15" rx="7" fill="#2e7d32"/><text x="421" y="97" font-size="9" text-anchor="middle" fill="#fff">direct &middot; no FE solves</text>
+          <rect x="240" y="138" width="230" height="40" rx="5" fill="#f5f7fa" stroke="#888"/>
+          <text x="252" y="155" font-size="12" font-weight="700" fill="#333">CEGM</text>
+          <text x="252" y="170" font-size="10" fill="#555">constitutive equation gap</text>
+          <rect x="240" y="190" width="230" height="40" rx="5" fill="#f5f7fa" stroke="#888"/>
+          <text x="252" y="207" font-size="12" font-weight="700" fill="#333">EGM</text>
+          <text x="252" y="222" font-size="10" fill="#555">equilibrium gap of reconstructed stress</text>
+          <rect x="240" y="242" width="230" height="46" rx="5" fill="#f5f7fa" stroke="#888"/>
+          <text x="252" y="259" font-size="12" font-weight="700" fill="#333">RGM</text>
+          <text x="252" y="274" font-size="10" fill="#555">reciprocity gap (adjoint fields)</text>
+          <rect x="380" y="248" width="82" height="15" rx="7" fill="#c62828"/><text x="421" y="259" font-size="9" text-anchor="middle" fill="#fff">full boundary data</text>
+        </g>
+        <!-- output -->
+        <rect x="530" y="110" width="152" height="86" rx="6" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+        <text x="606" y="140" font-size="12" font-weight="700" text-anchor="middle" fill="#9c5308" font-family="sans-serif">constitutive</text>
+        <text x="606" y="156" font-size="12" font-weight="700" text-anchor="middle" fill="#9c5308" font-family="sans-serif">parameters &theta;&#770;</text>
+        <text x="606" y="174" font-size="10.5" text-anchor="middle" fill="#666" font-family="sans-serif">+ covariance</text>
+        <!-- arrows -->
+        <path d="M168,99 C 205,99 205,45 240,45" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M168,110 C 210,110 205,103 240,103" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M168,121 C 205,121 205,158 240,158" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M168,196 C 205,196 205,210 240,210" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M168,205 C 205,205 205,264 240,264" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M470,45 C 505,45 505,135 530,135" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M470,103 C 505,103 505,148 530,148" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M470,158 C 505,158 505,158 530,158" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M470,210 C 505,210 505,170 530,170" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <path d="M470,264 C 505,264 505,182 530,182" fill="none" stroke="#666" stroke-width="1.3" marker-end="url(#m3arr)"/>
+        <text x="350" y="322" font-size="10.5" text-anchor="middle" fill="#888" font-family="sans-serif">All five formulated side by side and applied to four common experiments &mdash; tensile, Brazilian,</text>
+        <text x="350" y="336" font-size="10.5" text-anchor="middle" fill="#888" font-family="sans-serif">shear-flexural, biaxial with non-uniform damage (Avril et al. 2008). Choice: data, cost, BC knowledge.</text>
+      </svg>
+      <div class="figure-caption">The map of full-field identification methods: both inputs feed all five residuals; the output is always parameters plus uncertainty. FEMU pays with forward solves; VFM is direct in the linear case; RGM demands complete boundary data.</div>
+    </div>
+
+    <p>What Avril et al. (2008) actually do deserves stating precisely, because the paper is the field's common reference point. After formulating all five methods, they apply them to full-field experimental data from <strong>four different experiments</strong>: (i) a tensile test, (ii) the Brazilian test, (iii) a shear-flexural test, and (iv) a biaxial test featuring a non-uniform damage field &mdash; hence non-uniform equivalent elastic properties. Tests (i)&ndash;(iii) identify uniform anisotropic elastic properties; tests (ii)&ndash;(iv) involve non-uniform strain fields in the region of interest. Read it for how the methods are formulated and exercised on real data &mdash; not as a single accuracy ranking.</p>
+
+    <p>The practical selection rule &mdash; offered as this module's synthesis, not as a headline verdict of that paper: <strong>choose on data type, computational budget, and how much of the boundary you actually know.</strong> Full coverage of a thin specimen and a linear-in-parameters law favor VFM; partial data, complex 3D geometry, or an exotic law favor FEMU; complete boundary knowledge is rare enough that RGM is the specialist's tool.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the universal scale indeterminacy</div>
+      <div>Kinematics alone fix $\boldsymbol{\theta}$ only up to a global stress scale. Multiply <em>all</em> moduli by $c$: every internal stress scales by $c$, the strain field is <em>identical</em>, and no camera can tell the difference. The load and the stiffness trade off exactly. At least one measured force is mandatory to set the absolute stiffness &mdash; this is not ill-conditioning that more pixels can fix; the cost function is <em>exactly flat</em> along the scale direction. The Identifiability Lab in &sect;8 lets you watch this happen.</div>
+    </div>
+
+    <h3 class="subsection-heading" id="elastography">When the Unknown Is a Material Field: Elastography</h3>
+    <p>Nothing in the formulation forces $\boldsymbol{\theta}$ to be a handful of numbers. The unknown can be a spatially varying <em>field</em> $\boldsymbol{\theta}(\mathbf{x})$ &mdash; a stiffness map rather than a stiffness value. Test (iv) of Avril et al. (2008) is exactly this situation: a non-uniform damage field means the equivalent elastic properties vary over the region, and the identification returns a property <em>distribution</em>. Pushed to its extreme, this is the defining problem of <strong>elastography</strong>: reconstruct a modulus map from a measured interior kinematic field, because stiffness contrast is the quantity of interest &mdash; the flagship application being medical imaging of tissue.</p>
+
+    <p>The same five residuals apply; only the parameter space explodes &mdash; from $p$ numbers to one or more unknowns per pixel or element. The problem then inherits everything Module&nbsp;3 warned about: severe ill-posedness, regularization that trades resolution against noise amplification, and unobservable components (the scale indeterminacy above now holds <em>per connected region</em> unless force data or a reference stiffness pins it). FEMU generalizes by letting $\boldsymbol{\theta}$ vary element-wise, at the price of a sensitivity computation that grows with the field's dimension; the gap methods reconstruct contrast maps more directly from the measured field. Module&nbsp;9 hands its configuration-side problems over to this section whenever the unknown turns out to be the material rather than the geometry.</p>
+
+    <!-- ===== SECTION 4 ===== -->
+    <h2 class="section-heading" id="femu">4. FEMU: Finite Element Model Updating</h2>
+
+    <p>FEMU is the oldest and most flexible approach (Kavanagh &amp; Clough 1971): build a forward FE model of the test, compare its predictions to the measurements, and update $\boldsymbol{\theta}$ until they agree. Everything you know about forward FEM (Module&nbsp;2) is reused; the new ingredients are a cost function, a sensitivity computation, and an update rule.</p>
+
+    <h3 class="subsection-heading">The Forward Model and Its Boundary Conditions</h3>
+    <p>Geometry comes from the specimen. Boundary conditions come in two flavors: (a) measured resultant loads applied to the modeled grips, or (b) <strong>measured displacements imposed on the boundary of the DIC region itself</strong>. Option (b) is elegant &mdash; it removes grip modeling entirely &mdash; but it injects DIC noise into the BCs and, crucially, <em>removes the stiffness-scale information</em>: a displacement-driven model produces the same displacement field for any global modulus scaling. A force residual must then be added to restore the scale (&sect;3's indeterminacy, again).</p>
+
+    <h3 class="subsection-heading">Cost Function</h3>
+    <div class="math-block">$$J(\boldsymbol{\theta}) = \left[\mathbf{u}_{\mathrm{m}} - \mathbf{u}(\boldsymbol{\theta})\right]^{\mathsf{T}} \mathbf{W}_u \left[\mathbf{u}_{\mathrm{m}} - \mathbf{u}(\boldsymbol{\theta})\right] + w_F\, \big(F_{\mathrm{m}} - F(\boldsymbol{\theta})\big)^2$$</div>
+
+    <p>The first term is <strong>FEMU-U</strong> (displacement residual, with FE displacements interpolated to the DIC points), the second <strong>FEMU-F</strong> (reaction-force residual); the standard formulation weights and combines both. Statistically optimal weighting is the inverse noise covariance (generalized least squares); in practice, diagonal weights normalized by the noise variance of each data type.</p>
+
+    <h3 class="subsection-heading">Sensitivities: the Crux</h3>
+    <p>Minimization is Gauss&ndash;Newton, driven by the sensitivity matrix</p>
+
+    <div class="math-block">$$S_{ij} = \frac{\partial u_i(\boldsymbol{\theta})}{\partial \theta_j}, \qquad \boldsymbol{\theta}^{(k+1)} = \boldsymbol{\theta}^{(k)} + \left(\mathbf{S}^{\mathsf{T}}\mathbf{W}_u\,\mathbf{S}\right)^{-1} \mathbf{S}^{\mathsf{T}}\mathbf{W}_u \left[\mathbf{u}_{\mathrm{m}} - \mathbf{u}(\boldsymbol{\theta}^{(k)})\right]$$</div>
+
+    <p>How $\mathbf{S}$ is computed decides both cost and reliability:</p>
+    <ul>
+      <li><strong>Forward finite differences:</strong> $(p+1)$ FE solves per iteration; step-size dependent, and the step-size error interacts with noise.</li>
+      <li><strong>Direct differentiation:</strong> differentiate the discrete equilibrium $\mathbf{K}\mathbf{u} = \mathbf{f}$ to get one extra <em>linear</em> solve per parameter, reusing the factorized $\mathbf{K}$ (collapsible below).</li>
+      <li><strong>Adjoint methods:</strong> the winner when parameters are many (the elastography limit of &sect;3; Module&nbsp;10 owns the machinery).</li>
+      <li><strong>Automatic differentiation:</strong> Kumar, Seidl, Granzow, Yang &amp; Fuhg (2025) derive numerically-exact AD sensitivities for finite-strain elastoplastic FEMU <em>and</em> VFM &mdash; and argue that earlier method comparisons were limited by their reliance on approximate gradients.</li>
+    </ul>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Direct differentiation in two lines</div>
+      <div class="collapsible-body">
+        <p>Differentiate the discrete equilibrium $\mathbf{K}(\boldsymbol{\theta})\,\mathbf{u} = \mathbf{f}$ with respect to $\theta_j$ (loads independent of $\boldsymbol{\theta}$):</p>
+        <div class="math-block">$$\mathbf{K}\,\frac{\partial \mathbf{u}}{\partial \theta_j} = -\frac{\partial \mathbf{K}}{\partial \theta_j}\,\mathbf{u}$$</div>
+        <p>The right-hand side is cheap ($\partial\mathbf{K}/\partial\theta_j$ is assembled like a stiffness matrix, often analytically per element), and $\mathbf{K}$ is already factorized from the forward solve &mdash; so each parameter costs one back-substitution, not one FE solve. The result is exact for the discrete model, with no step-size tuning.</p>
+      </div>
+    </div>
+
+    <p>When $\mathbf{S}^{\mathsf{T}}\mathbf{W}_u\mathbf{S}$ is ill-conditioned &mdash; near-collinear parameters, flat directions &mdash; add Levenberg&ndash;Marquardt damping. For elastic problems from a reasonable initial guess, convergence is fast in practice: on the order of a few to a few tens of iterations. Treat that as a rough expectation, not a specification.</p>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 700 400" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <defs>
+          <marker id="m4arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+        </defs>
+        <g font-family="sans-serif">
+          <!-- external inputs -->
+          <rect x="18" y="150" width="118" height="40" rx="5" fill="#f5f7fa" stroke="#999"/>
+          <text x="77" y="167" font-size="11" font-weight="600" text-anchor="middle" fill="#333">DIC data u&#8344;</text>
+          <text x="77" y="181" font-size="10" text-anchor="middle" fill="#666">+ load cell F&#8344;</text>
+          <!-- loop boxes -->
+          <rect x="60" y="24" width="130" height="40" rx="5" fill="#e6f4f5" stroke="#00838f" stroke-width="1.5"/>
+          <text x="125" y="41" font-size="11.5" font-weight="600" text-anchor="middle" fill="#00565e">initial guess &theta;&#8317;&#8304;&#8318;</text>
+          <text x="125" y="55" font-size="10" text-anchor="middle" fill="#666">from handbook / VFM</text>
+          <rect x="250" y="24" width="150" height="40" rx="5" fill="#e6f4f5" stroke="#00838f" stroke-width="1.5"/>
+          <text x="325" y="41" font-size="11.5" font-weight="600" text-anchor="middle" fill="#00565e">FE forward solve</text>
+          <text x="325" y="55" font-size="10" text-anchor="middle" fill="#666">u(&theta;), F(&theta;)</text>
+          <rect x="460" y="24" width="180" height="40" rx="5" fill="#f5f7fa" stroke="#888"/>
+          <text x="550" y="41" font-size="11.5" font-weight="600" text-anchor="middle" fill="#333">interpolate FE field</text>
+          <text x="550" y="55" font-size="10" text-anchor="middle" fill="#666">to the DIC points</text>
+          <rect x="460" y="140" width="180" height="44" rx="5" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+          <text x="550" y="158" font-size="11.5" font-weight="600" text-anchor="middle" fill="#9c5308">residuals</text>
+          <text x="550" y="173" font-size="10" text-anchor="middle" fill="#666">u&#8344; &minus; u(&theta;),&nbsp; F&#8344; &minus; F(&theta;)</text>
+          <!-- decision diamond -->
+          <path d="M550,225 L610,260 L550,295 L490,260 z" fill="#f5f7fa" stroke="#888"/>
+          <text x="550" y="264" font-size="11" font-weight="600" text-anchor="middle" fill="#333">converged?</text>
+          <!-- sensitivity + update -->
+          <rect x="235" y="238" width="180" height="44" rx="5" fill="#f5f7fa" stroke="#888"/>
+          <text x="325" y="256" font-size="11.5" font-weight="600" text-anchor="middle" fill="#333">sensitivities S = &part;u/&part;&theta;</text>
+          <text x="325" y="271" font-size="9.5" text-anchor="middle" fill="#666">FD / direct / adjoint / AD</text>
+          <rect x="30" y="238" width="150" height="44" rx="5" fill="#f5f7fa" stroke="#888"/>
+          <text x="105" y="256" font-size="11.5" font-weight="600" text-anchor="middle" fill="#333">Gauss&ndash;Newton</text>
+          <text x="105" y="271" font-size="10" text-anchor="middle" fill="#666">(LM-damped) update</text>
+          <!-- output -->
+          <rect x="460" y="330" width="222" height="58" rx="5" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+          <text x="571" y="348" font-size="11" font-weight="700" text-anchor="middle" fill="#9c5308">&theta;&#770;, covariance &sigma;&sup2;(S&#7488;WS)&#8315;&sup1;,</text>
+          <text x="571" y="364" font-size="11" font-weight="600" text-anchor="middle" fill="#9c5308">residual field map</text>
+          <text x="571" y="379" font-size="9.5" text-anchor="middle" fill="#666">(model-error diagnostic)</text>
+          <!-- arrows -->
+          <path d="M190,44 L250,44" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M400,44 L460,44" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M550,64 L550,140" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M136,170 C 300,170 380,162 460,162" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M550,184 L550,225" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M490,260 L415,260" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <text x="452" y="252" font-size="10" fill="#c62828" font-weight="600">no</text>
+          <path d="M235,260 L180,260" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M105,238 C 105,120 200,54 248,46" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <path d="M550,295 C 550,315 555,330 565,330" fill="none" stroke="#555" stroke-width="1.4" marker-end="url(#m4arr)"/>
+          <text x="565" y="317" font-size="10" fill="#2e7d32" font-weight="600">yes</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The FEMU loop. Each pass costs at least one forward FE solve; the sensitivity computation (finite differences, direct differentiation $\mathbf{K}\,\partial\mathbf{u}/\partial\theta_j = -(\partial\mathbf{K}/\partial\theta_j)\mathbf{u}$, adjoint, or automatic differentiation) decides the cost per iteration. The outputs include the residual <em>field</em>, not just $\hat{\boldsymbol{\theta}}$.</div>
+    </div>
+
+    <h3 class="subsection-heading">Read the Residual Field, Not Just the Minimum</h3>
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; residual maps diagnose model error</div>
+      <div>FEMU returns more than $\hat{\boldsymbol{\theta}}$. If the converged residual field $\mathbf{u}_{\mathrm{m}} - \mathbf{u}(\hat{\boldsymbol{\theta}})$ shows <em>systematic spatial patterns</em>, the model is wrong somewhere &mdash; wrong constitutive form, wrong boundary idealization, wrong geometry &mdash; and the identified parameters are absorbing that error. White, structureless residuals indicate a noise-limited identification. This diagnostic is FEMU's quiet superpower, and no covariance estimate replaces it (&sect;8).</div>
+    </div>
+
+    <p><strong>Strengths:</strong> arbitrary laws, arbitrary geometry, tolerates partial and sparse data. <strong>Weaknesses:</strong> the cost of repeated (possibly nonlinear) FE solves, local minima, and sensitivity to the boundary-condition assumptions baked into the forward model.</p>
+
+    <!-- ===== SECTION 5 ===== -->
+    <h2 class="section-heading" id="vfm-linear">5. The Virtual Fields Method: Linear Case</h2>
+
+    <p>The VFM (Gr&eacute;diac 1989; comprehensive treatment in Pierron &amp; Gr&eacute;diac 2012; review in Gr&eacute;diac, Pierron, Avril &amp; Toussaint 2006) starts from a statement your forward-FEM training already contains &mdash; the principle of virtual work &mdash; and weaponizes the fact that DIC hands you the <em>actual</em> strain field everywhere.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Principle of Virtual Work, as VFM uses it</div>
+      <div>For a body in equilibrium, for <em>any</em> kinematically admissible virtual field $\mathbf{u}^{*}$:
+      $$\int_V \boldsymbol{\sigma} : \boldsymbol{\varepsilon}^{*}\, \mathrm{d}V = \int_{\partial V} \mathbf{T} \cdot \mathbf{u}^{*}\, \mathrm{d}S + \int_V \mathbf{b} \cdot \mathbf{u}^{*}\, \mathrm{d}V$$
+      with $\mathbf{b}$ the body force per unit volume. Kinematic admissibility asks only continuity &mdash; and, the key trick, we <em>choose</em> $\mathbf{u}^{*}$ to be zero on boundary portions where tractions are unknown (inside grips), so the unknown reactions do no virtual work.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; a virtual field is a test function, not a displacement</div>
+      <div>$\mathbf{u}^{*}$ is <em>not</em> a physical displacement solution. It satisfies no constitutive law, no equilibrium, and need not resemble the real deformation in any way &mdash; it is an arbitrary test function, constrained only by continuity and by vanishing where tractions are unknown. Treating virtual fields as "candidate deformations" is the most common conceptual error in reading VFM papers.</div>
+    </div>
+
+    <p>Here is the mechanism. DIC supplies $\boldsymbol{\varepsilon}(\mathbf{x})$ at every point of the region. For linear elasticity, $\boldsymbol{\sigma}$ depends <em>linearly</em> on the stiffness parameters. Substitute both into the PVW: each chosen virtual field converts the equation into <strong>one scalar linear equation in the unknown stiffnesses</strong>. Choose $p$ independent virtual fields and you have a $p \times p$ linear system,</p>
+
+    <div class="math-block">$$\mathbf{A}\,\boldsymbol{\theta} = \mathbf{b},$$</div>
+
+    <p>solved directly. No FE model, no iteration &mdash; milliseconds.</p>
+
+    <h3 class="subsection-heading">The Canonical Worked Example</h3>
+    <p>A rectangular coupon of area $S$ and thickness $t$, clamped at $x = 0$, with a transverse resultant $F$ applied at $x = L$. Take the virtual field $\mathbf{u}^{*} = (0,\ x)$. Its virtual strains: $\gamma^{*}_{xy} = 1$, all normal components zero. Now watch the boundary terms do their work:</p>
+    <ul>
+      <li>On the clamped edge, $\mathbf{u}^{*} = \mathbf{0}$: the unknown clamp reactions do <strong>zero</strong> virtual work.</li>
+      <li>On the loaded edge, $u^{*}_y = L$ is <strong>constant</strong>: the unknown traction distribution enters only through its resultant, and the external work is exactly $F \cdot L$.</li>
+    </ul>
+    <p>The PVW collapses to $t \int_S \sigma_{xy}\, \mathrm{d}S = F L$, and with $\sigma_{xy} = Q_{ss}\,\gamma_{xy}$ the shear modulus follows in closed form from an area integral of the <em>measured</em> shear strain:</p>
+
+    <div class="math-block">$$Q_{ss} = \frac{F\,L}{t \displaystyle\int_S \gamma_{xy}\, \mathrm{d}S} \quad \text{for } \mathbf{u}^{*} = (0,\ x)$$</div>
+
+    <p>One virtual field, one parameter, no model. For the orthotropic plane-stress case, additional independent fields &mdash; e.g. polynomials $\mathbf{u}^{*} = (xy,\ 0)$ and $\mathbf{u}^{*} = (0,\ x^2)$ &mdash; bring $Q_{xx}$, $Q_{yy}$, $Q_{xy}$ into play. The general work equation reads:</p>
+
+    <div class="math-block" style="font-size:14px;">$$t\left[ Q_{xx}\!\int_S \varepsilon_{xx}\varepsilon^{*}_{xx}\, \mathrm{d}S + Q_{yy}\!\int_S \varepsilon_{yy}\varepsilon^{*}_{yy}\, \mathrm{d}S + Q_{xy}\!\int_S (\varepsilon_{xx}\varepsilon^{*}_{yy} + \varepsilon_{yy}\varepsilon^{*}_{xx})\, \mathrm{d}S + Q_{ss}\!\int_S \gamma_{xy}\gamma^{*}_{xy}\, \mathrm{d}S \right] = \int_{\partial S} \mathbf{T} \cdot \mathbf{u}^{*}\, t\,\mathrm{d}l$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; the classic factor-of-two error</div>
+      <div>Note the convention that makes the shear term work: it pairs <strong>engineering</strong> shear strain on both the real and virtual side &mdash; $\gamma_{xy}\gamma^{*}_{xy}$ with $Q_{ss} = G$ and $\gamma_{xy} = 2\varepsilon_{xy}$. This is not arbitrary: expanding the tensor contraction gives $\boldsymbol{\sigma}:\boldsymbol{\varepsilon}^{*} \supset 2\sigma_{xy}\varepsilon^{*}_{xy} = \sigma_{xy}\gamma^{*}_{xy}$. Writing the work equation with tensor shear components and no factor 2 &mdash; or mixing tensor strain from your DIC export with an engineering-shear $Q_{ss}$ &mdash; biases the identified shear modulus by a factor of two. Check which convention your DIC software exports before a single integral is computed.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Admissibility Tightrope</h3>
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; too little and too much are both fatal</div>
+      <div><strong>Too little:</strong> if $\mathbf{u}^{*}$ is nonzero on a boundary whose traction distribution is unknown (and not constant along a resultant-instrumented edge), the work equation contains unmeasured boundary work &mdash; and the identification is <em>silently</em> biased. <strong>Too much:</strong> a virtual field chosen to vanish on <em>every</em> loaded boundary annihilates the entire external work, so $\mathbf{A}\boldsymbol{\theta} = \mathbf{b}$ degenerates to $\mathbf{A}\boldsymbol{\theta} = \mathbf{0}$ &mdash; a homogeneous system in which only parameter <em>ratios</em> (like Poisson's ratio) survive and the stiffness scale is lost. At least one virtual field must do work against a measured resultant. This is &sect;3's scale indeterminacy wearing VFM clothes.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg viewBox="0 0 720 310" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
+        <defs>
+          <marker id="m5arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+          <pattern id="hatch5" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#888" stroke-width="1.5"/></pattern>
+        </defs>
+        <g font-family="sans-serif">
+          <!-- specimen -->
+          <rect x="30" y="60" width="70" height="130" fill="#fdf6ee" stroke="#333"/>
+          <circle cx="43" cy="80" r="1.6" fill="#555"/><circle cx="62" cy="72" r="1.4" fill="#555"/><circle cx="85" cy="88" r="1.7" fill="#555"/><circle cx="50" cy="105" r="1.5" fill="#555"/><circle cx="74" cy="112" r="1.6" fill="#555"/><circle cx="40" cy="132" r="1.4" fill="#555"/><circle cx="88" cy="128" r="1.5" fill="#555"/><circle cx="58" cy="148" r="1.7" fill="#555"/><circle cx="79" cy="160" r="1.4" fill="#555"/><circle cx="45" cy="170" r="1.6" fill="#555"/><circle cx="68" cy="178" r="1.5" fill="#555"/><circle cx="90" cy="150" r="1.4" fill="#555"/>
+          <rect x="30" y="190" width="70" height="12" fill="url(#hatch5)" stroke="#333"/>
+          <path d="M65,48 L65,20" fill="none" stroke="#c62828" stroke-width="2.2" marker-end="url(#m5arr)"/>
+          <text x="74" y="32" font-size="12" font-weight="700" fill="#c62828">F</text>
+          <text x="65" y="216" font-size="9.5" text-anchor="middle" fill="#666">clamped (tractions unknown)</text>
+          <text x="65" y="228" font-size="9.5" text-anchor="middle" fill="#666">speckled specimen</text>
+          <!-- strain maps -->
+          <g>
+            <rect x="130" y="70" width="44" height="44" fill="#e6f4f5" stroke="#999"/>
+            <rect x="134" y="74" width="12" height="12" fill="#00838f"/><rect x="146" y="74" width="12" height="12" fill="#4fb3be"/><rect x="158" y="74" width="12" height="12" fill="#9adbe2"/>
+            <rect x="134" y="86" width="12" height="12" fill="#4fb3be"/><rect x="146" y="86" width="12" height="12" fill="#9adbe2"/><rect x="158" y="86" width="12" height="12" fill="#00838f"/>
+            <rect x="134" y="98" width="12" height="12" fill="#9adbe2"/><rect x="146" y="98" width="12" height="12" fill="#00838f"/><rect x="158" y="98" width="12" height="12" fill="#4fb3be"/>
+            <text x="152" y="126" font-size="10" text-anchor="middle" fill="#555">&epsilon;&#8339;&#8339;</text>
+            <rect x="130" y="140" width="44" height="44" fill="#e6f4f5" stroke="#999"/>
+            <rect x="134" y="144" width="12" height="12" fill="#9adbe2"/><rect x="146" y="144" width="12" height="12" fill="#00838f"/><rect x="158" y="144" width="12" height="12" fill="#4fb3be"/>
+            <rect x="134" y="156" width="12" height="12" fill="#00838f"/><rect x="146" y="156" width="12" height="12" fill="#9adbe2"/><rect x="158" y="156" width="12" height="12" fill="#9adbe2"/>
+            <rect x="134" y="168" width="12" height="12" fill="#4fb3be"/><rect x="146" y="168" width="12" height="12" fill="#4fb3be"/><rect x="158" y="168" width="12" height="12" fill="#00838f"/>
+            <text x="152" y="196" font-size="10" text-anchor="middle" fill="#555">&epsilon;&#8348;&#8348;, &gamma;&#8339;&#8348;</text>
+            <text x="152" y="212" font-size="9.5" text-anchor="middle" fill="#00838f" font-weight="600">measured,</text>
+            <text x="152" y="223" font-size="9.5" text-anchor="middle" fill="#00838f" font-weight="600">every point</text>
+          </g>
+          <!-- PVW box -->
+          <rect x="210" y="100" width="150" height="60" rx="5" fill="#e6f4f5" stroke="#00838f" stroke-width="1.5"/>
+          <text x="285" y="124" font-size="12" font-weight="700" text-anchor="middle" fill="#00565e">PVW with measured &epsilon;</text>
+          <text x="285" y="142" font-size="10.5" text-anchor="middle" fill="#555">&int; &sigma; : &epsilon;* dV = &int; T &middot; u* dS</text>
+          <!-- virtual fields -->
+          <g>
+            <rect x="392" y="42" width="110" height="74" rx="4" fill="#fafafa" stroke="#999"/>
+            <text x="447" y="57" font-size="10.5" font-weight="600" text-anchor="middle" fill="#333">u*&#8321;</text>
+            <path d="M404,102 L404,88" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M424,102 L424,82" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M444,102 L444,76" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M464,102 L464,70" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M484,102 L484,64" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <rect x="392" y="130" width="110" height="74" rx="4" fill="#fafafa" stroke="#999"/>
+            <text x="447" y="145" font-size="10.5" font-weight="600" text-anchor="middle" fill="#333">u*&#8322;</text>
+            <path d="M404,190 L410,176" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M426,190 L436,172" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M448,190 L462,168" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <path d="M470,190 L488,164" stroke="#00838f" stroke-width="1.3" marker-end="url(#m5arr)"/>
+            <text x="447" y="218" font-size="9" text-anchor="middle" fill="#2e7d32">u* = 0 on clamped edge (kills unknown reactions)</text>
+            <text x="447" y="230" font-size="9" text-anchor="middle" fill="#2e7d32">u* constant on loaded edge (only resultant F enters)</text>
+            <text x="447" y="248" font-size="9" text-anchor="middle" fill="#c62828" font-weight="600">&#9888; but u* must NOT vanish on every loaded</text>
+            <text x="447" y="259" font-size="9" text-anchor="middle" fill="#c62828" font-weight="600">boundary &mdash; then b = 0, only ratios survive</text>
+          </g>
+          <!-- solve + output -->
+          <rect x="530" y="76" width="90" height="44" rx="5" fill="#e6f4f5" stroke="#00838f" stroke-width="1.5"/>
+          <text x="575" y="94" font-size="11.5" font-weight="700" text-anchor="middle" fill="#00565e">A &theta; = b</text>
+          <text x="575" y="109" font-size="9.5" text-anchor="middle" fill="#555">solve directly</text>
+          <rect x="530" y="150" width="170" height="46" rx="5" fill="#fff8f0" stroke="#e67e22" stroke-width="1.5"/>
+          <text x="615" y="168" font-size="11" font-weight="700" text-anchor="middle" fill="#9c5308">&theta;&#770; with error bars</text>
+          <text x="615" y="184" font-size="9.5" text-anchor="middle" fill="#666">(optimized fields predict the std)</text>
+          <!-- arrows -->
+          <path d="M104,125 L128,110" fill="none" stroke="#555" stroke-width="1.3" marker-end="url(#m5arr)"/>
+          <path d="M176,130 L208,130" fill="none" stroke="#555" stroke-width="1.3" marker-end="url(#m5arr)"/>
+          <path d="M362,118 L390,96" fill="none" stroke="#555" stroke-width="1.3" marker-end="url(#m5arr)"/>
+          <path d="M362,142 L390,160" fill="none" stroke="#555" stroke-width="1.3" marker-end="url(#m5arr)"/>
+          <path d="M504,86 L528,92" fill="none" stroke="#555" stroke-width="1.3" marker-end="url(#m5arr)"/>
+          <path d="M575,120 L590,148" fill="none" stroke="#555" stroke-width="1.3" marker-end="url(#m5arr)"/>
+          <rect x="210" y="24" width="290" height="20" rx="10" fill="#2e7d32"/>
+          <text x="355" y="38" font-size="10.5" font-weight="600" text-anchor="middle" fill="#fff">no FE model &middot; no iteration (linear case)</text>
+        </g>
+      </svg>
+      <div class="figure-caption">The VFM pipeline. Measured full-field strains enter the PVW; each admissible virtual field yields one scalar linear equation in the stiffnesses; $p$ fields give $\mathbf{A}\boldsymbol{\theta} = \mathbf{b}$. The virtual-field boundary behavior is the whole game: zero on unknown-traction edges, constant along the resultant-instrumented edge &mdash; but never zero on <em>all</em> loaded boundaries.</div>
+    </div>
+
+    <h3 class="subsection-heading">Special, Optimized, and Piecewise Virtual Fields</h3>
+    <p>Three refinements (Pierron &amp; Gr&eacute;diac 2012):</p>
+    <ul>
+      <li><strong>Special virtual fields:</strong> choose the fields so that $\mathbf{A}$ becomes the identity &mdash; each equation isolates exactly one parameter.</li>
+      <li><strong>Optimized virtual fields:</strong> among all special fields, pick the one that minimizes the variance of each parameter with respect to strain noise. This both stabilizes the identification and yields <em>predicted standard deviations for free</em> &mdash; error bars as a by-product of the solve.</li>
+      <li><strong>Piecewise (element-wise) virtual fields:</strong> constructed on a mesh, they handle complex geometries where global polynomials cannot be made admissible.</li>
+    </ul>
+
+    <!-- ===== SECTION 6 ===== -->
+    <h2 class="section-heading" id="nonlinear-vfm">6. Nonlinear VFM and Sensitivity-Based Virtual Fields</h2>
+
+    <p>When stress is <em>not</em> linear in the parameters &mdash; hyperelasticity, plasticity &mdash; the PVW no longer collapses to a linear system. But VFM's core advantage survives intact: the stress is computed <strong>pointwise</strong> from the measured strain (or strain history) through the candidate law, with <em>no boundary-value problem solved anywhere</em>. Define the cost as the sum, over load steps and virtual fields, of squared virtual-work residuals, and minimize over $\boldsymbol{\theta}$ with gradient-based optimization &mdash; the gradients are analytic, because the residual is explicit in $\boldsymbol{\theta}$:</p>
+
+    <div class="math-block">$$J(\boldsymbol{\theta}) = \sum_{t=1}^{N_t} \sum_{j=1}^{N_v} \left[ \int_{V_0} \mathbf{P}(\mathbf{F}_t;\ \boldsymbol{\theta}) : \nabla_0\, \mathbf{u}^{*(j)}\, \mathrm{d}V_0 - \int_{\partial V_0} \mathbf{T}_0 \cdot \mathbf{u}^{*(j)}\, \mathrm{d}S_0 \right]^2$$</div>
+
+    <p>For large deformations, work in the reference configuration: the deformation gradient $\mathbf{F} = \mathbf{I} + \nabla_0\mathbf{u}$ comes from the measured displacement field, the first Piola&ndash;Kirchhoff stress $\mathbf{P}(\mathbf{F};\boldsymbol{\theta})$ from the candidate law. The internal virtual work is $\int \mathbf{P} : \nabla_0 \mathbf{u}^{*}\,\mathrm{d}V_0$ &mdash; $\mathbf{P}$ is work-conjugate to the <em>material gradient</em> of the virtual displacement, which is why $\nabla_0\mathbf{u}^{*}$ and not some strain measure appears there. For elastoplasticity, the stress at each DIC point comes from running the return-mapping algorithm on <em>that point's</em> measured strain history &mdash; still no FE mesh involved.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; "VFM is non-iterative" is the wrong slogan</div>
+      <div>Nonlinear VFM iterates over $\boldsymbol{\theta}$ like any nonlinear least-squares problem &mdash; and it is emphatically <em>not</em> "FEMU run inside the PVW". The true distinction is elsewhere: VFM never solves a boundary-value problem. FEMU's inner loop is a full FE solve per evaluation; VFM's is a pointwise stress evaluation on measured kinematics. That is where the orders-of-magnitude cost gap comes from &mdash; and it survives fully into the nonlinear regime.</div>
+    </div>
+
+    <h3 class="subsection-heading">Sensitivity-Based Virtual Fields</h3>
+    <p>The Achilles heel of nonlinear VFM is virtual-field <em>choice</em>: hand-picked polynomials that work for one geometry fail for another, and poor fields leave the cost flat in some parameters. <strong>Sensitivity-based virtual fields</strong> (Marek, Davis &amp; Pierron 2017) automate the choice: build each virtual field $\mathbf{u}^{*(i)}$ from the sensitivity of the stress field to parameter $\theta_i$,</p>
+
+    <div class="math-block">$$\boldsymbol{\varepsilon}^{*(i)}(\mathbf{x}) \ \propto\ \frac{\partial \boldsymbol{\sigma}}{\partial \theta_i}\Big(\boldsymbol{\varepsilon}_{\mathrm{m}}(\mathbf{x});\ \boldsymbol{\theta}\Big) \quad \text{(schematic)}$$</div>
+
+    <p>&mdash; the virtual strain field is taken proportional to $\partial\boldsymbol{\sigma}/\partial\theta_i$ evaluated along the <em>measured</em> strain path, then rendered kinematically admissible. Each residual becomes maximally responsive to "its" parameter. This construction became a de facto standard for nonlinear VFM. Nikolov, Zhu &amp; Estrada (2026) push further with <em>variation-matching</em> SBVFs: procedural construction via G&acirc;teaux derivatives plus analytically-derived, model-tailored fields, demonstrated on simulated noisy volumetric (3D) data &mdash; removing manual field selection altogether.</p>
+
+    <h3 class="subsection-heading">The Incompressibility Subtlety</h3>
+    <p>For (nearly) incompressible materials the hydrostatic pressure $p$ is <strong>not determined by the kinematics</strong> &mdash; the camera cannot see it. Two escapes:</p>
+    <ul>
+      <li><strong>Plane stress:</strong> eliminate $p$ via $\sigma_{zz} = 0$. Valid <em>only</em> if the specimen genuinely is in plane stress &mdash; applying this trick to thick sections or bulging membranes that deform three-dimensionally imports an uncontrolled model error into the identification.</li>
+      <li><strong>3D:</strong> choose divergence-free virtual fields, so the pressure term vanishes identically and only deviatoric parameters are probed:
+      <div class="math-block">$$\int_V p\ \nabla \cdot \mathbf{u}^{*}\, \mathrm{d}V = 0 \quad \text{when } \nabla \cdot \mathbf{u}^{*} = 0$$</div></li>
+    </ul>
+
+    <!-- ===== SECTION 7 ===== -->
+    <h2 class="section-heading" id="hyperelastic-soft-materials">7. Inverse Hyperelastic Characterization of Soft Materials</h2>
+
+    <p>Now the specifics that matter for a tactile-sensor skin. Elastomers &mdash; the silicones cast over vision-based tactile sensors &mdash; are nearly incompressible ($\nu \approx 0.499$) with shear moduli spanning roughly tens of kPa for soft platinum-cure silicones up to the order of 1&nbsp;MPa for stiffer PDMS formulations. Treat those as typical orders <em>to be measured</em>, not quoted: batch, cure schedule, and aging move the real value.</p>
+
+    <h3 class="subsection-heading">Candidate Strain-Energy Functions</h3>
+    <div class="math-block">$$W_{\mathrm{nH}} = \frac{\mu}{2}(I_1 - 3), \qquad W_{\mathrm{MR}} = C_{10}(I_1 - 3) + C_{01}(I_2 - 3)$$</div>
+    <div class="math-block">$$W_{\mathrm{Ogden}} = \sum_{p=1}^{N} \frac{\mu_p}{\alpha_p} \left( \lambda_1^{\alpha_p} + \lambda_2^{\alpha_p} + \lambda_3^{\alpha_p} - 3 \right)$$</div>
+
+    <table>
+      <tr><th>Model</th><th>Parameters</th><th>When</th></tr>
+      <tr><td>Incompressible neo-Hookean</td><td>1 ($\mu$)</td><td>Remarkably serviceable for silicones at moderate stretch &mdash; the default starting point</td></tr>
+      <tr><td>Mooney&ndash;Rivlin</td><td>2 ($C_{10}, C_{01}$)</td><td>Adds $I_2$ dependence &mdash; but see the identifiability pathology in &sect;8</td></tr>
+      <tr><td>Ogden</td><td>$2N$ ($\mu_p, \alpha_p$)</td><td>Strong strain-stiffening, principal-stretch formulation</td></tr>
+      <tr><td>Fung-type exponential, HGO</td><td>varies</td><td>Soft-tissue anisotropy (fiber-reinforced)</td></tr>
+    </table>
+
+    <p>The Cauchy stress for the incompressible neo-Hookean model shows the pressure problem explicitly:</p>
+
+    <div class="math-block">$$\boldsymbol{\sigma} = -p\,\mathbf{I} + \mu\,\mathbf{B}, \qquad \mathbf{B} = \mathbf{F}\mathbf{F}^{\mathsf{T}}$$</div>
+
+    <p>with $p$ determined by the boundary conditions, not the kinematics &mdash; hence the previous section's divergence-free and plane-stress tricks on the VFM side. On the FEMU side, the same near-incompressibility bites the <em>forward</em> model: a standard displacement-based FE solve locks volumetrically as $\nu \to 0.5$, so the forward model inside the updating loop needs a mixed displacement&ndash;pressure (or comparable) formulation. An identification is only as good as the forward solves &mdash; or the pointwise stress evaluations &mdash; inside it.</p>
+
+    <h3 class="subsection-heading">Two Landmark Applications</h3>
+    <p><strong>Arteries, with VFM.</strong> Avril, Badel &amp; Duprey (2010) identified anisotropic hyperelastic parameters of in vitro human arterial segments from inflation and extension tests with full-field optical measurement &mdash; and did so <em>using the virtual fields method</em>, not a forward-model updating loop. That is exactly why it belongs in this module: their formulation handles the heterogeneous strain and stress distributions of an arterial segment rather than requiring a homogeneous gauge section. It is the template for membrane-type identification: pressurize, measure the surface kinematics full-field, enforce virtual work with the measured strains.</p>
+
+    <p><strong>Elastomeric foam, with VFM-GA.</strong> Yan, Tao, Franck &amp; Henann (2025) calibrate isotropic hyperelastic models &mdash; including compressible forms with coupled dependencies on the deformation invariants, applied to open-cell elastomeric foam &mdash; via a VFM objective searched with a genetic algorithm, using DIC displacement fields (both homogeneous and inhomogeneous) synchronized with force data. The GA suits models whose coupled invariant dependencies frustrate gradient methods, and the framework includes a <strong>material-stability screen</strong>, rejecting parameter sets that would imply non-physical behavior.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; a fitted model is not yet a valid model</div>
+      <div>Identified hyperelastic parameters can violate material stability, or extrapolate wildly outside the strain range that was actually sampled (&sect;10 documents this failure mode verbatim for exponential stiffening terms). Two screens are non-negotiable before a parameter set enters your sensor simulation: a stability check on the identified $W$, and validation by <em>predicting an independent experiment</em> &mdash; not by admiring the fitting residual.</div>
+    </div>
+
+    <h3 class="subsection-heading">Practical Guidance for the Tactile-Skin Use Case</h3>
+    <ul>
+      <li><strong>Test the actual cast material.</strong> Batch, cure, and aging matter more than datasheets.</li>
+      <li><strong>Prefer a heterogeneous test spanning the strain states seen in service.</strong> Indentation is closest to sensor loading; membrane inflation gives clean biaxial states.</li>
+      <li><strong>Mind viscoelasticity.</strong> Quasi-static hyperelastic fits are rate-dependent for silicones: test at service-representative rates, or model the rate dependence.</li>
+      <li><strong>Validate by predicting an independent experiment</strong>, never by the fitting residual (&sect;11).</li>
+    </ul>
+
+    <!-- ===== SECTION 8 ===== -->
+    <h2 class="section-heading" id="identifiability-noise-test-design">8. Identifiability, Noise, and Test Design</h2>
+
+    <p>Identification quality is decided <em>before the experiment runs</em>. This section is the module's control center: what makes parameters recoverable, how noise reaches them, and how to design the test so they arrive with small error bars.</p>
+
+    <h3 class="subsection-heading">Local Identifiability: the Fisher Matrix</h3>
+    <p>Near the optimum, the Gauss&ndash;Newton (Fisher) matrix $\mathbf{S}^{\mathsf{T}}\mathbf{W}\mathbf{S}$ governs everything. Its condition number flags near-collinear parameter directions; its inverse, times the noise variance, approximates the parameter covariance:</p>
+
+    <div class="math-block" style="font-size:14px;">$$\mathrm{cov}(\hat{\boldsymbol{\theta}}) \approx \sigma_u^2 \left( \mathbf{S}^{\mathsf{T}} \mathbf{W}_u \mathbf{S} \right)^{-1} \quad (\mathbf{W}_u \text{ normalized});\qquad \mathrm{cov}(\hat{\boldsymbol{\theta}}) \approx \left( \mathbf{S}^{\mathsf{T}} \mathbf{C}_u^{-1} \mathbf{S} \right)^{-1} \quad (\mathbf{C}_u = \text{noise covariance})$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">Careful with the prefactor</div>
+      <div>The left formula assumes $\mathbf{W}_u$ is a <em>normalized</em> weight matrix and $\sigma_u^2$ the displacement-noise variance. If instead $\mathbf{W}_u$ is taken as the exact inverse noise covariance, the estimate is $(\mathbf{S}^{\mathsf{T}}\mathbf{W}_u\mathbf{S})^{-1}$ with <strong>no</strong> $\sigma_u^2$ prefactor. Applying both double-counts the noise &mdash; a silent factor-of-$\sigma^2$ error in the reported error bars.</div>
+    </div>
+
+    <p>The off-diagonal structure is read through the correlation matrix:</p>
+
+    <div class="math-block">$$r_{ij} = \frac{[\mathrm{cov}(\hat{\boldsymbol{\theta}})]_{ij}}{\sqrt{[\mathrm{cov}(\hat{\boldsymbol{\theta}})]_{ii}\,[\mathrm{cov}(\hat{\boldsymbol{\theta}})]_{jj}}} \quad (|r_{ij}| \to 1 \Rightarrow \text{near-collinear pair})$$</div>
+
+    <p>A practical footnote on <strong>parameter scaling</strong>: $E$ in MPa and $\nu$ dimensionless differ by orders of magnitude in raw units, and a condition number computed on the raw parameterization mostly measures that scaling, not the physics. Read conditioning on relative (scaled) parameters &mdash; the Identifiability Lab below does.</p>
+
+    <h3 class="subsection-heading">The Classic Pathologies</h3>
+    <p><strong>Mooney&ndash;Rivlin:</strong> $C_{10}$ and $C_{01}$ are nearly unidentifiable from uniaxial-dominated data, because $I_1$ and $I_2$ vary almost proportionally along uniaxial paths &mdash; the two terms' stress contributions are nearly collinear, and $|r_{12}| \to 1$. Separation requires strain states spanning the $(I_1, I_2)$ plane: simultaneous uniaxial, shear (planar tension), and biaxial regions <em>in one heterogeneous field</em>. <strong>Ogden:</strong> the $(\mu_p, \alpha_p)$ pairs trade off strongly at small stretch. Hyperelastic parameters are, as a rule, correlated &mdash; report the correlation matrix, not just the diagonal.</p>
+
+    <p><strong>Structural non-identifiability</strong> is worse than conditioning: with displacement-controlled BCs and no force channel, a uniform scaling of all moduli leaves the displacement field <em>unchanged</em>. The cost is <em>exactly flat</em> along the stiffness-scale direction &mdash; no amount of data or noise reduction helps. One load measurement removes it (&sect;3, &sect;5, and the Lab below, all telling the same story).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; a low residual certifies nothing about identifiability</div>
+      <div>At the bottom of a flat valley the residual is small <em>everywhere along the valley</em>. A beautiful fit is compatible with a parameter that is completely undetermined &mdash; the fit quality lives in data space, identifiability lives in parameter space, and only the Fisher matrix (or a landscape plot) connects them. Corollary: never report $\hat{\boldsymbol{\theta}}$ without its covariance and correlation structure.</div>
+    </div>
+
+    <h3 class="subsection-heading">Noise Propagation, and Two Caveats on the Covariance Formula</h3>
+    <p>For linear VFM, $\hat{\boldsymbol{\theta}} = \mathbf{A}^{-1}\mathbf{b}$, so strain noise propagates through $\mathbf{A}^{-1}$ &mdash; and optimized virtual fields (&sect;5) explicitly minimize each parameter's noise sensitivity, returning predicted standard deviations as a by-product (Pierron &amp; Gr&eacute;diac 2012). For any method, two caveats before you trust $\sigma^2(\mathbf{S}^{\mathsf{T}}\mathbf{S})^{-1}$:</p>
+    <ol>
+      <li><strong>DIC noise is spatially correlated</strong> after subset matching and strain smoothing. Treating every DIC point as an independent sample grossly understates the uncertainty &mdash; absurdly small confidence intervals from $10^5$ "independent" points are a red flag, not a triumph. Characterize the actual noise from static image pairs.</li>
+      <li><strong>Covariance quantifies noise-driven scatter only.</strong> Model error &mdash; wrong constitutive form, violated plane-stress assumption, idealized BCs &mdash; produces <em>bias</em> that is invisible to it. The residual field's spatial structure is the diagnostic (&sect;4), not the error bar.</li>
+    </ol>
+
+    <h3 class="subsection-heading">Test Design: the Material Testing 2.0 Core</h3>
+    <p>Design the specimen and loading &mdash; holes, notches, off-axis fibers, multiaxial rigs &mdash; to maximize sensitivity coverage (Pierron &amp; Gr&eacute;diac 2021). Rank candidate designs by predicted parameter standard deviations, or by D-optimality:</p>
+
+    <div class="math-block">$$\text{D-optimal design:}\quad \max_{\text{design}}\ \det\!\big( \mathbf{S}^{\mathsf{T}} \mathbf{W}_u \mathbf{S} \big)$$</div>
+
+    <p>Best practice simulates the <em>entire chain</em>: FE-generate synthetic deformed speckle images, run them through the <strong>actual DIC engine</strong>, then through the identification &mdash; so the error budget includes DIC systematics (interpolation bias, VSG smoothing), not just idealized white noise.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; heterogeneous does not mean good</div>
+      <div>Heterogeneity helps only if the strain states span the invariant space that the parameters actually care about. A badly designed heterogeneous test can concentrate all its sensitivity in a few noisy pixels near a stress raiser and identify <em>worse</em> than a boring homogeneous test. The metric is never "how complicated does the field look" &mdash; it is $\det(\mathbf{S}^{\mathsf{T}}\mathbf{W}\mathbf{S})$ and the predicted standard deviations.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg id="testdesign-svg" viewBox="0 0 720 320" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;"></svg>
+      <div class="figure-caption">Test design drives identifiability. Left: a dogbone probes one stress state &mdash; the $(I_1, I_2)$ samples collapse onto a curve, the covariance ellipse is large. Middle: an open-hole plate spreads the states. Right: a notched multiaxial specimen fills the invariant plane &mdash; better-conditioned $\mathbf{S}^{\mathsf{T}}\mathbf{S}$, smaller ellipse. Material Testing 2.0: one experiment, many stress states (Pierron &amp; Gr&eacute;diac 2021).</div>
+    </div>
+
+    <!-- ===== INTERACTIVE: IDENTIFIABILITY LANDSCAPE LAB ===== -->
+    <div class="interactive-container" id="ident-lab">
+      <div class="interactive-label">Interactive Tool &mdash; Identifiability Landscape Lab: FEMU vs VFM on a Plate with a Hole</div>
+      <p style="font-size:13px;color:#555;margin-bottom:8px;">Synthetic DIC data from the Kirsch plane-stress solution for a plate with a circular hole under remote tension (true $E_0 = 1.0$&nbsp;MPa, $\nu_0 = 0.45$). Explore the cost landscape over $(E, \nu)$: click the map to set a start, iterate Gauss&ndash;Newton (FEMU), or let VFM solve $\mathbf{A}\boldsymbol{\theta} = \mathbf{b}$ directly. Switch off the load measurement and watch the landscape degenerate into an exactly flat valley &mdash; the residual stays low, the parameter is gone.</p>
+      <p style="font-size:11.5px;color:#888;margin-bottom:12px;">Notes: Kirsch is the <em>infinite</em>-plate solution &mdash; the outer frame (at 4$a$) must be far enough from the hole for the sampled window to be consistent, and the boundary tractions entering the VFM work terms are evaluated from the same analytic stress field. $\nu_0 = 0.45$ is a deliberately <em>compressible</em> stand-in: real silicones sit near $\nu = 0.499$, where identifying $\nu$ from in-plane data becomes ill-conditioned. Under traction (load-controlled) loading the Kirsch <em>stress</em> field is independent of the elastic constants while displacements scale as $1/E$ &mdash; with the load known, both parameters are identifiable, which is exactly why the "load measured" toggle changes the landscape's topology.</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="flex:0 0 auto;font-size:12px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:4px;">Method</div>
+          <label style="margin-right:10px;cursor:pointer;"><input type="radio" name="il7-mode" value="femu" checked> FEMU (iterative)</label>
+          <label style="cursor:pointer;"><input type="radio" name="il7-mode" value="vfm"> VFM (direct)</label>
+        </div>
+        <div style="flex:0 0 auto;font-size:12px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:4px;">Data</div>
+          <label style="margin-right:10px;cursor:pointer;"><input type="checkbox" id="il7-load" checked> load resultant measured</label>
+          <label style="cursor:pointer;"><input type="checkbox" id="il7-case2"> add 2nd load case (tension along $y$)</label>
+        </div>
+        <div style="flex:0 0 auto;font-size:12px;">
+          <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:4px;">FEMU sensitivities</div>
+          <label style="margin-right:10px;cursor:pointer;"><input type="radio" name="il7-sens" value="exact" checked> exact</label>
+          <label style="cursor:pointer;"><input type="radio" name="il7-sens" value="fd"> finite-difference</label>
+        </div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control">
+          <label><span>Measurement noise (&times;10&#8315;&sup3; strain)</span> <span id="il7-noise-val">1.0</span></label>
+          <input type="range" id="il7-noise" min="0" max="5" step="0.1" value="1">
+        </div>
+        <div class="slider-control">
+          <label><span>FD step (relative, 10&#712;)</span> <span id="il7-fdh-val">&minus;2.0</span></label>
+          <input type="range" id="il7-fdh" min="-5" max="-1" step="0.1" value="-2" disabled>
+        </div>
+        <div class="slider-control" style="flex:0 0 auto;min-width:auto;display:flex;gap:8px;align-items:flex-end;">
+          <button id="il7-iter" style="border:1px solid #00838f;color:#fff;background:#00838f;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;">Iterate (Gauss&ndash;Newton)</button>
+          <button id="il7-reset" style="border:1px solid #00838f;color:#00838f;background:none;padding:6px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Reset start</button>
+          <button id="il7-reroll" style="border:1px solid #999;color:#666;background:none;padding:6px 10px;border-radius:3px;cursor:pointer;font-size:12px;">Reroll noise</button>
+        </div>
+      </div>
+      <div id="il7-banner" style="display:none;font-size:12.5px;font-weight:600;color:#c62828;background:#fef0f0;border:1px solid #e8b5b5;border-radius:4px;padding:8px 12px;margin-bottom:10px;"></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div style="flex:0 0 232px;">
+          <svg id="il7-heat" viewBox="0 0 232 258" width="232" height="258" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
+        </div>
+        <div style="flex:1 1 380px;min-width:320px;">
+          <svg id="il7-land" viewBox="0 0 420 258" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;cursor:crosshair;"></svg>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;">
+        <div id="il7-panel" style="flex:1 1 250px;min-width:250px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+        <div id="il7-readout" style="flex:2 1 340px;min-width:300px;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 9 ===== -->
+    <h2 class="section-heading" id="femu-vs-vfm">9. FEMU vs VFM: An Honest Comparison</h2>
+
+    <p>Both methods answer the same question from the same data. The differences are structural, and each direction of superiority has a matching direction of weakness.</p>
+
+    <table>
+      <tr><th>Criterion</th><th>FEMU</th><th>VFM</th></tr>
+      <tr><td><strong>Computational cost</strong></td><td>$N_{\mathrm{iter}}$ forward FE solves (times $p+1$ with finite-difference sensitivities)</td><td>Zero FE solves: direct for parameter-linear laws, cheap iterations otherwise &mdash; routinely orders of magnitude faster, and a good FEMU initializer</td></tr>
+      <tr><td><strong>Boundary knowledge</strong></td><td>Complete BC model, or measured-displacement BCs <em>plus</em> a force channel</td><td>Load resultants only &mdash; and only on boundary parts where $\mathbf{u}^{*} \neq \mathbf{0}$; unknown grip tractions annihilated by $\mathbf{u}^{*} = \mathbf{0}$</td></tr>
+      <tr><td><strong>Data requirements</strong></td><td>Compares at displacement level (smoother); tolerates sparse or partial data</td><td>Needs full-field strain over the whole analyzed region; holes in the data are a real problem, and strain = differentiated data, noisier</td></tr>
+      <tr><td><strong>Model scope</strong></td><td>Any law, any geometry</td><td>Stress must be computable pointwise from measured surface kinematics: fine for plane stress / membranes and history-dependent laws via return mapping; problematic when through-thickness fields deviate from the surface measurement</td></tr>
+      <tr><td><strong>Noise behavior</strong></td><td>Forward model filters measurement noise &mdash; but finite-difference gradients inject their own</td><td>Parameters exposed directly to strain noise &mdash; but optimized / sensitivity-based fields quantify and minimize it</td></tr>
+      <tr><td><strong>Diagnostics</strong></td><td>Residual <em>field</em> maps localize model error</td><td>Predicted standard deviations for free (optimized fields)</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">What the Evidence Actually Supports</h3>
+    <p>Avril et al. (2008) is the field's common reference point: it formulates FEMU, CEGM, VFM, EGM and RGM side by side and exercises them on full-field experimental data from four tests &mdash; tensile, Brazilian, shear-flexural, and a biaxial test with a non-uniform damage field. Use it for how the methods relate and where each is applicable, not as a single accuracy ranking. Kumar, Seidl, Granzow, Yang &amp; Fuhg (2025) revisited the comparison for finite-strain elastoplasticity with numerically-exact automatic-differentiation sensitivities for <em>both</em> methods &mdash; arguing that prior comparisons were confounded by gradient approximation error &mdash; and assessed robustness under practical data corruptions on an even footing.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Practical decision rule</div>
+      <div>Thin or planar specimen, full DIC coverage, moderate nonlinearity &rarr; <strong>VFM</strong>. Complex 3D geometry, partial data, exotic law, need for residual-field model diagnostics &rarr; <strong>FEMU</strong>. Best practice often chains them: VFM first (fast, BC-robust initialization), FEMU second (refinement plus model-error diagnosis).</div>
+    </div>
+
+    <!-- ===== SECTION 10 ===== -->
+    <h2 class="section-heading" id="model-discovery">10. Beyond Parameters: Constitutive Model Discovery</h2>
+
+    <p>The 2020s reframed the question. Instead of "fit $\boldsymbol{\theta}$ inside a model someone chose", ask: <em>discover the model itself from the data</em>.</p>
+
+    <h3 class="subsection-heading">EUCLID: Sparse Discovery on a Feature Library</h3>
+    <p>EUCLID (Flaschel, Kumar &amp; De Lorenzis 2021) writes the strain-energy density as a large linear combination of interpretable candidate features &mdash; invariant powers, logarithmic and volumetric terms:</p>
+
+    <div class="math-block">$$W(\mathbf{F}) = \sum_{k=1}^{N_f} \theta_k\, \Phi_k(I_1, I_2, J)$$</div>
+
+    <p>It enforces weak-form equilibrium evaluated with <em>many</em> test functions plus global force balance &mdash; structurally, a VFM residual with many virtual fields &mdash; and applies sparsity-promoting regression so only a few physically meaningful terms survive:</p>
+
+    <div class="math-block">$$\hat{\boldsymbol{\theta}} = \arg\min_{\boldsymbol{\theta}} \left\{ \sum_{j} \big[ r_j^{\mathrm{weak}}(\boldsymbol{\theta}) \big]^2 + \lambda \sum_k |\theta_k|^{p} \right\}, \quad 0 < p \le 1$$</div>
+
+    <p>Inputs: the displacement field plus global reaction forces &mdash; both realistically available from DIC-instrumented testing. <strong>No stress data anywhere</strong>: stress is never measured, only inferred, which is what "unsupervised" means here. Output: a closed-form, interpretable hyperelastic law with fitted coefficients. The original paper demonstrates recovery of five hyperelastic models of varying complexity on numerically generated data, including graceful behaviour when the true function is absent from the candidate library.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; one spectrum, one residual</div>
+      <div>Classical VFM (fixed model, $p$ parameters, $p$ virtual fields) and EUCLID (model library, many test functions, sparse selection) are two ends of one spectrum built on the <em>same weak-form residual</em>. Everything this module taught about admissibility, scale indeterminacy, and noise propagation transfers directly to model discovery.</div>
+    </div>
+
+    <h3 class="subsection-heading">Neural but Interpretable: CANN-EUCLID</h3>
+    <p>CANN-EUCLID (Alheit, Kumar &amp; Peirlinck 2026) trains a Constitutive Artificial Neural Network &mdash; architecture constrained so every node maps to an interpretable term &mdash; through the EUCLID residual on full-field displacement and force data, with sparsity-promoting regularization selecting a compact set of active terms; benchmarks cover isotropic and anisotropic hyperelasticity with prescribed ground-truth laws. The paper documents a sobering failure mode in its own words: exponential strain-stiffening terms <em>"can be recovered accurately when sufficiently probed, but can produce large extrapolation errors when the stiffening regime lies outside the sampled domain"</em> &mdash; a general warning for all data-driven constitutive laws, and the reason &sect;7 insisted on independent-experiment validation.</p>
+
+    <h3 class="subsection-heading">The Unifying Frame: Reduced vs All-at-Once</h3>
+    <p>R&ouml;mer, Hartmann, Tr&ouml;ger, Anton, Wessels, Flaschel &amp; De Lorenzis (2025) organize the whole field into <strong>reduced</strong> approaches &mdash; only $\boldsymbol{\theta}$ unknown, the state eliminated through a forward solve or through measured kinematics; FEMU and VFM live here &mdash; versus <strong>all-at-once</strong> approaches &mdash; state fields and parameters estimated jointly; integrated-DIC and PINN-style methods live here. They fold in statistical uncertainty quantification, propose a hybrid frequentist&ndash;Bayesian identification procedure for complex material models, and validate several methods on benchmarks with synthetic and real data. (That the classical least-squares estimators correspond to maximum-a-posteriori estimates under Gaussian noise and flat priors is the standard statistical reading &mdash; offered here as this module's synthesis, not as a headline claim of the review.)</p>
+
+    <p>Whichever end of the spectrum you work at, the closing discipline is the same: the provenance of the identification &mdash; which data, which residual, which regularization &mdash; determines what the "identified material" actually <em>means</em>. A modulus is never just a number; it is a number plus the experiment and the residual that produced it.</p>
+
+    <!-- ===== SECTION 11 ===== -->
+    <h2 class="section-heading" id="practical-workflow">11. A Practical Identification Workflow for a Silicone Skin</h2>
+
+    <p>The module condensed into a recipe you can run in the lab. Each step references the section that justifies it.</p>
+
+    <ol>
+      <li><strong>Design (&sect;8).</strong> Pick a heterogeneous test spanning the service strain states: open-hole tension or planar-tension-with-notch for in-plane characterization; membrane inflation or instrumented indentation with stereo-DIC when out-of-plane response matters. <em>Before cutting silicone</em>, run the synthetic pipeline: FE-simulate the candidate test with plausible parameters, deform synthetic speckle images, run them through the actual DIC software, run the identification. This reveals identifiability problems and realistic error bars while they are still free to fix.</li>
+      <li><strong>Speckle (&sect;2).</strong> Airbrushed or spray pattern, feature size 3&ndash;5&nbsp;px at the chosen magnification. On soft thin samples use flexible ink sparingly &mdash; a continuous paint film can locally stiffen the very surface being measured. Acquire static image pairs and measure the actual displacement/strain noise floor.</li>
+      <li><strong>Test (&sect;7).</strong> Synchronized load cell + camera(s); quasi-static rate matched to service conditions &mdash; silicones are mildly viscoelastic, and a rate mismatch biases hyperelastic fits. Record the true unloaded reference frame. For stereo, calibrate immediately before testing.</li>
+      <li><strong>DIC (&sect;2).</strong> Choose subset, step, and VSG from the noise-floor study, not from software defaults. Export displacements, strains, and coordinates in the specimen frame.</li>
+      <li><strong>Identify (&sect;5&ndash;&sect;8).</strong> Start with the simplest credible model (neo-Hookean, one parameter) and add parameters only when the data can support them &mdash; watch the correlation matrix $r_{ij}$. Run VFM first (seconds; deviatoric or plane-stress treatment for incompressibility), cross-check with FEMU. Report $\hat{\boldsymbol{\theta}}$ <em>with</em> covariance and <em>with</em> residual-field maps.</li>
+      <li><strong>Validate (&sect;7, &sect;9).</strong> Predict an experiment not used in fitting &mdash; e.g. identify from tension, predict indentation force&ndash;depth. Agreement there, not the fitting residual, is the evidence that the material model transfers to the sensor simulation.</li>
+      <li><strong>Report.</strong> Images, calibration, DIC settings, noise floor, virtual fields or FEMU configuration &mdash; so the identification is reproducible.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; fitting residual vs validation, one last time</div>
+      <div>A small identification residual proves consistency with the fitted data. It does not prove the model transfers to any other loading. Only the prediction of an experiment <em>excluded from fitting</em> evidences the model &mdash; and that is the number your sensor simulation will live or die by.</div>
+    </div>
+
+    <!-- ===== INTERACTIVE: WALKTHROUGH ===== -->
+    <div id="skin-walkthrough" class="interactive-container" data-title="Walkthrough — An Identification Campaign for a Silicone Skin"></div>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <p>Seventeen cards: the two method families, the PVW machinery, the identifiability results, and the numbers worth knowing cold.</p>
+    <div class="flashcard-container" id="mod7-flashcards"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Kavanagh, Kenneth T.; Clough, Ray W. (1971). <em>Finite element applications in the characterization of elastic solids</em>. International Journal of Solids and Structures, 7(1):11&ndash;23. doi:10.1016/0020-7683(71)90015-1</li>
+      <li>Pierron, F.; Gr&eacute;diac, M. (2021). <em>Towards Material Testing 2.0. A review of test design for identification of constitutive parameters from full-field measurements</em>. Strain, 57(1):e12370 (online 2020). doi:10.1111/str.12370</li>
+      <li>Pierron, Fabrice (2023). <em>Material Testing 2.0: A brief review</em>. Strain, 59(3):e12434. doi:10.1111/str.12434</li>
+      <li>Sutton, Michael A.; Orteu, Jean-Jos&eacute;; Schreier, Hubert (2009). <em>Image Correlation for Shape, Motion and Deformation Measurements: Basic Concepts, Theory and Applications</em>. Springer US (book). doi:10.1007/978-0-387-78747-3</li>
+      <li>Hild, Fran&ccedil;ois; Roux, St&eacute;phane (2006). <em>Digital Image Correlation: from Displacement Measurement to Identification of Elastic Properties &ndash; a Review</em>. Strain, 42(2):69&ndash;80. doi:10.1111/j.1475-1305.2006.00258.x</li>
+      <li>Avril, St&eacute;phane; Bonnet, Marc; Bretelle, Anne-Sophie; Gr&eacute;diac, Michel; Hild, Fran&ccedil;ois; Ienny, Patrick; Latourte, F&eacute;lix; Lemosse, Didier; Pagano, St&eacute;phane; Pagnacco, Emmanuel; Pierron, Fabrice (2008). <em>Overview of Identification Methods of Mechanical Parameters Based on Full-field Measurements</em>. Experimental Mechanics, 48(4):381&ndash;402. doi:10.1007/s11340-008-9148-y</li>
+      <li>Gr&eacute;diac, Michel; Pierron, Fabrice; Avril, St&eacute;phane; Toussaint, Evelyne (2006). <em>The Virtual Fields Method for Extracting Constitutive Parameters From Full-Field Measurements: a Review</em>. Strain, 42(4):233&ndash;253. doi:10.1111/j.1475-1305.2006.00283.x</li>
+      <li>Pierron, Fabrice; Gr&eacute;diac, Michel (2012). <em>The Virtual Fields Method: Extracting Constitutive Mechanical Parameters from Full-field Deformation Measurements</em>. Springer New York (book). doi:10.1007/978-1-4614-1824-5</li>
+      <li>Marek, Aleksander; Davis, Frances M.; Pierron, Fabrice (2017). <em>Sensitivity-based virtual fields for the non-linear virtual fields method</em>. Computational Mechanics, 60(3):409&ndash;431. doi:10.1007/s00466-017-1411-6</li>
+      <li>Nikolov, Denislav P.; Zhu, Zhiren; Estrada, Jonathan B. (2026). <em>Variation-matching sensitivity-based virtual fields for hyperelastic material model calibration</em>. Strain, 62(1):e70031 (2026); arXiv:2509.03363 (2025). doi:10.1111/str.70031</li>
+      <li>Avril, St&eacute;phane; Badel, Pierre; Duprey, Ambroise (2010). <em>Anisotropic and hyperelastic identification of in vitro human arteries from full-field optical measurements</em>. Journal of Biomechanics, 43(15):2978&ndash;2985. doi:10.1016/j.jbiomech.2010.07.004</li>
+      <li>Yan, Zicheng; Tao, Jialiang; Franck, Christian; Henann, David L. (2025). <em>A Virtual Fields Method-Genetic Algorithm (VFM-GA) calibration framework for isotropic hyperelastic constitutive models with application to an elastomeric foam material</em>. arXiv:2510.07683. doi:10.48550/arXiv.2510.07683</li>
+      <li>Kumar, Sanjeev; Seidl, D. Thomas; Granzow, Brian N.; Yang, Jin; Fuhg, Jan N. (2025). <em>A comparative study of calibration techniques for finite strain elastoplasticity: Numerically-exact sensitivities for FEMU and VFM</em>. arXiv:2503.19782. doi:10.48550/arXiv.2503.19782</li>
+      <li>Flaschel, Moritz; Kumar, Siddhant; De Lorenzis, Laura (2021). <em>Unsupervised discovery of interpretable hyperelastic constitutive laws</em>. Computer Methods in Applied Mechanics and Engineering, 381:113852. doi:10.1016/j.cma.2021.113852</li>
+      <li>Alheit, Benjamin; Kumar, Siddhant; Peirlinck, Mathias (2026). <em>CANN-EUCLID: unsupervised constitutive artificial neural network model discovery from full-field data</em>. arXiv:2606.14565. doi:10.48550/arXiv.2606.14565</li>
+      <li>R&ouml;mer, Ulrich; Hartmann, Stefan; Tr&ouml;ger, Jendrik-Alexander; Anton, David; Wessels, Henning; Flaschel, Moritz; De Lorenzis, Laura (2025). <em>Reduced and All-at-Once Approaches for Model Calibration and Discovery in Computational Solid Mechanics</em>. Applied Mechanics Reviews, 77(4) (2025); arXiv:2404.16980 (2024).</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod6.html">&larr; 6. Sensors, Placement &amp; Deployment</a>
+      <a href="mod8.html">8. Load &amp; Contact Force Reconstruction &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod7');</script>
+
+<!-- ===== SCRIPT: DIC SUBSET DIAGRAM ===== -->
+<script>
+(function() {
+  var svg = document.getElementById('dic-subset-svg');
+  function sr(seed) { return function() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }; }
+  var h = '';
+  // reference frame
+  h += '<text x="130" y="30" font-size="12" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">reference image f</text>';
+  h += '<rect x="40" y="40" width="180" height="180" fill="#fdfdfd" stroke="#333"/>';
+  var r1 = sr(42), i, x, y, rad;
+  var spk = [];
+  for (i = 0; i < 90; i++) { x = 44 + r1() * 172; y = 44 + r1() * 172; rad = 1 + r1() * 2.2; spk.push([x, y, rad]); h += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + rad.toFixed(1) + '" fill="#444"/>'; }
+  // grid points (step size)
+  for (i = 0; i < 4; i++) for (var j = 0; j < 4; j++) h += '<circle cx="' + (62 + i * 45) + '" cy="' + (62 + j * 45) + '" r="1.6" fill="#00838f"/>';
+  h += '<rect x="108" y="108" width="44" height="44" fill="none" stroke="#00838f" stroke-width="2"/>';
+  h += '<circle cx="130" cy="130" r="2.6" fill="#c62828"/><text x="122" y="126" font-size="11" font-weight="700" fill="#c62828" font-family="sans-serif">P</text>';
+  h += '<text x="130" y="242" font-size="10" text-anchor="middle" fill="#666" font-family="sans-serif">subset (21&#8211;41 px) &#183; grid = step size</text>';
+  // deformed frame
+  h += '<text x="350" y="30" font-size="12" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">deformed image g</text>';
+  h += '<rect x="260" y="40" width="180" height="180" fill="#fdfdfd" stroke="#333"/>';
+  for (i = 0; i < spk.length; i++) {
+    var sx = spk[i][0] - 40, sy = spk[i][1] - 40;
+    var dx = 260 + sx + 6 + 0.06 * sy, dy = 40 + sy + 9 + 0.04 * sx;
+    if (dx > 262 && dx < 438 && dy > 42 && dy < 218) h += '<circle cx="' + dx.toFixed(1) + '" cy="' + dy.toFixed(1) + '" r="' + spk[i][2].toFixed(1) + '" fill="#444"/>';
+  }
+  // warped subset quadrilateral around P' : P=(130,130) -> local (90,90): P' = 260+90+6+0.06*90=361.4, 40+90+9+0.04*90=142.6
+  h += '<path d="M337,119 L383,124 L389,166 L342,160 z" fill="none" stroke="#00838f" stroke-width="2"/>';
+  h += '<circle cx="362" cy="142" r="2.6" fill="#c62828"/><text x="368" y="138" font-size="11" font-weight="700" fill="#c62828" font-family="sans-serif">P&#8242;</text>';
+  h += '<text x="350" y="242" font-size="10" text-anchor="middle" fill="#666" font-family="sans-serif">affine shape function (translation + gradients)</text>';
+  // arrow P -> P'
+  h += '<defs><marker id="dicarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c62828"/></marker></defs>';
+  h += '<path d="M136,126 C 220,70 300,95 356,136" fill="none" stroke="#c62828" stroke-width="1.6" stroke-dasharray="5,3" marker-end="url(#dicarr)"/>';
+  h += '<text x="248" y="72" font-size="10.5" text-anchor="middle" fill="#c62828" font-weight="600" font-family="sans-serif">u(P), resolution ~0.01 px</text>';
+  // VSG inset
+  h += '<rect x="470" y="52" width="216" height="176" rx="5" fill="#fafafa" stroke="#bbb"/>';
+  h += '<text x="578" y="72" font-size="11" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">virtual strain gauge (VSG)</text>';
+  for (i = 0; i < 5; i++) for (var k = 0; k < 4; k++) h += '<circle cx="' + (505 + i * 37) + '" cy="' + (95 + k * 32) + '" r="2" fill="#00838f"/>';
+  h += '<circle cx="579" cy="127" r="52" fill="none" stroke="#e67e22" stroke-width="1.6" stroke-dasharray="5,4"/>';
+  h += '<text x="578" y="204" font-size="9.5" text-anchor="middle" fill="#666" font-family="sans-serif">strain from local polynomial fit over the window:</text>';
+  h += '<text x="578" y="217" font-size="9.5" text-anchor="middle" fill="#666" font-family="sans-serif">bigger = smoother, but blurs gradients</text>';
+  svg.innerHTML = h;
+})();
+</script>
+
+<!-- ===== SCRIPT: TEST DESIGN DIAGRAM ===== -->
+<script>
+(function() {
+  var svg = document.getElementById('testdesign-svg');
+  function sr(seed) { return function() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }; }
+  var h = '', i;
+  var cols = ['#9adbe2', '#4fb3be', '#00838f', '#e67e22', '#f0b27a'];
+  function panelLabel(cx, txt) { return '<text x="' + cx + '" y="24" font-size="11.5" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">' + txt + '</text>'; }
+  function scatterBox(x0) { return '<rect x="' + x0 + '" y="168" width="130" height="86" fill="#fdfdfd" stroke="#bbb"/><text x="' + (x0 + 65) + '" y="266" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">(I&#8321;, I&#8322;) samples</text>'; }
+  // (a) dogbone
+  h += panelLabel(120, '(a) dogbone: one stress state');
+  h += '<path d="M50,80 L90,80 Q104,80 104,92 L104,108 Q104,120 90,120 L50,120 L50,80 z" fill="#9adbe2" stroke="#333" transform="translate(35,0)"/>';
+  h += '<path d="M190,80 L150,80 Q136,80 136,92 L136,108 Q136,120 150,120 L190,120 L190,80 z" fill="#9adbe2" stroke="#333" transform="translate(35,0)"/>';
+  h += '<rect x="139" y="92" width="32" height="16" fill="#9adbe2" stroke="none"/><rect x="139" y="91.2" width="32" height="0.8" fill="#333"/><rect x="139" y="108" width="32" height="0.8" fill="#333"/>';
+  h += '<text x="120" y="145" font-size="9.5" text-anchor="middle" fill="#666" font-family="sans-serif">uniform sensitivity map</text>';
+  h += scatterBox(55);
+  var ra = sr(7);
+  for (i = 0; i < 26; i++) { var t = ra(); h += '<circle cx="' + (62 + t * 116).toFixed(1) + '" cy="' + (244 - t * 62 + (ra() - 0.5) * 4).toFixed(1) + '" r="1.6" fill="#00838f"/>'; }
+  h += '<ellipse cx="120" cy="210" rx="52" ry="26" fill="none" stroke="#c62828" stroke-width="1.8" transform="rotate(-24 120 210)"/>';
+  // (b) open hole
+  h += panelLabel(360, '(b) open-hole plate');
+  h += '<rect x="300" y="60" width="120" height="82" fill="#9adbe2" stroke="#333"/>';
+  h += '<circle cx="360" cy="101" r="26" fill="#4fb3be"/><circle cx="360" cy="101" r="19" fill="#e67e22"/><circle cx="360" cy="101" r="12" fill="#00838f"/>';
+  h += '<circle cx="360" cy="101" r="9" fill="#fff" stroke="#333"/>';
+  h += '<text x="360" y="156" font-size="9.5" text-anchor="middle" fill="#666" font-family="sans-serif">gradients concentrate near the hole</text>';
+  h += scatterBox(295);
+  var rb = sr(19);
+  for (i = 0; i < 30; i++) { var tb = rb(); h += '<circle cx="' + (302 + tb * 116).toFixed(1) + '" cy="' + (244 - tb * 62 + (rb() - 0.5) * 26).toFixed(1) + '" r="1.6" fill="#00838f"/>'; }
+  h += '<ellipse cx="360" cy="210" rx="34" ry="17" fill="none" stroke="#c62828" stroke-width="1.8" transform="rotate(-24 360 210)"/>';
+  // (c) notched multiaxial
+  h += panelLabel(600, '(c) notched multiaxial');
+  h += '<path d="M560,60 L640,60 L640,84 L662,101 L640,118 L640,142 L560,142 L560,118 L538,101 L560,84 z" fill="#9adbe2" stroke="#333"/>';
+  h += '<circle cx="576" cy="80" r="9" fill="#e67e22"/><circle cx="624" cy="80" r="8" fill="#00838f"/><circle cx="600" cy="101" r="11" fill="#f0b27a"/><circle cx="576" cy="122" r="8" fill="#4fb3be"/><circle cx="624" cy="122" r="9" fill="#e67e22"/>';
+  h += '<text x="600" y="156" font-size="9.5" text-anchor="middle" fill="#666" font-family="sans-serif">many states in one field</text>';
+  h += scatterBox(535);
+  var rc = sr(31);
+  for (i = 0; i < 46; i++) h += '<circle cx="' + (542 + rc() * 116).toFixed(1) + '" cy="' + (176 + rc() * 70).toFixed(1) + '" r="1.6" fill="#00838f"/>';
+  h += '<ellipse cx="600" cy="210" rx="15" ry="8" fill="none" stroke="#c62828" stroke-width="1.8" transform="rotate(-24 600 210)"/>';
+  // arrow
+  h += '<defs><marker id="tdarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs>';
+  h += '<path d="M60,292 L660,292" fill="none" stroke="#555" stroke-width="1.6" marker-end="url(#tdarr)"/>';
+  h += '<text x="360" y="310" font-size="10.5" text-anchor="middle" fill="#555" font-family="sans-serif">richer strain-state coverage &#8594; better-conditioned S&#7488;S &#8594; smaller parameter covariance</text>';
+  svg.innerHTML = h;
+})();
+</script>
+
+<!-- ===== SCRIPT: VSG BIAS-VARIANCE EXPLORER ===== -->
+<script>
+(function() {
+  var N = 121, e0 = 0.01, xw = 0.55, wg = 0.07, amp = 2.5;
+  var xs = [], uTrue = [], eTrue = [];
+  function eps(x) { var z = (x - xw) / wg; return e0 * (1 + amp * Math.exp(-z * z)); }
+  // integrate u by fine trapezoid
+  var fine = 1201, du = 0, xprev = 0, uf = [0];
+  for (var k = 1; k < fine; k++) {
+    var xk = k / (fine - 1);
+    du += 0.5 * (eps(xprev) + eps(xk)) * (xk - xprev);
+    uf.push(du); xprev = xk;
+  }
+  for (var i = 0; i < N; i++) {
+    var x = i / (N - 1);
+    xs.push(x); eTrue.push(eps(x));
+    uTrue.push(uf[Math.round(x * (fine - 1))]);
+  }
+  var noise = [];
+  function reroll() {
+    noise = [];
+    for (var i2 = 0; i2 < N; i2++) {
+      var u1 = Math.random(), u2 = Math.random();
+      noise.push(Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2));
+    }
+  }
+  reroll();
+  var el = function(id) { return document.getElementById(id); };
+  function update() {
+    var s = parseFloat(el('vsg-noise').value), w = parseInt(el('vsg-win').value);
+    el('vsg-noise-val').textContent = s.toFixed(1);
+    el('vsg-win-val').textContent = w;
+    var su = s * 1e-4;
+    var um = [], i;
+    for (i = 0; i < N; i++) um.push(uTrue[i] + su * noise[i]);
+    // local linear fit of window w around each point
+    var hstep = 1 / (N - 1), half = (w - 1) / 2, eEst = [];
+    for (i = 0; i < N; i++) {
+      var lo = Math.max(0, i - half), hi = Math.min(N - 1, i + half);
+      var n = hi - lo + 1, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (var j = lo; j <= hi; j++) { sx += xs[j]; sy += um[j]; sxx += xs[j] * xs[j]; sxy += xs[j] * um[j]; }
+      var denom = n * sxx - sx * sx;
+      eEst.push(denom > 0 ? (n * sxy - sx * sy) / denom : 0);
+    }
+    // draw
+    var W = 700, H = 260, x0 = 58, x1 = 672, y0 = 218, y1 = 26;
+    var emax = 0.042;
+    function X(x) { return x0 + x * (x1 - x0); }
+    function Y(e) { return y0 + (e / emax) * (y1 - y0); }
+    var h = '<line x1="' + x0 + '" y1="' + y0 + '" x2="' + x1 + '" y2="' + y0 + '" stroke="#999"/><line x1="' + x0 + '" y1="' + y0 + '" x2="' + x0 + '" y2="' + y1 + '" stroke="#999"/>';
+    h += '<text x="' + ((x0 + x1) / 2) + '" y="248" font-size="11" text-anchor="middle" fill="#666" font-family="sans-serif">position x / L</text>';
+    h += '<text x="16" y="120" font-size="11" fill="#666" font-family="sans-serif" transform="rotate(-90 16 120)">strain</text>';
+    for (var g = 0; g <= 4; g++) { var ev = g * 0.01; h += '<line x1="' + (x0 - 3) + '" y1="' + Y(ev) + '" x2="' + x0 + '" y2="' + Y(ev) + '" stroke="#999"/><text x="' + (x0 - 7) + '" y="' + (Y(ev) + 3.5) + '" font-size="9" text-anchor="end" fill="#888" font-family="sans-serif">' + ev.toFixed(2) + '</text>'; }
+    var p = '';
+    for (i = 0; i < N; i++) p += (i ? 'L' : 'M') + X(xs[i]).toFixed(1) + ',' + Y(eTrue[i]).toFixed(1);
+    h += '<path d="' + p + '" fill="none" stroke="#999" stroke-width="2" stroke-dasharray="6,4"/>';
+    p = '';
+    for (i = 0; i < N; i++) p += (i ? 'L' : 'M') + X(xs[i]).toFixed(1) + ',' + Y(Math.max(-0.004, Math.min(emax, eEst[i]))).toFixed(1);
+    h += '<path d="' + p + '" fill="none" stroke="#00838f" stroke-width="1.8"/>';
+    h += '<rect x="' + (x1 - 190) + '" y="30" width="182" height="36" fill="#fff" fill-opacity="0.85"/>';
+    h += '<line x1="' + (x1 - 182) + '" y1="40" x2="' + (x1 - 152) + '" y2="40" stroke="#999" stroke-width="2" stroke-dasharray="6,4"/><text x="' + (x1 - 146) + '" y="43.5" font-size="10" fill="#555" font-family="sans-serif">true strain</text>';
+    h += '<line x1="' + (x1 - 182) + '" y1="56" x2="' + (x1 - 152) + '" y2="56" stroke="#00838f" stroke-width="2"/><text x="' + (x1 - 146) + '" y="59.5" font-size="10" fill="#555" font-family="sans-serif">VSG estimate (window ' + w + ')</text>';
+    el('vsg-svg').innerHTML = h;
+    // stats: noise in flat region, bias at peak
+    var errs = [], peakE = 0, peakT = e0 * (1 + amp);
+    for (i = 0; i < N; i++) {
+      if (xs[i] > 0.05 && xs[i] < 0.35) errs.push(eEst[i] - eTrue[i]);
+      if (xs[i] > 0.45 && xs[i] < 0.65 && eEst[i] > peakE) peakE = eEst[i];
+    }
+    var m = 0, v = 0;
+    for (i = 0; i < errs.length; i++) m += errs[i];
+    m /= errs.length;
+    for (i = 0; i < errs.length; i++) v += (errs[i] - m) * (errs[i] - m);
+    var stdMeas = Math.sqrt(v / (errs.length - 1));
+    var predStd = su * Math.sqrt(12 / (hstep * hstep * w * (w * w - 1)));
+    var bias = (1 - peakE / peakT) * 100;
+    var ro = el('vsg-readout');
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\sigma_{\\varepsilon}^{\\text{measured}} = ' + (stdMeas * 1000).toFixed(2) + '\\times 10^{-3}, \\qquad \\sigma_{\\varepsilon}^{\\text{predicted}} = \\sigma_u\\sqrt{\\tfrac{12}{h^2 w (w^2-1)}} = ' + (predStd * 1000).toFixed(2) + '\\times 10^{-3}, \\qquad \\text{peak underestimated by } ' + bias.toFixed(1) + '\\%$$</div>' +
+      '<div>Noise falls roughly as $\\sigma_u / L_{\\mathrm{VSG}}$ as the window grows &mdash; but watch the peak: past a point, the window is averaging <em>across</em> the strain concentration, and the reduction you see is no longer noise removal but signal destruction. That bias goes straight into any parameter whose sensitivity lives near the hole.</div>';
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+  el('vsg-noise').addEventListener('input', update);
+  el('vsg-win').addEventListener('input', update);
+  el('vsg-reroll').addEventListener('click', function() { reroll(); update(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: IDENTIFIABILITY LANDSCAPE LAB ===== -->
+<script>
+(function() {
+  var a = 1, Wd = 4, Sload = 0.02, E0 = 1.0, nu0 = 0.45, t = 1;
+  var el = function(id) { return document.getElementById(id); };
+  function randn() { var u1 = Math.random(), u2 = Math.random(); return Math.sqrt(-2 * Math.log(u1 + 1e-12)) * Math.cos(2 * Math.PI * u2); }
+
+  // ----- Kirsch analytic fields (case 1: remote tension along x) -----
+  function sig1(x, y) {
+    var r2 = x * x + y * y, r = Math.sqrt(r2), phi = Math.atan2(y, x);
+    var c2 = Math.cos(2 * phi), s2 = Math.sin(2 * phi);
+    var ir2 = 1 / r2, ir4 = ir2 * ir2;
+    var srr = Sload / 2 * (1 - ir2) + Sload / 2 * (1 - 4 * ir2 + 3 * ir4) * c2;
+    var spp = Sload / 2 * (1 + ir2) - Sload / 2 * (1 + 3 * ir4) * c2;
+    var srp = -Sload / 2 * (1 + 2 * ir2 - 3 * ir4) * s2;
+    var c = Math.cos(phi), s = Math.sin(phi);
+    return {
+      xx: srr * c * c + spp * s * s - 2 * srp * c * s,
+      yy: srr * s * s + spp * c * c + 2 * srp * c * s,
+      xy: (srr - spp) * c * s + srp * (c * c - s * s)
+    };
+  }
+  function sig2(x, y) { var q = sig1(y, -x); return { xx: q.yy, yy: q.xx, xy: -q.xy }; }
+  // displacement coefficient functions: u = f (A0 + kappa A1), f = S/(4 mu)
+  function dispCoef(x, y) {
+    var r2 = x * x + y * y, r = Math.sqrt(r2), phi = Math.atan2(y, x);
+    var c2 = Math.cos(2 * phi), s2 = Math.sin(2 * phi), c = Math.cos(phi), s = Math.sin(phi);
+    var C0 = -r / 2 + 1 / r + (r + 1 / r - 1 / (r2 * r)) * c2;
+    var C1 = r / 2 + (1 / r) * c2;
+    var D0 = (r - 1 / r + 1 / (r2 * r)) * s2;
+    var D1 = (1 / r) * s2;
+    return {
+      x0: C0 * c + D0 * s, x1: C1 * c + D1 * s,
+      y0: C0 * s - D0 * c, y1: C1 * s - D1 * c
+    };
+  }
+
+  // ----- FEMU sample points (16x16, r > 1.25) -----
+  var fitPts = [], valPts = [], nfp = 0;
+  (function() {
+    var idx = 0;
+    for (var i = 0; i < 16; i++) for (var j = 0; j < 16; j++) {
+      var x = -3.8 + i * (7.6 / 15), y = -3.8 + j * (7.6 / 15);
+      if (x * x + y * y < 1.25 * 1.25) continue;
+      var c1 = dispCoef(x, y), c2p = dispCoef(y, -x);
+      var pt = { x: x, y: y, c1: c1, c2: { x0: -c2p.y0, x1: -c2p.y1, y0: c2p.x0, y1: c2p.x1 } };
+      if (idx % 6 === 0) valPts.push(pt); else fitPts.push(pt);
+      idx++;
+    }
+    nfp = fitPts.length;
+  })();
+  function modelU(pts, E, nu, cse) {
+    var f = Sload * (1 + nu) / (2 * E), kap = (3 - nu) / (1 + nu), out = [];
+    for (var i = 0; i < pts.length; i++) {
+      var c = (cse === 1) ? pts[i].c1 : pts[i].c2;
+      out.push(f * (c.x0 + kap * c.x1), f * (c.y0 + kap * c.y1));
+    }
+    return out;
+  }
+  var uTrue1 = modelU(fitPts, E0, nu0, 1), uTrue2 = modelU(fitPts, E0, nu0, 2);
+  var vTrue1 = modelU(valPts, E0, nu0, 1), vTrue2 = modelU(valPts, E0, nu0, 2);
+  var gFit1 = [], gFit2 = [], gVal1 = [], gVal2 = [];
+  function rerollFEMU() {
+    gFit1 = []; gFit2 = []; gVal1 = []; gVal2 = [];
+    for (var i = 0; i < uTrue1.length; i++) { gFit1.push(randn()); gFit2.push(randn()); }
+    for (var j = 0; j < vTrue1.length; j++) { gVal1.push(randn()); gVal2.push(randn()); }
+  }
+
+  // ----- VFM integration grid (40x40 with 3x3 subdivision near hole) -----
+  var IP = { x: [], y: [], w: [], exx1: [], eyy1: [], exx2: [], eyy2: [] };
+  var Sxx1 = 0, Syy1 = 0, Sxx2 = 0, Syy2 = 0, W2 = 0;
+  (function() {
+    var Ng = 40, c = 2 * Wd / Ng, invE = 1 / E0;
+    function addPt(x, y, w) {
+      var q1 = sig1(x, y), q2 = sig2(x, y);
+      var e1x = (q1.xx - nu0 * q1.yy) * invE, e1y = (q1.yy - nu0 * q1.xx) * invE;
+      var e2x = (q2.xx - nu0 * q2.yy) * invE, e2y = (q2.yy - nu0 * q2.xx) * invE;
+      IP.x.push(x); IP.y.push(y); IP.w.push(w);
+      IP.exx1.push(e1x); IP.eyy1.push(e1y); IP.exx2.push(e2x); IP.eyy2.push(e2y);
+      Sxx1 += e1x * w; Syy1 += e1y * w; Sxx2 += e2x * w; Syy2 += e2y * w; W2 += w * w;
+    }
+    for (var i = 0; i < Ng; i++) for (var j = 0; j < Ng; j++) {
+      var xc = -Wd + (i + 0.5) * c, yc = -Wd + (j + 0.5) * c, rc = Math.sqrt(xc * xc + yc * yc);
+      if (rc < 1 - 0.9 * c) continue;
+      if (Math.abs(rc - 1) < 1.2 * c) {
+        for (var si = 0; si < 3; si++) for (var sj = 0; sj < 3; sj++) {
+          var xs = xc + (si - 1) * c / 3, ys = yc + (sj - 1) * c / 3;
+          if (xs * xs + ys * ys > 1) addPt(xs, ys, c * c / 9);
+        }
+      } else addPt(xc, yc, c * c);
+    }
+  })();
+  // boundary work integrals b (theta-independent): b[field][case]
+  var bVec = { f1c1: 0, f2c1: 0, f1c2: 0, f2c2: 0 };
+  (function() {
+    var n = 300, dl = 2 * Wd / n, i, y, x, q;
+    for (i = 0; i < n; i++) {
+      y = -Wd + (i + 0.5) * dl;
+      q = sig1(Wd, y); bVec.f1c1 += q.xx * Wd * dl; bVec.f2c1 += q.xy * y * dl;
+      q = sig1(-Wd, y); bVec.f1c1 += (-q.xx) * (-Wd) * dl; bVec.f2c1 += (-q.xy) * y * dl;
+      q = sig2(Wd, y); bVec.f1c2 += q.xx * Wd * dl; bVec.f2c2 += q.xy * y * dl;
+      q = sig2(-Wd, y); bVec.f1c2 += (-q.xx) * (-Wd) * dl; bVec.f2c2 += (-q.xy) * y * dl;
+    }
+    for (i = 0; i < n; i++) {
+      x = -Wd + (i + 0.5) * dl;
+      q = sig1(x, Wd); bVec.f1c1 += q.xy * x * dl; bVec.f2c1 += q.yy * Wd * dl;
+      q = sig1(x, -Wd); bVec.f1c1 += (-q.xy) * x * dl; bVec.f2c1 += (-q.yy) * (-Wd) * dl;
+      q = sig2(x, Wd); bVec.f1c2 += q.xy * x * dl; bVec.f2c2 += q.yy * Wd * dl;
+      q = sig2(x, -Wd); bVec.f1c2 += (-q.xy) * x * dl; bVec.f2c2 += (-q.yy) * (-Wd) * dl;
+    }
+  })();
+  // headline VFM noise aggregates (per component, per case)
+  var hn = { xx1: 0, yy1: 0, xx2: 0, yy2: 0 };
+  function rerollVFM() {
+    hn.xx1 = 0; hn.yy1 = 0; hn.xx2 = 0; hn.yy2 = 0;
+    for (var i = 0; i < IP.w.length; i++) {
+      hn.xx1 += randn() * IP.w[i]; hn.yy1 += randn() * IP.w[i];
+      hn.xx2 += randn() * IP.w[i]; hn.yy2 += randn() * IP.w[i];
+    }
+  }
+
+  // ----- heatmap grid -----
+  var HM = { n: 26, x: [], y: [], e: [], mask: [] };
+  (function() {
+    var c = 2 * Wd / HM.n, invE = 1 / E0;
+    for (var j = 0; j < HM.n; j++) for (var i = 0; i < HM.n; i++) {
+      var x = -Wd + (i + 0.5) * c, y = -Wd + (j + 0.5) * c;
+      var masked = (x * x + y * y < 1.05);
+      HM.x.push(x); HM.y.push(y); HM.mask.push(masked);
+      if (masked) HM.e.push(0); else { var q = sig1(x, y); HM.e.push((q.xx - nu0 * q.yy) * invE); }
+    }
+  })();
+  var hmNoise = [];
+  function rerollHM() { hmNoise = []; for (var i = 0; i < HM.e.length; i++) hmNoise.push(randn()); }
+
+  rerollFEMU(); rerollVFM(); rerollHM();
+
+  // ----- state -----
+  var start = { E: 2.4, nu: 0.12 }, path = [], animTimer = null;
+  var Emin = 0.3, Emax = 3.0, nmin = 0.05, nmax = 0.499;
+  var PX0 = 42, PX1 = 268, PY0 = 218, PY1 = 14; // plot area in landscape svg
+
+  function getState() {
+    return {
+      mode: document.querySelector('input[name="il7-mode"]:checked').value,
+      loadKnown: el('il7-load').checked,
+      twoCases: el('il7-case2').checked,
+      sens: document.querySelector('input[name="il7-sens"]:checked').value,
+      s: parseFloat(el('il7-noise').value),
+      fdh: Math.pow(10, parseFloat(el('il7-fdh').value))
+    };
+  }
+  function sigmaU(st) { return st.s * 2e-4; }
+  function sigmaE(st) { return st.s * 1e-3; }
+
+  // measured displacement data for current noise level
+  function measured(st) {
+    var su = sigmaU(st), m1 = [], m2 = [], i;
+    for (i = 0; i < uTrue1.length; i++) { m1.push(uTrue1[i] + su * gFit1[i]); m2.push(uTrue2[i] + su * gFit2[i]); }
+    return { m1: m1, m2: m2 };
+  }
+  function norm2(v) { var s = 0; for (var i = 0; i < v.length; i++) s += v[i] * v[i]; return Math.sqrt(s); }
+
+  // FEMU cost
+  function femuJ(E, nu, st, meas) {
+    var J = 0, i, pred, nm, np;
+    var cases = st.twoCases ? [1, 2] : [1];
+    for (var ci = 0; ci < cases.length; ci++) {
+      var mm = (cases[ci] === 1) ? meas.m1 : meas.m2;
+      pred = modelU(fitPts, E, nu, cases[ci]);
+      if (st.loadKnown) { for (i = 0; i < mm.length; i++) { var d = mm[i] - pred[i]; J += d * d; } }
+      else {
+        nm = norm2(mm); np = norm2(pred);
+        for (i = 0; i < mm.length; i++) { var d2 = mm[i] / nm - pred[i] / np; J += d2 * d2; }
+      }
+    }
+    return J;
+  }
+  // FEMU residual vector
+  function femuR(E, nu, st, meas, jitter) {
+    var r = [], i;
+    var cases = st.twoCases ? [1, 2] : [1];
+    for (var ci = 0; ci < cases.length; ci++) {
+      var mm = (cases[ci] === 1) ? meas.m1 : meas.m2;
+      var pred = modelU(fitPts, E, nu, cases[ci]);
+      if (jitter > 0) for (i = 0; i < pred.length; i++) pred[i] += jitter * randn();
+      if (st.loadKnown) { for (i = 0; i < mm.length; i++) r.push(mm[i] - pred[i]); }
+      else {
+        var nm = norm2(mm), np = norm2(pred);
+        for (i = 0; i < mm.length; i++) r.push(mm[i] / nm - pred[i] / np);
+      }
+    }
+    return r;
+  }
+  function femuSens(E, nu, st, meas) {
+    var uScale = 0.03, S1, S2, r0, i;
+    if (st.sens === 'exact') {
+      var hE = 1e-5, hn2 = 1e-6;
+      var rp = femuR(E + hE, nu, st, meas, 0), rm = femuR(E - hE, nu, st, meas, 0);
+      var rp2 = femuR(E, nu + hn2, st, meas, 0), rm2 = femuR(E, nu - hn2, st, meas, 0);
+      S1 = []; S2 = [];
+      for (i = 0; i < rp.length; i++) { S1.push(-(rp[i] - rm[i]) / (2 * hE)); S2.push(-(rp2[i] - rm2[i]) / (2 * hn2)); }
+      return { S1: S1, S2: S2 };
+    }
+    var jit = 1e-5 * uScale, hEf = st.fdh * 1.0, hnf = st.fdh * 0.45;
+    r0 = femuR(E, nu, st, meas, jit);
+    var rpe = femuR(E + hEf, nu, st, meas, jit), rpn = femuR(E, nu + hnf, st, meas, jit);
+    S1 = []; S2 = [];
+    for (i = 0; i < r0.length; i++) { S1.push(-(rpe[i] - r0[i]) / hEf); S2.push(-(rpn[i] - r0[i]) / hnf); }
+    return { S1: S1, S2: S2 };
+  }
+  function gnStep(E, nu, st, meas) {
+    var Sm = femuSens(E, nu, st, meas), r = femuR(E, nu, st, meas, 0);
+    var a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0, i;
+    for (i = 0; i < r.length; i++) {
+      a11 += Sm.S1[i] * Sm.S1[i]; a12 += Sm.S1[i] * Sm.S2[i]; a22 += Sm.S2[i] * Sm.S2[i];
+      b1 += Sm.S1[i] * r[i]; b2 += Sm.S2[i] * r[i];
+    }
+    var lam = 1e-6 * (a11 + a22);
+    var det = (a11 + lam) * (a22 + lam) - a12 * a12;
+    if (Math.abs(det) < 1e-30) return { dE: 0, dnu: 0, N: [a11, a12, a22] };
+    var dE = ((a22 + lam) * b1 - a12 * b2) / det, dnu = ((a11 + lam) * b2 - a12 * b1) / det;
+    var mx = 0.5;
+    if (Math.abs(dE) > mx) { dnu *= mx / Math.abs(dE); dE = mx * Math.sign(dE); }
+    if (Math.abs(dnu) > 0.12) { dE *= 0.12 / Math.abs(dnu); dnu = 0.12 * Math.sign(dnu); }
+    return { dE: dE, dnu: dnu, N: [a11, a12, a22] };
+  }
+  // normal matrix info at a point (exact sensitivities, no jitter) for panel/cov
+  function normalInfo(E, nu, st, meas) {
+    var stx = { mode: st.mode, loadKnown: st.loadKnown, twoCases: st.twoCases, sens: 'exact', s: st.s, fdh: st.fdh };
+    var Sm = femuSens(E, nu, stx, meas);
+    var a11 = 0, a12 = 0, a22 = 0, i;
+    for (i = 0; i < Sm.S1.length; i++) { a11 += Sm.S1[i] * Sm.S1[i]; a12 += Sm.S1[i] * Sm.S2[i]; a22 += Sm.S2[i] * Sm.S2[i]; }
+    // scaled (relative-parameter) conditioning
+    var s11 = a11 * E * E, s12 = a12 * E * nu, s22 = a22 * nu * nu;
+    var tr = s11 + s22, dt = s11 * s22 - s12 * s12;
+    var disc = Math.sqrt(Math.max(0, tr * tr / 4 - dt));
+    var l1 = tr / 2 + disc, l2 = tr / 2 - disc;
+    var cond = (l2 > 1e-14 * l1) ? l1 / l2 : Infinity;
+    // covariance (raw parameters)
+    var det = a11 * a22 - a12 * a12, cov = null;
+    if (det > 1e-30) {
+      var su = sigmaU(st);
+      cov = { EE: su * su * a22 / det, En: -su * su * a12 / det, nn: su * su * a11 / det };
+    }
+    return { cond: cond, cov: cov, rankDef: (l2 <= 1e-10 * l1) };
+  }
+
+  // ----- VFM solve -----
+  function vfmSolve(st, nxx1, nyy1, nxx2, nyy2) {
+    var se = sigmaE(st);
+    var sx1 = Sxx1 + se * nxx1, sy1 = Syy1 + se * nyy1;
+    var sx2 = Sxx2 + se * nxx2, sy2 = Syy2 + se * nyy2;
+    var rows = [[sx1, sy1, bVec.f1c1], [sy1, sx1, bVec.f2c1]];
+    if (st.twoCases) { rows.push([sx2, sy2, bVec.f1c2]); rows.push([sy2, sx2, bVec.f2c2]); }
+    if (st.loadKnown) {
+      var a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0, i;
+      for (i = 0; i < rows.length; i++) {
+        a11 += rows[i][0] * rows[i][0]; a12 += rows[i][0] * rows[i][1]; a22 += rows[i][1] * rows[i][1];
+        b1 += rows[i][0] * rows[i][2]; b2 += rows[i][1] * rows[i][2];
+      }
+      var det = a11 * a22 - a12 * a12;
+      if (Math.abs(det) < 1e-30) return null;
+      var Qxx = (a22 * b1 - a12 * b2) / det / t, Qxy = (a11 * b2 - a12 * b1) / det / t;
+      var tr = a11 + a22, disc = Math.sqrt(Math.max(0, tr * tr / 4 - det));
+      var cond = Math.sqrt((tr / 2 + disc) / Math.max(1e-30, tr / 2 - disc));
+      var E = (Qxx * Qxx - Qxy * Qxy) / Qxx, nu = Qxy / Qxx;
+      return { E: E, nu: nu, Qxx: Qxx, Qxy: Qxy, cond: cond, rows: rows };
+    }
+    // load unknown: only ratio nu recoverable (b known up to common scale)
+    var rho = bVec.f1c1 / bVec.f2c1;
+    var q = (rho * sy1 - sx1) / (sy1 - rho * sx1);
+    return { E: null, nu: q, rows: rows };
+  }
+  function vfmJ(E, nu, st, headline) {
+    var se = sigmaE(st);
+    var sx1 = Sxx1 + se * headline.xx1, sy1 = Syy1 + se * headline.yy1;
+    var sx2 = Sxx2 + se * headline.xx2, sy2 = Syy2 + se * headline.yy2;
+    var Qxx = E / (1 - nu * nu), Qxy = nu * E / (1 - nu * nu);
+    var rows = [[sx1, sy1, bVec.f1c1], [sy1, sx1, bVec.f2c1]];
+    if (st.twoCases) { rows.push([sx2, sy2, bVec.f1c2]); rows.push([sy2, sx2, bVec.f2c2]); }
+    var J = 0, i;
+    if (st.loadKnown) {
+      for (i = 0; i < rows.length; i++) { var d = t * (rows[i][0] * Qxx + rows[i][1] * Qxy) - rows[i][2]; J += d * d; }
+    } else {
+      // min over unknown load scale s of || A theta - s b ||^2
+      var nb = 0, ab = 0, aa = 0;
+      for (i = 0; i < rows.length; i++) {
+        var Ai = t * (rows[i][0] * Qxx + rows[i][1] * Qxy);
+        aa += Ai * Ai; ab += Ai * rows[i][2]; nb += rows[i][2] * rows[i][2];
+      }
+      J = aa - ab * ab / nb;
+    }
+    return J;
+  }
+
+  // ----- drawing helpers -----
+  function EtoX(E) { return PX0 + (E - Emin) / (Emax - Emin) * (PX1 - PX0); }
+  function nuToY(nu) { return PY0 - (nu - nmin) / (nmax - nmin) * (PY0 - PY1); }
+  function heatColor(tv) {
+    tv = Math.max(0, Math.min(1, tv));
+    var c0 = [242, 250, 251], c1 = [8, 74, 82];
+    var b = Math.floor(tv * 11) / 11;
+    return 'rgb(' + Math.round(c0[0] + (c1[0] - c0[0]) * b) + ',' + Math.round(c0[1] + (c1[1] - c0[1]) * b) + ',' + Math.round(c0[2] + (c1[2] - c0[2]) * b) + ')';
+  }
+
+  function drawHeat(st) {
+    var se = sigmaE(st), vals = [], mn = 1e9, mx = -1e9, i;
+    for (i = 0; i < HM.e.length; i++) {
+      var v = HM.mask[i] ? 0 : HM.e[i] + se * hmNoise[i];
+      vals.push(v);
+      if (!HM.mask[i]) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    }
+    var cell = 208 / HM.n, h = '';
+    h += '<text x="116" y="16" font-size="11" font-weight="600" text-anchor="middle" fill="#333" font-family="sans-serif">measured &#949;&#8339;&#8339; (case 1, noisy)</text>';
+    for (i = 0; i < vals.length; i++) {
+      if (HM.mask[i]) continue;
+      var ix = i % HM.n, iy = Math.floor(i / HM.n);
+      h += '<rect x="' + (12 + ix * cell).toFixed(1) + '" y="' + (24 + (HM.n - 1 - iy) * cell).toFixed(1) + '" width="' + (cell + 0.4).toFixed(1) + '" height="' + (cell + 0.4).toFixed(1) + '" fill="' + heatColor((vals[i] - mn) / (mx - mn + 1e-12)) + '"/>';
+    }
+    h += '<circle cx="' + (12 + 104) + '" cy="' + (24 + 104) + '" r="' + (104 / Wd) + '" fill="#fff" stroke="#999"/>';
+    if (st.mode === 'femu') {
+      for (i = 0; i < fitPts.length; i += 2) h += '<circle cx="' + (116 + fitPts[i].x * 26).toFixed(1) + '" cy="' + (128 - fitPts[i].y * 26).toFixed(1) + '" r="1.1" fill="#e67e22"/>';
+    }
+    h += '<text x="12" y="248" font-size="9.5" fill="#888" font-family="sans-serif">min ' + (mn * 1000).toFixed(1) + ' &middot; max ' + (mx * 1000).toFixed(1) + ' (&times;10&#8315;&sup3;)' + (st.mode === 'femu' ? ' &middot; dots: FEMU samples' : '') + '</text>';
+    el('il7-heat').innerHTML = h;
+  }
+
+  function drawLand(st, meas, headline, vfmRes, ni) {
+    var nE = 46, nN = 36, i, j, vals = [], mn = 1e9, mx = -1e9;
+    for (j = 0; j < nN; j++) for (i = 0; i < nE; i++) {
+      var E = Emin + (i + 0.5) * (Emax - Emin) / nE, nu = nmin + (j + 0.5) * (nmax - nmin) / nN;
+      var J = (st.mode === 'femu') ? femuJ(E, nu, st, meas) : vfmJ(E, nu, st, headline);
+      var lv = Math.log10(J + 1e-14);
+      vals.push(lv);
+      if (lv < mn) mn = lv; if (lv > mx) mx = lv;
+    }
+    var cw = (PX1 - PX0) / nE, ch = (PY0 - PY1) / nN, h = '';
+    for (j = 0; j < nN; j++) for (i = 0; i < nE; i++) {
+      h += '<rect x="' + (PX0 + i * cw).toFixed(1) + '" y="' + (PY0 - (j + 1) * ch).toFixed(1) + '" width="' + (cw + 0.4).toFixed(1) + '" height="' + (ch + 0.4).toFixed(1) + '" fill="' + heatColor((vals[j * nE + i] - mn) / (mx - mn + 1e-12)) + '"/>';
+    }
+    // axes
+    h += '<line x1="' + PX0 + '" y1="' + PY0 + '" x2="' + PX1 + '" y2="' + PY0 + '" stroke="#666"/><line x1="' + PX0 + '" y1="' + PY0 + '" x2="' + PX0 + '" y2="' + PY1 + '" stroke="#666"/>';
+    [0.5, 1, 1.5, 2, 2.5, 3].forEach(function(ev) { h += '<line x1="' + EtoX(ev) + '" y1="' + PY0 + '" x2="' + EtoX(ev) + '" y2="' + (PY0 + 3) + '" stroke="#666"/><text x="' + EtoX(ev) + '" y="' + (PY0 + 13) + '" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">' + ev + '</text>'; });
+    [0.1, 0.2, 0.3, 0.4].forEach(function(nv) { h += '<line x1="' + (PX0 - 3) + '" y1="' + nuToY(nv) + '" x2="' + PX0 + '" y2="' + nuToY(nv) + '" stroke="#666"/><text x="' + (PX0 - 5) + '" y="' + (nuToY(nv) + 3) + '" font-size="9" text-anchor="end" fill="#888" font-family="sans-serif">' + nv + '</text>'; });
+    h += '<text x="' + ((PX0 + PX1) / 2) + '" y="' + (PY0 + 26) + '" font-size="10.5" text-anchor="middle" fill="#666" font-family="sans-serif">E (MPa)</text>';
+    h += '<text x="12" y="' + ((PY0 + PY1) / 2) + '" font-size="10.5" fill="#666" font-family="sans-serif" transform="rotate(-90 12 ' + ((PY0 + PY1) / 2) + ')">&nu;</text>';
+    h += '<text x="' + ((PX0 + PX1) / 2) + '" y="' + (PY1 - 3) + '" font-size="9.5" text-anchor="middle" fill="#888" font-family="sans-serif">log&#8321;&#8320; ' + (st.mode === 'femu' ? 'J&#8320;(E,&nu;) &mdash; FEMU cost' : 'J(E,&nu;) &mdash; VFM residual') + '</text>';
+    // truth
+    var tx = EtoX(E0), ty = nuToY(nu0);
+    h += '<line x1="' + (tx - 6) + '" y1="' + ty + '" x2="' + (tx + 6) + '" y2="' + ty + '" stroke="#1a1a1a" stroke-width="1.6"/><line x1="' + tx + '" y1="' + (ty - 6) + '" x2="' + tx + '" y2="' + (ty + 6) + '" stroke="#1a1a1a" stroke-width="1.6"/>';
+    // flat-valley line for VFM load-unknown
+    if (st.mode === 'vfm' && !st.loadKnown && vfmRes) {
+      var vy = nuToY(vfmRes.nu);
+      h += '<line x1="' + PX0 + '" y1="' + vy + '" x2="' + PX1 + '" y2="' + vy + '" stroke="#00838f" stroke-width="1.8" stroke-dasharray="7,4"/>';
+      h += '<text x="' + (PX0 + 6) + '" y="' + (vy - 5) + '" font-size="9.5" fill="#00838f" font-weight="600" font-family="sans-serif">identifiable set: &nu; only, E undetermined</text>';
+    }
+    // GN path
+    if (st.mode === 'femu' && path.length) {
+      var p = '';
+      for (i = 0; i < path.length; i++) p += (i ? 'L' : 'M') + EtoX(path[i][0]).toFixed(1) + ',' + nuToY(path[i][1]).toFixed(1);
+      h += '<path d="' + p + '" fill="none" stroke="#e67e22" stroke-width="1.8" stroke-dasharray="4,3"/>';
+      for (i = 0; i < path.length; i++) h += '<circle cx="' + EtoX(path[i][0]).toFixed(1) + '" cy="' + nuToY(path[i][1]).toFixed(1) + '" r="' + (i === path.length - 1 ? 3.4 : 2) + '" fill="#e67e22"/>';
+    }
+    if (st.mode === 'femu') h += '<circle cx="' + EtoX(start.E) + '" cy="' + nuToY(start.nu) + '" r="4.4" fill="none" stroke="#e67e22" stroke-width="2"/>';
+    // VFM estimate diamond
+    if (st.mode === 'vfm' && vfmRes && vfmRes.E !== null) {
+      var vx = EtoX(vfmRes.E), vy2 = nuToY(vfmRes.nu);
+      h += '<path d="M' + vx + ',' + (vy2 - 5.5) + ' L' + (vx + 5.5) + ',' + vy2 + ' L' + vx + ',' + (vy2 + 5.5) + ' L' + (vx - 5.5) + ',' + vy2 + ' z" fill="#00838f"/>';
+      h += '<text x="' + (vx + 8) + '" y="' + (vy2 - 6) + '" font-size="9.5" fill="#00838f" font-weight="600" font-family="sans-serif">direct solve</text>';
+    }
+    // ---- uncertainty inset ----
+    h += '<rect x="282" y="14" width="132" height="132" fill="#fff" stroke="#bbb" rx="4"/>';
+    h += '<text x="348" y="160" font-size="9" text-anchor="middle" fill="#888" font-family="sans-serif">uncertainty zoom (about truth)</text>';
+    var hs = 0.02, hn2 = 0.006; // half-spans, autoscale below
+    if (st.mode === 'femu' && ni && ni.cov && st.loadKnown) {
+      hs = Math.max(4 * Math.sqrt(Math.max(ni.cov.EE, 0)), 0.004); hn2 = Math.max(4 * Math.sqrt(Math.max(ni.cov.nn, 0)), 0.0012);
+    } else if (st.mode === 'vfm' && vfmRes && vfmRes.mc) {
+      hs = Math.max(4 * vfmRes.mc.sE, 0.004); hn2 = Math.max(4 * vfmRes.mc.sN, 0.0012);
+    }
+    function IX(E) { return 348 + (E - E0) / hs * 60; }
+    function IY(nu) { return 80 - (nu - nu0) / hn2 * 60; }
+    h += '<line x1="342" y1="80" x2="354" y2="80" stroke="#1a1a1a" stroke-width="1.4"/><line x1="348" y1="74" x2="348" y2="86" stroke="#1a1a1a" stroke-width="1.4"/>';
+    if (st.mode === 'vfm' && vfmRes && vfmRes.mc) {
+      for (i = 0; i < vfmRes.mc.pts.length; i++) {
+        var mp = vfmRes.mc.pts[i], mxp = IX(mp[0]), myp = IY(mp[1]);
+        if (mxp > 284 && mxp < 412 && myp > 16 && myp < 144) h += '<circle cx="' + mxp.toFixed(1) + '" cy="' + myp.toFixed(1) + '" r="1.4" fill="#00838f" fill-opacity="0.55"/>';
+      }
+      h += '<text x="348" y="26" font-size="8.5" text-anchor="middle" fill="#00838f" font-family="sans-serif">VFM Monte-Carlo (60 draws)</text>';
+    }
+    if (st.mode === 'femu' && ni && ni.cov && st.loadKnown && sigmaU(st) > 0) {
+      // 1-sigma ellipse from 2x2 covariance
+      var cEE = ni.cov.EE, cEn = ni.cov.En, cnn = ni.cov.nn;
+      var tr2 = (cEE + cnn) / 2, disc2 = Math.sqrt(Math.max(0, tr2 * tr2 - (cEE * cnn - cEn * cEn)));
+      var l1 = tr2 + disc2, l2 = Math.max(1e-30, tr2 - disc2);
+      var ang = 0.5 * Math.atan2(2 * cEn, cEE - cnn), pe = '';
+      for (i = 0; i <= 40; i++) {
+        var th = i / 40 * 2 * Math.PI;
+        var ex = Math.sqrt(l1) * Math.cos(th), ey = Math.sqrt(l2) * Math.sin(th);
+        var dE2 = ex * Math.cos(ang) - ey * Math.sin(ang), dn2 = ex * Math.sin(ang) + ey * Math.cos(ang);
+        pe += (i ? 'L' : 'M') + IX(E0 + dE2).toFixed(1) + ',' + IY(nu0 + dn2).toFixed(1);
+      }
+      h += '<path d="' + pe + ' z" fill="none" stroke="#e67e22" stroke-width="1.6"/>';
+      h += '<text x="348" y="26" font-size="8.5" text-anchor="middle" fill="#e67e22" font-family="sans-serif">1&#963; ellipse: &#963;&#178;(S&#7488;S)&#8315;&sup1;</text>';
+    }
+    if ((st.mode === 'femu' && !st.loadKnown)) {
+      h += '<text x="348" y="80" font-size="9" text-anchor="middle" fill="#c62828" font-weight="600" font-family="sans-serif">ellipse degenerate:</text><text x="348" y="92" font-size="9" text-anchor="middle" fill="#c62828" font-family="sans-serif">flat direction along E</text>';
+    }
+    el('il7-land').innerHTML = h;
+  }
+
+  function fmtE(x, d) { return (x === null || !isFinite(x)) ? '&mdash;' : x.toFixed(d === undefined ? 3 : d); }
+
+  function validation(st, theta) {
+    if (theta.E === null || theta.nu === null) return null;
+    var su = sigmaU(st), rms = 0, ref = 0, i;
+    var cases = st.twoCases ? [1, 2] : [1];
+    for (var ci = 0; ci < cases.length; ci++) {
+      var vt = (cases[ci] === 1) ? vTrue1 : vTrue2, gv = (cases[ci] === 1) ? gVal1 : gVal2;
+      var pred = modelU(valPts, theta.E, theta.nu, cases[ci]);
+      for (i = 0; i < vt.length; i++) {
+        var mv = vt[i] + su * gv[i], d = mv - pred[i];
+        rms += d * d; ref += mv * mv;
+      }
+    }
+    return 100 * Math.sqrt(rms / ref);
+  }
+
+  function panel(st, theta, ni, vfmRes, Jopt) {
+    var npts = fitPts.length, ncase = st.twoCases ? 2 : 1;
+    var measStr, unkStr, rankStr, condV;
+    if (st.mode === 'femu') {
+      measStr = (npts * 2 * ncase) + ' displacement samples (' + npts + ' pts &times; 2 comps &times; ' + ncase + ' case' + (ncase > 1 ? 's' : '') + '), ' + (valPts.length * 2 * ncase) + ' withheld; load resultant: ' + (st.loadKnown ? 'measured' : '<span style="color:#c62828;font-weight:700;">NOT measured &mdash; fields amplitude-normalized</span>');
+      unkStr = '&theta; = (E, &nu;) &mdash; 2 parameters';
+      condV = ni ? ni.cond : Infinity;
+      rankStr = (ni && ni.rankDef) ? '<span style="color:#c62828;font-weight:700;">effective rank 1 / 2 &mdash; flat direction along E</span>' : 'rank 2 / 2';
+    } else {
+      measStr = IP.w.length + ' strain samples &times; 2 used components &times; ' + ncase + ' case' + (ncase > 1 ? 's' : '') + ', integrated into A; boundary work b: ' + (st.loadKnown ? 'from measured resultants' : '<span style="color:#c62828;font-weight:700;">NOT measured &mdash; b known only up to scale</span>');
+      unkStr = '(Q&#8339;&#8339;, Q&#8339;&#8348;) &rarr; reported as (E, &nu;)';
+      condV = (vfmRes && vfmRes.cond) ? vfmRes.cond : Infinity;
+      rankStr = st.loadKnown ? ('rank 2 / 2 (' + (2 * ncase) + ' equations)') : '<span style="color:#c62828;font-weight:700;">homogeneous system &mdash; only the ratio &nu; = Q&#8339;&#8348;/Q&#8339;&#8339; survives</span>';
+    }
+    var condStr = !isFinite(condV) ? '<span style="color:#c62828;font-weight:700;">&infin;</span>' : (condV > 1e4 ? '<span style="color:#b36118;font-weight:700;">' : '<span style="color:#2e7d32;">') + condV.toExponential(1) + '</span>';
+    var val = validation(st, theta);
+    var valStr = (val === null) ? '<span style="color:#c62828;">undefined &mdash; E not identified</span>' : ((val < 2 ? '<span style="color:#2e7d32;font-weight:700;">' : val < 10 ? '<span style="color:#b36118;font-weight:700;">' : '<span style="color:#c62828;font-weight:700;">') + val.toFixed(2) + '%</span>');
+    var perr = (theta.E === null) ? '&mdash;' : (100 * Math.abs(theta.E - E0) / E0).toFixed(2) + '% in E, ' + (100 * Math.abs(theta.nu - nu0) / nu0).toFixed(2) + '% in &nu;';
+    var assume = '<li>isotropic linear elasticity, plane stress &mdash; model = data generator here (an inverse crime; real campaigns add model-form error, &sect;8)</li>' +
+      '<li>geometry known exactly (a, t, frame at 4a); Kirsch infinite-plate fields used consistently for data and boundary tractions</li>' +
+      '<li>noise: iid Gaussian per sample, &sigma;<sub>&epsilon;</sub> = ' + sigmaE(st).toExponential(1) + ', &sigma;<sub>u</sub> = ' + sigmaU(st).toExponential(1) + '&middot;a (idealization &mdash; real DIC noise is spatially correlated)</li>' +
+      '<li>load: ' + (st.loadKnown ? 'traction resultant measured (noise-free here)' : '<span style="color:#c62828;font-weight:600;">no force channel</span>') + '</li>' +
+      (st.mode === 'femu' && st.sens === 'fd' ? '<li><span style="color:#b36118;font-weight:600;">finite-difference sensitivities with jittered forward solves</span></li>' : '');
+    el('il7-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the identification sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + measStr + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> ' + unkStr + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank:</strong> ' + rankStr + '<br><strong>cond (scaled params):</strong> ' + condStr + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation (withheld data, RMS):</strong> ' + valStr + '<br><span style="font-size:11px;color:#888;">parameter error vs truth: ' + perr + ' &mdash; a luxury of simulation</span></div>' +
+      '<div style="font-size:11px;font-weight:700;color:' + (st.loadKnown ? '#2e7d32' : '#c62828') + ';border-top:1px solid #ddd;padding-top:6px;">fit residual at optimum: ' + (Jopt === null ? '&mdash;' : Jopt.toExponential(1)) + ' &mdash; low in every mode. Low residual &ne; identifiability.</div>';
+  }
+
+  function readout(st, theta, ni, vfmRes) {
+    var ro = el('il7-readout'), htm = '';
+    if (st.mode === 'femu') {
+      htm += '<div class="math-block" style="margin:6px 0;">$$\\boldsymbol{\\theta}^{(k+1)} = \\boldsymbol{\\theta}^{(k)} + (\\mathbf{S}^{\\mathsf{T}}\\mathbf{S})^{-1}\\mathbf{S}^{\\mathsf{T}}\\big[\\mathbf{u}_{\\mathrm{m}} - \\mathbf{u}(\\boldsymbol{\\theta}^{(k)})\\big], \\qquad S_{ij} = \\partial u_i/\\partial\\theta_j \\ \\text{(' + (st.sens === 'exact' ? 'exact' : 'finite-difference, jittered solves') + ')}$$</div>';
+      if (path.length > 1) {
+        htm += '<table style="font-size:12px;"><tr><th>k</th><th>E&#8342;</th><th>&nu;&#8342;</th></tr>';
+        var lo = Math.max(0, path.length - 6);
+        for (var i = lo; i < path.length; i++) htm += '<tr><td>' + i + '</td><td>' + path[i][0].toFixed(4) + '</td><td>' + path[i][1].toFixed(4) + '</td></tr>';
+        htm += '</table>';
+      } else {
+        htm += '<div style="color:#888;">Click the landscape to place a start, then press <em>Iterate</em>.</div>';
+      }
+      if (theta.E !== null && ni && ni.cov && st.loadKnown) {
+        var sE = Math.sqrt(Math.max(0, ni.cov.EE)), sN = Math.sqrt(Math.max(0, ni.cov.nn));
+        var rEn = (sE > 0 && sN > 0) ? ni.cov.En / (sE * sN) : 0;
+        htm += '<div>Identified: $\\hat{E} = ' + fmtE(theta.E, 4) + ' \\pm ' + sE.toFixed(4) + '$ MPa, $\\hat{\\nu} = ' + fmtE(theta.nu, 4) + ' \\pm ' + sN.toFixed(4) + '$, correlation $r_{E\\nu} = ' + rEn.toFixed(2) + '$. <span style="font-size:11.5px;color:#888;">Footnote: this $\\sigma^2(\\mathbf{S}^{\\mathsf{T}}\\mathbf{S})^{-1}$ form assumes a normalized weight matrix and independent samples &mdash; both idealizations relative to real DIC (&sect;8).</span></div>';
+      } else if (!st.loadKnown) {
+        htm += '<div>With amplitude-normalized fields, $J$ is <strong>exactly</strong> independent of $E$: the descent slides into the valley floor and stalls along it. $\\hat{\\nu}$ converges; $\\hat{E}$ is wherever the path happened to stop.</div>';
+      }
+    } else {
+      if (st.loadKnown && vfmRes) {
+        var r0 = vfmRes.rows[0], r1 = vfmRes.rows[1];
+        htm += '<div class="math-block" style="margin:6px 0;">$$\\mathbf{A}\\boldsymbol{\\theta} = \\mathbf{b}: \\quad \\begin{bmatrix} ' + r0[0].toFixed(3) + ' & ' + r0[1].toFixed(3) + ' \\\\ ' + r1[0].toFixed(3) + ' & ' + r1[1].toFixed(3) + (st.twoCases ? ' \\\\ \\vdots & \\vdots ' : '') + ' \\end{bmatrix} \\begin{bmatrix} Q_{xx} \\\\ Q_{xy} \\end{bmatrix} = \\begin{bmatrix} ' + r0[2].toFixed(4) + ' \\\\ ' + r1[2].toFixed(4) + (st.twoCases ? ' \\\\ \\vdots ' : '') + ' \\end{bmatrix}, \\quad \\mathrm{cond}(\\mathbf{A}) = ' + fmtE(vfmRes.cond, 2) + '$$</div>';
+        var mc = vfmRes.mc;
+        htm += '<div>One linear solve, no iterations: $\\hat{E} = ' + fmtE(vfmRes.E, 4) + ' \\pm ' + (mc ? mc.sE.toFixed(4) : '?') + '$ MPa, $\\hat{\\nu} = ' + fmtE(vfmRes.nu, 4) + ' \\pm ' + (mc ? mc.sN.toFixed(4) : '?') + '$ (Monte-Carlo over 60 noise draws). The rows are virtual-work equations for $\\mathbf{u}^{*}_1 = (x, 0)$ and $\\mathbf{u}^{*}_2 = (0, y)$' + (st.twoCases ? ', for both load cases (overdetermined least squares)' : '') + '.</div>';
+      } else if (vfmRes) {
+        htm += '<div class="math-block" style="margin:6px 0;">$$\\mathbf{A}\\boldsymbol{\\theta} = \\mathbf{0} \\ \\text{(homogeneous)} \\;\\Rightarrow\\; \\text{only } \\hat{\\nu} = Q_{xy}/Q_{xx} = ' + fmtE(vfmRes.nu, 4) + ' \\ \\text{survives}; \\ \\hat{E} \\ \\text{undetermined}$$</div>';
+        htm += '<div>Without a measured resultant entering $\\mathbf{b}$, the system is homogeneous &mdash; identical mathematics to choosing a virtual field that vanishes on every loaded boundary.</div>';
+      }
+    }
+    ro.innerHTML = htm;
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+
+  var lastTheta = { E: null, nu: null };
+
+  function update() {
+    var st = getState();
+    el('il7-noise-val').textContent = st.s.toFixed(1);
+    el('il7-fdh-val').innerHTML = parseFloat(el('il7-fdh').value).toFixed(1).replace('-', '&minus;');
+    el('il7-fdh').disabled = (st.sens !== 'fd') || (st.mode !== 'femu');
+    el('il7-iter').disabled = (st.mode !== 'femu');
+    el('il7-iter').style.opacity = (st.mode === 'femu') ? 1 : 0.45;
+    var meas = measured(st);
+    var vfmRes = null, ni = null, theta, Jopt = null;
+    if (st.mode === 'vfm') {
+      vfmRes = vfmSolve(st, hn.xx1, hn.yy1, hn.xx2, hn.yy2);
+      if (st.loadKnown && vfmRes) {
+        var sw = Math.sqrt(W2), pts = [], sE = 0, sN = 0, mE = 0, mN = 0, k;
+        for (k = 0; k < 60; k++) {
+          var rr = vfmSolve(st, randn() * sw, randn() * sw, randn() * sw, randn() * sw);
+          if (rr && rr.E !== null) pts.push([rr.E, rr.nu]);
+        }
+        for (k = 0; k < pts.length; k++) { mE += pts[k][0]; mN += pts[k][1]; }
+        mE /= pts.length; mN /= pts.length;
+        for (k = 0; k < pts.length; k++) { sE += (pts[k][0] - mE) * (pts[k][0] - mE); sN += (pts[k][1] - mN) * (pts[k][1] - mN); }
+        vfmRes.mc = { pts: pts, sE: Math.sqrt(sE / Math.max(1, pts.length - 1)), sN: Math.sqrt(sN / Math.max(1, pts.length - 1)) };
+      }
+      theta = { E: vfmRes ? vfmRes.E : null, nu: vfmRes ? vfmRes.nu : null };
+      Jopt = (theta.E !== null) ? vfmJ(theta.E, theta.nu, st, hn) : ((theta.nu !== null) ? vfmJ(1.0, theta.nu, st, hn) : null);
+    } else {
+      theta = { E: lastTheta.E, nu: lastTheta.nu };
+      if (theta.E !== null) {
+        ni = normalInfo(theta.E, theta.nu, st, meas);
+        Jopt = femuJ(theta.E, theta.nu, st, meas);
+      } else {
+        ni = normalInfo(E0, nu0, st, meas);
+      }
+    }
+    // banner
+    var ban = el('il7-banner');
+    if (!st.loadKnown) {
+      ban.style.display = 'block';
+      ban.innerHTML = (st.mode === 'vfm')
+        ? 'A virtual field that vanishes on all loaded boundaries destroys the stiffness scale &mdash; b = 0, only parameter ratios survive. <strong>Add a force measurement to fix the scale.</strong>'
+        : 'The cost is exactly flat along the E direction &mdash; scale indeterminacy, not ill-conditioning. <strong>Add a force measurement to fix the scale.</strong>';
+    } else ban.style.display = 'none';
+    drawHeat(st);
+    drawLand(st, meas, hn, vfmRes, ni);
+    panel(st, theta, ni, vfmRes, Jopt);
+    readout(st, theta, ni, vfmRes);
+  }
+
+  function runIterations() {
+    var st = getState();
+    if (st.mode !== 'femu') return;
+    if (animTimer) { clearInterval(animTimer); animTimer = null; }
+    var meas = measured(st);
+    path = [[start.E, start.nu]];
+    var cur = { E: start.E, nu: start.nu }, k = 0;
+    el('il7-iter').disabled = true;
+    animTimer = setInterval(function() {
+      var stp = gnStep(cur.E, cur.nu, st, meas);
+      cur.E = Math.min(3.4, Math.max(0.16, cur.E + stp.dE));
+      cur.nu = Math.min(0.4995, Math.max(0.02, cur.nu + stp.dnu));
+      path.push([cur.E, cur.nu]);
+      k++;
+      lastTheta = { E: cur.E, nu: cur.nu };
+      var done = (k >= 22) || (Math.abs(stp.dE) < 2e-4 && Math.abs(stp.dnu) < 5e-5 && st.sens === 'exact');
+      if (done) { clearInterval(animTimer); animTimer = null; el('il7-iter').disabled = false; }
+      update();
+    }, 240);
+  }
+
+  // events
+  el('il7-land').addEventListener('click', function(ev) {
+    var st = getState();
+    if (st.mode !== 'femu') return;
+    var r = el('il7-land').getBoundingClientRect();
+    var vx = (ev.clientX - r.left) * 420 / r.width, vy = (ev.clientY - r.top) * 258 / r.height;
+    if (vx < PX0 || vx > PX1 || vy < PY1 || vy > PY0) return;
+    start.E = Emin + (vx - PX0) / (PX1 - PX0) * (Emax - Emin);
+    start.nu = nmin + (PY0 - vy) / (PY0 - PY1) * (nmax - nmin);
+    path = []; lastTheta = { E: null, nu: null };
+    update();
+  });
+  ['il7-load', 'il7-case2', 'il7-noise', 'il7-fdh'].forEach(function(id) {
+    el(id).addEventListener('input', function() { path = []; lastTheta = { E: null, nu: null }; update(); });
+  });
+  document.querySelectorAll('input[name="il7-mode"], input[name="il7-sens"]').forEach(function(r) {
+    r.addEventListener('change', function() { path = []; lastTheta = { E: null, nu: null }; update(); });
+  });
+  el('il7-iter').addEventListener('click', runIterations);
+  el('il7-reset').addEventListener('click', function() { start = { E: 2.4, nu: 0.12 }; path = []; lastTheta = { E: null, nu: null }; update(); });
+  el('il7-reroll').addEventListener('click', function() { rerollFEMU(); rerollVFM(); rerollHM(); path = []; lastTheta = { E: null, nu: null }; update(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+  initWalkthrough('skin-walkthrough', [
+    {
+      tab: '1. Design',
+      title: 'Step 1: Design the Test on the Computer First',
+      text: 'Pick a heterogeneous test spanning the service strain states: open-hole tension or planar-tension-with-notch for in-plane characterization; membrane inflation or instrumented indentation with stereo-DIC when out-of-plane response matters. Then run the synthetic pipeline before any silicone is cut: FE-simulate the candidate test with plausible parameters, deform synthetic speckle images, push them through the actual DIC software, and run the identification on the result.',
+      visual: '<div class="definition-box"><div class="box-label">The Material Testing 2.0 design loop</div><div>FE model &rarr; synthetic deformed speckle images &rarr; <strong>real DIC engine</strong> &rarr; identification &rarr; predicted std / $\\det(\\mathbf{S}^{\\mathsf{T}}\\mathbf{W}\\mathbf{S})$ &rarr; redesign</div></div>',
+      insight: 'Identifiability problems found at this stage are free to fix. Found after the test, they cost a new campaign.'
+    },
+    {
+      tab: '2. Speckle',
+      title: 'Step 2: Speckle, and Measure the Noise Floor',
+      text: 'Airbrushed or spray pattern, feature size 3\u20135 px at the chosen magnification, roughly half coverage. On soft thin samples use flexible ink sparingly. Then acquire static image pairs \u2014 zero true motion \u2014 and measure the actual displacement and strain noise floor of your setup, subset, and VSG choices.',
+      visual: '<div class="definition-box"><div class="box-label">Rules of thumb</div><div>Features 3&ndash;5 px &middot; ~50% coverage &middot; static pairs for the real $\\sigma_u$, $\\sigma_{\\varepsilon}$ &middot; typical strain floors $10^{-4}$&ndash;$10^{-3}$, but <em>measured</em>, never assumed</div></div>',
+      insight: 'A continuous paint film can locally stiffen the very surface being measured \u2014 on a soft skin, the pattern is part of the mechanics.'
+    },
+    {
+      tab: '3. Test',
+      title: 'Step 3: Run the Test, Synchronized',
+      text: 'Load cell and camera(s) synchronized; quasi-static rate matched to service conditions; record the true unloaded reference frame; for stereo, calibrate immediately before testing. For an elastomer, out-of-plane motion is guaranteed \u2014 stereo-DIC is the default, not the upgrade.',
+      visual: '<div class="definition-box"><div class="box-label">Why the rate matters</div><div>Silicones are mildly viscoelastic: a quasi-static hyperelastic fit is rate-dependent. Test at service-representative rates, or model the rate dependence explicitly.</div></div>',
+      insight: 'The scale indeterminacy makes the load cell as important as the camera: without the force channel, every modulus is known only up to a factor.'
+    },
+    {
+      tab: '4. Correlate',
+      title: 'Step 4: DIC with Deliberate Settings',
+      text: 'Choose subset, step, and virtual strain gauge from the noise-floor study of Step 2 \u2014 not from software defaults. Export displacements, strains, and coordinates in the specimen frame, and record every setting: they are part of the identification\u2019s provenance.',
+      visual: '<div class="definition-box"><div class="box-label">The trade you are setting</div><div>$$\\sigma_{\\varepsilon} \\sim \\frac{\\sigma_u}{L_{\\mathrm{VSG}}} \\quad \\text{vs} \\quad \\text{bias at strain gradients as } L_{\\mathrm{VSG}} \\text{ grows}$$</div></div>',
+      insight: 'The VSG explorer in \u00a72 is this step in miniature: past the sweet spot, "smoother" means "wrong where it matters".'
+    },
+    {
+      tab: '5. Identify',
+      title: 'Step 5: Identify \u2014 Simple First, Then Cross-Check',
+      text: 'Start with the simplest credible model (neo-Hookean: one parameter) and add parameters only when the data support them \u2014 watch the correlation matrix $r_{ij}$ before trusting a new term. Run VFM first: seconds of compute, robust to unknown grip tractions, deviatoric or plane-stress treatment for incompressibility. Cross-check with FEMU and inspect its residual field for systematic structure.',
+      visual: '<div class="definition-box"><div class="box-label">Report, always</div><div>$\\hat{\\boldsymbol{\\theta}}$ <strong>with</strong> covariance and correlations <strong>with</strong> residual-field maps. A parameter without an error bar and a residual map is a rumor.</div></div>',
+      insight: 'VFM then FEMU is the standard chain: fast BC-robust initialization, then refinement plus model-error diagnosis.'
+    },
+    {
+      tab: '6. Validate',
+      title: 'Step 6: Validate by Prediction, Then Report',
+      text: 'Predict an experiment not used in fitting \u2014 identify from tension, predict indentation force\u2013depth. Agreement there, not the fitting residual, is the evidence that the model transfers to the sensor simulation. Then report images, calibration, DIC settings, noise floor, and the virtual fields or FEMU configuration, so the identification is reproducible.',
+      visual: '<div class="definition-box"><div class="box-label">The validation standard</div><div>fit residual: consistency with the fitted data only &nbsp;&middot;&nbsp; independent prediction: evidence of transfer &nbsp;&middot;&nbsp; stability screen: no non-physical $W$ (\u00a77)</div></div>',
+      insight: 'Identified models can extrapolate wildly outside the sampled strain range \u2014 documented verbatim for exponential stiffening terms (\u00a710). Validation bounds the damage.'
+    }
+  ]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+  initFlashcards('mod7-flashcards', [
+    {
+      q: "In one sentence each: what do FEMU and VFM do with the measured field?",
+      a: "FEMU iteratively updates parameters of a forward FE model until its predicted displacements/forces match the measurement (repeated FE solves). VFM inserts the measured strain field into the principle of virtual work with chosen virtual fields, yielding equations for the parameters directly \u2014 no FE solves, a linear system when the law is parameter-linear."
+    },
+    {
+      q: "State the principle of virtual work as used by VFM, and the requirement on $\\mathbf{u}^{*}$.",
+      a: "$\\int_V \\boldsymbol{\\sigma}:\\boldsymbol{\\varepsilon}^{*}\\,\\mathrm{d}V = \\int_{\\partial V}\\mathbf{T}\\cdot\\mathbf{u}^{*}\\,\\mathrm{d}S + \\int_V \\mathbf{b}\\cdot\\mathbf{u}^{*}\\,\\mathrm{d}V$ for every kinematically admissible virtual field ($\\mathbf{b}$ = body force per unit volume). $\\mathbf{u}^{*}$ is a test function: continuous, zero where tractions are unknown \u2014 it need not be a physically occurring displacement field."
+    },
+    {
+      q: "Why must the virtual field vanish on the gripped boundary (or be constant along the loaded edge)?",
+      a: "The grip traction distribution is unknown. Setting $\\mathbf{u}^{*}=0$ there makes the unknown reactions do zero virtual work; choosing $\\mathbf{u}^{*}$ constant along the loaded edge makes the unknown distribution enter only through its measured resultant $F$. Caution: it must not vanish on ALL loaded boundaries at once, or the external virtual work is zero and only parameter ratios remain identifiable."
+    },
+    {
+      q: "Write the Gauss-Newton update used in FEMU.",
+      a: "$\\boldsymbol{\\theta}^{(k+1)} = \\boldsymbol{\\theta}^{(k)} + (\\mathbf{S}^{\\mathsf{T}}\\mathbf{W}\\mathbf{S})^{-1}\\mathbf{S}^{\\mathsf{T}}\\mathbf{W}\\,[\\mathbf{u}_{\\mathrm{m}}-\\mathbf{u}(\\boldsymbol{\\theta}^{(k)})]$ with sensitivity matrix $S_{ij}=\\partial u_i/\\partial\\theta_j$; Levenberg-Marquardt damping is added when $\\mathbf{S}^{\\mathsf{T}}\\mathbf{W}\\mathbf{S}$ is ill-conditioned."
+    },
+    {
+      q: "What is a sensitivity-based virtual field (Marek, Davis & Pierron 2017)?",
+      a: "A virtual field constructed from the sensitivity of the stress field to one parameter, with virtual strain $\\boldsymbol{\\varepsilon}^{*(i)} \\propto \\partial\\boldsymbol{\\sigma}/\\partial\\theta_i$ evaluated along the measured strain path (then rendered kinematically admissible), so each virtual-work residual is maximally responsive to its own parameter \u2014 automating field choice for nonlinear VFM."
+    },
+    {
+      q: "Why does every identification method need at least one force measurement?",
+      a: "Kinematics alone determine parameters only up to a global stress scale: multiplying all moduli by $c$ scales all stresses by $c$ with the identical strain field. One measured resultant fixes the absolute stiffness; without it the cost function is exactly flat along the scale direction."
+    },
+    {
+      q: "Compute: shear coupon clamped at $x=0$, transverse force $F=100$ N at $x=L=50$ mm, thickness $t=2$ mm, measured $\\int_S \\gamma_{xy}\\,\\mathrm{d}S = 25\\ \\mathrm{mm}^2$. Virtual field $\\mathbf{u}^{*}=(0,x)$. Find $Q_{ss}$.",
+      a: "The field gives $\\gamma^{*}_{xy}=1$ with zero normal virtual strains, so PVW reduces to $t\\,Q_{ss}\\int_S \\gamma_{xy}\\,\\mathrm{d}S = FL$. Hence $Q_{ss} = \\dfrac{FL}{t\\int_S \\gamma_{xy}\\,\\mathrm{d}S} = \\dfrac{100 \\times 50}{2 \\times 25} = 100\\ \\mathrm{N/mm^2} = 100$ MPa. One virtual field, one closed-form parameter \u2014 no FE model."
+    },
+    {
+      q: "Give the standard parameter-covariance estimate and its two major caveats.",
+      a: "$\\mathrm{cov}(\\hat{\\boldsymbol{\\theta}}) \\approx \\sigma_u^2(\\mathbf{S}^{\\mathsf{T}}\\mathbf{W}\\mathbf{S})^{-1}$ for a normalized weight matrix $\\mathbf{W}$ (if $\\mathbf{W}$ is the exact inverse noise covariance, drop the $\\sigma_u^2$ prefactor). Caveat 1: DIC noise is spatially correlated (subset overlap, smoothing), so treating points as independent understates uncertainty. Caveat 2: it captures noise scatter only \u2014 model error (wrong law, BC idealization) biases $\\hat{\\boldsymbol{\\theta}}$ invisibly; check residual fields for systematic structure."
+    },
+    {
+      q: "Why can a uniaxial test not separate $C_{10}$ and $C_{01}$ of Mooney-Rivlin?",
+      a: "Along uniaxial-dominated deformation paths $I_1$ and $I_2$ vary almost proportionally, so the two terms' stress contributions are nearly collinear \u2014 the sensitivity matrix is ill-conditioned. Separation needs strain states spanning the $(I_1, I_2)$ plane: shear and biaxial states present alongside uniaxial in one heterogeneous field."
+    },
+    {
+      q: "What does EUCLID change relative to classical VFM?",
+      a: "Instead of a fixed model with $p$ parameters and $p$ virtual fields, EUCLID expands $W$ over a large interpretable feature library, enforces weak-form equilibrium with many test functions (structurally a VFM residual), and uses sparsity-promoting regression to select few terms \u2014 discovering the model form and its parameters from displacement + global reaction-force data, still with no stress measurements."
+    },
+    {
+      q: "Typical DIC displacement resolution, and what it implies for strain data.",
+      a: "About 0.01 px subpixel (down to ~0.005 px in good conditions). Strain requires differentiation, which amplifies noise, so strain is computed over a virtual strain gauge window: larger VSG lowers noise (typical floors around $10^{-4}$-$10^{-3}$) but biases gradients near holes and notches \u2014 a bias-variance trade set by the user, and it must be measured from static image pairs."
+    },
+    {
+      q: "How is incompressibility handled in VFM, where pressure is not determined by kinematics?",
+      a: "In plane stress, eliminate the pressure via $\\sigma_{zz}=0$. In 3D, choose divergence-free virtual fields so $\\int_V p\\,\\nabla\\cdot\\mathbf{u}^{*}\\,\\mathrm{d}V = 0$ and the identification probes only deviatoric parameters."
+    },
+    {
+      q: "In the plane-stress VFM work equation, which shear strain measure pairs with $Q_{ss}$, and why does it matter?",
+      a: "ENGINEERING shear strain on both sides: the term is $Q_{ss}\\int_S \\gamma_{xy}\\gamma^{*}_{xy}\\,\\mathrm{d}S$ with $\\gamma_{xy}=2\\varepsilon_{xy}$ and $Q_{ss}=G$. Expanding $\\boldsymbol{\\sigma}:\\boldsymbol{\\varepsilon}^{*}$ produces $2\\sigma_{xy}\\varepsilon^{*}_{xy}=\\sigma_{xy}\\gamma^{*}_{xy}$; dropping that factor of 2 is the classic error and biases the identified shear modulus by a factor of two."
+    },
+    {
+      q: "What is Material Testing 2.0, in one sentence?",
+      a: "Deliberately design a HETEROGENEOUS test so a single experiment activates many stress states, measure the full displacement field with a camera ($10^4$-$10^6$ points per frame via DIC), and extract all constitutive parameters at once with an inverse method (Pierron & Gr\u00e9diac 2021) \u2014 the inversion of the classical philosophy of engineering the stress state to be homogeneous."
+    },
+    {
+      q: "FEMU-U vs FEMU-F \u2014 and why does displacement-BC FEMU need a force channel?",
+      a: "FEMU-U minimizes the displacement residual (FE fields interpolated to DIC points); FEMU-F minimizes the reaction-force residual; the standard cost weights and combines both. Driving the model with measured-displacement BCs removes grip modeling but also removes stiffness-scale information \u2014 the displacement field is unchanged under a global modulus scaling \u2014 so a force residual must restore the scale."
+    },
+    {
+      q: "Reduced vs all-at-once identification approaches (R\u00f6mer et al. 2025)?",
+      a: "REDUCED approaches keep only $\\boldsymbol{\\theta}$ as unknown, eliminating the state through a forward solve or through the measured kinematics \u2014 FEMU and VFM live here. ALL-AT-ONCE approaches estimate the state fields and parameters jointly \u2014 integrated-DIC and PINN-style methods live here. The taxonomy places all identification methods in one statistical framework with uncertainty quantification."
+    },
+    {
+      q: "Why is a small fitting residual not evidence that the identified material model is right?",
+      a: "A small residual proves consistency with the fitted data only. It coexists with unidentifiable parameters (flat cost valleys: the residual is low everywhere along the valley) and with model error absorbed into biased parameters. Evidence of transfer is the prediction of an experiment EXCLUDED from fitting \u2014 plus a stability check on the identified strain-energy function."
+    }
+  ]);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,1670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>8. Load &amp; Contact Force Reconstruction — iFEM</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">8. Load &amp; Contact Force Reconstruction</h1>
+    <p class="page-subtitle">Transfer matrices, ill-conditioning &amp; SVD, Tikhonov-regularized inversion, L-curve &amp; GCV, time-domain deconvolution, GelSlim iFEM case study, soft robot skins as distributed force sensors</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#elastic-body-as-force-sensor">1. Every Elastic Body Is a Force Sensor</a>
+      <a href="#transfer-matrix-formulation">2. The Transfer Matrix: Condensing an FE Model into a Sensor Model</a>
+      <a href="#svd-ill-conditioning">3. Why Naive Inversion Explodes: SVD Applied to $\mathbf{H}$</a>
+      <a href="#tikhonov-regularization">4. Tikhonov-Regularized Inversion</a>
+      <a href="#choosing-lambda">5. Choosing $\lambda$: L-Curve, GCV, Discrepancy</a>
+      <a href="#time-domain-force-identification">6. Time-Domain Force Identification</a>
+      <a href="#structures-to-skin">7. From Structures to Skin: the Tactile Inverse Problem</a>
+      <a href="#case-study-gelslim-ifem">8. Case Study: GelSlim 2.0 and Inverse FEM</a>
+      <a href="#skin-design-as-conditioning">9. Soft Robot Skins as Distributed Force Sensors: Design as Conditioning</a>
+      <a href="#practical-recipe-and-pitfalls">10. Practical Recipe and Pitfalls</a>
+      <a class="toc-interactive" href="#contact-lab">Interactive: Contact Inversion Lab</a>
+      <a class="toc-interactive" href="#lcurve-explorer">Interactive: L-Curve &amp; GCV Explorer</a>
+      <a class="toc-interactive" href="#gelslim-walkthrough">Interactive: GelSlim Pipeline Walkthrough</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <!-- ===== SECTION 1: EVERY ELASTIC BODY IS A FORCE SENSOR ===== -->
+    <h2 class="section-heading" id="elastic-body-as-force-sensor">1. Every Elastic Body Is a Force Sensor</h2>
+
+    <p>An elastic body in equilibrium encodes its applied loads in its deformation. Push on a wing, a bridge deck, or a silicone fingertip pad, and the displacement field that results is a complete — if scrambled — record of the pushing. This module is about unscrambling it: measure the deformation, know the elasticity, recover the load. It is the third of the four inverse families in this guide's taxonomy, and it behaves very differently from the shape sensing of Modules 4&ndash;6.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Core Problem</div>
+      <div>Given $m$ noisy displacement or strain measurements on an elastic body whose FE model is known, reconstruct the applied load — ideally the full traction <em>distribution</em> $\mathbf{t}(\mathbf{x})$ on the candidate contact surface, not merely its resultant. In the guide's observation model $y = \mathcal{H}(u, p, f, X_0) + b + \eta$: geometry $X_0$ and material $p$ are assumed known, the response $u$ is (partially) measured, and the unknown is the load $f$.</div>
+    </div>
+
+    <table>
+      <tr><th></th><th>In this module</th></tr>
+      <tr><td><strong>Measured</strong></td><td>Displacements at $m$ points (marker tracking, DIC) or strains (gauges), noisy</td></tr>
+      <tr><td><strong>Unknown</strong></td><td>$n$ load parameters $\mathbf{g}$: nodal contact forces, pressure-patch amplitudes, or a force time history $g(t)$</td></tr>
+      <tr><td><strong>Assumed known</strong></td><td>Geometry, mesh, $E$, $\nu$, boundary conditions, (for dynamics) $\mathbf{M}, \mathbf{C}$ — the entire forward model</td></tr>
+      <tr><td><strong>Unobservable</strong></td><td>Load components in the nullspace of the observation map, and spatially oscillatory traction patterns whose displacement signature is below the noise floor (Section 3)</td></tr>
+    </table>
+
+    <p>The <strong>forward</strong> problem — given the boundary tractions, solve the elastostatic boundary-value problem for the displacements — is well-posed: the solution exists, is unique, and depends continuously on the data. The <strong>inverse</strong> load problem fails Hadamard's stability requirement (Module 3): it is the discretization of a first-kind Fredholm integral equation with a smooth kernel, the textbook signature of severe ill-posedness. Small noise in the measured displacements maps to enormous errors in the reconstructed load.</p>
+
+    <div class="figure-container">
+      <svg id="fig-pipeline" viewBox="0 0 760 330" style="width:100%;max-width:760px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="arr-red" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#c62828"/></marker>
+          <marker id="arr-dark" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#555"/></marker>
+        </defs>
+        <!-- FORWARD ROW -->
+        <text x="20" y="24" font-size="12" font-weight="700" fill="#2e7d32" font-family="sans-serif">FORWARD — well-posed</text>
+        <!-- pad with tractions -->
+        <rect x="30" y="70" width="130" height="46" fill="#eceff1" stroke="#00838f" stroke-width="1.5"/>
+        <rect x="30" y="116" width="130" height="10" fill="#90a4ae"/>
+        <line x1="30" y1="126" x2="160" y2="126" stroke="#546e7a" stroke-width="2"/>
+        <line x1="70" y1="44" x2="70" y2="66" stroke="#c62828" stroke-width="2" marker-end="url(#arr-red)"/>
+        <line x1="88" y1="36" x2="88" y2="66" stroke="#c62828" stroke-width="2" marker-end="url(#arr-red)"/>
+        <line x1="106" y1="32" x2="106" y2="66" stroke="#c62828" stroke-width="2" marker-end="url(#arr-red)"/>
+        <line x1="124" y1="38" x2="124" y2="66" stroke="#c62828" stroke-width="2" marker-end="url(#arr-red)"/>
+        <text x="95" y="146" font-size="11" fill="#666" font-family="sans-serif" text-anchor="middle">traction t(x) on gel pad</text>
+        <!-- arrow to K^-1 box -->
+        <line x1="170" y1="93" x2="240" y2="93" stroke="#555" stroke-width="1.5" marker-end="url(#arr-dark)"/>
+        <rect x="248" y="72" width="140" height="42" rx="5" fill="#e0f2f1" stroke="#00838f" stroke-width="1.5"/>
+        <text x="318" y="90" font-size="12" fill="#00695c" font-family="sans-serif" text-anchor="middle">K&#8315;&#185;</text>
+        <text x="318" y="105" font-size="11" fill="#00695c" font-family="sans-serif" text-anchor="middle">(smoothing)</text>
+        <line x1="396" y1="93" x2="452" y2="93" stroke="#555" stroke-width="1.5" marker-end="url(#arr-dark)"/>
+        <!-- smooth wide displacement curve -->
+        <path d="M 462 118 C 500 116, 520 76, 590 74 C 660 76, 680 116, 740 118" fill="none" stroke="#00838f" stroke-width="2.5"/>
+        <line x1="462" y1="120" x2="740" y2="120" stroke="#bbb" stroke-width="1"/>
+        <text x="600" y="140" font-size="11" fill="#666" font-family="sans-serif" text-anchor="middle">u — smooth, spread wide</text>
+        <!-- INVERSE ROW -->
+        <text x="20" y="182" font-size="12" font-weight="700" fill="#c62828" font-family="sans-serif">INVERSE — ill-posed</text>
+        <!-- noisy displacement data -->
+        <path d="M 30 250 C 60 248, 75 214, 110 212 C 145 214, 160 248, 190 250" fill="none" stroke="#00838f" stroke-width="2"/>
+        <circle cx="42" cy="252" r="2.2" fill="#555"/><circle cx="58" cy="245" r="2.2" fill="#555"/>
+        <circle cx="74" cy="228" r="2.2" fill="#555"/><circle cx="90" cy="221" r="2.2" fill="#555"/>
+        <circle cx="106" cy="209" r="2.2" fill="#555"/><circle cx="122" cy="217" r="2.2" fill="#555"/>
+        <circle cx="138" cy="226" r="2.2" fill="#555"/><circle cx="154" cy="243" r="2.2" fill="#555"/>
+        <circle cx="170" cy="246" r="2.2" fill="#555"/><circle cx="186" cy="253" r="2.2" fill="#555"/>
+        <text x="108" y="272" font-size="11" fill="#666" font-family="sans-serif" text-anchor="middle">measured u + noise</text>
+        <!-- two branches -->
+        <line x1="196" y1="222" x2="248" y2="207" stroke="#555" stroke-width="1.5" marker-end="url(#arr-dark)"/>
+        <line x1="196" y1="246" x2="248" y2="272" stroke="#555" stroke-width="1.5" marker-end="url(#arr-dark)"/>
+        <rect x="254" y="188" width="150" height="36" rx="5" fill="#fbe9e7" stroke="#c62828" stroke-width="1.5"/>
+        <text x="329" y="210" font-size="12" fill="#c62828" font-family="sans-serif" text-anchor="middle">H&#8314; (roughening)</text>
+        <rect x="254" y="258" width="150" height="36" rx="5" fill="#e0f2f1" stroke="#00838f" stroke-width="1.5"/>
+        <text x="329" y="280" font-size="11.5" fill="#00695c" font-family="sans-serif" text-anchor="middle">(H&#7488;H + &#955;&#178;L&#7488;L)&#8315;&#185;H&#7488;</text>
+        <line x1="410" y1="206" x2="452" y2="206" stroke="#555" stroke-width="1.5" marker-end="url(#arr-dark)"/>
+        <line x1="410" y1="276" x2="452" y2="276" stroke="#555" stroke-width="1.5" marker-end="url(#arr-dark)"/>
+        <!-- wild oscillation -->
+        <polyline points="462,208 470,178 478,232 486,182 494,228 502,176 510,236 518,184 526,224 534,178 542,232 550,186 558,222 566,180 574,230 582,190 590,218 598,186 606,224 614,196" fill="none" stroke="#c62828" stroke-width="1.8"/>
+        <text x="668" y="208" font-size="11" fill="#c62828" font-family="sans-serif">noise &#215; 1/&#963;&#7522;</text>
+        <!-- regularized -->
+        <path d="M 462 292 L 520 292 C 545 292, 550 262, 575 262 C 600 262, 605 292, 630 292 L 700 292" fill="none" stroke="#00838f" stroke-width="2.5"/>
+        <text x="712" y="288" font-size="11" fill="#00695c" font-family="sans-serif">regularized</text>
+      </svg>
+      <div class="figure-caption">Forward vs. inverse. Elasticity destroys high-frequency load information on the way from traction to displacement ($\mathbf{K}^{-1}$ smooths); naive inversion $\mathbf{H}^{+}$ tries to re-create that information from noise and produces oscillatory garbage; Tikhonov-regularized inversion declines to invent it and returns the recoverable part.</div>
+    </div>
+
+    <h3 class="subsection-heading">A Decade Older Than Tactile Robotics</h3>
+
+    <p>Load identification from measured response is a mature discipline spanning scales. Aircraft flight loads are monitored from wing strain gauges. Maincon et al. (OMAE 2008) estimated vortex-induced-vibration forces on marine risers via inverse FEM — the term "inverse FEM" for <em>force estimation</em> predates its tactile-robotics use by a decade. Vehicle and bridge dynamic load identification has its own literature, systematized in the reviews of Sanchez &amp; Benaroya (2014) and Liu et al. (2022). This module's destination sits at the opposite end of the size scale: a robot fingertip whose millimeters-thick gel pad deforms under contact while a camera watches from behind.</p>
+
+    <h3 class="subsection-heading">Why Inversion Is Hard: Elasticity Smooths</h3>
+
+    <p>The physical root of the difficulty is that elasticity is a <strong>smoothing operator</strong>. The classical Boussinesq solution makes this concrete: a normal point load $P$ on an elastic half-space produces the surface deflection</p>
+
+    <div class="math-block">$$u_z(r) = \frac{(1-\nu^2)\,P}{\pi E\, r}$$</div>
+
+    <p>Read it two ways. First, the displacement footprint of a <em>point</em> load is <em>wide</em>: $1/r$ decay, no compact support — a delta function in force becomes a long-tailed bump in displacement. Second, and consequently, two nearby point loads produce almost identical displacement fields everywhere except very close to the loads. Distinguishing them from noisy data requires amplifying tiny differences — and amplifying tiny differences amplifies noise with them.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — force is a global functional</div>
+      <div>Ma et al. (ICRA 2019, Fig. 1) observed on a GelSlim sensor that markers move substantially <em>outside</em> the contact patch. That motion is caused by internal elastic stresses transmitted through the gel, not by any external load at those markers. The tempting per-point assumption $f_i \propto u_i$ — a diagonal stiffness — therefore produces physically wrong force maps: it paints force wherever there is motion. The force at a point depends on the <em>entire</em> displacement field. Every correct method in this module is, at bottom, machinery for honoring that coupling.</div>
+    </div>
+
+    <div class="figure-container">
+      <svg id="fig-dispforce" viewBox="0 0 760 300" style="width:100%;max-width:760px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;"></svg>
+      <div class="figure-caption">Top view of a tactile pad, redrawing the key figure logic of Ma et al. (2019). Left: the measured marker displacement field radiates far beyond the true contact patch (dashed) — driven by internal elastic stresses. Right: the reconstructed force field is confined to the patch, and near the patch boundary the force can point <em>opposite</em> to the local displacement. $f_i \propto u_i$ is a fallacy.</div>
+    </div>
+    <script>
+    (function() {
+      var svg = document.getElementById('fig-dispforce');
+      var s = '';
+      s += '<defs><marker id="fd-a1" markerWidth="6" markerHeight="6" refX="4" refY="2" orient="auto"><path d="M0,0 L5,2 L0,4 Z" fill="#607d8b"/></marker>';
+      s += '<marker id="fd-a2" markerWidth="6" markerHeight="6" refX="4" refY="2" orient="auto"><path d="M0,0 L5,2 L0,4 Z" fill="#00838f"/></marker>';
+      s += '<marker id="fd-a3" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#c62828"/></marker></defs>';
+      function panel(cx, cy, mode) {
+        var out = '';
+        // grid of sample points
+        for (var gx = -5; gx <= 5; gx++) {
+          for (var gy = -3; gy <= 3; gy++) {
+            var px = gx * 26, py = gy * 26;
+            var rho = Math.sqrt(px * px + py * py);
+            if (rho < 1) continue;
+            var ux = px / rho, uy = py / rho;
+            if (mode === 'disp') {
+              var mag = 20 * (rho < 55 ? rho / 55 : 55 / rho);
+              if (mag < 2.5) continue;
+              out += '<line x1="' + (cx + px) + '" y1="' + (cy + py) + '" x2="' + (cx + px + ux * mag) + '" y2="' + (cy + py + uy * mag) + '" stroke="#607d8b" stroke-width="1.4" marker-end="url(#fd-a1)"/>';
+            } else {
+              if (rho > 52) continue;
+              var mag2 = 16 * Math.sqrt(Math.max(0, 1 - Math.pow((55 - rho) / 55, 2)));
+              if (mag2 < 2.5) continue;
+              out += '<line x1="' + (cx + px) + '" y1="' + (cy + py) + '" x2="' + (cx + px - ux * mag2) + '" y2="' + (cy + py - uy * mag2) + '" stroke="#00838f" stroke-width="1.5" marker-end="url(#fd-a2)"/>';
+            }
+          }
+        }
+        out += '<circle cx="' + cx + '" cy="' + cy + '" r="55" fill="none" stroke="#2e7d32" stroke-width="1.8" stroke-dasharray="6,4"/>';
+        return out;
+      }
+      s += panel(190, 140, 'disp');
+      s += panel(570, 140, 'force');
+      // highlighted opposing pair on right panel: displacement (measured) vs force at same spot
+      s += '<line x1="618" y1="140" x2="648" y2="140" stroke="#c62828" stroke-width="2.4" marker-end="url(#fd-a3)"/>';
+      s += '<line x1="616" y1="152" x2="596" y2="152" stroke="#00838f" stroke-width="2.4" marker-end="url(#fd-a2)"/>';
+      s += '<text x="662" y="132" font-size="10.5" fill="#c62828" font-family="sans-serif">local u</text>';
+      s += '<text x="640" y="168" font-size="10.5" fill="#00695c" font-family="sans-serif">reconstructed f — opposite!</text>';
+      s += '<text x="190" y="248" font-size="11.5" fill="#455a64" font-family="sans-serif" text-anchor="middle">displacements spread outside contact</text>';
+      s += '<text x="190" y="263" font-size="11.5" fill="#455a64" font-family="sans-serif" text-anchor="middle">(internal elastic stresses)</text>';
+      s += '<text x="570" y="248" font-size="11.5" fill="#00695c" font-family="sans-serif" text-anchor="middle">iFEM forces confined to contact patch</text>';
+      s += '<text x="190" y="30" font-size="12" font-weight="700" fill="#333" font-family="sans-serif" text-anchor="middle">measured displacement field</text>';
+      s += '<text x="570" y="30" font-size="12" font-weight="700" fill="#333" font-family="sans-serif" text-anchor="middle">reconstructed force field</text>';
+      s += '<text x="120" y="85" font-size="10.5" fill="#2e7d32" font-family="sans-serif">contact patch</text>';
+      svg.innerHTML = s;
+    })();
+    </script>
+
+    <div class="insight-box">
+      <div class="box-label">Warning — two different "inverse FEMs"</div>
+      <div>This guide contains two unrelated methods that both go by "iFEM". (1) <strong>Shape-sensing iFEM</strong> (Tessler&ndash;Spangler, Modules 4&ndash;6): measured <em>strains</em> $\to$ displacement field, via a variational least-squares functional; loads never appear. (2) <strong>Load-reconstruction inverse FEM</strong> (this module; Maincon et al. 2008, Ma et al. 2019): measured <em>displacements</em> $\to$ applied forces, via a stiffness or transfer-matrix model. Same acronym, different unknowns, different mathematics. To compound the confusion, Li et al. (2025) <em>chain</em> the two: shape-sensing iFEM reconstructs the displacement field from strains, and a load-identification step then recovers the distributed load from it. Always say which iFEM you mean.</div>
+    </div>
+
+    <p>The route through the module: build the linear observation model (Section 2), see exactly why naive inversion explodes (Section 3), repair it with Tikhonov regularization (Section 4) and choose the parameter honestly (Section 5), add dynamics (Section 6), then cross from structures to skin (Sections 7&ndash;9) and close with a field-tested recipe (Section 10).</p>
+
+    <!-- ===== SECTION 2: TRANSFER MATRIX ===== -->
+    <h2 class="section-heading" id="transfer-matrix-formulation">2. The Transfer Matrix: Condensing an FE Model into a Sensor Model</h2>
+
+    <p>Everything in the static linear theory follows from three matrices of bookkeeping wrapped around one FE solve. Start from the constrained static FE model of Module 2:</p>
+
+    <div class="math-block">$$\mathbf{K}\mathbf{u} = \mathbf{f},\qquad \mathbf{f} = \mathbf{B}\mathbf{g},\qquad \mathbf{y} = \mathbf{S}\mathbf{u}$$</div>
+
+    <ul>
+      <li>$\mathbf{K}$ — the $N \times N$ stiffness matrix after boundary conditions, symmetric positive definite ($N$ = all free DOFs);</li>
+      <li>$\mathbf{B}$ ($N \times n$) — the <strong>candidate-load parametrization</strong>: it maps $n$ unknown force parameters $\mathbf{g}$ (nodal forces on the candidate contact surface, or amplitudes of pressure patches) into the global load vector;</li>
+      <li>$\mathbf{S}$ ($m \times N$) — the <strong>observation operator</strong>: it selects the measured DOFs, or extracts strains via rows of the strain-displacement matrix for gauge-based sensing.</li>
+    </ul>
+
+    <p>Eliminate $\mathbf{u}$ and the sensor model appears:</p>
+
+    <div class="math-block">$$\mathbf{y} = \underbrace{\mathbf{S}\,\mathbf{K}^{-1}\mathbf{B}}_{\;\mathbf{H}\,\in\,\mathbb{R}^{m\times n}}\,\mathbf{g}$$</div>
+
+    <p>$\mathbf{H}$ is the <strong>transfer matrix</strong> (influence-coefficient matrix), with units of displacement per unit force (m/N). Entry $H_{ij}$ is the response of sensor $i$ to a unit force at candidate DOF $j$ — one column of $\mathbf{H}$ per candidate load, one row per sensor.</p>
+
+    <div class="figure-container">
+      <svg id="fig-hassembly" viewBox="0 0 760 270" style="width:100%;max-width:760px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;"></svg>
+      <div class="figure-caption">Assembling $\mathbf{H}$ column by column. Left: candidate force nodes (open circles) and sensors (filled squares) on the meshed contact surface; a unit load at candidate node $j$. Middle: one forward FE solve. Right: the measured response at the $m$ sensors fills column $j$ of the $m \times n$ transfer matrix. $n$ forward solves, offline — or, by Maxwell&ndash;Betti, $m$ solves with unit loads at the sensors.</div>
+    </div>
+    <script>
+    (function() {
+      var svg = document.getElementById('fig-hassembly');
+      var s = '<defs><marker id="ha-a" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#c62828"/></marker>' +
+        '<marker id="ha-d" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#555"/></marker></defs>';
+      // left: meshed surface (top view) 6x5 grid
+      var x0 = 35, y0 = 55, dxc = 32, dyc = 32;
+      for (var i = 0; i <= 5; i++) s += '<line x1="' + (x0 + i * dxc) + '" y1="' + y0 + '" x2="' + (x0 + i * dxc) + '" y2="' + (y0 + 4 * dyc) + '" stroke="#ddd" stroke-width="1"/>';
+      for (var j = 0; j <= 4; j++) s += '<line x1="' + x0 + '" y1="' + (y0 + j * dyc) + '" x2="' + (x0 + 5 * dxc) + '" y2="' + (y0 + j * dyc) + '" stroke="#ddd" stroke-width="1"/>';
+      var sensorSet = {'1,1':1,'3,1':1,'1,3':1,'3,3':1,'2,2':1,'4,2':1,'0,2':1};
+      for (var gi = 0; gi <= 5; gi++) {
+        for (var gj = 0; gj <= 4; gj++) {
+          var px = x0 + gi * dxc, py = y0 + gj * dyc;
+          if (sensorSet[gi + ',' + gj]) {
+            s += '<rect x="' + (px - 4.5) + '" y="' + (py - 4.5) + '" width="9" height="9" fill="#00838f"/>';
+          } else {
+            s += '<circle cx="' + px + '" cy="' + py + '" r="4" fill="#fff" stroke="#888" stroke-width="1.4"/>';
+          }
+        }
+      }
+      // unit force at node j (2,3)
+      var fx = x0 + 2 * dxc, fy = y0 + 3 * dyc;
+      s += '<line x1="' + fx + '" y1="' + (fy - 30) + '" x2="' + fx + '" y2="' + (fy - 7) + '" stroke="#c62828" stroke-width="2.4" marker-end="url(#ha-a)"/>';
+      s += '<text x="' + (fx + 7) + '" y="' + (fy - 26) + '" font-size="11.5" fill="#c62828" font-family="sans-serif">unit force at j</text>';
+      s += '<text x="' + (x0 + 80) + '" y="230" font-size="11" fill="#666" font-family="sans-serif" text-anchor="middle">&#9675; candidate loads (n) &nbsp; &#9632; sensors (m)</text>';
+      // middle arrow + solve box
+      s += '<line x1="215" y1="120" x2="280" y2="120" stroke="#555" stroke-width="1.5" marker-end="url(#ha-d)"/>';
+      s += '<rect x="288" y="96" width="150" height="48" rx="5" fill="#e0f2f1" stroke="#00838f" stroke-width="1.5"/>';
+      s += '<text x="363" y="116" font-size="12" fill="#00695c" font-family="sans-serif" text-anchor="middle">solve K u = B e&#11388;</text>';
+      s += '<text x="363" y="133" font-size="10.5" fill="#00695c" font-family="sans-serif" text-anchor="middle">sample u at sensors</text>';
+      s += '<line x1="446" y1="120" x2="505" y2="120" stroke="#555" stroke-width="1.5" marker-end="url(#ha-d)"/>';
+      // right: H heatmap 8 rows x 12 cols, column jc highlighted
+      var hx = 515, hy = 50, cw = 16, ch = 16, rows = 8, cols = 12, jc = 5;
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          var v = 0.15 + 0.55 * Math.abs(Math.sin(0.9 * r + 0.6 * c) * Math.cos(0.35 * c - 0.2 * r));
+          var fill = (c === jc) ? 'rgba(0,131,143,' + (0.25 + 0.65 * v).toFixed(2) + ')' : 'rgba(70,70,70,' + (0.08 + 0.5 * v).toFixed(2) + ')';
+          s += '<rect x="' + (hx + c * cw) + '" y="' + (hy + r * ch) + '" width="' + (cw - 1) + '" height="' + (ch - 1) + '" fill="' + fill + '"/>';
+        }
+      }
+      s += '<rect x="' + (hx + jc * cw - 1) + '" y="' + (hy - 2) + '" width="' + (cw + 1) + '" height="' + (rows * ch + 3) + '" fill="none" stroke="#c62828" stroke-width="1.6"/>';
+      s += '<text x="' + (hx + cols * cw / 2) + '" y="38" font-size="12" font-weight="700" fill="#333" font-family="sans-serif" text-anchor="middle">H (m &#215; n)</text>';
+      s += '<text x="' + (hx - 10) + '" y="' + (hy + rows * ch / 2) + '" font-size="11" fill="#666" font-family="sans-serif" text-anchor="end">m</text>';
+      s += '<text x="' + (hx + cols * cw / 2) + '" y="' + (hy + rows * ch + 16) + '" font-size="11" fill="#666" font-family="sans-serif" text-anchor="middle">n</text>';
+      s += '<text x="' + (hx + cols * cw / 2) + '" y="' + (hy + rows * ch + 34) + '" font-size="10.5" fill="#c62828" font-family="sans-serif" text-anchor="middle">column j = response to unit load at j</text>';
+      s += '<text x="' + (hx + cols * cw / 2) + '" y="' + (hy + rows * ch + 52) + '" font-size="10" fill="#888" font-family="sans-serif" text-anchor="middle">n solves offline; Maxwell&#8211;Betti: or m solves at sensors</text>';
+      svg.innerHTML = s;
+    })();
+    </script>
+
+    <h3 class="subsection-heading">Practical Assembly</h3>
+
+    <p>You never form $\mathbf{K}^{-1}$ (Module 2's rule: solve the system). Factorize $\mathbf{K}$ once, then perform $n$ forward solves with unit loads — one per candidate DOF — sampling each solution at the sensors. All offline. When $m &lt; n$ (few sensors, many candidate loads), <strong>Maxwell&ndash;Betti reciprocity</strong> cuts the work: the displacement at $i$ due to a unit force at $j$ equals the displacement at $j$ due to a unit force at $i$ (for collocated force/displacement pairs), so you can assemble $\mathbf{H}$ row-wise from only $m$ solves with unit loads applied <em>at the sensor DOFs</em>.</p>
+
+    <p>With $m \ge n$ the overdetermined least-squares estimate is</p>
+
+    <div class="math-block">$$\hat{\mathbf{g}}_{\mathrm{LS}} = \left(\mathbf{H}^{\mathsf T}\mathbf{H}\right)^{-1}\mathbf{H}^{\mathsf T}\mathbf{y}$$</div>
+
+    <p>— algebraically fine, statistically a disaster, for reasons Section 3 makes quantitative. For harmonic and dynamic loading the same construction produces the frequency response function (FRF) matrix used in frequency-domain identification:</p>
+
+    <div class="math-block">$$\mathbf{H}(\omega) = \mathbf{S}\left(\mathbf{K} - \omega^{2}\mathbf{M} + \mathrm{i}\,\omega\,\mathbf{C}\right)^{-1}\mathbf{B}$$</div>
+
+    <h3 class="subsection-heading">Choosing the Load Basis $\mathbf{B}$</h3>
+
+    <p>$\mathbf{B}$ is a modeling decision, not a formality. Nodal point loads on every candidate contact node give maximal flexibility and maximal ill-posedness. Piecewise-constant pressure patches, or a low-order pressure basis over the candidate surface, shrink $n$ and build smoothness into the parametrization itself — a structural prior that does part of the regularization work before any $\lambda$ appears. For distributed dynamic loads the same idea appears in Section 6 as radial-basis-function compression (Li et al. 2025).</p>
+
+    <h3 class="subsection-heading">The Fully-Observed Special Case: $\mathbf{f} = \mathbf{K}\mathbf{u}$</h3>
+
+    <p>Tactile sensing enables a degenerate case worth singling out. If <em>all</em> retained DOFs are measured — Ma et al. (2019) mesh the gel as a single layer of elements with a fixed base, so a camera sees every retained node — then $\mathbf{S} = \mathbf{I}$, no elimination is needed, and force recovery is a <em>direct product</em>:</p>
+
+    <div class="math-block">$$\mathbf{f} = \mathbf{K}\,\mathbf{u}_{\mathrm{meas}}$$</div>
+
+    <p>No inversion at all: multiplication. But the pathology does not vanish — it <strong>relocates</strong>. $\mathbf{K}$ acts like a discrete second-derivative operator, so pixel-scale tracking noise in $\mathbf{u}_{\mathrm{meas}}$ is multiplied by the <em>largest</em> stiffness eigenvalues. Ill-posedness enters wherever the observation is partial, noisy, or the model is wrong — never only in the matrix inverse. With perfect dense data, $\mathbf{f}=\mathbf{K}\mathbf{u}$ is exact; with real data, it is a noise amplifier that still needs the regularization of Section 4 (which is exactly what iFEM2.0 added — Section 8).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Two bookkeeping traps that corrupt force maps</div>
+      <div>
+        <strong>1. Constrained-DOF rows return reactions.</strong> Evaluating $\mathbf{f} = \mathbf{K}\mathbf{u}$ on rows belonging to DOFs with imposed displacements (the bonded base, clamped edges) yields <em>support reactions</em>, not applied contact loads. If your candidate contact surface touches a constrained region, applied load and reaction are inseparable there — exclude constrained DOFs from the reported force map, or report them separately as reactions.<br><br>
+        <strong>2. Consistent nodal forces are not pointwise tractions.</strong> A nodal force is the shape-function-weighted integral of traction over the adjacent elements, $f_j = \int_{\Gamma} N_j\, t\, \mathrm{d}\Gamma$ — its magnitude scales with element size. Refine the mesh and every nodal force shrinks while the underlying traction field is unchanged. To report pressure, divide by the tributary area (lumped) or solve the boundary mass-matrix system. Plotting raw nodal forces as if they were a pressure map is a units error that mesh refinement silently exposes.
+      </div>
+    </div>
+
+<!-- ===== SECTION 3: SVD APPLIED TO H ===== -->
+    <h2 class="section-heading" id="svd-ill-conditioning">3. Why Naive Inversion Explodes: SVD Applied to $\mathbf{H}$</h2>
+
+    <p>Module 3 built the full diagnostic machinery — SVD anatomy, the discrete Picard condition, filter factors (see <a href="mod3.html#svd-ill-conditioning">Module 3, Sections 5&ndash;8</a>). This section does not re-derive any of it; it applies it to the transfer matrix and extracts the two numbers that matter for force sensing: how fast the singular values fall, and what that decay costs you in spatial resolution.</p>
+
+    <p>Write $\mathbf{H} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^{\mathsf T} = \sum_i \sigma_i \mathbf{u}_i \mathbf{v}_i^{\mathsf T}$ with $\sigma_1 \ge \dots \ge \sigma_n$. The least-squares solution expands as</p>
+
+    <div class="math-block">$$\hat{\mathbf{g}}_{\mathrm{LS}} = \sum_{i=1}^{n}\frac{\mathbf{u}_i^{\mathsf T}\mathbf{y}}{\sigma_i}\,\mathbf{v}_i,\qquad \kappa(\mathbf{H}) = \frac{\sigma_1}{\sigma_n}$$</div>
+
+    <p>Because elasticity smooths, the high-index right singular vectors $\mathbf{v}_i$ are <em>spatially oscillatory force patterns</em> whose displacement signatures $\mathbf{u}_i$ carry tiny $\sigma_i$: the singular values of discretized first-kind problems with smooth kernels decay very fast, often near-exponentially (Hansen 1998). Additive measurement noise $\mathbf{e}$ contributes $\mathbf{u}_i^{\mathsf T}\mathbf{e}/\sigma_i$ to mode $i$. With $\sigma_n/\sigma_1 = 10^{-6}$ and 1% relative noise, the last modes contribute errors up to $10^4$ times the signal — the reconstruction is a large-amplitude oscillation bearing no resemblance to the true load. Discretized load-identification problems routinely reach $\kappa(\mathbf{H})$ of $10^6$&ndash;$10^{12}$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — $\kappa(\mathbf{K})$ and $\kappa(\mathbf{H})$ are different diseases</div>
+      <div>The stiffness matrix's conditioning grows polynomially with mesh refinement ($\sim h^{-2}$) — a <em>discretization</em> artifact, treatable by preconditioning, and it caps how many digits a forward solve loses. The transfer matrix's near-exponential singular-value decay is a property of the <em>physics</em>: the elastic kernel is smooth, so oscillatory loads are nearly invisible regardless of how you discretize. Refining the candidate-load mesh makes $\mathbf{H}$ <em>worse</em>, not better — you add ever-fainter columns and ever-smaller singular values. No preconditioner fixes information that never reached the sensors.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Discrete Picard Condition on Real Data</h3>
+
+    <p>The regularized solution is meaningful only while the data coefficients $|\mathbf{u}_i^{\mathsf T}\mathbf{y}|$ decay faster than the $\sigma_i$ (Hansen 1998). On a Picard plot of both series against mode index, noisy data coefficients track the singular values initially, then flatten at the noise floor while $\sigma_i$ keeps falling. The crossing index separates recoverable modes from noise-dominated ones — count it <em>before</em> promising a spatial resolution.</p>
+
+    <div class="figure-container">
+      <svg id="fig-picard" viewBox="0 0 700 310" style="width:100%;max-width:700px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;"></svg>
+      <div class="figure-caption">Anatomy of a Picard plot for a transfer matrix. The singular values $\sigma_i$ (physics) fall steadily; the data coefficients $|\mathbf{u}_i^{\mathsf T}\mathbf{y}|$ (measurements) flatten at the marker-noise floor. Left of the crossing $i^*$: recoverable traction modes ($\varphi_i \approx 1$). Right: noise-dominated modes that any sane filter must suppress.</div>
+    </div>
+    <script>
+    (function() {
+      var svg = document.getElementById('fig-picard');
+      var W = 700, Hh = 310, x0 = 70, x1 = 660, y0 = 30, y1 = 250;
+      var nmodes = 40;
+      var logmin = -9, logmax = 0.5;
+      function xm(i) { return x0 + (i - 1) / (nmodes - 1) * (x1 - x0); }
+      function yl(v) { return y0 + (logmax - v) / (logmax - logmin) * (y1 - y0); }
+      var sig = [], coef = [];
+      var floor = -5.4;
+      for (var i = 1; i <= nmodes; i++) {
+        var ls = -0.235 * (i - 1);
+        sig.push(ls);
+        var lc = ls + Math.log10(0.55) + 0.14 * Math.sin(1.7 * i);
+        coef.push(Math.max(lc, floor + 0.12 * Math.sin(2.3 * i)));
+      }
+      // crossing index: first i where coef >= sig
+      var istar = nmodes;
+      for (i = 2; i <= nmodes; i++) { if (coef[i - 1] >= sig[i - 1]) { istar = i; break; } }
+      var s = '';
+      // shaded regions
+      s += '<rect x="' + x0 + '" y="' + y0 + '" width="' + (xm(istar) - x0) + '" height="' + (y1 - y0) + '" fill="rgba(46,125,50,0.07)"/>';
+      s += '<rect x="' + xm(istar) + '" y="' + y0 + '" width="' + (x1 - xm(istar)) + '" height="' + (y1 - y0) + '" fill="rgba(198,40,40,0.06)"/>';
+      // axes
+      s += '<line x1="' + x0 + '" y1="' + y1 + '" x2="' + x1 + '" y2="' + y1 + '" stroke="#333" stroke-width="1.2"/>';
+      s += '<line x1="' + x0 + '" y1="' + y0 + '" x2="' + x0 + '" y2="' + y1 + '" stroke="#333" stroke-width="1.2"/>';
+      for (var e = 0; e >= -8; e -= 2) {
+        s += '<text x="' + (x0 - 8) + '" y="' + (yl(e) + 4) + '" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="end">10' + (e === 0 ? '&#8304;' : '&#8315;' + String(-e).replace('2','&#178;').replace('4','&#8308;').replace('6','&#8310;').replace('8','&#8312;')) + '</text>';
+        s += '<line x1="' + (x0 - 4) + '" y1="' + yl(e) + '" x2="' + x0 + '" y2="' + yl(e) + '" stroke="#333" stroke-width="1"/>';
+      }
+      for (i = 10; i <= 40; i += 10) {
+        s += '<text x="' + xm(i) + '" y="' + (y1 + 16) + '" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="middle">' + i + '</text>';
+      }
+      s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (y1 + 34) + '" font-size="11.5" fill="#444" font-family="sans-serif" text-anchor="middle">mode index i</text>';
+      // sigma line
+      var p1 = '';
+      for (i = 1; i <= nmodes; i++) p1 += (i === 1 ? 'M ' : ' L ') + xm(i).toFixed(1) + ' ' + yl(sig[i - 1]).toFixed(1);
+      s += '<path d="' + p1 + '" fill="none" stroke="#00838f" stroke-width="2.2"/>';
+      // coefficient markers
+      for (i = 1; i <= nmodes; i++) {
+        s += '<circle cx="' + xm(i).toFixed(1) + '" cy="' + yl(coef[i - 1]).toFixed(1) + '" r="3" fill="#c62828"/>';
+      }
+      // crossing line
+      s += '<line x1="' + xm(istar) + '" y1="' + y0 + '" x2="' + xm(istar) + '" y2="' + y1 + '" stroke="#555" stroke-width="1.3" stroke-dasharray="6,4"/>';
+      s += '<text x="' + xm(istar) + '" y="' + (y0 - 8) + '" font-size="11.5" font-weight="700" fill="#333" font-family="sans-serif" text-anchor="middle">i*</text>';
+      // labels
+      s += '<text x="' + xm(9) + '" y="' + (yl(sig[8]) - 12) + '" font-size="11.5" fill="#00695c" font-family="sans-serif">&#963;&#7522; — singular values (physics)</text>';
+      s += '<text x="' + xm(24) + '" y="' + (yl(floor) - 14) + '" font-size="11.5" fill="#c62828" font-family="sans-serif">|u&#7522;&#7488;y| — flatten at noise floor</text>';
+      s += '<text x="' + xm(6) + '" y="' + (y1 - 12) + '" font-size="11" fill="#2e7d32" font-family="sans-serif">recoverable (&#966;&#7522; &#8776; 1)</text>';
+      s += '<text x="' + xm(28) + '" y="' + (y1 - 12) + '" font-size="11" fill="#c62828" font-family="sans-serif">noise-dominated (filter out)</text>';
+      svg.innerHTML = s;
+    })();
+    </script>
+
+    <h3 class="subsection-heading">The Resolution Economics of Force Sensing</h3>
+
+    <p>How much resolution do the surviving modes buy? A model problem gives the scaling — treat this as a design estimate from standard deconvolution analysis, not a theorem about your particular sensor. For a Gaussian smoothing kernel of width $w$, the singular values behave like $\mathrm{e}^{-k^2 w^2/2}$ in spatial frequency $k$, so modes survive above noise-to-signal ratio $\eta$ only for</p>
+
+    <div class="math-block">$$k_{\max} = \frac{\sqrt{2\ln(1/\eta)}}{w}$$</div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Numbers: what an SNR upgrade actually buys</div>
+      <div class="collapsible-body">
+        <p>Set $\eta = 1/\mathrm{SNR}$. At SNR $= 100$: $k_{\max} = \sqrt{2\ln 100}/w \approx 3.0/w$. At SNR $= 10{,}000$ — a hundred times better measurement — $k_{\max} \approx 4.3/w$: barely 40% more resolution. The square root of a logarithm is one of the cruelest functions in engineering. Meanwhile the kernel width $w$ sits in the denominator: halving it doubles $k_{\max}$ outright. Section 9 turns this into a design rule, because for an elastic layer $w$ is set by the pad thickness.</p>
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — resolution grows with the logarithm of SNR</div>
+      <div>Better cameras, better marker tracking, more averaging: all of it buys spatial resolution only through $\sqrt{\ln(\mathrm{SNR})}$. Thinner gel buys it linearly. This is the fundamental economics of force reconstruction, and it is why Section 9 treats skin <em>geometry</em> — not sensing hardware — as the primary design knob for the inverse problem.</div>
+    </div>
+
+    <!-- ===== SECTION 4: TIKHONOV ===== -->
+    <h2 class="section-heading" id="tikhonov-regularization">4. Tikhonov-Regularized Inversion</h2>
+
+    <p>The repair (Tikhonov &amp; Arsenin 1977) replaces the unstable least-squares problem with a penalized one:</p>
+
+    <div class="math-block">$$\hat{\mathbf{g}}_{\lambda} = \arg\min_{\mathbf{g}}\;\lVert\mathbf{H}\mathbf{g}-\mathbf{y}\rVert_2^{2} + \lambda^{2}\,\lVert\mathbf{L}\mathbf{g}\rVert_2^{2}$$</div>
+
+    <p>with closed-form normal equations</p>
+
+    <div class="math-block">$$\left(\mathbf{H}^{\mathsf T}\mathbf{H} + \lambda^{2}\mathbf{L}^{\mathsf T}\mathbf{L}\right)\hat{\mathbf{g}}_{\lambda} = \mathbf{H}^{\mathsf T}\mathbf{y}$$</div>
+
+    <p><strong>Standard form</strong> $\mathbf{L} = \mathbf{I}$ penalizes force magnitude. The <strong>general form</strong>, with $\mathbf{L}$ a discrete gradient or surface Laplacian, penalizes <em>roughness</em> of the traction field — usually the physically right prior for contact pressure, which is smooth over the patch — and is handled via the GSVD or a standard-form transformation. In the singular basis (for $\mathbf{L} = \mathbf{I}$), Module 3's filter-factor result applies verbatim to $\mathbf{H}$:</p>
+
+    <div class="math-block">$$\hat{\mathbf{g}}_{\lambda} = \sum_{i=1}^{n}\varphi_i\,\frac{\mathbf{u}_i^{\mathsf T}\mathbf{y}}{\sigma_i}\,\mathbf{v}_i,\qquad \varphi_i = \frac{\sigma_i^{2}}{\sigma_i^{2}+\lambda^{2}}\;\;(\mathbf{L}=\mathbf{I})$$</div>
+
+    <p>— a smooth roll-off passing modes with $\sigma_i \gg \lambda$ and damping modes with $\sigma_i \ll \lambda$ by the factor $(\sigma_i/\lambda)^2$. Mind the exponents: the filter factor is $\sigma_i^2/(\sigma_i^2 + \lambda^2)$, not $\sigma_i/(\sigma_i+\lambda)$ and not $\sigma_i/(\sigma_i^2+\lambda^2)$ — the quadratic roll-off is what matches Tikhonov to a TSVD truncation level. <strong>Truncated SVD</strong> is precisely the hard-cutoff cousin: $\varphi_i = 1$ for $i \le k$, else $0$; with $\lambda$ matched to $\sigma_k$ the two give similar reconstructions.</p>
+
+    <h3 class="subsection-heading">What the Bias Looks Like on a Contact Patch</h3>
+
+    <p>Small $\lambda$ leaves noise amplification (variance); large $\lambda$ over-smooths (bias). For contact problems the bias has a recognizable signature: the reconstructed patch is <strong>spread wider</strong> than the truth and the <strong>peak pressure is underestimated</strong>, while the total force — a smooth functional that lives in the well-conditioned low modes — survives almost unbiased. This asymmetry is why resultant-force checks pass long after the pressure map has degraded (Section 8), and you can watch it happen live in the lab below.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — regularization declines to invent, it does not recover</div>
+      <div>No choice of $\lambda$ "restores" the information that elasticity smoothed away; regularization only trades variance for bias among the modes the data actually constrains. The resolution limit of Section 3 — logarithmic in SNR — stands regardless. Any pipeline that claims regularization "recovered" sub-kernel-width force detail is describing its prior, not its measurement.</div>
+    </div>
+
+    <h3 class="subsection-heading">Priors, Statistics, and Physical Constraints</h3>
+
+    <p>Statistically, Tikhonov is MAP estimation under Gaussian noise with the Gaussian prior $\mathbf{g} \sim \mathcal{N}\!\left(\mathbf{0},\, \sigma_e^2 \lambda^{-2} (\mathbf{L}^{\mathsf T}\mathbf{L})^{-1}\right)$ — the bridge to the Bayesian and Kalman branches of load identification surveyed by Liu et al. (2022); Module 3 covers the derivation.</p>
+
+    <p>Physical side constraints do regularization work too, and deserve first-class status rather than afterthought status:</p>
+
+    <ul>
+      <li><strong>Unilateral contact:</strong> normal nodal forces satisfy $g_i \ge 0$ (a surface can push, not pull, absent adhesion) — solved by NNLS / active-set methods, and often worth more than a decade of $\lambda$ tuning because it forbids the oscillating negative lobes that noise amplification produces;</li>
+      <li><strong>Friction cone:</strong> tangential traction bounded by $\lVert \mathbf{t}_t \rVert \le \mu\, p$ — couples the tangential reconstruction to the normal one;</li>
+      <li><strong>Equilibrium / total-force equality:</strong> when a force/torque sensor is in the loop, constrain the reconstructed resultant to match its reading.</li>
+    </ul>
+
+    <p>Ridge regression — standard-form Tikhonov by another name — is exactly what iFEM2.0 (Zhao, Liu &amp; Ma, T-RO 2025) adds to the tactile $\mathbf{f}=\mathbf{K}\mathbf{u}$ pipeline for noise robustness: the machinery of this section, imported wholesale into Section 8's case study.</p>
+
+    <!-- ===== MAIN INTERACTIVE: CONTACT INVERSION LAB ===== -->
+    <div class="interactive-container" id="contact-lab">
+      <div class="interactive-label">Interactive Tool &mdash; Contact Inversion Lab</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Press a 1-D compliant surface and reconstruct the contact pressure from marker displacements. The elastic layer is modeled by a Lorentzian smoothing kernel whose width scales with pad thickness $t$ — an explicit <em>surrogate</em> for the thin-layer Green's function, not the exact kernel. Choose the indenter, thin out or occlude the markers, add noise, then tune $\lambda$ and the physical constraints. Watch the panel: measurements, unknowns, assumptions, conditioning, and the two validation numbers that this module keeps insisting are different — resultant error vs. pressure-map error.</p>
+
+      <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="min-width:160px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Indenter (truth)</div>
+          <select id="cl-preset" style="font-size:12px;padding:4px;width:100%;">
+            <option value="sphere">Sphere (Hertz-like)</option>
+            <option value="punch">Flat punch (uniform)</option>
+            <option value="twin" selected>Two fingertips (bumps)</option>
+          </select>
+        </div>
+        <div class="slider-control" style="min-width:170px;">
+          <label><span>Pad thickness $t$</span> <span id="cl-t-val">0.10</span></label>
+          <input type="range" id="cl-t" min="0.02" max="0.30" step="0.01" value="0.10">
+        </div>
+        <div class="slider-control" style="min-width:170px;">
+          <label><span>Bump separation $s$</span> <span id="cl-s-val">0.25</span></label>
+          <input type="range" id="cl-s" min="0.05" max="0.5" step="0.01" value="0.25">
+        </div>
+        <div class="slider-control" style="min-width:170px;">
+          <label><span>Noise $\eta$ (% of max $|y|$)</span> <span id="cl-noise-val">1.0</span></label>
+          <input type="range" id="cl-noise" min="0" max="5" step="0.25" value="1">
+        </div>
+        <div class="slider-control" style="min-width:190px;">
+          <label><span>$\log_{10}\lambda$</span> <span id="cl-lam-val">&minus;3.0</span></label>
+          <input type="range" id="cl-lam" min="-6" max="0" step="0.1" value="-3">
+        </div>
+      </div>
+      <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;margin-top:2px;">
+        <div style="min-width:170px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Method</div>
+          <select id="cl-method" style="font-size:12px;padding:4px;width:100%;">
+            <option value="naive">Naive least squares ($\lambda$ = 0)</option>
+            <option value="tik" selected>Tikhonov (L = I)</option>
+          </select>
+        </div>
+        <div style="min-width:210px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Physical constraints</div>
+          <select id="cl-constraint" style="font-size:12px;padding:4px;width:100%;">
+            <option value="none">None</option>
+            <option value="nn">p &ge; 0 (nonnegativity clip)</option>
+            <option value="nnft">p &ge; 0 + total force from F/T sensor</option>
+          </select>
+        </div>
+        <div style="min-width:150px;">
+          <div style="font-size:12px;color:#555;margin-bottom:3px;">Marker spacing</div>
+          <select id="cl-spacing" style="font-size:12px;padding:4px;width:100%;">
+            <option value="1">Every node</option>
+            <option value="2" selected>Every 2nd node</option>
+            <option value="4">Every 4th node</option>
+            <option value="8">Every 8th node</option>
+          </select>
+        </div>
+        <div style="min-width:200px;">
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="cl-occlude"> markers vanish under indenter
+          </label>
+        </div>
+        <div>
+          <button id="cl-reroll" style="border:1px solid #00838f;color:#00838f;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">New noise draw</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;">
+        <div style="flex:2 1 420px;min-width:320px;">
+          <svg id="cl-svg-g" width="700" height="190" viewBox="0 0 700 190" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+          <svg id="cl-svg-y" width="700" height="150" viewBox="0 0 700 150" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;margin-top:8px;"></svg>
+          <svg id="cl-svg-s" width="700" height="150" viewBox="0 0 700 150" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;margin-top:8px;"></svg>
+        </div>
+        <div id="cl-panel" style="flex:1 1 250px;min-width:250px;font-size:12.5px;border:1px solid #e0e0e0;border-radius:6px;padding:12px;background:#fafafa;"></div>
+      </div>
+      <div id="cl-readout" style="font-size:13px;margin-top:10px;"></div>
+      <div style="font-size:12px;color:#555;margin-top:10px;border-top:1px solid #eee;padding-top:8px;">
+        <strong>Try this:</strong>
+        (1) Set $\eta = 0$, marker spacing = every node, method = naive LS: inversion is essentially exact on this finite synthetic problem. Do not over-read that: ill-posedness is failure of <em>continuous dependence</em>, a property of the operator that is present before any noise is added. Exact data and exact arithmetic merely let you reproduce one particular truth you generated yourself; roundoff, model error, or a finer discretization expose the instability that was there all along. (With sparse markers the problem is underdetermined and even noiseless data only pins down the minimum-norm solution.)
+        (2) Restore $\eta = 1\%$, keep naive LS, and watch the clipped blow-up; then switch to Tikhonov and slide $\lambda$.
+        (3) Two-fingertip preset: raise $t$ until the two bumps merge in the reconstruction <em>no matter what</em> $\lambda$ you choose — the resolution floor of Section 3, live.
+        (4) Occlude the markers under the indenter and watch conditioning and map error degrade while resultant error barely moves.
+        (5) At large $\lambda$, compare the two validation numbers: the resultant stays honest while the map spreads and the peak drops — Section 8's partial-validation trap in miniature. The friction-cone constraint is the tangential analogue of the $p \ge 0$ option; it needs a 2-D vector traction field, so here you get its scalar cousins.
+      </div>
+    </div>
+
+<!-- ===== SECTION 5: CHOOSING LAMBDA ===== -->
+    <h2 class="section-heading" id="choosing-lambda">5. Choosing $\lambda$: L-Curve, GCV, Discrepancy</h2>
+
+    <p>Module 3 (<a href="mod3.html#choosing-the-parameter">Section 9</a>) derives the three standard parameter-choice rules; here is what each one needs, and — more usefully — how each one fails on load-identification data. None of them is ground truth. Each is an estimator with a documented failure mode, and the failure modes are different, which is exactly why you run more than one.</p>
+
+    <table>
+      <tr><th>Criterion</th><th>Chooses $\lambda$ by</th><th>Needs</th><th>Fails when</th></tr>
+      <tr><td><strong>L-curve</strong> (Hansen 1992)</td><td>Corner (max curvature) of $\log\lVert\mathbf{L}\hat{\mathbf{g}}_\lambda\rVert$ vs. $\log\lVert\mathbf{H}\hat{\mathbf{g}}_\lambda-\mathbf{y}\rVert$</td><td>Nothing beyond the sweep</td><td>Very smooth exact solutions (corner disappears); extremely fast $\sigma_i$ decay</td></tr>
+      <tr><td><strong>GCV</strong> (Golub, Heath &amp; Wahba 1979)</td><td>Minimum of $G(\lambda)$ — rotation-invariant leave-one-out</td><td>No noise-level estimate</td><td><strong>Correlated noise</strong>: minimum flattens or drifts toward undersmoothing</td></tr>
+      <tr><td><strong>Discrepancy</strong> (Morozov)</td><td>Residual $= \tau\delta$, $\tau$ slightly above 1</td><td>The noise level $\delta$</td><td>$\delta$ misjudged: overestimate $\Rightarrow$ oversmoothing</td></tr>
+    </table>
+
+    <div class="math-block">$$G(\lambda) = \frac{m\,\lVert(\mathbf{I}-\mathbf{A}_{\lambda})\mathbf{y}\rVert_2^{2}}{\left[\operatorname{tr}\!\left(\mathbf{I}-\mathbf{A}_{\lambda}\right)\right]^{2}},\qquad \mathbf{A}_{\lambda} = \mathbf{H}\left(\mathbf{H}^{\mathsf T}\mathbf{H}+\lambda^{2}\mathbf{L}^{\mathsf T}\mathbf{L}\right)^{-1}\mathbf{H}^{\mathsf T}$$</div>
+
+    <p>The L-curve corner is operationalized as the point of maximum curvature,</p>
+
+    <div class="math-block">$$\kappa(\lambda) = \frac{\rho'\eta'' - \rho''\eta'}{\left(\rho'^{2}+\eta'^{2}\right)^{3/2}},\qquad \rho = \log\lVert\mathbf{H}\hat{\mathbf{g}}_{\lambda}-\mathbf{y}\rVert_2,\;\; \eta = \log\lVert\mathbf{L}\hat{\mathbf{g}}_{\lambda}\rVert_2$$</div>
+
+    <p>and the discrepancy rule reads $\lVert\mathbf{H}\hat{\mathbf{g}}_{\lambda}-\mathbf{y}\rVert_2 = \tau\,\delta$. For tactile pipelines the GCV failure mode is not exotic: interpolating sparse marker displacements onto FE nodes <em>correlates</em> the noise across nodes, which is precisely the condition under which GCV drifts. Meanwhile $\delta$ is often genuinely measurable — record the unloaded sensor for a minute and read the marker-tracking repeatability — which promotes the discrepancy principle from textbook afterthought to the most reliable rule in the room.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — disagreement is a diagnostic</div>
+      <div>The SVD is computed once ($n$ up to a few thousand is trivial); a sweep of 100&ndash;200 log-spaced $\lambda$ values from $\sigma_n$ to $\sigma_1$ evaluates all three criteria through filter factors at negligible cost. Run all three. If the L-curve and GCV agree within an order of magnitude, proceed. If they disagree wildly, that disagreement is <em>information</em>: suspect correlated noise or model error before trusting either number.</div>
+    </div>
+
+    <p><strong>Real-time practice:</strong> $\lambda$ is not chosen per frame. Freeze it offline during calibration, precompute the regularized pseudoinverse $(\mathbf{H}^{\mathsf T}\mathbf{H} + \lambda^2\mathbf{L}^{\mathsf T}\mathbf{L})^{-1}\mathbf{H}^{\mathsf T}$, and per-frame reconstruction becomes a single $n \times m$ matrix&ndash;vector product. That one precomputation is the entire gap between "inverse problem" and "sensor".</p>
+
+    <!-- ===== INTERACTIVE: L-CURVE & GCV EXPLORER ===== -->
+    <div class="interactive-container" id="lcurve-explorer">
+      <div class="interactive-label">Interactive Tool &mdash; L-Curve &amp; GCV Explorer</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">The fixed two-bump problem from the lab above ($t = 0.1$, $s = 0.25$, $\eta = 1\%$), fully observed. All curves come from one precomputed SVD swept over 150 log-spaced $\lambda$ values. Drag the $\lambda$ slider or click on the L-curve; compare where the corner, the GCV minimum, and the discrepancy rule land against the oracle (the truth-knowing best $\lambda$ — a luxury of simulation). Then press the failure-mode buttons: redraw the noise (the corner and GCV minimum jitter between draws) and switch to correlated noise (the GCV minimum drifts toward undersmoothing while the discrepancy choice stays sane).</p>
+
+      <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="slider-control" style="min-width:220px;">
+          <label><span>$\log_{10}\lambda$</span> <span id="lc-lam-val">&minus;3.0</span></label>
+          <input type="range" id="lc-lam" min="-6" max="0" step="0.02" value="-3">
+        </div>
+        <div>
+          <button id="lc-reroll" style="border:1px solid #00838f;color:#00838f;background:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-size:12px;">Redraw noise</button>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="lc-corr"> correlated noise (moving-average width 5)
+          </label>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="lc-oracle" checked> overlay oracle RMSE($\lambda$)
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;">
+        <div style="flex:1 1 300px;min-width:280px;">
+          <svg id="lc-svg-l" width="340" height="300" viewBox="0 0 340 300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;cursor:crosshair;"></svg>
+          <div style="font-size:11px;color:#888;margin-top:4px;">L-curve (log&ndash;log). Click to set $\lambda$.</div>
+        </div>
+        <div style="flex:1 1 300px;min-width:280px;">
+          <svg id="lc-svg-g" width="340" height="300" viewBox="0 0 340 300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+          <div style="font-size:11px;color:#888;margin-top:4px;">GCV function and oracle RMSE — each curve normalized to its own range; compare the <em>minima locations</em>, not heights.</div>
+        </div>
+        <div style="flex:1 1 300px;min-width:280px;">
+          <svg id="lc-svg-r" width="340" height="300" viewBox="0 0 340 300" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;width:100%;height:auto;"></svg>
+          <div style="font-size:11px;color:#888;margin-top:4px;">Reconstruction at the current $\lambda$ vs. true traction.</div>
+        </div>
+      </div>
+      <div id="lc-readout" style="font-size:13px;margin-top:10px;"></div>
+    </div>
+
+    <!-- ===== SECTION 6: TIME DOMAIN ===== -->
+    <h2 class="section-heading" id="time-domain-force-identification">6. Time-Domain Force Identification</h2>
+
+    <p>Add inertia and the static picture becomes a movie:</p>
+
+    <div class="math-block">$$\mathbf{M}\ddot{\mathbf{u}} + \mathbf{C}\dot{\mathbf{u}} + \mathbf{K}\mathbf{u} = \mathbf{B}\,\mathbf{g}(t)$$</div>
+
+    <p>The measured response is the Duhamel convolution of the input with the impulse response function (IRF):</p>
+
+    <div class="math-block">$$y(t) = \int_{0}^{t} h(t-\tau)\,g(\tau)\,\mathrm{d}\tau$$</div>
+
+    <p>Sampling with step $\Delta t$ turns this into a linear system with a lower-triangular Toeplitz operator built from IRF samples $h_k = h(k\,\Delta t)$:</p>
+
+    <div class="math-block">$$y_i = \Delta t\sum_{j=1}^{i} h_{\,i-j+1}\,g_j \;\;\Longleftrightarrow\;\; \mathbf{y} = \mathbf{A}\,\mathbf{g}$$</div>
+
+    <p>— a <strong>deconvolution</strong> problem, severely ill-posed for the same structural reason as the static case, now in time: the IRF of a damped structure is smooth, so $\mathbf{A}$'s singular values decay rapidly. Light damping makes it worse — long memory, and errors that accumulate as the record grows. The canonical analysis is Jacquelin, Bennani &amp; Hamelin (JSV 2003): impact-force reconstruction posed as regularized deconvolution,</p>
+
+    <div class="math-block">$$\hat{\mathbf{g}} = \arg\min_{\mathbf{g}}\;\lVert\mathbf{A}\mathbf{g}-\mathbf{y}\rVert_2^{2} + \lambda^{2}\lVert\mathbf{g}\rVert_2^{2}\quad\left(\text{or } +\,\lambda\lVert\mathbf{g}\rVert_1\right)$$</div>
+
+    <p>comparing Tikhonov with L-curve and GCV parameter selection. Their conclusions transfer wholesale: regularization is mandatory, and the parameter choice — not the factorization — is the delicate step.</p>
+
+    <h3 class="subsection-heading">Frequency Domain, and Where It Blows Up</h3>
+
+    <p>The alternative is per-frequency inversion, $\mathbf{G}(\omega) = \mathbf{H}(\omega)^{+}\,\mathbf{Y}(\omega)$, using the FRF matrix of Section 2. Its Achilles heel is spectral: ill-conditioning concentrates near the <strong>antiresonances</strong> of the FRF, where $|\mathbf{H}(\omega)|$ is small and per-line inversion amplifies noise violently. Transient signals add leakage and windowing artifacts on top. Hence the standard division of labor: <strong>time domain for impacts, frequency domain for stationary loading</strong> — presenting frequency-domain inversion without its antiresonance blowup is selling half a method.</p>
+
+    <h3 class="subsection-heading">The Modern Method Map</h3>
+
+    <p>Following the taxonomy of Liu, Dobriban, Hou &amp; Qian (2022), five families now coexist:</p>
+
+    <table>
+      <tr><th>Family</th><th>Core move</th><th>Character</th></tr>
+      <tr><td>(i) Frequency-domain FRF inversion</td><td>Per-line pseudoinverse of $\mathbf{H}(\omega)$</td><td>Batch; stationary loads; antiresonance-fragile</td></tr>
+      <tr><td>(ii) Time-domain deconvolution</td><td>Tikhonov/TSVD on the Toeplitz system</td><td>Batch; impacts; the Jacquelin et al. (2003) canon</td></tr>
+      <tr><td>(iii) State-space recursive estimators</td><td>Augment the state with the unknown input modeled as a random walk; run a Kalman-type joint input&ndash;state filter (Lourens et al. 2012)</td><td><strong>Online</strong>, with uncertainty; the augmented Kalman filter is the workhorse</td></tr>
+      <tr><td>(iv) Sparse regularization</td><td>Replace $\ell_2$ with $\ell_1$: impacts are sparse in time (or in a wavelet dictionary)</td><td>Recovers sharp impacts that Tikhonov smears</td></tr>
+      <tr><td>(v) Learning-based mappings</td><td>Train response $\to$ load directly (e.g., deep CNN load identification, Yang et al., MSSP 2023)</td><td>Fast inference; inherits training-distribution limits</td></tr>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — the prior picks the family</div>
+      <div>Tikhonov's $\ell_2$ penalty encodes "the force history is small and smooth" — the worst possible prior for a hammer blow. The $\ell_1$ family encodes "the force is zero almost always" — exactly right for impacts, useless for slowly varying service loads. The joint input&ndash;state filters encode "the force is a random walk" — right for online tracking. Choosing the method <em>is</em> choosing the prior; make it consciously.</div>
+    </div>
+
+    <h3 class="subsection-heading">Unknown Locations and Distributed Loads</h3>
+
+    <p>When the load <em>location</em> is unknown, solve on a grid of candidate positions and select by minimum residual — a discrete search wrapped around the linear solver. When the load is <em>distributed</em> in space and varying in time, the spatial dimension must be compressed into a low-order basis or the problem is hopelessly underdetermined: Li et al. (2025) reconstruct distributed dynamic loads on plates by combining Tessler-style iFEM strain shape sensing (their displacement front-end) with radial-basis-function spatial fitting — the paper that chains both "iFEMs" of Section 1's warning box in one pipeline.</p>
+
+<!-- ===== SECTION 7: STRUCTURES TO SKIN ===== -->
+    <h2 class="section-heading" id="structures-to-skin">7. From Structures to Skin: the Tactile Inverse Problem</h2>
+
+    <p>Now recast the problem for a vision-based tactile sensor: a millimeters-thick elastomer pad (silicone, $E$ of order 0.1&ndash;1 MPa) bonded to a rigid window, camera behind it. The measurement channels are the tracked displacements of a printed marker array (the GelSight/GelSlim lineage) and/or photometric-stereo depth. The continuous forward model is a boundary-integral relation between surface traction and surface displacement:</p>
+
+    <div class="math-block">$$\mathbf{u}(\mathbf{x}) = \int_{\Gamma_{c}} \mathbf{G}(\mathbf{x}-\mathbf{x}')\,\mathbf{t}(\mathbf{x}')\,\mathrm{d}\Gamma'$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — the data economics flip</div>
+      <div>Structural SHM measures a handful of strain gauges far from unknown load locations; tactile sensing measures <em>thousands</em> of displacement vectors <em>on the loaded boundary itself</em>. The kernel relating surface traction to surface displacement is far less smoothed at zero depth than at gauge distance — the singular values decay much more slowly, the conditioning is dramatically better, and this is why dense contact force reconstruction is feasible at all. Where you measure is the single biggest conditioning lever in the whole problem (Section 9).</div>
+    </div>
+
+    <h3 class="subsection-heading">What Still Makes It Hard</h3>
+
+    <ul>
+      <li><strong>2-D projections of 3-D motion.</strong> The camera sees image-plane displacements, which conflate tangential motion with normal indentation through perspective and refraction. Ma et al. (2019) derive the correction: a marker displaced by $d$ along the normal appears shifted in-plane by
+        <div class="math-block">$$\beta = \arcsin\!\left(\frac{\sin\alpha}{\gamma}\right),\qquad \boldsymbol{\Delta} = \frac{\mathbf{r}}{\lvert\mathbf{r}\rvert}\;d\,\tan\beta$$</div>
+        with $\alpha$ the viewing-ray incidence angle, $\gamma$ the silicone refractive index, and $\mathbf{r}$ the radial image position (acrylic refraction neglected by index-matching design). Feed uncorrected 2-D displacements to the inverse solver and the tangential force field is biased.</li>
+      <li><strong>Out-of-plane displacement often is not directly measured</strong> — it must come from photometric depth or from assumed contact geometry.</li>
+      <li><strong>Soft silicones are nonlinear</strong> (hyperelastic, some viscoelastic) at deep indentation, while the pipeline assumes linear elasticity.</li>
+      <li><strong>Marker-interpolation noise is correlated</strong> — the quiet GCV-killer of Section 5.</li>
+    </ul>
+
+    <div class="figure-container">
+      <svg id="fig-gelslim" viewBox="0 0 760 340" style="width:100%;max-width:760px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
+        <defs>
+          <marker id="gs-a" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#555"/></marker>
+          <marker id="gs-ar" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#c62828"/></marker>
+          <marker id="gs-ag" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L6,2.5 L0,5 Z" fill="#2e7d32"/></marker>
+        </defs>
+        <!-- LEFT: sensing stack cross-section -->
+        <text x="215" y="24" font-size="12.5" font-weight="700" fill="#333" font-family="sans-serif" text-anchor="middle">GelSlim 2.0 sensing stack (cross-section)</text>
+        <!-- contact object -->
+        <path d="M 170 40 Q 215 76 260 40 L 260 34 L 170 34 Z" fill="#b0bec5" stroke="#78909c" stroke-width="1.2"/>
+        <line x1="215" y1="30" x2="215" y2="52" stroke="#555" stroke-width="1.8" marker-end="url(#gs-a)"/>
+        <text x="270" y="42" font-size="10.5" fill="#555" font-family="sans-serif">contact</text>
+        <!-- paint layer -->
+        <rect x="60" y="66" width="310" height="7" fill="#546e7a"/>
+        <text x="378" y="74" font-size="10.5" fill="#546e7a" font-family="sans-serif">paint (opaque)</text>
+        <!-- markers under paint on outer gel surface -->
+        <g fill="#212121">
+          <circle cx="78" cy="78" r="2.6"/><circle cx="100" cy="78" r="2.6"/><circle cx="122" cy="78" r="2.6"/><circle cx="144" cy="78" r="2.6"/><circle cx="166" cy="78" r="2.6"/><circle cx="188" cy="80" r="2.6"/><circle cx="210" cy="82" r="2.6"/><circle cx="232" cy="80" r="2.6"/><circle cx="254" cy="78" r="2.6"/><circle cx="276" cy="78" r="2.6"/><circle cx="298" cy="78" r="2.6"/><circle cx="320" cy="78" r="2.6"/><circle cx="342" cy="78" r="2.6"/>
+        </g>
+        <text x="378" y="88" font-size="10.5" fill="#212121" font-family="sans-serif">marker grid = FE nodes</text>
+        <!-- gel -->
+        <rect x="60" y="73" width="310" height="78" fill="rgba(255,213,79,0.30)" stroke="#e0b93c" stroke-width="1"/>
+        <text x="215" y="120" font-size="11.5" fill="#8d6e63" font-family="sans-serif" text-anchor="middle">silicone gel (E &#8776; 0.1&#8211;1 MPa)</text>
+        <!-- acrylic -->
+        <rect x="60" y="151" width="310" height="26" fill="rgba(129,212,250,0.35)" stroke="#4fc3f7" stroke-width="1"/>
+        <text x="215" y="168" font-size="11.5" fill="#0277bd" font-family="sans-serif" text-anchor="middle">acrylic window</text>
+        <!-- LEDs -->
+        <line x1="28" y1="100" x2="58" y2="112" stroke="#c62828" stroke-width="2.2" marker-end="url(#gs-ar)"/>
+        <text x="12" y="94" font-size="10.5" fill="#c62828" font-family="sans-serif">red LED</text>
+        <line x1="404" y1="100" x2="374" y2="112" stroke="#2e7d32" stroke-width="2.2" marker-end="url(#gs-ag)"/>
+        <text x="376" y="94" font-size="10.5" fill="#2e7d32" font-family="sans-serif">green LED</text>
+        <!-- curved TIR light guide -->
+        <path d="M 60 177 C 40 200, 40 240, 78 258" fill="none" stroke="#ffa000" stroke-width="5" opacity="0.55"/>
+        <text x="16" y="238" font-size="10.5" fill="#b28704" font-family="sans-serif">curved TIR</text>
+        <text x="16" y="251" font-size="10.5" fill="#b28704" font-family="sans-serif">light guide</text>
+        <!-- camera -->
+        <path d="M 92 262 L 128 250 L 138 276 L 102 288 Z" fill="#455a64"/>
+        <text x="90" y="306" font-size="10.5" fill="#455a64" font-family="sans-serif">camera (angled)</text>
+        <line x1="122" y1="258" x2="208" y2="86" stroke="#455a64" stroke-width="1" stroke-dasharray="3,3"/>
+        <!-- virtual camera -->
+        <path d="M 300 262 L 336 274 L 326 296 L 290 284 Z" fill="none" stroke="#455a64" stroke-width="1.4" stroke-dasharray="4,3"/>
+        <text x="286" y="312" font-size="10.5" fill="#455a64" font-family="sans-serif">virtual camera (mirrored)</text>
+        <line x1="312" y1="266" x2="224" y2="86" stroke="#455a64" stroke-width="1" stroke-dasharray="4,3"/>
+        <!-- RIGHT: projection-error inset -->
+        <rect x="452" y="34" width="296" height="292" fill="#fafafa" stroke="#ddd" stroke-width="1" rx="6"/>
+        <text x="600" y="54" font-size="12" font-weight="700" fill="#333" font-family="sans-serif" text-anchor="middle">Inset: projection error at one marker</text>
+        <!-- interface line -->
+        <line x1="472" y1="200" x2="728" y2="200" stroke="#4fc3f7" stroke-width="2"/>
+        <text x="720" y="216" font-size="10" fill="#0277bd" font-family="sans-serif" text-anchor="end">gel / window interface</text>
+        <!-- normal -->
+        <line x1="600" y1="90" x2="600" y2="290" stroke="#999" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="606" y="286" font-size="10" fill="#999" font-family="sans-serif">normal</text>
+        <!-- marker before/after -->
+        <circle cx="600" cy="112" r="4.5" fill="none" stroke="#212121" stroke-width="1.5"/>
+        <circle cx="600" cy="152" r="4.5" fill="#212121"/>
+        <line x1="588" y1="112" x2="588" y2="148" stroke="#555" stroke-width="1.6" marker-end="url(#gs-a)"/>
+        <text x="566" y="136" font-size="11.5" font-style="italic" fill="#333" font-family="sans-serif">d</text>
+        <text x="612" y="110" font-size="10" fill="#666" font-family="sans-serif">marker (rest)</text>
+        <text x="612" y="156" font-size="10" fill="#212121" font-family="sans-serif">marker (pressed)</text>
+        <!-- ray from virtual camera through interface, refracting -->
+        <line x1="676" y1="290" x2="640" y2="200" stroke="#455a64" stroke-width="1.5"/>
+        <line x1="640" y1="200" x2="600" y2="152" stroke="#455a64" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <line x1="640" y1="90" x2="640" y2="290" stroke="#bbb" stroke-width="0.8" stroke-dasharray="3,3"/>
+        <!-- angle arcs -->
+        <path d="M 640 236 A 36 36 0 0 1 654 233" fill="none" stroke="#c62828" stroke-width="1.4"/>
+        <text x="652" y="248" font-size="12" fill="#c62828" font-family="sans-serif">&#945;</text>
+        <path d="M 640 172 A 28 28 0 0 0 625 176" fill="none" stroke="#2e7d32" stroke-width="1.4"/>
+        <text x="618" y="168" font-size="12" fill="#2e7d32" font-family="sans-serif">&#946;</text>
+        <!-- apparent shift Delta -->
+        <line x1="600" y1="242" x2="640" y2="242" stroke="#c62828" stroke-width="1.8" marker-end="url(#gs-ar)"/>
+        <text x="612" y="236" font-size="12" fill="#c62828" font-family="sans-serif">&#916;</text>
+        <text x="600" y="266" font-size="10.5" fill="#c62828" font-family="sans-serif" text-anchor="middle">&#916; = d&#183;tan&#946;, &#946; = arcsin(sin&#945;/&#947;)</text>
+        <text x="600" y="281" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="middle">projection error — subtract before iFEM</text>
+      </svg>
+      <div class="figure-caption">The GelSlim 2.0 sensing stack, drawn from the description in Ma et al. (2019): markers printed on the outer gel surface under the paint, dual-color grazing illumination, curved total-internal-reflection light guide, angled camera with its mirrored virtual position. Inset: a marker displaced $d$ along the normal appears shifted in-plane by $\Delta = d\tan\beta$ with $\beta = \arcsin(\sin\alpha/\gamma)$ — a systematic error subtracted before inversion.</div>
+    </div>
+
+    <h3 class="subsection-heading">Three Solution Families</h3>
+
+    <table>
+      <tr><th>Family</th><th>Idea</th><th>Strengths</th><th>Weaknesses</th></tr>
+      <tr><td><strong>Analytical</strong> (GelForce-style)</td><td>Two-layer marker sensors invert Boussinesq&ndash;Cerruti half-space Green's functions per marker</td><td>Closed-form, fast, no mesh</td><td>Semi-infinite assumption is invalid for a thin bonded pad — Ma et al. (2019) criticize precisely this: it wrongly implies the force at a marker depends only on that marker's displacement</td></tr>
+      <tr><td><strong>Model-based FE</strong></td><td>Geometry-true stiffness model; this module's case study</td><td>Physics-consistent; calibration-light (two material constants); interpretable</td><td>Linear-elastic assumption strains at deep indentation; needs a good mesh and BCs</td></tr>
+      <tr><td><strong>Learning-based</strong></td><td>Sferrazza et al. (2019) invert the pipeline's role of FEM: offline FE simulations of the gel generate dense ground-truth force-distribution labels (resultants validated against a commercial F/T sensor); a network trained on thousands of image&ndash;label pairs reconstructs the 3-D force distribution in real time. FeelAnyForce (2024) scales the learned route across sensor types with a transformer trained on 200k+ indentations</td><td>Handles nonlinearity; simple runtime pipeline</td><td>Needs the label generator (itself an FE model) or massive data; training-distribution limits</td></tr>
+    </table>
+
+    <p>The tradeoff in one line: model-based buys physics consistency and calibration-lightness; learned buys nonlinearity handling and pipeline simplicity. The most interesting current work (Section 8's successor discussion) imports the regularization machinery of Sections 4&ndash;5 into the model-based route rather than abandoning it.</p>
+
+    <!-- ===== SECTION 8: CASE STUDY ===== -->
+    <h2 class="section-heading" id="case-study-gelslim-ifem">8. Case Study: GelSlim 2.0 and Inverse FEM (Ma et al., ICRA 2019)</h2>
+
+    <p>One paper, walked end to end — because it is the cleanest existing demonstration that a soft skin plus a calibrated FE model <em>is</em> a distributed force sensor. Keep the framing honest from the start: this is one bounded, material-dependent case — a specific gel, a specific geometry, linear elasticity, simple indenters — not proof of general dense 3-D force recovery. Its own authors call the validation partial; its successor exists largely to fix that.</p>
+
+    <h3 class="subsection-heading">Hardware</h3>
+
+    <ul>
+      <li><strong>Markers as FE nodes:</strong> markers are printed as a <em>regular grid</em> directly correlated with the FE nodes, on the outer gel surface under the paint — the mesh is drawn on the sensor.</li>
+      <li><strong>Dual-color grazing illumination:</strong> red LED from the left, green from the right (LUXEON CZ, chosen to match the Raspberry Pi Spy Camera CCD bands), so contact geometry is encoded in RGB-channel differences.</li>
+      <li><strong>Curved total-internal-reflection light guide</strong> replaces a 45&deg; mirror — brighter image, higher frame rate, slimmer finger.</li>
+      <li><strong>Parametric CAD</strong> scales the gel pad down to 20 &times; 20 mm and the finger thickness to 18 mm.</li>
+    </ul>
+
+    <h3 class="subsection-heading">FE Model and the Key Formulation Move</h3>
+
+    <p>The gel pad is meshed with a <strong>single layer</strong> of Hex-8 (8-node hexahedral, 24-DOF) elements — 1964 elements, 3698 nodes — built slightly larger than the gel bounding box and then cropped. Linear elasticity throughout:</p>
+
+    <div class="math-block">$$\mathbf{F} = \mathbf{K}\,\mathbf{U},\qquad \mathbf{K}\in\mathbb{R}^{3n\times 3n}$$</div>
+    <div class="math-block">$$\mathbf{U} = \left(\delta_{x}^{1},\delta_{y}^{1},\delta_{z}^{1},\ldots,\delta_{z}^{n}\right)^{\mathsf T},\qquad \mathbf{F} = \left(f_{x}^{1},f_{y}^{1},f_{z}^{1},\ldots,f_{z}^{n}\right)^{\mathsf T}$$</div>
+
+    <p>The only material inputs are $E$ and $\nu$, measured by tensile tests at several speeds (rate effects found negligible, licensing the elastic model): $E = 0.147$ MPa and $\nu = 0.3223$ — both flagged by the authors as sensitive to gel preparation.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Aside: 147 MPa or 147 kPa?</div>
+      <div class="collapsible-body">
+        <p>The arXiv v2 text renders the modulus as "147MPa" across a line break, with a leading "0." clipped by the layout. $0.147$ MPa $= 147$ kPa is the physically consistent reading — a silicone gel at 147 <em>M</em>Pa would be three orders of magnitude too stiff, harder than dense polyethylene. A useful reminder that source-reading is part of modeling: a copied constant with a dropped decimal point silently rescales every reconstructed force by 1000.</p>
+      </div>
+    </div>
+
+    <p>The formulation move that makes it real-time: single layer of nodes + fixed bottom boundary (gel bonded to the acrylic) means <strong>every retained node has a displacement estimate</strong> &mdash; though "observed" deserves a footnote: the markers give tangential ($x$, $y$) motion directly, while the normal ($z$) component is completed using the known geometry of the indenter. Full observation is therefore conditional on that geometric assumption, not a general property of the sensor. Granting it, this is Section 2's fully-observed special case: force recovery is the direct product $\mathbf{F} = \mathbf{K}\mathbf{U}$ — no ill-conditioned inversion online, $\mathbf{K}$ precomputed offline, estimation at camera frame rate. The pathology relocates rather than vanishes: $\mathbf{K}$ amplifies pixel-scale tracking noise through its largest eigenvalues, which is exactly the door through which iFEM2.0's ridge regularization later entered.</p>
+
+    <h3 class="subsection-heading">Displacement Pipeline</h3>
+
+    <table>
+      <tr><th>Step</th><th>What happens</th><th>Failure it guards against</th></tr>
+      <tr><td>1. Detect</td><td>Markers found per frame</td><td>&mdash;</td></tr>
+      <tr><td>2. Match</td><td>Nearest-neighbor matching with a validity check</td><td>Markers can <em>vanish</em> under deformation; naive matching then corrupts the field</td></tr>
+      <tr><td>3. Interpolate</td><td>Marker displacements interpolated onto FE nodes</td><td>&mdash; (but this step correlates the noise: Section 5)</td></tr>
+      <tr><td>4. Correct projection</td><td>Subtract $\Delta = d\tan\beta$, $\beta = \arcsin(\sin\alpha/\gamma)$ (Section 7)</td><td>Tangential/normal conflation through perspective and refraction</td></tr>
+      <tr><td>5. Reconstruct $z$</td><td>Out-of-plane displacements from contact-patch geometry for known simple indenters (sphere, cylinder)</td><td>The camera does not measure $\delta_z$ directly</td></tr>
+      <tr><td>6. Multiply</td><td>$\mathbf{F} = \mathbf{K}\mathbf{U}$</td><td>&mdash;</td></tr>
+    </table>
+
+    <h3 class="subsection-heading">Results and Validation</h3>
+
+    <p>The reconstructions deliver the punchline promised in Section 1: tangential forces confined to the contact patch even though displacements spread far outside it, and near the patch boundary the tangential force direction can even <em>oppose</em> the local displacement — the global functional at work, impossible under any $f_i \propto u_i$ scheme.</p>
+
+    <p>Validation against an ATI Gamma F/T sensor while pushing and sliding on a sphere: standard deviation of the resultant force $(0.244,\ 0.201,\ 0.322)$ N in $(x, y, z)$ — roughly within 15% of ground truth, with the residual error attributed to calibration, marker tracking, and material nonlinearity.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — "partial validation," in the authors' own framing</div>
+      <div>The F/T sensor checks the <em>resultant</em>: one linear functional of the distribution, living in the best-conditioned modes. Infinitely many wrong pressure maps share a correct resultant — Section 4 showed regularization bias spreads the patch and cuts the peak while preserving exactly this functional. Resultant agreement is necessary, not sufficient; presenting it as validation of the force <em>distribution</em> is the field's most common overclaim. Ma et al. label their validation partial for precisely this reason. The fix requires distribution-level ground truth: Sferrazza et al. (2019) build it from a calibrated FE forward model; iFEM2.0 builds standardized simulation-based metrics.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Successor: iFEM2.0</h3>
+
+    <p>Zhao, Liu &amp; Ma (IEEE T-RO 2025) upgrade the pipeline on both fronts this module has been flagging. Mechanically: a <em>multilayer</em> inverse FEM with mesh constraints plus ridge (Tikhonov) regularization for noise robustness — Sections 4&ndash;5 imported into the tactile stack. Methodologically: a standardized evaluation framework with accuracy, fidelity, and noise-robustness metrics for dense 3-D contact force fields, demonstrated in simulation and experiment — a direct answer to the resultant-only validation gap.</p>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <div id="gelslim-walkthrough" class="interactive-container" data-title="Walkthrough — GelSlim inverse-FEM pipeline"></div>
+
+    <!-- ===== SECTION 9: DESIGN AS CONDITIONING ===== -->
+    <h2 class="section-heading" id="skin-design-as-conditioning">9. Soft Robot Skins as Distributed Force Sensors: Design as Conditioning</h2>
+
+    <p>The bridge to your own hardware: every skin design parameter is a knob on the inverse problem. Choose them with the SVD in mind and the regularization has less to repair; choose them blind and no $\lambda$ will save you.</p>
+
+    <table>
+      <tr><th>Design knob</th><th>Effect on the inverse problem</th></tr>
+      <tr><td><strong>Pad thickness $t$</strong></td><td>The elastic kernel spreads a surface point load over a lateral scale of order $t$: thicker pads mean wider kernels, faster singular-value decay, and a spatial-resolution floor of order $t$ (kernel-width scaling estimate, Section 3). But thicker also means larger displacement signal and more mechanical compliance for grasping — a resolution/robustness tradeoff, not a free win.</td></tr>
+      <tr><td><strong>Modulus $E$</strong></td><td>In linear elasticity with fixed geometry and $\nu$: $\mathbf{H} \propto 1/E$ — a <em>pure gain</em>. It does not change conditioning at all. It sets signal amplitude against the camera noise floor and the load range before nonlinearity.</td></tr>
+      <tr><td><strong>Measurement density $m$</strong></td><td>More markers average noise (variance shrinks like $1/m$ per retained mode) but cannot defeat the exponential singular-value decay — the logarithmic resolution law still governs. Camera upgrades buy resolution slowly.</td></tr>
+      <tr><td><strong>Where you measure</strong></td><td>Sensing on the loaded surface (tactile) versus remote (structural SHM) is the single biggest conditioning lever — Section 7's data-economics flip.</td></tr>
+      <tr><td><strong>Compressibility $\nu$</strong></td><td>$\nu \to 0.5$ causes volumetric locking in standard displacement-based Hex-8 elements — the very element of Section 8's case study — requiring mixed/hybrid formulations. And note the measured GelSlim value $\nu = 0.3223$: real engineered gels can sit far from the incompressible idealization; assuming $0.5$ biases the model.</td></tr>
+    </table>
+
+    <div class="math-block">$$\mathbf{H} \propto \frac{1}{E}\quad(\text{fixed geometry},\ \nu),\qquad \ell_{\min} = \mathcal{O}(t)$$</div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight — thickness is a resolution knob, modulus is a gain knob</div>
+      <div>Saying a softer or stiffer gel changes the ill-conditioning is wrong in the linear regime: $E$ scales every singular value equally and cancels out of $\kappa(\mathbf{H})$. Conditioning is controlled by geometry (thickness) and measurement placement. The corollary is diagnostic gold: a calibration error in $E$ rescales all reconstructed forces <em>uniformly</em> but does not distort the distribution shape — shape errors point to $\nu$, geometry, or boundary conditions instead. When your force map looks right but the magnitudes are off by a constant factor, recheck $E$; when the shape is wrong, $E$ is innocent.</div>
+    </div>
+
+    <p><strong>Ground truth remains the field's open sore.</strong> Point F/T sensors validate only resultants (Ma et al. 2019). Sferrazza et al. (2019) answer with a calibrated FE forward model as a dense label generator; iFEM2.0 (2025) answers with standardized simulation-based assessment metrics. Neither is a measured distributed reference; a true distributed-pressure ground-truth instrument for soft skins does not yet exist.</p>
+
+    <div class="definition-box">
+      <div class="box-label">The takeaway recipe</div>
+      <div>Elastomer + camera + calibrated FE model + regularized inverse = a complete distributed force sensor — whose <strong>resolution</strong> is set by mechanics ($t$), whose <strong>accuracy</strong> is set by calibration ($E$, $\nu$, boundary conditions), and whose <strong>robustness</strong> is set by regularization.</div>
+    </div>
+
+    <!-- ===== SECTION 10: RECIPE AND PITFALLS ===== -->
+    <h2 class="section-heading" id="practical-recipe-and-pitfalls">10. Practical Recipe and Pitfalls</h2>
+
+    <h3 class="subsection-heading">The Workflow</h3>
+
+    <ol>
+      <li><strong>Characterize the elastomer at operating strain rates</strong> — tensile and/or indentation tests; check rate-independence as Ma et al. did before assuming elasticity; go hyperelastic if operating strains exceed roughly 10%.</li>
+      <li><strong>Verify the forward model first.</strong> Simulate a known indentation and compare force&ndash;depth against experiment. An inverse pipeline built on an unvalidated forward model is unfalsifiable — every wrong reconstruction can be blamed on the inversion. Hertz spherical contact is the standard sanity target:
+        <div class="math-block">$$p(r) = p_0\sqrt{1-\frac{r^{2}}{a^{2}}},\qquad p_0 = \frac{3F}{2\pi a^{2}}$$</div></li>
+      <li><strong>Choose the candidate force set and measurement set;</strong> assemble $\mathbf{H}$ column-by-column with unit-load solves — or exploit the fully-observed shortcut $\mathbf{F} = \mathbf{K}\mathbf{U}$ when every retained node is measured.</li>
+      <li><strong>Compute the SVD;</strong> inspect $\kappa(\mathbf{H})$ and the Picard plot with representative measured data to count recoverable modes <em>before</em> promising a spatial resolution.</li>
+      <li><strong>Impose physical constraints:</strong> nonnegative normal forces (NNLS), optional friction cone, total-force equality when an F/T sensor is in the loop.</li>
+      <li><strong>Choose $\mathbf{L}$:</strong> identity for point-load problems, surface Laplacian for smooth pressure fields.</li>
+      <li><strong>Select $\lambda$</strong> by L-curve corner cross-checked against GCV on calibration presses; freeze it.</li>
+      <li><strong>Precompute the regularized pseudoinverse;</strong> per-frame cost is one matrix&ndash;vector product — this is what makes real-time possible.</li>
+      <li><strong>Validate at two levels:</strong> resultants against F/T across the workspace, distributions against known indenter geometries.</li>
+      <li><strong>Monitor drift:</strong> gel wear and aging change $E$ and thickness; recalibrate on schedule.</li>
+    </ol>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters — step 2 is the one people skip</div>
+      <div>Steps 3&ndash;8 all inherit their meaning from step 2. If the forward model has the wrong boundary conditions or a mischaracterized modulus, the inverse solution converges beautifully to the answer of the wrong question, and no residual, L-curve, or cross-validation will tell you. Only a forward-model check against independent physical measurement can.</div>
+    </div>
+
+    <h3 class="subsection-heading">The Failure Catalogue</h3>
+
+    <ul>
+      <li>Linear model at deep indentation — hyperelastic reality, linear pipeline (Sections 7, 8).</li>
+      <li>Wrong boundary conditions — edges assumed fixed that are not (Section 9).</li>
+      <li>Marker-interpolation noise is correlated and quietly breaks GCV (Section 5).</li>
+      <li>Regularization spreads the contact patch and underestimates peak pressure while conserving total force — report all three numbers, not just the flattering one (Section 4).</li>
+      <li>The per-point stiffness fallacy $f_i \propto u_i$ (Section 1).</li>
+      <li>Skipping projection/refraction compensation (Section 7).</li>
+      <li>Half-space (Boussinesq&ndash;Cerruti) formulas on thin bonded pads — invalid unless contact scale $\ll$ pad thickness (Section 7).</li>
+      <li>Conflating the two iFEMs — load reconstruction vs. Tessler-style shape sensing (Section 1).</li>
+      <li>Trusting a single $\lambda$ criterion (Section 5).</li>
+      <li>Validating only resultants and claiming distribution accuracy (Section 8).</li>
+      <li>Reporting constrained-DOF entries of $\mathbf{K}\mathbf{u}$ as contact forces — they are reactions (Section 2).</li>
+      <li>Plotting consistent nodal forces as a pressure map without the tributary-area conversion (Section 2).</li>
+    </ul>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="mod8-flashcards"></div>
+
+    <!-- ===== REFERENCES ===== -->
+    <h2 class="section-heading" id="references">References</h2>
+    <ul class="ref-list">
+      <li>Tikhonov, A. N.; Arsenin, V. Y. (1977). <em>Solutions of Ill-Posed Problems</em>. Book (reviewed in Mathematics of Computation 32(144), 1978, and SIAM Review 21(2), 1979).</li>
+      <li>Golub, Gene H.; Heath, Michael; Wahba, Grace (1979). <em>Generalized Cross-Validation as a Method for Choosing a Good Ridge Parameter</em>. Technometrics 21(2), pp. 215&ndash;223. doi:10.1080/00401706.1979.10489751</li>
+      <li>Hansen, Per Christian (1992). <em>Analysis of Discrete Ill-Posed Problems by Means of the L-Curve</em>. SIAM Review 34(4), pp. 561&ndash;580. doi:10.1137/1034115</li>
+      <li>Hansen, Per Christian (1998). <em>Rank-Deficient and Discrete Ill-Posed Problems: Numerical Aspects of Linear Inversion</em>. SIAM Monographs on Mathematical Modeling and Computation. doi:10.1137/1.9780898719697</li>
+      <li>Jacquelin, E.; Bennani, A.; Hamelin, P. (2003). <em>Force reconstruction: analysis and regularization of a deconvolution problem</em>. Journal of Sound and Vibration 265(1), pp. 81&ndash;107. doi:10.1016/s0022-460x(02)01441-4</li>
+      <li>Maincon, Philippe; Barnardo, Celeste; Larsen, Carl M. (2008). <em>VIV Force Estimation Using Inverse FEM</em>. ASME 27th International Conference on Offshore Mechanics and Arctic Engineering (OMAE 2008), pp. 673&ndash;681. doi:10.1115/omae2008-57325</li>
+      <li>Lourens, E.; Reynders, E.; De Roeck, G.; Degrande, G.; Lombaert, G. (2012). <em>An augmented Kalman filter for force identification in structural dynamics</em>. Mechanical Systems and Signal Processing 27, pp. 446&ndash;460. doi:10.1016/j.ymssp.2011.09.025</li>
+      <li>Sanchez, J.; Benaroya, H. (2014). <em>Review of force reconstruction techniques</em>. Journal of Sound and Vibration 333(14), pp. 2999&ndash;3018. doi:10.1016/j.jsv.2014.02.025</li>
+      <li>Ma, Daolin; Donlon, Elliott; Dong, Siyuan; Rodriguez, Alberto (2019). <em>Dense Tactile Force Estimation using GelSlim and inverse FEM</em>. 2019 International Conference on Robotics and Automation (ICRA), pp. 5418&ndash;5424. doi:10.1109/icra.2019.8794113</li>
+      <li>Sferrazza, Carmelo; Wahlsten, Adam; Trueeb, Camill; D'Andrea, Raffaello (2019). <em>Ground Truth Force Distribution for Learning-Based Tactile Sensing: A Finite Element Approach</em>. IEEE Access, vol. 7, pp. 173438&ndash;173449 (arXiv:1909.04000). doi:10.1109/access.2019.2956882</li>
+      <li>Liu, Ruixue; Dobriban, Edgar; Hou, Zhichao; Qian, Kun (2022). <em>Dynamic Load Identification for Mechanical Systems: A Review</em>. Archives of Computational Methods in Engineering 29(2), pp. 831&ndash;863. doi:10.1007/s11831-021-09594-7</li>
+      <li>Yang, Hongji; Jiang, Jinhui; Chen, Guoping; Zhao, Jiamin (2023). <em>Dynamic load identification based on deep convolution neural network</em>. Mechanical Systems and Signal Processing, vol. 185, 109757. doi:10.1016/j.ymssp.2022.109757</li>
+      <li>Shahidzadeh, Amir-Hossein; Caddeo, Gabriele; Alapati, Koushik; Natale, Lorenzo; Fermuller, Cornelia; Aloimonos, Yiannis (2024). <em>FeelAnyForce: Estimating Contact Force Feedback from Tactile Sensation for Vision-Based Tactile Sensors</em>. arXiv:2410.02048.</li>
+      <li>Zhao, Can; Liu, Jin; Ma, Daolin (2025). <em>iFEM2.0: Dense 3-D Contact Force Field Reconstruction and Assessment for Vision-Based Tactile Sensors</em>. IEEE Transactions on Robotics, vol. 41, pp. 289&ndash;305 (online November 2024). doi:10.1109/tro.2024.3502197</li>
+      <li>Li, Kelu; Xiao, Longfei; Liu, Mingyue; Kou, Yufeng (2025). <em>A distributed dynamic load identification approach for thin plates based on inverse Finite Element Method and radial basis function fitting via strain response</em>. Engineering Structures, vol. 322, 119072. doi:10.1016/j.engstruct.2024.119072</li>
+    </ul>
+
+    <div class="page-nav">
+      <a href="mod7.html">&larr; 7. Material Identification</a>
+      <a href="mod9.html">9. Reference Configuration &amp; Prestress &rarr;</a>
+    </div>
+  </main>
+
+  <script src="components.js"></script>
+  <script>renderSidebar('mod8');</script>
+
+<!-- ===== SCRIPT: CONTACT INVERSION LAB ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  var n = 48, dx = 1 / n;
+  var xs = []; for (var i0 = 0; i0 < n; i0++) xs.push((i0 + 0.5) * dx);
+
+  function gauss() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  var noisePool = [];
+  function reroll() { noisePool = []; for (var i = 0; i < n; i++) noisePool.push(gauss()); }
+  reroll();
+
+  var Hfull = null, curT = -1;
+  function buildKernel(t) {
+    Hfull = [];
+    for (var i = 0; i < n; i++) {
+      var row = [];
+      for (var j = 0; j < n; j++) { var d = xs[i] - xs[j]; row.push((dx / Math.PI) * t / (d * d + t * t)); }
+      Hfull.push(row);
+    }
+    curT = t;
+  }
+
+  function eigSym(Ain) {
+    var nn = Ain.length, A = [], V = [], i, j, k;
+    for (i = 0; i < nn; i++) {
+      A.push(Ain[i].slice());
+      var r = []; for (j = 0; j < nn; j++) r.push(i === j ? 1 : 0);
+      V.push(r);
+    }
+    for (var sweep = 0; sweep < 40; sweep++) {
+      var off = 0;
+      for (i = 0; i < nn - 1; i++) for (j = i + 1; j < nn; j++) off += A[i][j] * A[i][j];
+      if (off < 1e-26) break;
+      for (i = 0; i < nn - 1; i++) {
+        for (j = i + 1; j < nn; j++) {
+          if (Math.abs(A[i][j]) < 1e-20) continue;
+          var th = (A[j][j] - A[i][i]) / (2 * A[i][j]);
+          var tt = (th === 0) ? 1 : (th > 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+          var c = 1 / Math.sqrt(tt * tt + 1), s = tt * c;
+          for (k = 0; k < nn; k++) {
+            var aik = A[i][k], ajk = A[j][k];
+            A[i][k] = c * aik - s * ajk; A[j][k] = s * aik + c * ajk;
+          }
+          for (k = 0; k < nn; k++) {
+            var aki = A[k][i], akj = A[k][j];
+            A[k][i] = c * aki - s * akj; A[k][j] = s * aki + c * akj;
+            var vki = V[k][i], vkj = V[k][j];
+            V[k][i] = c * vki - s * vkj; V[k][j] = s * vki + c * vkj;
+          }
+        }
+      }
+    }
+    var idx = []; for (i = 0; i < nn; i++) idx.push(i);
+    idx.sort(function(a, b) { return A[b][b] - A[a][a]; });
+    var d2 = [], Vc = [];
+    for (i = 0; i < nn; i++) {
+      d2.push(Math.max(A[idx[i]][idx[i]], 0));
+      var col = []; for (j = 0; j < nn; j++) col.push(V[j][idx[i]]);
+      Vc.push(col);
+    }
+    return { d: d2, V: Vc };
+  }
+
+  var cache = { key: '', Vs: null, s2: null, midx: null };
+  function markerIdx(spacing, occl) {
+    var idx = [];
+    for (var i = 0; i < n; i++) {
+      if (i % spacing !== 0) continue;
+      if (occl && Math.abs(xs[i] - 0.5) < 0.14) continue;
+      idx.push(i);
+    }
+    return idx;
+  }
+  function decompose(t, spacing, occl) {
+    var key = t.toFixed(2) + '|' + spacing + '|' + (occl ? 1 : 0);
+    if (cache.key === key) return;
+    if (curT !== t) buildKernel(t);
+    var midx = markerIdx(spacing, occl);
+    var m = midx.length;
+    var G = [];
+    for (var a = 0; a < n; a++) { var row = []; for (var b = 0; b < n; b++) row.push(0); G.push(row); }
+    for (var k = 0; k < m; k++) {
+      var hr = Hfull[midx[k]];
+      for (a = 0; a < n; a++) {
+        var ha = hr[a];
+        if (ha === 0) continue;
+        for (b = a; b < n; b++) G[a][b] += ha * hr[b];
+      }
+    }
+    for (a = 0; a < n; a++) for (b = 0; b < a; b++) G[a][b] = G[b][a];
+    var eg = eigSym(G);
+    cache = { key: key, Vs: eg.V, s2: eg.d, midx: midx };
+  }
+
+  function truth(preset, sep) {
+    var g = [];
+    for (var i = 0; i < n; i++) {
+      var x = xs[i], v = 0;
+      if (preset === 'sphere') {
+        var a = 0.14, q = 1 - Math.pow((x - 0.5) / a, 2);
+        v = q > 0 ? Math.sqrt(q) : 0;
+      } else if (preset === 'punch') {
+        v = Math.abs(x - 0.5) <= 0.14 ? 1 : 0;
+      } else {
+        var w = 0.03;
+        v = Math.exp(-Math.pow(x - (0.5 - sep / 2), 2) / (2 * w * w)) + Math.exp(-Math.pow(x - (0.5 + sep / 2), 2) / (2 * w * w));
+      }
+      g.push(v);
+    }
+    return g;
+  }
+
+  function fmtExp(v) {
+    if (!isFinite(v)) return '&#8734;';
+    var e = Math.floor(Math.log10(v));
+    var mant = v / Math.pow(10, e);
+    return mant.toFixed(1) + '&#215;10<sup>' + e + '</sup>';
+  }
+
+  function pathFrom(pts) {
+    var p = '';
+    for (var i = 0; i < pts.length; i++) p += (i === 0 ? 'M ' : ' L ') + pts[i][0].toFixed(1) + ' ' + pts[i][1].toFixed(1);
+    return p;
+  }
+
+  function update() {
+    var t = parseFloat(el('cl-t').value);
+    var sep = parseFloat(el('cl-s').value);
+    var eta = parseFloat(el('cl-noise').value);
+    var loglam = parseFloat(el('cl-lam').value);
+    var method = el('cl-method').value;
+    var constraint = el('cl-constraint').value;
+    var spacing = parseInt(el('cl-spacing').value, 10);
+    var occl = el('cl-occlude').checked;
+    var preset = el('cl-preset').value;
+    el('cl-t-val').textContent = t.toFixed(2);
+    el('cl-s-val').textContent = sep.toFixed(2);
+    el('cl-noise-val').textContent = eta.toFixed(2);
+    el('cl-lam-val').innerHTML = (loglam < 0 ? '&minus;' : '') + Math.abs(loglam).toFixed(1);
+    var lam = Math.pow(10, loglam);
+    var lam2 = (method === 'naive') ? 0 : lam * lam;
+
+    decompose(t, spacing, occl);
+    var midx = cache.midx, m = midx.length, Vs = cache.Vs, s2 = cache.s2;
+    var i, j, k;
+
+    var gTrue = truth(preset, sep);
+    var ycleanFull = [];
+    for (i = 0; i < n; i++) {
+      var acc = 0, row = Hfull[i];
+      for (j = 0; j < n; j++) acc += row[j] * gTrue[j];
+      ycleanFull.push(acc);
+    }
+    var ymaxM = 0;
+    for (k = 0; k < m; k++) ymaxM = Math.max(ymaxM, Math.abs(ycleanFull[midx[k]]));
+    var sd = eta / 100 * ymaxM;
+    var yMeas = [];
+    for (k = 0; k < m; k++) yMeas.push(ycleanFull[midx[k]] + sd * noisePool[midx[k]]);
+
+    var hty = [];
+    for (var a = 0; a < n; a++) {
+      var acc2 = 0;
+      for (k = 0; k < m; k++) acc2 += Hfull[midx[k]][a] * yMeas[k];
+      hty.push(acc2);
+    }
+    var s2max = s2[0], tol = s2max * 3e-15;
+    var rank = 0;
+    for (i = 0; i < n; i++) if (s2[i] > tol) rank++;
+    var gHat = []; for (i = 0; i < n; i++) gHat.push(0);
+    var nkeep = 0;
+    for (i = 0; i < rank; i++) {
+      var denom = s2[i] + lam2;
+      if (method === 'naive' && s2[i] <= tol) continue;
+      var coef = 0, vi = Vs[i];
+      for (a = 0; a < n; a++) coef += vi[a] * hty[a];
+      var wgt = coef / (method === 'naive' ? s2[i] : denom);
+      for (a = 0; a < n; a++) gHat[a] += wgt * vi[a];
+      var phi = (method === 'naive') ? 1 : s2[i] / denom;
+      if (phi > 0.5) nkeep++;
+    }
+    if (constraint === 'nn' || constraint === 'nnft') {
+      for (a = 0; a < n; a++) if (gHat[a] < 0) gHat[a] = 0;
+    }
+    var Rtrue = 0, R = 0;
+    for (a = 0; a < n; a++) { Rtrue += gTrue[a]; R += gHat[a]; }
+    Rtrue *= dx; R *= dx;
+    if (constraint === 'nnft') {
+      var c0 = (Rtrue - R) / (n * dx);
+      for (a = 0; a < n; a++) gHat[a] += c0;
+      R = Rtrue;
+    }
+    var gmax = 0; for (a = 0; a < n; a++) gmax = Math.max(gmax, gTrue[a]);
+    var resErr = Math.abs(R - Rtrue) / Rtrue * 100;
+    var sse = 0, ghmax = -1e30, ghAbsMax = 0;
+    for (a = 0; a < n; a++) {
+      sse += Math.pow(gHat[a] - gTrue[a], 2);
+      ghmax = Math.max(ghmax, gHat[a]);
+      ghAbsMax = Math.max(ghAbsMax, Math.abs(gHat[a]));
+    }
+    var rmse = Math.sqrt(sse / n) / gmax * 100;
+    var peakErr = (ghmax - gmax) / gmax * 100;
+    var kappa = Math.sqrt(s2[0] / s2[rank - 1]);
+
+    // ---- panel (a): traction ----
+    var W = 700, Ht = 190, px0 = 45, px1 = 685, py0 = 18, py1 = 165;
+    var yTop = 1.65 * gmax, yBot = -0.85 * gmax;
+    function X(x) { return px0 + x * (px1 - px0); }
+    function Y(v) { return py0 + (yTop - v) / (yTop - yBot) * (py1 - py0); }
+    var clipped = false;
+    var sA = '<line x1="' + px0 + '" y1="' + Y(0) + '" x2="' + px1 + '" y2="' + Y(0) + '" stroke="#ccc" stroke-width="1"/>';
+    var fillPts = 'M ' + X(xs[0]) + ' ' + Y(0);
+    for (i = 0; i < n; i++) fillPts += ' L ' + X(xs[i]).toFixed(1) + ' ' + Y(gTrue[i]).toFixed(1);
+    fillPts += ' L ' + X(xs[n - 1]) + ' ' + Y(0) + ' Z';
+    sA += '<path d="' + fillPts + '" fill="rgba(0,131,143,0.18)" stroke="#00838f" stroke-width="1.6"/>';
+    var rp = [];
+    for (i = 0; i < n; i++) {
+      var gv = gHat[i];
+      if (gv > yTop) { gv = yTop; clipped = true; }
+      if (gv < yBot) { gv = yBot; clipped = true; }
+      rp.push([X(xs[i]), Y(gv)]);
+    }
+    sA += '<path d="' + pathFrom(rp) + '" fill="none" stroke="#c62828" stroke-width="2"/>';
+    sA += '<text x="' + (px0 + 6) + '" y="' + (py0 + 12) + '" font-size="11" fill="#00695c" font-family="sans-serif">true traction g(x) (filled)</text>';
+    sA += '<text x="' + (px0 + 6) + '" y="' + (py0 + 27) + '" font-size="11" fill="#c62828" font-family="sans-serif">reconstruction &#285;(x)</text>';
+    if (clipped) sA += '<text x="' + (px1 - 6) + '" y="' + (py0 + 12) + '" font-size="11" font-weight="700" fill="#c62828" font-family="sans-serif" text-anchor="end">clipped: max|&#285;| = ' + fmtExp(ghAbsMax) + ' (truth: ' + gmax.toFixed(1) + ')</text>';
+    el('cl-svg-g').innerHTML = sA;
+
+    // ---- panel (b): measurements ----
+    var qy0 = 14, qy1 = 128;
+    var ymaxAbs = 1e-12;
+    for (i = 0; i < n; i++) ymaxAbs = Math.max(ymaxAbs, Math.abs(ycleanFull[i]));
+    for (k = 0; k < m; k++) ymaxAbs = Math.max(ymaxAbs, Math.abs(yMeas[k]));
+    ymaxAbs *= 1.15;
+    function Yq(v) { return qy0 + (ymaxAbs - v) / (2 * ymaxAbs) * (qy1 - qy0); }
+    var sB = '<line x1="' + px0 + '" y1="' + Yq(0) + '" x2="' + px1 + '" y2="' + Yq(0) + '" stroke="#ccc" stroke-width="1"/>';
+    var cp = [];
+    for (i = 0; i < n; i++) cp.push([X(xs[i]), Yq(ycleanFull[i])]);
+    sB += '<path d="' + pathFrom(cp) + '" fill="none" stroke="#00838f" stroke-width="1.8"/>';
+    for (k = 0; k < m; k++) sB += '<circle cx="' + X(xs[midx[k]]).toFixed(1) + '" cy="' + Yq(yMeas[k]).toFixed(1) + '" r="2.6" fill="#555"/>';
+    if (occl) sB += '<rect x="' + X(0.36) + '" y="' + qy0 + '" width="' + (X(0.64) - X(0.36)) + '" height="' + (qy1 - qy0) + '" fill="rgba(198,40,40,0.05)"/><text x="' + X(0.5) + '" y="' + (qy1 + 14) + '" font-size="10" fill="#c62828" font-family="sans-serif" text-anchor="middle">occluded</text>';
+    sB += '<text x="' + (px0 + 6) + '" y="' + (qy0 + 12) + '" font-size="11" fill="#00695c" font-family="sans-serif">clean Hg (line) &#8226; noisy markers (dots) — note how smooth and featureless the data is</text>';
+    el('cl-svg-y').innerHTML = sB;
+
+    // ---- panel (c): spectrum ----
+    var sy0 = 16, sy1 = 118;
+    var sig1 = Math.sqrt(s2[0]);
+    var logTop = Math.log10(sig1), logBotRel = -12;
+    function Ys(lg) {
+      var rel = Math.max(lg - logTop, logBotRel);
+      return sy0 + (0 - rel) / (0 - logBotRel) * (sy1 - sy0);
+    }
+    var bw = (px1 - px0) / n;
+    var sC = '';
+    for (i = 0; i < n; i++) {
+      var lg = 0.5 * Math.log10(Math.max(s2[i], 1e-300));
+      var ybar = Ys(lg);
+      var phi2 = (method === 'naive') ? (i < rank ? 1 : 0) : s2[i] / (s2[i] + lam2);
+      var alpha = (0.12 + 0.78 * phi2).toFixed(2);
+      sC += '<rect x="' + (px0 + i * bw + 1).toFixed(1) + '" y="' + ybar.toFixed(1) + '" width="' + (bw - 2).toFixed(1) + '" height="' + Math.max(1, sy1 - ybar).toFixed(1) + '" fill="rgba(0,131,143,' + alpha + ')"/>';
+    }
+    if (method !== 'naive') {
+      var ylam = Ys(Math.log10(lam));
+      if (ylam > sy0 && ylam < sy1) {
+        sC += '<line x1="' + px0 + '" y1="' + ylam.toFixed(1) + '" x2="' + px1 + '" y2="' + ylam.toFixed(1) + '" stroke="#c62828" stroke-width="1.4" stroke-dasharray="6,4"/>';
+        sC += '<text x="' + (px1 - 4) + '" y="' + (ylam - 5).toFixed(1) + '" font-size="11" fill="#c62828" font-family="sans-serif" text-anchor="end">&#955;</text>';
+      }
+    }
+    sC += '<text x="' + (px0 + 4) + '" y="' + (sy1 + 16) + '" font-size="10.5" fill="#666" font-family="sans-serif">singular values &#963;&#7522; (log scale, 12 decades) — bar opacity = filter factor &#966;&#7522; = &#963;&#7522;&#178;/(&#963;&#7522;&#178;+&#955;&#178;)</text>';
+    el('cl-svg-s').innerHTML = sC;
+
+    // ---- persistent panel ----
+    var colR = resErr < 5 ? '#2e7d32' : resErr < 15 ? '#b36118' : '#c62828';
+    var colM = rmse < 10 ? '#2e7d32' : rmse < 35 ? '#b36118' : '#c62828';
+    var colP = Math.abs(peakErr) < 10 ? '#2e7d32' : Math.abs(peakErr) < 35 ? '#b36118' : '#c62828';
+    var assume = '<li>linear elasticity, small strain</li>' +
+      '<li>kernel known <em>exactly</em> (Lorentzian thin-layer surrogate) — an inverse crime real pipelines cannot commit</li>' +
+      '<li>modulus known: enters as pure gain (&#167;9)</li>' +
+      '<li>noise white, uncorrelated' + (spacing > 1 ? ' — real marker interpolation would correlate it (&#167;5)' : '') + '</li>' +
+      '<li>normal traction only (1-D)</li>';
+    el('cl-panel').innerHTML =
+      '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the solver sees</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + m + ' marker displacements (every ' + (spacing === 1 ? '' : spacing + (spacing === 2 ? 'nd ' : 'th ')) + 'node' + (occl ? ', center occluded' : '') + '), noise ' + eta.toFixed(2) + '%</div>' +
+      '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> ' + n + ' nodal tractions g&#7522; on the candidate surface</div>' +
+      '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
+      '<div style="margin-bottom:7px;"><strong>Conditioning:</strong> &#954;(H) = ' + fmtExp(kappa) + '<br><strong>Rank:</strong> ' + rank + ' / ' + Math.min(m, n) + '&nbsp;&nbsp;<strong>Modes &#966; &gt; 0.5:</strong> ' + nkeep + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Validation vs. truth:</strong><br>' +
+      'resultant error: <span style="color:' + colR + ';font-weight:700;">' + resErr.toFixed(1) + '%</span><br>' +
+      'pressure-map RMSE: <span style="color:' + colM + ';font-weight:700;">' + rmse.toFixed(1) + '%</span><br>' +
+      'peak-pressure error: <span style="color:' + colP + ';font-weight:700;">' + (peakErr >= 0 ? '+' : '') + peakErr.toFixed(1) + '%</span></div>' +
+      '<div style="font-size:11px;font-weight:700;color:#00695c;border-top:1px solid #ddd;padding-top:6px;">a passing resultant does NOT validate the map (&#167;8)</div>';
+
+    // ---- readout ----
+    var ro = el('cl-readout');
+    var lamStr = (method === 'naive') ? '0 \\;(\\text{naive LS})' : '10^{' + loglam.toFixed(1) + '}';
+    var note = '';
+    if (method === 'naive' && eta > 0) note = ' Naive LS distributes the noise over all ' + rank + ' modes, the last of which are amplified by $1/\\sigma_i$ up to $' + '\\kappa \\approx ' + '10^{' + Math.round(Math.log10(kappa)) + '}$.';
+    if (constraint === 'nnft') note += ' The total-force equality is enforced by a one-pass least-squares shift (not a full active-set solve), so tiny negative values can reappear.';
+    ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\hat{\\mathbf{g}}_\\lambda = \\arg\\min_{\\mathbf{g}} \\; \\lVert\\mathbf{H}\\mathbf{g}-\\mathbf{y}\\rVert_2^2 + \\lambda^2\\lVert\\mathbf{g}\\rVert_2^2, \\qquad \\lambda = ' + lamStr + '$$</div><div>' + note + '</div>';
+    if (typeof renderMath === 'function') renderMath(ro);
+  }
+
+  ['cl-t', 'cl-s', 'cl-noise', 'cl-lam'].forEach(function(id) { el(id).addEventListener('input', update); });
+  ['cl-preset', 'cl-method', 'cl-constraint', 'cl-spacing'].forEach(function(id) { el(id).addEventListener('change', update); });
+  el('cl-occlude').addEventListener('change', update);
+  el('cl-reroll').addEventListener('click', function() { reroll(); update(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', update); else update();
+})();
+</script>
+
+<!-- ===== SCRIPT: L-CURVE & GCV EXPLORER ===== -->
+<script>
+(function() {
+  var el = function(id) { return document.getElementById(id); };
+  var n = 64, dx = 1 / n, t = 0.1, sep = 0.25, etaPct = 1.0;
+  var xs = []; for (var i0 = 0; i0 < n; i0++) xs.push((i0 + 0.5) * dx);
+
+  function gauss() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  // symmetric SPD kernel: SVD = eigendecomposition
+  var H = [];
+  for (var i = 0; i < n; i++) {
+    var row = [];
+    for (var j = 0; j < n; j++) { var d = xs[i] - xs[j]; row.push((dx / Math.PI) * t / (d * d + t * t)); }
+    H.push(row);
+  }
+  function eigSym(Ain) {
+    var nn = Ain.length, A = [], V = [], i, j, k;
+    for (i = 0; i < nn; i++) {
+      A.push(Ain[i].slice());
+      var r = []; for (j = 0; j < nn; j++) r.push(i === j ? 1 : 0);
+      V.push(r);
+    }
+    for (var sweep = 0; sweep < 40; sweep++) {
+      var off = 0;
+      for (i = 0; i < nn - 1; i++) for (j = i + 1; j < nn; j++) off += A[i][j] * A[i][j];
+      if (off < 1e-26) break;
+      for (i = 0; i < nn - 1; i++) {
+        for (j = i + 1; j < nn; j++) {
+          if (Math.abs(A[i][j]) < 1e-20) continue;
+          var th = (A[j][j] - A[i][i]) / (2 * A[i][j]);
+          var tt = (th === 0) ? 1 : (th > 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+          var c = 1 / Math.sqrt(tt * tt + 1), s = tt * c;
+          for (k = 0; k < nn; k++) { var aik = A[i][k], ajk = A[j][k]; A[i][k] = c * aik - s * ajk; A[j][k] = s * aik + c * ajk; }
+          for (k = 0; k < nn; k++) {
+            var aki = A[k][i], akj = A[k][j];
+            A[k][i] = c * aki - s * akj; A[k][j] = s * aki + c * akj;
+            var vki = V[k][i], vkj = V[k][j];
+            V[k][i] = c * vki - s * vkj; V[k][j] = s * vki + c * vkj;
+          }
+        }
+      }
+    }
+    var idx = []; for (i = 0; i < nn; i++) idx.push(i);
+    idx.sort(function(a, b) { return A[b][b] - A[a][a]; });
+    var d2 = [], Vc = [];
+    for (i = 0; i < nn; i++) {
+      d2.push(A[idx[i]][idx[i]]);
+      var col = []; for (j = 0; j < nn; j++) col.push(V[j][idx[i]]);
+      Vc.push(col);
+    }
+    return { d: d2, V: Vc };
+  }
+  var eg = eigSym(H);
+  var sig = [], Vs = eg.V;
+  for (i = 0; i < n; i++) sig.push(Math.max(Math.abs(eg.d[i]), 1e-14 * Math.abs(eg.d[0])));
+
+  var gTrue = [], w0 = 0.03;
+  for (i = 0; i < n; i++) {
+    var x = xs[i];
+    gTrue.push(Math.exp(-Math.pow(x - (0.5 - sep / 2), 2) / (2 * w0 * w0)) + Math.exp(-Math.pow(x - (0.5 + sep / 2), 2) / (2 * w0 * w0)));
+  }
+  var gmax = 0; for (i = 0; i < n; i++) gmax = Math.max(gmax, gTrue[i]);
+  var yclean = [];
+  for (i = 0; i < n; i++) {
+    var acc = 0;
+    for (j = 0; j < n; j++) acc += H[i][j] * gTrue[j];
+    yclean.push(acc);
+  }
+  var ymax = 0; for (i = 0; i < n; i++) ymax = Math.max(ymax, Math.abs(yclean[i]));
+  var sd = etaPct / 100 * ymax;
+
+  var white = [], eVec = [], delta = 0, bC = [], gtC = [];
+  for (i = 0; i < n; i++) gtC.push(0);
+  for (i = 0; i < n; i++) for (j = 0; j < n; j++) gtC[i] += Vs[i][j] * gTrue[j];
+
+  function makeNoise() { white = []; for (var q = 0; q < n; q++) white.push(gauss()); }
+  function prepData() {
+    var corr = el('lc-corr').checked;
+    var e = [];
+    if (corr) {
+      var raw = [];
+      for (var q = 0; q < n; q++) {
+        var acc3 = 0, cnt = 0;
+        for (var r2 = -2; r2 <= 2; r2++) {
+          var idx2 = q + r2;
+          if (idx2 >= 0 && idx2 < n) { acc3 += white[idx2]; cnt++; }
+        }
+        raw.push(acc3 / cnt);
+      }
+      var m0 = 0, v0 = 0;
+      for (q = 0; q < n; q++) m0 += raw[q]; m0 /= n;
+      for (q = 0; q < n; q++) v0 += Math.pow(raw[q] - m0, 2); v0 = Math.sqrt(v0 / n);
+      for (q = 0; q < n; q++) e.push(sd * (raw[q] - m0) / (v0 || 1));
+    } else {
+      for (q = 0; q < n; q++) e.push(sd * white[q]);
+    }
+    delta = 0;
+    for (q = 0; q < n; q++) delta += e[q] * e[q];
+    delta = Math.sqrt(delta);
+    var y = [];
+    for (q = 0; q < n; q++) y.push(yclean[q] + e[q]);
+    bC = [];
+    for (var a = 0; a < n; a++) {
+      var acc4 = 0;
+      for (q = 0; q < n; q++) acc4 += Vs[a][q] * y[q];
+      bC.push(acc4);
+    }
+  }
+  makeNoise();
+
+  var NL = 150, lams = [];
+  for (var jl = 0; jl < NL; jl++) lams.push(Math.pow(10, -6 + 6 * jl / (NL - 1)));
+  var sw = null;
+
+  function sweep() {
+    prepData();
+    var res = [], sol = [], gcv = [], rmse = [];
+    for (var jj = 0; jj < NL; jj++) {
+      var l2 = lams[jj] * lams[jj];
+      var r2s = 0, s2s = 0, trc = 0, e2 = 0;
+      for (var i2 = 0; i2 < n; i2++) {
+        var ss = sig[i2] * sig[i2];
+        var phi = ss / (ss + l2);
+        r2s += Math.pow((1 - phi) * bC[i2], 2);
+        s2s += Math.pow(phi * bC[i2] / sig[i2], 2);
+        trc += (1 - phi);
+        e2 += Math.pow(phi * bC[i2] / sig[i2] - gtC[i2], 2);
+      }
+      res.push(Math.sqrt(r2s));
+      sol.push(Math.sqrt(s2s));
+      gcv.push(n * r2s / Math.pow(trc || 1e-300, 2));
+      rmse.push(Math.sqrt(e2 / n) / gmax * 100);
+    }
+    // corner via max signed curvature of (rho, eta)
+    var rho = [], etaL = [];
+    for (jj = 0; jj < NL; jj++) { rho.push(Math.log(res[jj] || 1e-300)); etaL.push(Math.log(sol[jj] || 1e-300)); }
+    function smooth(v) {
+      var o = v.slice();
+      for (var q2 = 1; q2 < NL - 1; q2++) o[q2] = (v[q2 - 1] + v[q2] + v[q2 + 1]) / 3;
+      return o;
+    }
+    var rs = smooth(smooth(rho)), es2 = smooth(smooth(etaL));
+    var jCorner = 1, kBest = -1e30;
+    for (jj = 3; jj < NL - 3; jj++) {
+      var dr = (rs[jj + 1] - rs[jj - 1]) / 2, de = (es2[jj + 1] - es2[jj - 1]) / 2;
+      var d2r = rs[jj + 1] - 2 * rs[jj] + rs[jj - 1], d2e = es2[jj + 1] - 2 * es2[jj] + es2[jj - 1];
+      var kap = (dr * d2e - d2r * de) / Math.pow(dr * dr + de * de, 1.5);
+      if (kap > kBest) { kBest = kap; jCorner = jj; }
+    }
+    var jGcv = 0; for (jj = 1; jj < NL; jj++) if (gcv[jj] < gcv[jGcv]) jGcv = jj;
+    var jOr = 0; for (jj = 1; jj < NL; jj++) if (rmse[jj] < rmse[jOr]) jOr = jj;
+    var tau = 1.05, jDisc = NL - 1;
+    for (jj = 0; jj < NL; jj++) if (res[jj] >= tau * delta) { jDisc = jj; break; }
+    sw = { res: res, sol: sol, gcv: gcv, rmse: rmse, jCorner: jCorner, jGcv: jGcv, jOr: jOr, jDisc: jDisc, tau: tau };
+  }
+  sweep();
+
+  function nearestJ(loglam) {
+    var jj = Math.round((loglam + 6) / 6 * (NL - 1));
+    return Math.max(0, Math.min(NL - 1, jj));
+  }
+  function fmtLam(jj) {
+    return '10^{' + Math.log10(lams[jj]).toFixed(1).replace('-', '&minus;').replace('&minus;', '-') + '}';
+  }
+  function fmtLamHtml(jj) {
+    return '10<sup>' + Math.log10(lams[jj]).toFixed(1) + '</sup>';
+  }
+
+  var lcGeom = null;
+
+  function draw() {
+    var loglam = parseFloat(el('lc-lam').value);
+    el('lc-lam-val').innerHTML = (loglam < 0 ? '&minus;' : '') + Math.abs(loglam).toFixed(2);
+    var jCur = nearestJ(loglam);
+    var s2 = sw;
+    var i, jj;
+
+    // ---- L-curve panel ----
+    var W = 340, Hh = 300, ax0 = 46, ax1 = 322, ay0 = 20, ay1 = 258;
+    var rmin = 1e30, rmax = -1e30, emin = 1e30, emax = -1e30;
+    for (jj = 0; jj < NL; jj++) {
+      var lr = Math.log10(s2.res[jj] || 1e-300), le = Math.log10(s2.sol[jj] || 1e-300);
+      rmin = Math.min(rmin, lr); rmax = Math.max(rmax, lr);
+      emin = Math.min(emin, le); emax = Math.max(emax, le);
+    }
+    var rpad = 0.05 * (rmax - rmin) + 1e-9, epad = 0.05 * (emax - emin) + 1e-9;
+    rmin -= rpad; rmax += rpad; emin -= epad; emax += epad;
+    function LX(lr) { return ax0 + (lr - rmin) / (rmax - rmin) * (ax1 - ax0); }
+    function LY(le) { return ay0 + (emax - le) / (emax - emin) * (ay1 - ay0); }
+    var sL = '<line x1="' + ax0 + '" y1="' + ay1 + '" x2="' + ax1 + '" y2="' + ay1 + '" stroke="#333" stroke-width="1"/>' +
+             '<line x1="' + ax0 + '" y1="' + ay0 + '" x2="' + ax0 + '" y2="' + ay1 + '" stroke="#333" stroke-width="1"/>';
+    var pts = [];
+    for (jj = 0; jj < NL; jj++) pts.push([LX(Math.log10(s2.res[jj])), LY(Math.log10(s2.sol[jj]))]);
+    for (jj = 0; jj < NL - 1; jj++) {
+      var fr = jj / (NL - 1);
+      var cr = Math.round(170 - 170 * fr), cg = Math.round(170 - 39 * fr), cb = Math.round(170 - 27 * fr);
+      sL += '<line x1="' + pts[jj][0].toFixed(1) + '" y1="' + pts[jj][1].toFixed(1) + '" x2="' + pts[jj + 1][0].toFixed(1) + '" y2="' + pts[jj + 1][1].toFixed(1) + '" stroke="rgb(' + cr + ',' + cg + ',' + cb + ')" stroke-width="2.2"/>';
+    }
+    // discrepancy vertical line
+    var xd = LX(Math.log10(s2.tau * delta));
+    if (xd > ax0 && xd < ax1) {
+      sL += '<line x1="' + xd.toFixed(1) + '" y1="' + ay0 + '" x2="' + xd.toFixed(1) + '" y2="' + ay1 + '" stroke="#7b1fa2" stroke-width="1.2" stroke-dasharray="5,4"/>';
+      sL += '<text x="' + (xd + 4).toFixed(1) + '" y="' + (ay0 + 12) + '" font-size="10" fill="#7b1fa2" font-family="sans-serif">&#964;&#948;</text>';
+    }
+    sL += '<circle cx="' + pts[s2.jCorner][0].toFixed(1) + '" cy="' + pts[s2.jCorner][1].toFixed(1) + '" r="7" fill="none" stroke="#e67e22" stroke-width="2.2"/>';
+    sL += '<circle cx="' + pts[jCur][0].toFixed(1) + '" cy="' + pts[jCur][1].toFixed(1) + '" r="4.5" fill="#c62828"/>';
+    sL += '<text x="' + (ax0 + 8) + '" y="' + (ay0 + 30) + '" font-size="10" fill="#888" font-family="sans-serif">undersmoothed: ||g|| explodes,</text>';
+    sL += '<text x="' + (ax0 + 8) + '" y="' + (ay0 + 42) + '" font-size="10" fill="#888" font-family="sans-serif">residual pinned at noise floor</text>';
+    sL += '<text x="' + (ax1 - 4) + '" y="' + (ay1 - 22) + '" font-size="10" fill="#888" font-family="sans-serif" text-anchor="end">oversmoothed: residual grows,</text>';
+    sL += '<text x="' + (ax1 - 4) + '" y="' + (ay1 - 10) + '" font-size="10" fill="#888" font-family="sans-serif" text-anchor="end">solution frozen</text>';
+    sL += '<text x="' + ((ax0 + ax1) / 2) + '" y="' + (ay1 + 26) + '" font-size="10.5" fill="#444" font-family="sans-serif" text-anchor="middle">log ||Hg&#955; &#8722; y||</text>';
+    sL += '<text x="14" y="' + ((ay0 + ay1) / 2) + '" font-size="10.5" fill="#444" font-family="sans-serif" text-anchor="middle" transform="rotate(-90 14 ' + ((ay0 + ay1) / 2) + ')">log ||g&#955;||</text>';
+    sL += '<circle cx="' + (ax1 - 78) + '" cy="' + (ay0 + 8) + '" r="5" fill="none" stroke="#e67e22" stroke-width="2"/><text x="' + (ax1 - 68) + '" y="' + (ay0 + 12) + '" font-size="10" fill="#e67e22" font-family="sans-serif">corner</text>';
+    el('lc-svg-l').innerHTML = sL;
+    lcGeom = { pts: pts };
+
+    // ---- GCV panel ----
+    var gx0 = 46, gx1 = 322, gy0 = 20, gy1 = 258;
+    function GX(jj2) { return gx0 + jj2 / (NL - 1) * (gx1 - gx0); }
+    var lg = [], lo = [];
+    var gmin2 = 1e30, gmax2 = -1e30, omin = 1e30, omax = -1e30;
+    for (jj = 0; jj < NL; jj++) {
+      var lgv = Math.log10(s2.gcv[jj] || 1e-300);
+      var lov = Math.log10(s2.rmse[jj] || 1e-300);
+      lg.push(lgv); lo.push(lov);
+      gmin2 = Math.min(gmin2, lgv); gmax2 = Math.max(gmax2, lgv);
+      omin = Math.min(omin, lov); omax = Math.max(omax, lov);
+    }
+    function GYg(v) { return gy0 + (gmax2 - v) / (gmax2 - gmin2 + 1e-9) * (gy1 - gy0); }
+    function GYo(v) { return gy0 + (omax - v) / (omax - omin + 1e-9) * (gy1 - gy0); }
+    var sG = '<line x1="' + gx0 + '" y1="' + gy1 + '" x2="' + gx1 + '" y2="' + gy1 + '" stroke="#333" stroke-width="1"/>' +
+             '<line x1="' + gx0 + '" y1="' + gy0 + '" x2="' + gx0 + '" y2="' + gy1 + '" stroke="#333" stroke-width="1"/>';
+    for (var e2 = -6; e2 <= 0; e2 += 2) {
+      var xt = GX((e2 + 6) / 6 * (NL - 1));
+      sG += '<text x="' + xt.toFixed(1) + '" y="' + (gy1 + 14) + '" font-size="10" fill="#666" font-family="sans-serif" text-anchor="middle">1e' + e2 + '</text>';
+    }
+    var pg = [], po = [];
+    for (jj = 0; jj < NL; jj++) { pg.push([GX(jj), GYg(lg[jj])]); po.push([GX(jj), GYo(lo[jj])]); }
+    function pth(ps) { var p = ''; for (var q3 = 0; q3 < ps.length; q3++) p += (q3 === 0 ? 'M ' : ' L ') + ps[q3][0].toFixed(1) + ' ' + ps[q3][1].toFixed(1); return p; }
+    sG += '<path d="' + pth(pg) + '" fill="none" stroke="#00838f" stroke-width="2"/>';
+    if (el('lc-oracle').checked) {
+      sG += '<path d="' + pth(po) + '" fill="none" stroke="#e67e22" stroke-width="1.8" stroke-dasharray="6,3"/>';
+      sG += '<circle cx="' + GX(s2.jOr).toFixed(1) + '" cy="' + GYo(lo[s2.jOr]).toFixed(1) + '" r="4.5" fill="#e67e22"/>';
+      sG += '<text x="' + (gx1 - 4) + '" y="' + (gy0 + 26) + '" font-size="10" fill="#e67e22" font-family="sans-serif" text-anchor="end">oracle RMSE(&#955;)</text>';
+    }
+    sG += '<circle cx="' + GX(s2.jGcv).toFixed(1) + '" cy="' + GYg(lg[s2.jGcv]).toFixed(1) + '" r="4.5" fill="#00838f"/>';
+    sG += '<line x1="' + GX(jCur).toFixed(1) + '" y1="' + gy0 + '" x2="' + GX(jCur).toFixed(1) + '" y2="' + gy1 + '" stroke="#c62828" stroke-width="1" stroke-dasharray="3,3"/>';
+    sG += '<text x="' + (gx1 - 4) + '" y="' + (gy0 + 12) + '" font-size="10" fill="#00695c" font-family="sans-serif" text-anchor="end">G(&#955;)</text>';
+    sG += '<text x="' + ((gx0 + gx1) / 2) + '" y="' + (gy1 + 28) + '" font-size="10.5" fill="#444" font-family="sans-serif" text-anchor="middle">&#955;</text>';
+    el('lc-svg-g').innerHTML = sG;
+
+    // ---- reconstruction panel ----
+    var rx0 = 40, rx1 = 326, ry0 = 20, ry1 = 262;
+    var l2c = lams[jCur] * lams[jCur];
+    var gl = []; for (i = 0; i < n; i++) gl.push(0);
+    for (i = 0; i < n; i++) {
+      var ss2 = sig[i] * sig[i];
+      var wgt = (ss2 / (ss2 + l2c)) * bC[i] / sig[i];
+      for (j = 0; j < n; j++) gl[j] += wgt * Vs[i][j];
+    }
+    var yTop2 = 1.5 * gmax, yBot2 = -0.5 * gmax;
+    function RX(x2) { return rx0 + x2 * (rx1 - rx0); }
+    function RY(v) { return ry0 + (yTop2 - v) / (yTop2 - yBot2) * (ry1 - ry0); }
+    var sR = '<line x1="' + rx0 + '" y1="' + RY(0).toFixed(1) + '" x2="' + rx1 + '" y2="' + RY(0).toFixed(1) + '" stroke="#ccc" stroke-width="1"/>';
+    var fp = 'M ' + RX(xs[0]).toFixed(1) + ' ' + RY(0).toFixed(1);
+    for (i = 0; i < n; i++) fp += ' L ' + RX(xs[i]).toFixed(1) + ' ' + RY(gTrue[i]).toFixed(1);
+    fp += ' L ' + RX(xs[n - 1]).toFixed(1) + ' ' + RY(0).toFixed(1) + ' Z';
+    sR += '<path d="' + fp + '" fill="rgba(0,131,143,0.18)" stroke="#00838f" stroke-width="1.4"/>';
+    var rp2 = '';
+    for (i = 0; i < n; i++) {
+      var gv2 = Math.max(Math.min(gl[i], yTop2), yBot2);
+      rp2 += (i === 0 ? 'M ' : ' L ') + RX(xs[i]).toFixed(1) + ' ' + RY(gv2).toFixed(1);
+    }
+    sR += '<path d="' + rp2 + '" fill="none" stroke="#c62828" stroke-width="2"/>';
+    sR += '<text x="' + (rx0 + 6) + '" y="' + (ry0 + 12) + '" font-size="10.5" fill="#00695c" font-family="sans-serif">truth (filled) vs reconstruction at current &#955;</text>';
+    sR += '<text x="' + (rx0 + 6) + '" y="' + (ry0 + 27) + '" font-size="10.5" fill="#c62828" font-family="sans-serif">RMSE = ' + s2.rmse[jCur].toFixed(1) + '% of peak</text>';
+    el('lc-svg-r').innerHTML = sR;
+
+    // ---- readout ----
+    var corrOn = el('lc-corr').checked;
+    var rows = [
+      ['L-curve corner', s2.jCorner, '#e67e22'],
+      ['GCV minimum', s2.jGcv, '#00838f'],
+      ['Discrepancy (&#964; = 1.05, &#948; known)', s2.jDisc, '#7b1fa2'],
+      ['Oracle (truth-knowing best)', s2.jOr, '#555']
+    ];
+    var html = '<table style="font-size:12.5px;"><tr><th>Criterion</th><th>&#955; chosen</th><th>RMSE at that &#955;</th></tr>';
+    for (var q4 = 0; q4 < rows.length; q4++) {
+      html += '<tr><td style="color:' + rows[q4][2] + ';font-weight:600;">' + rows[q4][0] + '</td><td>' + fmtLamHtml(rows[q4][1]) + '</td><td>' + s2.rmse[rows[q4][1]].toFixed(1) + '%</td></tr>';
+    }
+    html += '<tr><td>Current slider</td><td>' + fmtLamHtml(jCur) + '</td><td>' + s2.rmse[jCur].toFixed(1) + '%</td></tr></table>';
+    if (corrOn) {
+      html += '<div style="margin-top:8px;color:#b36118;"><strong>Correlated noise active:</strong> the GCV minimum drifts toward undersmoothing (smaller &#955;) because leave-one-out no longer sees independent errors, while the discrepancy rule — which only needs the noise <em>norm</em>, still known here — stays sane. This is exactly what marker-interpolation does to tactile pipelines.</div>';
+    } else {
+      html += '<div style="margin-top:8px;color:#666;">Press &ldquo;Redraw noise&rdquo; a few times: the corner and the GCV minimum jitter between draws — parameter-choice rules are estimators with variance, not oracles.</div>';
+    }
+    el('lc-readout').innerHTML = html;
+  }
+
+  el('lc-lam').addEventListener('input', draw);
+  el('lc-reroll').addEventListener('click', function() { makeNoise(); sweep(); draw(); });
+  el('lc-corr').addEventListener('change', function() { sweep(); draw(); });
+  el('lc-oracle').addEventListener('change', draw);
+  el('lc-svg-l').addEventListener('click', function(ev) {
+    if (!lcGeom) return;
+    var rect = el('lc-svg-l').getBoundingClientRect();
+    var sx = 340 / rect.width, sy = 300 / rect.height;
+    var mx = (ev.clientX - rect.left) * sx, my = (ev.clientY - rect.top) * sy;
+    var best = 0, bd = 1e30;
+    for (var jj = 0; jj < lcGeom.pts.length; jj++) {
+      var dd = Math.pow(lcGeom.pts[jj][0] - mx, 2) + Math.pow(lcGeom.pts[jj][1] - my, 2);
+      if (dd < bd) { bd = dd; best = jj; }
+    }
+    el('lc-lam').value = (-6 + 6 * best / (NL - 1)).toFixed(2);
+    draw();
+  });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', draw); else draw();
+})();
+</script>
+
+<!-- ===== SCRIPT: WALKTHROUGH ===== -->
+<script>
+  initWalkthrough('gelslim-walkthrough', [
+    {
+      tab: '1. Hardware',
+      title: 'Step 1: A Sensor Whose Markers Are Its Mesh',
+      text: 'GelSlim 2.0: a 20 &times; 20 mm silicone gel pad bonded to an acrylic window, finger 18 mm thick. Markers are printed as a regular grid on the outer gel surface, under the paint — placed to correlate directly with the FE nodes. Dual-color grazing illumination (red LED left, green right, LUXEON CZ matched to the Raspberry Pi Spy Camera CCD bands) encodes contact in RGB-channel differences; a curved total-internal-reflection light guide replaces a 45&deg; mirror for brightness and frame rate.',
+      visual: '<div class="definition-box"><div class="box-label">Design decision</div><div>The marker grid <em>is</em> the measurement mesh: every FE node the model retains is a physical dot the camera can track. Hardware and discretization are co-designed.</div></div>',
+      insight: 'Most inverse problems inherit whatever sensors happen to exist. Here the sensor was built around the inverse problem — the reason the fully-observed shortcut of Step 5 is available at all.'
+    },
+    {
+      tab: '2. FE model',
+      title: 'Step 2: One Layer of Hex-8, Two Material Constants',
+      text: 'The gel pad is meshed with a single layer of 8-node hexahedral elements — 1964 elements, 3698 nodes — built slightly larger than the gel bounding box, then cropped. Linear elasticity; the only material inputs are $E = 0.147$ MPa and $\\nu = 0.3223$, from tensile tests at several speeds (rate effects negligible, so the elastic model is licensed). Both values are sensitive to gel preparation.',
+      visual: '<div class="definition-box"><div class="box-label">Offline phase</div><div>$$\\mathbf{K} \\in \\mathbb{R}^{3n \\times 3n} \\text{ assembled once — geometry, } E, \\nu \\text{ only}$$</div></div>',
+      insight: 'Calibration-lightness is the model-based route’s superpower: two scalar constants, measured on a bench, versus thousands of labeled indentations for the learned route.'
+    },
+    {
+      tab: '3. Track',
+      title: 'Step 3: From Pixels to a Nodal Displacement Field',
+      text: 'Per frame: detect markers, match them to the previous frame by nearest neighbor with a validity check — markers can vanish under deformation, and unflagged mismatches would corrupt the field — then interpolate the scattered marker displacements onto the FE nodes.',
+      visual: '<div class="definition-box"><div class="box-label">Quiet side effect</div><div>Interpolation correlates the noise across nodes — harmless for the multiplication in Step 5, but it is precisely the condition under which GCV-style parameter selection drifts (Section 5).</div></div>',
+      insight: 'The interpolation step is where "thousands of independent measurements" quietly stops being true. Count effective, not nominal, measurements.'
+    },
+    {
+      tab: '4. Correct',
+      title: 'Step 4: Undo Perspective and Refraction',
+      text: 'The camera views the markers at an angle through refracting silicone. A marker displaced $d$ along the surface normal acquires an apparent in-plane shift $\\boldsymbol{\\Delta} = (\\mathbf{r}/|\\mathbf{r}|)\\, d \\tan\\beta$ with $\\beta = \\arcsin(\\sin\\alpha/\\gamma)$ — subtracted before inversion (acrylic refraction is neglected by index-matching design). Out-of-plane displacements are reconstructed from contact-patch geometry for known simple indenters (sphere, cylinder).',
+      visual: '<div class="definition-box"><div class="box-label">Projection-error correction</div><div>$$\\beta = \\arcsin\\!\\left(\\frac{\\sin\\alpha}{\\gamma}\\right), \\qquad \\boldsymbol{\\Delta} = \\frac{\\mathbf{r}}{|\\mathbf{r}|}\\, d\\tan\\beta$$</div></div>',
+      insight: 'Skip this step and the systematic error lands directly in the tangential force field — a bias no regularization parameter can remove, because it is not noise.'
+    },
+    {
+      tab: '5. Multiply',
+      title: 'Step 5: $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$ — No Inversion Online',
+      text: 'Single node layer + fixed bottom boundary (gel bonded to acrylic) means every retained node is camera-observable. With the full displacement vector measured, forces follow by direct multiplication $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$: $\\mathbf{K}$ precomputed, per-frame cost one matrix product, real-time at camera rate.',
+      visual: '<div class="definition-box"><div class="box-label">The degenerate inverse</div><div>$$\\mathbf{F} = \\mathbf{K}\\,\\mathbf{U}, \\qquad \\mathbf{U} = (\\delta_x^1, \\delta_y^1, \\delta_z^1, \\ldots, \\delta_z^n)^{\\mathsf T}$$</div></div>',
+      insight: 'The pathology relocates rather than vanishes: $\\mathbf{K}$ acts like a discrete second derivative, so pixel-scale tracking noise is amplified by the largest stiffness eigenvalues. iFEM2.0’s ridge regularization exists because of this step.'
+    },
+    {
+      tab: '6. Validate',
+      title: 'Step 6: Honest Numbers, Honest Label',
+      text: 'Pushing and sliding on a sphere against an ATI Gamma F/T sensor: resultant-force standard deviation $(0.244, 0.201, 0.322)$ N in $(x,y,z)$, roughly within 15% of ground truth; residual error attributed to calibration, tracking, and material nonlinearity. The authors label this partial validation: the resultant is one linear functional of the distribution, and infinitely many wrong pressure maps share it. The qualitative distribution checks — forces confined to the patch, boundary forces opposing local displacement — are the physically meaningful part.',
+      visual: '<div class="definition-box"><div class="box-label">Scope of the claim</div><div>One bounded, material-dependent case: a specific gel, specific geometry, linear elasticity, simple indenters. Evidence that the pipeline works — not proof of general dense 3-D force recovery. iFEM2.0 (T-RO 2025) adds multilayer meshes, ridge regularization, and distribution-level assessment metrics.</div></div>',
+      insight: 'Validating a distributed-quantity sensor with a point-resultant instrument is the field-wide gap, not a flaw unique to this paper — and naming it honestly is what made the successor paper possible.'
+    }
+  ]);
+</script>
+
+<!-- ===== SCRIPT: FLASHCARDS ===== -->
+<script>
+  initFlashcards('mod8-flashcards', [
+    {
+      q: 'Write the static transfer-matrix observation model for load identification and name each factor.',
+      a: '$\\mathbf{y} = \\mathbf{H}\\mathbf{g}$ with $\\mathbf{H} = \\mathbf{S}\\mathbf{K}^{-1}\\mathbf{B}$: $\\mathbf{K}$ = FE stiffness matrix, $\\mathbf{B}$ maps $n$ candidate force parameters into the global load vector, $\\mathbf{S}$ selects the $m$ measured DOFs (or extracts strains). $H_{ij}$ = response of sensor $i$ to a unit force at candidate DOF $j$; built by $n$ offline unit-load FE solves.'
+    },
+    {
+      q: 'The FE model is exact and the measurements are dense. Why is load reconstruction still ill-conditioned?',
+      a: 'Elasticity is a smoothing operator: oscillatory force patterns (high-index singular vectors) produce vanishingly small displacement signatures, so the singular values of $\\mathbf{H}$ decay near-exponentially (Hansen 1998). Inversion multiplies noise in mode $i$ by $1/\\sigma_i$ — the pathology is in the physics, not the model quality.'
+    },
+    {
+      q: 'Give the Tikhonov filter factors (standard form) and their two limits.',
+      a: '$\\varphi_i = \\dfrac{\\sigma_i^2}{\\sigma_i^2 + \\lambda^2}$. For $\\sigma_i \\gg \\lambda$: $\\varphi_i \\to 1$ (mode kept). For $\\sigma_i \\ll \\lambda$: $\\varphi_i \\approx \\sigma_i^2/\\lambda^2 \\to 0$ (mode damped quadratically). Note $\\sigma_i^2$, not $\\sigma_i$ — a common typo that changes the roll-off.'
+    },
+    {
+      q: 'State the discrete Picard condition and what it looks like on a Picard plot.',
+      a: 'A meaningful regularized solution requires the data coefficients $|\\mathbf{u}_i^{\\mathsf T}\\mathbf{y}|$ to decay faster than the singular values $\\sigma_i$ (on average). On the plot, noisy data coefficients flatten at the noise floor while $\\sigma_i$ keeps falling; the crossing index bounds the number of recoverable modes.'
+    },
+    {
+      q: 'L-curve: what is plotted, and what marks the good regularization parameter?',
+      a: 'Log-log parametric plot of solution (semi)norm $\\lVert\\mathbf{L}\\hat{\\mathbf{g}}_\\lambda\\rVert$ versus residual norm $\\lVert\\mathbf{H}\\hat{\\mathbf{g}}_\\lambda - \\mathbf{y}\\rVert$ as $\\lambda$ varies. The corner (maximum curvature) balances the undersmoothed vertical branch against the oversmoothed horizontal branch (Hansen 1992).'
+    },
+    {
+      q: 'GCV versus the discrepancy principle: what prior information does each need, and when does each fail?',
+      a: 'GCV (Golub-Heath-Wahba 1979) needs no noise estimate (rotation-invariant leave-one-out) but fails with correlated noise — flat or drifting minimum. The discrepancy principle needs the noise level $\\delta$ (choose $\\lambda$ so residual $= \\tau\\delta$) and is robust when $\\delta$ is genuinely known, oversmooths if $\\delta$ is overestimated.'
+    },
+    {
+      q: 'In Ma et al. (ICRA 2019), why does GelSlim’s force reconstruction need no matrix inversion at runtime?',
+      a: 'The gel is meshed as a single layer of Hex-8 elements with the bottom fixed to the acrylic, so every retained node is observable by the camera. With the full nodal displacement vector measured, forces follow from the direct product $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$; $\\mathbf{K}$ (3698 nodes, 1964 elements) is precomputed offline.'
+    },
+    {
+      q: 'Quote the GelSlim 2.0 validation result against the ATI Gamma F/T sensor.',
+      a: 'Standard deviation of the reconstructed resultant force: $(0.244, 0.201, 0.322)$ N in $(x, y, z)$ — roughly within 15% of ground truth. Residual error attributed to calibration, marker tracking, and material nonlinearity. Note it validates only the RESULTANT: a partial validation of the distribution.'
+    },
+    {
+      q: 'Near the contact boundary, the reconstructed tangential force can point OPPOSITE to the local marker displacement. Why is this correct?',
+      a: 'Force is a global functional of the entire displacement field: $\\mathbf{K}$ couples all nodes, and displacements outside/around the patch are driven by internal elastic stresses, not local external load. The per-point assumption $f_i \\propto u_i$ (diagonal-stiffness fallacy) is only valid for a semi-infinite medium under strong assumptions, not a thin bonded pad.'
+    },
+    {
+      q: 'Time-domain force identification: what is the structure of the discretized operator and why does it become worse-conditioned?',
+      a: 'Sampling the Duhamel convolution $y(t) = \\int_0^t h(t-\\tau)g(\\tau)d\\tau$ gives $\\mathbf{y} = \\mathbf{A}\\mathbf{g}$ with $\\mathbf{A}$ lower-triangular Toeplitz built from IRF samples. The IRF of a damped structure is smooth, so $\\mathbf{A}$’s singular values decay fast; light damping adds long memory and error accumulation over the record (Jacquelin et al. 2003).'
+    },
+    {
+      q: 'How do gel thickness $t$ and Young’s modulus $E$ each affect the tactile inverse problem?',
+      a: 'Thickness sets conditioning: the kernel spreads a point load over lateral scale $\\sim t$, so thicker gel means faster singular-value decay and a resolution floor $\\mathcal{O}(t)$. Modulus is pure gain: in linear elasticity $\\mathbf{H} \\propto 1/E$ (fixed geometry, $\\nu$), changing signal amplitude and load range but not conditioning; an $E$ calibration error rescales forces uniformly without distorting the distribution shape.'
+    },
+    {
+      q: 'Distinguish the two methods both called “inverse FEM” (iFEM).',
+      a: '(1) Load-reconstruction iFEM: measured displacements $\\to$ applied forces via a stiffness/transfer model (Ma et al. 2019, iFEM2.0 2025 — this module). (2) Tessler-Spangler shape-sensing iFEM: measured strains $\\to$ displacement field via variational least squares, loads not required (used in SHM; Li et al. 2025 chain it WITH load identification: iFEM shape sensing + RBF fitting to recover distributed loads).'
+    },
+    {
+      q: 'You use the fully-observed shortcut $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$. What do the entries of $\\mathbf{F}$ at nodes on the fixed (bonded) boundary mean?',
+      a: 'They are support reactions, not applied contact loads. Rows of the stiffness relation at DOFs with imposed displacements return reactions; only free-DOF rows return applied loads. If candidate contact nodes touch a constrained region, applied load and reaction are inseparable there — exclude constrained DOFs from the reported force map or report them separately.'
+    },
+    {
+      q: 'Why is a reconstructed consistent nodal force vector not yet a pressure map?',
+      a: 'A consistent nodal force is the shape-function-weighted integral of traction over adjacent elements, $f_j = \\int_\\Gamma N_j\\, t\\, d\\Gamma$ — it scales with element size. Convert to traction by dividing by tributary area (lumped) or solving the boundary mass-matrix system. Refine the mesh and nodal forces shrink while the traction field stays put; plotting raw nodal forces as pressure is a units error.'
+    },
+    {
+      q: 'How does the augmented Kalman filter identify forces online (Lourens et al. 2012)?',
+      a: 'Augment the state vector with the unknown input modeled as a random walk, then run a joint input–state Kalman-type filter on the coupled state-space model. This yields recursive, online estimates of both response and force — with uncertainty — instead of batch deconvolution over the whole record.'
+    },
+    {
+      q: 'State the model-problem resolution law for force reconstruction and its design consequence.',
+      a: 'For a Gaussian kernel of width $w$, modes survive above noise-to-signal ratio $\\eta$ only for $k \\le k_{\\max} = \\sqrt{2\\ln(1/\\eta)}/w$: resolution grows with the LOGARITHM of SNR but linearly with $1/w$. SNR 100 gives $k_{\\max} = 3.0/w$; SNR 10,000 gives only $4.3/w$. Better cameras buy resolution very slowly; thinner gel buys it linearly.'
+    }
+  ]);
+</script>
+</body>
+</html>
