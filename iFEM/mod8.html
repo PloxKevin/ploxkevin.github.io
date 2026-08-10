@@ -1105,8 +1105,16 @@
     for (a = 0; a < n; a++) { Rtrue += gTrue[a]; R += gHat[a]; }
     Rtrue *= dx; R *= dx;
     if (constraint === 'nnft') {
-      var c0 = (Rtrue - R) / (n * dx);
-      for (a = 0; a < n; a++) gHat[a] += c0;
+      // Match the measured resultant by RESCALING the clipped (nonnegative)
+      // profile, not by adding a uniform shift: a shift with Rtrue < R is
+      // negative everywhere and drives nodes straight back below zero, undoing
+      // the p >= 0 clip it was supposed to respect. Scaling preserves the sign.
+      if (R > 1e-12) {
+        var sc = Rtrue / R;
+        for (a = 0; a < n; a++) gHat[a] *= sc;
+      } else {
+        for (a = 0; a < n; a++) gHat[a] = Rtrue / (n * dx);
+      }
       R = Rtrue;
     }
     var gmax = 0; for (a = 0; a < n; a++) gmax = Math.max(gmax, gTrue[a]);
@@ -1214,7 +1222,7 @@
     var lamStr = (method === 'naive') ? '0 \\;(\\text{naive LS})' : '10^{' + loglam.toFixed(1) + '}';
     var note = '';
     if (method === 'naive' && eta > 0) note = ' Naive LS distributes the noise over all ' + rank + ' modes, the last of which are amplified by $1/\\sigma_i$ up to $' + '\\kappa \\approx ' + '10^{' + Math.round(Math.log10(kappa)) + '}$.';
-    if (constraint === 'nnft') note += ' The total-force equality is enforced by a one-pass least-squares shift (not a full active-set solve), so tiny negative values can reappear.';
+    if (constraint === 'nnft') note += ' The total-force equality is enforced by rescaling the clipped profile (not a full active-set NNLS), which keeps every value nonnegative but redistributes the error multiplicatively &mdash; peak-to-total ratios shift, so read the peak number, not just the resultant. A real solver would do the constrained solve jointly. Tiny numerical negative values can reappear.';
     ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\hat{\\mathbf{g}}_\\lambda = \\arg\\min_{\\mathbf{g}} \\; \\lVert\\mathbf{H}\\mathbf{g}-\\mathbf{y}\\rVert_2^2 + \\lambda^2\\lVert\\mathbf{g}\\rVert_2^2, \\qquad \\lambda = ' + lamStr + '$$</div><div>' + note + '</div>';
     if (typeof renderMath === 'function') renderMath(ro);
   }

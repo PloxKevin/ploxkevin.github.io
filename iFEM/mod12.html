@@ -350,7 +350,7 @@
         <label style="cursor:pointer;"><input type="checkbox" id="ts-drop" style="vertical-align:-2px;"> dropout: channel 3 dies (hold last value)</label>
         <label style="cursor:pointer;"><input type="checkbox" id="ts-contact" style="vertical-align:-2px;"> contact change: prop appears at x = 0.55</label>
         <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: stiffness decays slowly</label>
-        <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on a shape-residual index &gt; 12\%)</label>
+        <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on a shape-residual index &gt; 30\%)</label>
         <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-val" style="vertical-align:-2px;"> independent validation (laser at tip)</label>
       </div>
 
@@ -1012,7 +1012,11 @@
     if (drop) unhandled.push('a stale channel is still being trusted');
     if (age) unhandled.push('stiffness has aged away from the commissioning model');
     if (contact) unhandled.push('a new contact has changed the structure the model assumes');
-    var an = shapeResidual(meas), alarm = decide && an.max > 0.12;
+    // Threshold chosen against this widget's own noise model: at 0.12 the CLEAN
+    // stream alarms on ~47% of frames (measured), which is a detector that means
+    // nothing. At 0.30: clean ~6%, contact change ~87%. Drift stays near clean --
+    // that is a real property of a shape residual, not a tuning failure.
+    var an = shapeResidual(meas), alarm = decide && an.max > 0.30;
 
     // validation channel
     var laser = wTrue(1, t) * (1 + 0.005 * randn());
@@ -1023,7 +1027,7 @@
     if (!playing) { rung = 'RUNG 0 — OFFLINE MODEL'; rcol = '#888'; rtext = 'No stream: a mechanical model exists, nothing is synchronized. Press Stream.'; }
     else if (!decide) { rung = 'RUNG 1 — DIGITAL SHADOW'; rcol = '#1565c0'; rtext = 'The mirror follows the asset, but nothing acts on it. Enable decision feedback to climb.'; }
     else if (!valOn) { rung = 'RUNG 2 — DATA-DRIVEN TWIN (UNVALIDATED)'; rcol = '#b36118'; rtext = 'Decisions are being taken on the reconstruction with no independent check. Enable validation to climb.'; }
-    else if (valErr < 6 && !unhandled.length) { rung = 'RUNG 3 — SYNCHRONIZED TWIN'; rcol = '#2e7d32'; rtext = 'Stream + decisions + independent validation agreeing, and no unhandled channel pathology. This is the rung the term "digital twin" should be reserved for.'; }
+    else if (valErr < 6 && !unhandled.length) { rung = 'RUNG 3 — SYNCHRONIZED TWIN'; rcol = '#2e7d32'; rtext = 'Stream + decisions + independent validation agreeing, and no unhandled channel pathology. Note what this toy does <em>not</em> check: quantified uncertainty on the reconstruction, the fourth requirement in the definition above. Treat this as the highest rung the simulator can certify, not a full rung-3 audit.'; }
     else if (valErr < 6) { rung = 'RUNG 2 — DEMOTED: UNHANDLED PATHOLOGY'; rcol = '#b36118'; rtext = 'Validation currently agrees, but ' + unhandled.join(', ') + ' — an unguarded channel that happens to look fine is not a synchronized twin, it is a twin waiting to be wrong. Synchronization, channel health and uncertainty are entry conditions for rung 3, not bonuses.'; }
     else { rung = 'RUNG 2 — DEMOTED: VALIDATION FAILING'; rcol = '#c62828'; rtext = 'The independent channel contradicts the reconstruction (error ' + valErr.toFixed(1) + '%). Decisions are running on numbers the physics disputes — find the pathology before trusting anything.'; }
     el('ts-ladder').innerHTML = '<span style="display:inline-block;padding:5px 14px;border-radius:14px;background:' + rcol + ';color:#fff;font-size:12px;font-weight:700;">' + rung + '</span> <span style="font-size:12px;color:#555;margin-left:8px;">' + rtext + '</span>';
