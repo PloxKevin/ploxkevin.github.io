@@ -218,9 +218,9 @@
       <div class="figure-caption">Surface strains to section strains at one station. Left: a top/bottom pair separates membrane strain (mean) from curvature (difference over $2h$). Right: single-sided sensing &mdash; the common case on ship hulls, where the outer surface is under water &mdash; cannot separate the two without a documented assumption (&sect;6). Module 5 owns the general eight-component machinery; this plate-level pair is all &sect;2 needs.</div>
     </div>
 
-    <p><strong>Weights.</strong> Components with sensor data get weight 1; elements or components without data get a small penalty weight $\lambda$ &mdash; typically quoted on the order of $10^{-4}$ to $10^{-5}$ in the iFEM literature ("small, e.g., $10^{-4}$" in Kefal et al. 2016). This is Tikhonov-style regularization: it keeps the assembled matrix nonsingular and lets sensorless regions interpolate smoothly. It is <em>not</em> a free tuning knob &mdash; giving <em>full</em> weight to a sensorless component instead forces its section strains toward zero, an overstiff, biased reconstruction (Module 4's functional lab lets you feel this; Module 6 owns the weighted-iFEM machinery).</p>
+    <p><strong>Weights.</strong> Components with sensor data get weight 1; elements or components without data get a small penalty weight $\lambda$ &mdash; typically quoted on the order of $10^{-4}$ to $10^{-5}$ in the iFEM literature ("small, e.g., $10^{-4}$" in Kefal et al. 2016). This is Tikhonov-style regularization: it keeps the assembled matrix nonsingular and supplies a soft zero-strain/curvature target wherever sensors are missing &mdash; it fills those directions with a prior rather than with data. It is <em>not</em> a free tuning knob &mdash; giving <em>full</em> weight to a sensorless component instead forces its section strains toward zero, an overstiff, biased reconstruction (Module 4's functional lab lets you feel this; Module 6 owns the weighted-iFEM machinery).</p>
 
-    <p><strong>Equation 5 &mdash; the solve.</strong> Minimizing $\Phi$ with respect to the nodal DOFs gives a linear, symmetric system, positive definite once boundary conditions anchor the rigid modes:</p>
+    <p><strong>Equation 5 &mdash; the solve.</strong> Minimizing $\Phi$ with respect to the nodal DOFs gives a linear, symmetric system, invertible once the boundary conditions anchor the rigid modes <em>and</em> the weighted strain operator has full column rank &mdash; anchoring alone does not guarantee that, and any directions it leaves to the prior should be declared, not hidden:</p>
 
     <div class="math-block">$$\frac{\partial \Phi}{\partial \mathbf{U}} = \mathbf{0} \;\;\Longrightarrow\;\; \mathbf{K}\,\mathbf{U} = \mathbf{F}(\boldsymbol{\varepsilon}^{\text{meas}})$$</div>
 
@@ -228,7 +228,7 @@
     <ol>
       <li><strong>No applied loads required.</strong> Wave slamming, gusts, thermal gradients &mdash; the measured strains already contain the structure's response; no $\mathbf{F}(\text{loads})$ appears anywhere.</li>
       <li><strong>No elastic constants required for displacement.</strong> The matching is purely kinematic. Material enters only later, at stress recovery (&sect;4) &mdash; which is also exactly where material errors start to matter, and not before.</li>
-      <li><strong>$\mathbf{K}$ depends only on mesh, sensor positions, and weights &mdash; not on the data.</strong> It is fixed for the life of the deployment. This third property is the entire subject of &sect;3.</li>
+      <li><strong>$\mathbf{K}$ depends only on mesh, sensor positions, and weights &mdash; not on the data.</strong> It is fixed for as long as those things are &mdash; which is most of the time, and not always. Re-mesh, move or lose a sensor, reweight a channel after a dropout, change the kinematic model, and $\mathbf{K}$ changes with it, so the factorization has to be redone. The practical answer is to pre-factorize the handful of masks you expect (all channels healthy, each single-channel dropout) and refactorize only on a genuine configuration change. This third property is the entire subject of &sect;3.</li>
     </ol>
 
     <div class="insight-box">
@@ -251,7 +251,7 @@
 
     <div class="math-block">$$\mathbf{F}_t = \sum_{e\,\in\,\text{instrumented}} \mathbf{T}_e^{\mathsf T}\Big( w_m \mathbf{B}_m^{\mathsf T}\mathbf{e}^{\varepsilon}_t + w_b \mathbf{B}_b^{\mathsf T}\boldsymbol{\kappa}^{\varepsilon}_t \Big)_e$$</div>
 
-    <p>Cost per tick is $O(\mathrm{nnz}(\mathbf{L}))$ &mdash; for shell meshes with $10^3$&ndash;$10^5$ DOF this is microseconds to milliseconds on commodity hardware. <em>Synthesis, not a cited benchmark:</em> in practice the strain interrogator's sample rate and network latency bound the twin's update rate, not the solve. The grounded claims are that real-time experimental deployments exist &mdash; Esposito et al.'s IWSHM 2025 paper is literally titled "Real-Time Structural Monitoring Using the Inverse Finite Element Method: A Review of Experimental Applications in Aerospace Engineering", and Wei et al. (2024) demonstrate a real-time ship deformation-field twin.</p>
+    <p>Cost per tick is $O(\mathrm{nnz}(\mathbf{L}))$ &mdash; for shell meshes with $10^3$&ndash;$10^5$ DOF this lands in the microsecond-to-millisecond band on commodity hardware &mdash; though fill, ordering, sparsity and implementation move that by orders of magnitude, so treat it as a scale, not a spec, and measure your own. <em>Synthesis, not a cited benchmark:</em> in practice the strain interrogator's sample rate and network latency bound the twin's update rate, not the solve. The grounded claims are that real-time experimental deployments exist &mdash; Esposito et al.'s IWSHM 2025 paper is literally titled "Real-Time Structural Monitoring Using the Inverse Finite Element Method: A Review of Experimental Applications in Aerospace Engineering", and Wei et al. (2024) demonstrate a real-time ship deformation-field twin.</p>
 
     <h3 class="subsection-heading">Against the Alternatives</h3>
     <table>
@@ -313,7 +313,9 @@
     <h3 class="subsection-heading">Damage Indices</h3>
     <p>With a healthy-state baseline field recorded at commissioning, a localized anomaly in the reconstructed equivalent strain/stress field flags and locates damage. The generic relative-anomaly index &mdash; <em>a synthesis pattern distilled from the marine iFEM SHM literature, not a single canonical formula</em> &mdash; is:</p>
 
-    <div class="math-block">$$D_i = \frac{\varepsilon^{vM}_i - \varepsilon^{vM}_{i,\text{baseline}}}{\varepsilon^{vM}_{i,\text{baseline}}}$$</div>
+    <div class="math-block">$$D_i = \frac{\varepsilon^{vM}_i - \varepsilon^{vM}_{i,\text{baseline}}}{\left|\varepsilon^{vM}_{i,\text{baseline}}\right| + \varepsilon_{\text{ref}}}$$</div>
+
+    <p>The $\varepsilon_{\text{ref}}$ in the denominator is not cosmetic. A raw relative index blows up wherever the baseline strain passes through zero &mdash; near neutral axes, at nodal lines, anywhere the healthy structure happens to be unstrained &mdash; manufacturing spectacular "damage" out of noise. Stabilize the denominator with a reference level at the noise floor, and normalize for load and temperature before comparing to commissioning, or you are measuring the weather. The simulator below deliberately does <em>not</em> implement this: it stores no baseline at all, fitting the current amplitude to the expected profile and reporting the departure from that <em>shape</em>. That is a genuinely useful detector with a genuinely different blind spot &mdash; switch ageing on and watch a uniform stiffness loss sail straight past it, because scaling the whole field leaves the shape untouched.</p>
 
     <p>Three cautions to internalize immediately, because they are the difference between a damage index and a false-alarm generator:</p>
     <ol>
@@ -348,7 +350,7 @@
         <label style="cursor:pointer;"><input type="checkbox" id="ts-drop" style="vertical-align:-2px;"> dropout: channel 3 dies (hold last value)</label>
         <label style="cursor:pointer;"><input type="checkbox" id="ts-contact" style="vertical-align:-2px;"> contact change: prop appears at x = 0.55</label>
         <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: stiffness decays slowly</label>
-        <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on $|D_i| &gt; 12\%$)</label>
+        <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on a shape-residual index &gt; 12\%)</label>
         <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-val" style="vertical-align:-2px;"> independent validation (laser at tip)</label>
       </div>
 
@@ -755,14 +757,20 @@
     var tSolve = n * 30 / 1e6;            // c_s * n * b, b ~ bandwidth factor
     var tRec  = n * 4e-6;
     var tTick = tAsm + tSolve + tRec + render + (naive ? tFact : 0);
-    var rate = 1000 / tTick;
+    var capacity = 1000 / tTick;              // what the pipeline could sustain
+    var rate = Math.min(fs, capacity);        // what you actually achieve
     var period = 1000 / fs;
+    // name the stage that actually dominates, rather than always blaming the solve
+    var stages = [['assembly', tAsm], ['triangular solves', tSolve], ['field recovery', tRec], ['render', render]];
+    if (naive) stages.push(['re-factorization', tFact]);
+    stages.sort(function(a, b) { return b[1] - a[1]; });
+    var worst = stages[0][0];
 
     // verdict
     var verdict, vcol;
-    if (rate >= fs) { verdict = 'SENSOR-LIMITED &mdash; the interrogator is the bottleneck, not the solve'; vcol = '#2e7d32'; }
+    if (capacity >= fs) { verdict = 'SENSOR-LIMITED &mdash; the interrogator is the bottleneck; the pipeline could run at ' + fmt(capacity) + ' Hz'; vcol = '#2e7d32'; }
     else if (naive) { verdict = 'NOT REAL-TIME &mdash; re-factorizing a fixed matrix every tick'; vcol = '#c62828'; }
-    else { verdict = 'SOLVE-LIMITED &mdash; compute bounds the update rate'; vcol = '#b36118'; }
+    else { verdict = 'PIPELINE-LIMITED &mdash; dominated by ' + worst; vcol = '#b36118'; }
 
     // log-time axis: 1e-3 ms .. 1e4 ms mapped to x in [150, 660]
     var x0 = 150, x1 = 660, lgMin = -3, lgMax = 4;
@@ -815,7 +823,7 @@
     var ro = el('be-readout');
     ro.innerHTML =
       '<div style="display:inline-block;padding:4px 12px;border-radius:12px;background:' + vcol + ';color:#fff;font-size:12px;font-weight:700;margin-bottom:8px;">' + verdict + '</div>' +
-      '<div>Achieved twin rate $\\approx$ <strong>' + fmt(rate) + ' Hz</strong> vs interrogator $f_s = ' + fmt(fs) + '$ Hz. ' +
+      '<div>Pipeline capacity $\\approx$ <strong>' + fmt(capacity) + ' Hz</strong>; achieved twin rate $\\min(f_s,\\,\\text{capacity}) =$ <strong>' + fmt(rate) + ' Hz</strong> against interrogator $f_s = ' + fmt(fs) + '$ Hz. ' +
       (naive ? 'The factorization $\\mathbf{K} = \\mathbf{L}\\mathbf{L}^{\\mathsf T}$ costs $\\sim n^{1.5}$ and is being repaid <em>every tick</em> for a matrix that has not changed &mdash; the defining mistake this module exists to prevent.' :
         'Offline: $\\mathbf{K} = \\mathbf{L}\\mathbf{L}^{\\mathsf T}$ once. Online: $\\mathbf{U}_t = \\mathbf{L}^{-\\mathsf T}(\\mathbf{L}^{-1}\\mathbf{F}_t)$, dominated here by $' + dom + '$.') + '</div>';
     renderMath(ro);
@@ -969,7 +977,11 @@
   }
 
   // ---- damage index vs baseline SHAPE (tip-load profile 1-x) ----
-  function anomaly(meas) {
+  // NOTE: this is a SHAPE-RESIDUAL index, not a baseline-referenced damage index.
+  // It fits the current amplitude c to the expected (1 - x) profile and reports the
+  // largest relative departure from that shape. It stores no commissioning baseline,
+  // which is exactly why a uniform stiffness change is invisible to it.
+  function shapeResidual(meas) {
     var num = 0, den = 0, i;
     for (i = 0; i < 5; i++) { num += meas[i] * (1 - XS[i]); den += (1 - XS[i]) * (1 - XS[i]); }
     var c = num / den, mx = 0, at = 0;
@@ -1000,7 +1012,7 @@
     if (drop) unhandled.push('a stale channel is still being trusted');
     if (age) unhandled.push('stiffness has aged away from the commissioning model');
     if (contact) unhandled.push('a new contact has changed the structure the model assumes');
-    var an = anomaly(meas), alarm = decide && an.max > 0.12;
+    var an = shapeResidual(meas), alarm = decide && an.max > 0.12;
 
     // validation channel
     var laser = wTrue(1, t) * (1 + 0.005 * randn());
@@ -1022,9 +1034,9 @@
     s += '<text x="14" y="20" font-size="11" fill="#666">t = ' + t.toFixed(1) + ' s &nbsp;&middot;&nbsp; load P(t) = ' + loadP(t).toFixed(2) + (age ? ' &nbsp;&middot;&nbsp; EI decayed to ' + (ageEI(t) * 100).toFixed(0) + '%' : '') + '</text>';
     if (alarm) {
       var atag = contact ? 'shape change detected — prop or damage? the index cannot tell' : (drift > 0 ? 'FALSE POSITIVE — drift, not damage' : 'anomaly');
-      s += '<rect x="330" y="8" width="222" height="30" rx="4" fill="#fdecea" stroke="#c62828"/><text x="441" y="21" font-size="10.5" font-weight="700" text-anchor="middle" fill="#c62828">ALARM max|D&#7522;| = ' + (an.max * 100).toFixed(0) + '% at x = ' + XS[an.at] + '</text><text x="441" y="33" font-size="9" text-anchor="middle" fill="#c62828">' + atag + '</text>';
+      s += '<rect x="330" y="8" width="222" height="30" rx="4" fill="#fdecea" stroke="#c62828"/><text x="441" y="21" font-size="10.5" font-weight="700" text-anchor="middle" fill="#c62828">ALARM max shape residual = ' + (an.max * 100).toFixed(0) + '% at x = ' + XS[an.at] + '</text><text x="441" y="33" font-size="9" text-anchor="middle" fill="#c62828">' + atag + '</text>';
     } else if (decide) {
-      s += '<text x="552" y="20" font-size="10" text-anchor="end" fill="#2e7d32">no alarm (max|D&#7522;| = ' + (an.max * 100).toFixed(0) + '%)</text>';
+      s += '<text x="552" y="20" font-size="10" text-anchor="end" fill="#2e7d32">no alarm (max shape residual = ' + (an.max * 100).toFixed(0) + '%)</text>';
     }
     // wall + beam axis
     s += '<rect x="26" y="' + (y0 - 42) + '" width="8" height="84" fill="#bbb"/>';
@@ -1093,9 +1105,9 @@
     // ---- readout ----
     var notes = [];
     if (drift > 0 && !alarm) notes.push('<strong>Drift is active and nothing is alarming:</strong> the bias bends the whole reconstruction smoothly &mdash; indistinguishable from a load change (&sect;10, front 4).');
-    if (drift > 0 && alarm && !contact) notes.push('<strong>That alarm is the drifted channel,</strong> not damage &mdash; the $D_i$ index cannot know the difference.');
+    if (drift > 0 && alarm && !contact) notes.push('<strong>That alarm is the drifted channel,</strong> not damage &mdash; the shape-residual index cannot know the difference.');
     if (skew > 0) notes.push('<strong>Skew:</strong> during load swings the five channels describe five different instants; the least-squares solve fuses them into a state that never existed (&sect;10, front 2).');
-    if (age) notes.push('<strong>Ageing:</strong> a uniform stiffness decay preserves the strain <em>shape</em>, so the anomaly index is blind to it &mdash; and the recovered moment strip above overestimates the actual moment by ' + ((1 / ageEI(t) - 1) * 100).toFixed(0) + '% because it uses commissioning-era stiffness. The fast state loop cannot see what only the slow parameter loop can fix (&sect;1, &sect;9).');
+    if (age) notes.push('<strong>Ageing:</strong> a uniform stiffness decay preserves the strain <em>shape</em>, so the shape-residual index is blind to it &mdash; and the recovered moment strip above overestimates the actual moment by ' + ((1 / ageEI(t) - 1) * 100).toFixed(0) + '% because it uses commissioning-era stiffness. The fast state loop cannot see what only the slow parameter loop can fix (&sect;1, &sect;9).');
     if (drop) notes.push('<strong>Stale channel:</strong> ch3 keeps reporting an old strain as if fresh &mdash; a dropout guard should reweight it to &lambda;, not trust it.');
     var ro = el('ts-readout');
     ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\mathbf{K}\\,\\mathbf{U}_t = \\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}}_t) \\quad \\text{— } \\mathbf{K} \\text{ fixed, } \\mathbf{F} \\text{ rebuilt every tick}$$</div>' + (notes.length ? '<div>' + notes.join(' ') + '</div>' : '<div>Clean stream: reconstruction tracks truth from 5 strain stations, no loads, no material constants. Now break it.</div>');
@@ -1161,7 +1173,7 @@
     },
     {
       q: "How does iFEM-based damage detection work, and what is its most insidious false positive?",
-      a: "Compare the reconstructed equivalent strain/stress field to a healthy baseline, e.g. $D_i=(\\varepsilon^{vM}_i-\\varepsilon^{vM}_{i,\\text{base}})/\\varepsilon^{vM}_{i,\\text{base}}$; a localized anomaly flags damage. Sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
+      a: "Compare the reconstructed equivalent strain/stress field to a healthy baseline, e.g. $D_i=(\\varepsilon^{vM}_i-\\varepsilon^{vM}_{i,\\text{base}})/(|\\varepsilon^{vM}_{i,\\text{base}}|+\\varepsilon_{\\text{ref}})$; a localized anomaly flags damage. Sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
     },
     {
       q: "Per-snapshot iFEM has no inertial term. Is reconstructing a vibrating structure therefore invalid?",

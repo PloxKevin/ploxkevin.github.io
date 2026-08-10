@@ -201,7 +201,7 @@
     <ul>
       <li><strong>$C^0$ elements suffice.</strong> The functional then contains only first derivatives of the kinematic variables, so simple, robust $C^0$-continuous inverse elements can be built &mdash; no curvature continuity requirements.</li>
       <li><strong>Thickness range.</strong> Transverse shear flexibility covers moderately thick plates and sandwich constructions, not just thin skins.</li>
-      <li><strong>Conditioning.</strong> The least-squares problem stays well-conditioned.</li>
+      <li><strong>Conditioning.</strong> Nothing about FSDT or $C^0$ interpolation guarantees a well-conditioned least-squares problem; conditioning is decided by sensor layout and count, the weights, the dimensional scaling of the membrane/curvature/shear residuals, the pose anchoring, and element quality. Read $\kappa_2$, do not assume it.</li>
     </ul>
 
     <div class="insight-box">
@@ -212,7 +212,7 @@
     <!-- ===== SECTION 4: SECTION STRAINS FROM SENSORS ===== -->
     <h2 class="section-heading" id="section-strains-from-sensors">4. From Surface Strains to Section Strains</h2>
 
-    <p>Now the measured side of the story. A three-gauge strain rosette at one surface point yields the full in-plane strain state $(\varepsilon_{xx}, \varepsilon_{yy}, \gamma_{xy})$ at that point. Instrument the top surface ($z=+h$) and the bottom surface ($z=-h$) at the same in-plane location $\mathbf{x}_j$, and call the readings $\boldsymbol{\varepsilon}^{+}$ and $\boldsymbol{\varepsilon}^{-}$.</p>
+    <p>Now the measured side of the story. A three-gauge strain rosette at one surface point yields the full in-plane strain state $(\varepsilon_{xx}, \varepsilon_{yy}, \gamma_{xy})$ at that point. Instrument the top surface ($z=+h$) and the bottom surface ($z=-h$) at the same in-plane location $\mathbf{x}_j$, and call the readings $\boldsymbol{\varepsilon}^{+}$ and $\boldsymbol{\varepsilon}^{-}$. What follows is the plate-level version, kept here because the principle is unreadable without it; the general algebra &mdash; all six measurable components, rosette transformations, unequal sensing planes, one-sided sensing &mdash; belongs to <a href="mod5.html#strain-rosettes-membrane-bending">Module 5 &sect;3</a>.</p>
 
     <p>Because the in-plane strain is linear in $z$, averaging and differencing the pair isolates the section strains &mdash; the membrane strain is the mean of top and bottom, the curvature is the difference divided by the full thickness $2h$ (exactly as used in the experimental iFEM literature, e.g. Oboe et al., Sensors 2021):</p>
 
@@ -438,7 +438,7 @@
     <!-- ===== MAIN INTERACTIVE: IFEM FUNCTIONAL LAB ===== -->
     <div class="interactive-container" id="ifem-lab">
       <div class="interactive-label">Interactive Tool &mdash; iFEM Functional Lab</div>
-      <p style="font-size:13px;color:#555;margin-bottom:12px;">A 1D inverse-FEM testbed: a cantilever discretized into 8 inverse elements with stretching + bending DOFs. Top/bottom surface strains are "measured" on the elements you toggle on, converted to section strains $e^{\varepsilon}, \kappa^{\varepsilon}$, and least-squares fitted. Toggle sensors, change $\lambda$, break the pose anchoring, go one-sided &mdash; and watch the panel: measurements, unknowns, assumptions, rank, validation.</p>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A 1D inverse-FEM testbed: a cantilever discretized into 8 inverse elements with stretching + bending DOFs. Top/bottom surface strains are "measured" on the elements you toggle on, converted to section strains $e^{\varepsilon}, \kappa^{\varepsilon}$, and least-squares fitted. Toggle sensors, change $\lambda$, break the pose anchoring, go one-sided &mdash; and watch the panel: measurements, unknowns, assumptions, rank, validation. The aim here is to feel how the <em>functional</em> responds; sparse-sensing strategy proper &mdash; placement optimization, pre-extrapolation, channel budgets, withheld-sensor scoring &mdash; is <a href="mod6.html">Module 6</a>.</p>
 
       <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;margin-bottom:4px;">Sensored elements (click to toggle)</div>
       <div id="il-chips" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;"></div>
@@ -654,7 +654,9 @@
 
     <p>Each mode implies a strain pattern at the sensor locations; stacking these gives the strain-mode matrix $\boldsymbol{\Psi}$. With more sensors than retained modes, the amplitudes follow from linear least squares:</p>
 
-    <div class="math-block">$$\mathbf{q} = \big(\boldsymbol{\Psi}^T\boldsymbol{\Psi}\big)^{-1}\boldsymbol{\Psi}^T\,\boldsymbol{\varepsilon}^{\text{meas}}$$</div>
+    <div class="math-block">$$\mathbf{q} = \boldsymbol{\Psi}^{+}\,\boldsymbol{\varepsilon}^{\text{meas}} \qquad\text{(pseudo-inverse, computed by QR or SVD)}$$</div>
+
+    <p>Two cautions the compact notation hides. The fit is unique only if $\boldsymbol{\Psi}$ has full column rank &mdash; the retained modes must leave distinguishable strain signatures at the chosen sensors, which fails as soon as two modes look alike where you happen to have instrumented. And even when it is invertible, forming $\boldsymbol{\Psi}^{T}\boldsymbol{\Psi}$ explicitly squares the condition number (Module 3), so near-dependence that a QR or SVD would survive can destroy a normal-equations solve. Compute the pseudo-inverse, check the rank, regularize if it is deficient.</p>
 
     <p><strong>Strengths:</strong> extreme data compression (a handful of amplitudes), tolerance of very sparse sensing when the deformation truly lies in the retained subspace, trivially real-time.</p>
 
@@ -735,7 +737,7 @@
 
     <p>The gap between the clean functional and a working system is sensor economy. This section is a preview &mdash; the canonical treatment of weighting, placement, and pre-extrapolation is <a href="mod6.html">Module 6</a> &mdash; but the module would be dishonest without the headline numbers.</p>
 
-    <p><strong>Weight values in the wild.</strong> $w = 1.0$ for measured components is universal. For missing data, $10^{-4}$&ndash;$10^{-5}$ is typical in clean numerical studies &mdash; but Oboe et al. (Sensors 2021) used $w = 0.1$ for <em>pre-extrapolated</em> strains in their noisy experimental application, because extrapolated values carry genuine information and earn more weight than pure regularization placeholders:</p>
+    <p><strong>Weight values in the wild.</strong> $w = 1.0$ for measured components is universal. For missing data, $10^{-4}$&ndash;$10^{-5}$ is typical in clean numerical studies &mdash; but Oboe et al. (Sensors 2021) used $w = 0.1$ for <em>pre-extrapolated</em> strains in their noisy experimental application, because a physics-based extrapolation is a better-informed guess than a bare zero, and is weighted accordingly. Keep the category straight, though: an extrapolated strain is <em>correlated pseudo-data</em> derived from the measurements you already have, not an additional independent measurement. It cannot add information the sensors never captured, and because the assembled least-squares solve is global, the error it carries does not stay politely near the gap it filled:</p>
 
     <div class="math-block">$$w_{\text{measured}} = 1.0, \qquad w_{\text{missing}} = \lambda \in [10^{-5},\, 10^{-1}] \;\;\text{(context-dependent)}$$</div>
 
@@ -791,6 +793,7 @@
     <!-- ===== REFERENCES ===== -->
     <h2 class="section-heading" id="references">References</h2>
     <ul class="ref-list">
+      <li>Kefal, Adnan; Oterkus, Erkan (2016). <em>Displacement and stress monitoring of a Panamax containership using inverse finite element method</em>. Ocean Engineering 119, 16&ndash;29. doi:10.1016/j.oceaneng.2016.04.025</li>
       <li>Tessler, A.; Spangler, J. L. (2003). <em>A Variational Principle for Reconstruction of Elastic Deformations in Shear Deformable Plates and Shells</em>. NASA/TM-2003-212445, NASA Langley Research Center.</li>
       <li>Tessler, A.; Spangler, J. L. (2005). <em>A least-squares variational method for full-field reconstruction of elastic deformations in shear-deformable plates and shells</em>. Computer Methods in Applied Mechanics and Engineering, vol. 194, pp. 327&ndash;339. doi:10.1016/j.cma.2004.03.015</li>
       <li>Bogert, P.; Haugse, E.; Gehrki, R. (2003). <em>Structural Shape Identification from Experimental Strains Using a Modal Transformation Technique</em>. 44th AIAA/ASME/ASCE/AHS/ASC Structures, Structural Dynamics, and Materials Conference (AIAA 2003-1626). doi:10.2514/6.2003-1626</li>
@@ -1122,7 +1125,11 @@
     var ns = sensored.filter(function(x) { return x; }).length;
     var surf = (sensing === 'top') ? 1 : 2;
     var readings = ns * 2 * surf;
-    var samples = ns * 2 * 2;
+    // Three DIFFERENT things, previously conflated as 'samples':
+    //   derived  = section-strain targets genuinely computed from data
+    //   assumed  = targets supplied by an assumption (one-sided sensing sets e = 0)
+    var derived = ns * 2 * ((surf === 2) ? 2 : 1);
+    var assumed = ns * 2 * ((surf === 2) ? 0 : 1);
     var nfix = (bcMode === 'clamp') ? 3 : (bcMode === 'both') ? 6 : 0;
     var rankStr = sol.x ? (sol.rank + ' / ' + sol.n + ' &mdash; full rank')
       : '<span style="color:#c62828;font-weight:700;">' + sol.rank + ' / ' + sol.n + ' &mdash; deficient by ' + (sol.n - sol.rank) + ' (rigid modes)</span>';
@@ -1136,7 +1143,7 @@
     if (sensing === 'top') assume += '<li><span style="color:#b36118;font-weight:600;">one-sided sensing: e = 0 assumed at full weight</span></li>';
     el('il-panel').innerHTML =
       '<div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:6px;">What the solver sees</div>' +
-      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + readings + ' surface strain readings (' + ns + ' elements &times; 2 stations &times; ' + surf + ' surface' + (surf > 1 ? 's' : '') + ') &rarr; ' + samples + ' section-strain samples</div>' +
+      '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + readings + ' surface strain readings (' + ns + ' elements &times; 2 stations &times; ' + surf + ' surface' + (surf > 1 ? 's' : '') + ') &rarr; ' + derived + ' section-strain target' + (derived === 1 ? '' : 's') + ' derived from data' + (assumed ? ' <span style="color:#b36118;font-weight:600;">+ ' + assumed + ' supplied by the e = 0 assumption</span>' : '') + '</div>' +
       '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> 27 nodal DOFs (9 nodes &times; (u, w, &theta;)), ' + nfix + ' anchored &rarr; ' + (27 - nfix) + ' free</div>' +
       '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
       '<div style="margin-bottom:7px;"><strong>Rank:</strong> ' + rankStr + '<br><strong>cond(K):</strong> ' + condStr + '</div>' +
@@ -1152,9 +1159,9 @@
     var gaps = sensored.filter(function(x) { return !x; }).length;
     var note = '';
     if (q && gaps > 0 && !extrap) {
-      note = ' <strong>Note the gap bias:</strong> the sensorless elements carry a zero-strain prior and nothing competes with it there, so they bridge with straight segments <em>whatever the value of</em> $\\lambda$ &mdash; a small weight cannot conjure missing information; it only keeps the system connected and nonsingular (watch cond($\\mathbf{K}$) climb as $\\lambda \\to 10^{-6}$). Filling the gaps with real information is the job of pre-extrapolation &mdash; tick the checkbox.';
+      note = ' <strong>Note the gap bias:</strong> the sensorless elements carry a zero-strain prior and nothing competes with it there, so they bridge with straight segments <em>whatever the value of</em> $\\lambda$ &mdash; a small weight cannot conjure missing information; it only keeps the system connected and nonsingular (watch cond($\\mathbf{K}$) climb as $\\lambda \\to 10^{-6}$). Filling the gaps with a better-informed target than a bare zero is the job of pre-extrapolation &mdash; tick the checkbox (it is still pseudo-data, not new measurement).';
     } else if (q && gaps > 0 && extrap) {
-      note = ' With pre-extrapolation on, the gaps are filled with interpolated section strains at weight $\\lambda$ &mdash; genuine (if imperfect) information, which is why Oboe et al. (2021) gave such values $w = 0.1$ rather than $10^{-5}$.';
+      note = ' With pre-extrapolation on, the gaps are filled with interpolated section strains at weight $\\lambda$ &mdash; better-informed pseudo-data than a bare zero &mdash; still derived from the sensors you already have, not new measurement &mdash; which is why Oboe et al. (2021) gave such values $w = 0.1$ rather than $10^{-5}$.';
     }
     ro.innerHTML = '<div class="math-block" style="margin:6px 0;">' + r + '</div><div>' + tip + ax + note + '</div>';
     renderMath(ro);
@@ -1352,7 +1359,7 @@
     },
     {
       q: 'Modal shape sensing: core equations and the hidden cost that iFEM avoids.',
-      a: '$\\mathbf{u} \\approx \\boldsymbol{\\Phi}\\mathbf{q}$ with $\\mathbf{q} = (\\boldsymbol{\\Psi}^T\\boldsymbol{\\Psi})^{-1}\\boldsymbol{\\Psi}^T\\boldsymbol{\\varepsilon}^{\\text{meas}}$. The mode shapes come from a finite element model requiring mass AND stiffness &mdash; i.e. material properties &mdash; and damage or truncation error corrupts the basis. iFEM uses only strain&ndash;displacement relations.'
+      a: '$\\mathbf{u} \\approx \\boldsymbol{\\Phi}\\mathbf{q}$ with $\\mathbf{q} = \\boldsymbol{\\Psi}^{+}\\boldsymbol{\\varepsilon}^{\\text{meas}}$ (pseudo-inverse via QR/SVD, not normal equations). The mode shapes come from a finite element model requiring mass AND stiffness &mdash; i.e. material properties &mdash; and damage or truncation error corrupts the basis. iFEM uses only strain&ndash;displacement relations.'
     },
     {
       q: 'When do material properties re-enter an iFEM monitoring pipeline?',

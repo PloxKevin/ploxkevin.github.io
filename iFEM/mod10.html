@@ -74,7 +74,7 @@
     <ul>
       <li><strong>(a) Finite differences</strong> &mdash; $(n_p+1)$ full FEM solves per gradient; step-size dilemma; Section 4.</li>
       <li><strong>(b) Direct (tangent) sensitivities</strong> &mdash; one linearized solve per parameter; wins when $n_p$ is small and outputs many; Section 2.</li>
-      <li><strong>(c) The adjoint method</strong> &mdash; exactly two solves per gradient regardless of $n_p$; Sections 2&ndash;3.</li>
+      <li><strong>(c) The adjoint method</strong> &mdash; two solves per gradient regardless of $n_p$ (plus $O(n_p)$ work to assemble the components); Sections 2&ndash;3.</li>
       <li><strong>(d) Algorithmic differentiation of the entire FEM code</strong> &mdash; differentiable simulation, by unrolling the solver or by implicit differentiation at the fixed point; automates the tedious $\partial \mathbf{R}/\partial \mathbf{p}$ terms; Sections 4&ndash;5.</li>
     </ul>
 
@@ -188,7 +188,7 @@
 
     <div class="insight-box">
       <div class="box-label">Why symmetric $\mathbf{K}$ makes the adjoint nearly free</div>
-      <div>Self-adjoint elasticity gives $\mathbf{K}^{\mathsf{T}} = \mathbf{K}$: the Cholesky factorization computed for the forward solve is <em>reused</em>, and the adjoint solve is a single back-substitution. The marginal cost of the entire gradient over the plain objective evaluation is then essentially zero. This is also a trap: because $\mathbf{K}^{\mathsf{T}}=\mathbf{K}$, sloppy code that "forgets" the transpose silently works &mdash; and the habit breaks the day you meet a non-self-adjoint operator (advection, dynamics with damping, follower loads). Always <em>derive</em> with the transpose explicit, even when you then optimize it away.</div>
+      <div>Self-adjoint elasticity gives $\mathbf{K}^{\mathsf{T}} = \mathbf{K}$: the Cholesky factorization computed for the forward solve is <em>reused</em>, and the adjoint solve reuses those factors instead of refactorizing. What remains is not nothing: you still assemble the adjoint right-hand side, run two triangular substitutions, and contract $\boldsymbol{\lambda}$ against $\partial\mathbf{r}/\partial\mathbf{p}$ for every parameter. So the honest claim is <em>one extra linear solve with factor reuse, plus gradient assembly</em> &mdash; cheap next to a refactorization, and the <em>solve</em> count is independent of the parameter count &mdash; though assembling and storing all $n_p$ gradient components is still $O(n_p)$ work, so 'parameter-independent' describes the linear algebra, not the whole gradient. (For a nonlinear forward problem the asymmetry is larger still: the forward solve is a Newton loop, the adjoint solve is a single linear system.) This is also a trap: because $\mathbf{K}^{\mathsf{T}}=\mathbf{K}$, sloppy code that "forgets" the transpose silently works &mdash; and the habit breaks the day you meet a non-self-adjoint operator (advection, dynamics with damping, follower loads). Always <em>derive</em> with the transpose explicit, even when you then optimize it away.</div>
     </div>
 
     <div class="insight-box">
@@ -273,7 +273,7 @@
 
     <h3 class="subsection-heading">Identifiability, Read Directly Off the Gradient</h3>
 
-    <p>Under an end load, $u_k$ depends only on the elements between the support and node $k$. Equivalently: the adjoint bar is loaded only at sensor nodes, so elements to the right of the last sensor carry <em>zero adjoint strain</em> &mdash; their gradient is <strong>exactly zero</strong>, not small. No optimizer, no learning rate, no number of iterations can move them; they are unidentifiable, full stop. Likewise any element with near-zero <em>forward</em> strain is invisible regardless of sensing. The remedies are experimental, not algorithmic: multiple load cases, sensors spanning the domain, and Tikhonov regularization on $\log E$ to fill the null space with a prior.</p>
+    <p>Under an end load, $u_k$ depends only on the elements between the support and node $k$. Equivalently: the adjoint bar is loaded only at sensor nodes, so elements to the right of the last sensor carry <em>zero adjoint strain</em> &mdash; their gradient is <strong>exactly zero</strong>, not small. No optimizer, no learning rate, no number of iterations can move them; they are unidentifiable, full stop. That conclusion is specific to this load path: engage the tip stop &mdash; switched on <em>and</em> actually in contact &mdash; and the tail stops being invisible, because the force transmitted through the contact depends on the compliance of the <em>whole</em> bar, so even upstream sensors start responding to tail moduli. Observability is a property of the experiment, not of the element numbering. Likewise any element with near-zero <em>forward</em> strain is invisible regardless of sensing. The remedies are experimental, not algorithmic: multiple load cases, sensors spanning the domain, and Tikhonov regularization on $\log E$ to fill the null space with a prior.</p>
 
     <h3 class="subsection-heading">Numerical Hygiene, Shown with Numbers</h3>
 
@@ -448,7 +448,7 @@
 
     <div class="insight-box">
       <div class="box-label">Piecewise-smooth is not a bug in your code</div>
-      <div>The kink panel in the laboratory above shows the mechanism at toy scale: when the bar tip meets the stop, the active set changes, the slope of $\mathbf{u}(s)$ changes, and $J(s)$ has a corner &mdash; the gradient jumps. On each side of the event the adjoint gradient is exact; <em>at</em> the event it does not exist, and a finite-difference stencil that straddles the event returns garbage that no step size fixes. In a full simulator these events are dense in time (every marker of a tactile skin makes and breaks contact), so dynamic gradients are best treated as noisy estimates of a piecewise object &mdash; a named accuracy trade-off in the differentiable-simulator literature (Newbury et al. 2024), not a defect of your implementation.</div>
+      <div>The kink panel in the laboratory above shows the mechanism at toy scale: when the bar tip meets the stop, the active set changes, the slope of $\mathbf{u}(s)$ changes, and $J(s)$ has a corner &mdash; the gradient jumps. On each side of the event the adjoint gradient is exact; <em>at</em> the event it does not exist, and a finite-difference stencil that straddles the event returns garbage that no step size fixes. In a full simulator these events are dense in time (across a tactile skin, contact nodes enter and leave the active set continually), so dynamic gradients are best treated as noisy estimates of a piecewise object &mdash; a named accuracy trade-off in the differentiable-simulator literature (Newbury et al. 2024), not a defect of your implementation.</div>
     </div>
 
     <h3 class="subsection-heading">Case Study: DiffTactile</h3>
@@ -691,7 +691,7 @@
     s += '<marker id="bi-arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#c62828"/></marker></defs>';
     var x0 = 46, wEl = 71, e, x;
     // ---- Panel A: bar strip ----
-    s += '<text x="20" y="18" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">CURRENT ESTIMATE  (hatched = beyond last sensor: gradient exactly zero)</text>';
+    s += '<text x="20" y="18" font-size="11" font-weight="700" fill="#555" font-family="sans-serif">CURRENT ESTIMATE  (hatched = beyond last sensor: no direct sensitivity)</text>';
     s += '<rect x="28" y="28" width="14" height="48" fill="url(#bi-wall)" stroke="#555"/>';
     for (e = 0; e < 8; e++) {
       x = x0 + e * wEl;
@@ -1112,7 +1112,7 @@
       s += '<rect x="' + (xg + 5) + '" y="' + (hex > 0 ? yz - hex : yz) + '" width="13" height="' + Math.max(0.8, Math.abs(hex)) + '" fill="#7b1fa2" opacity="0.85"/>';
       s += '<rect x="' + (xg + 22) + '" y="' + (hrt > 0 ? yz - hrt : yz) + '" width="13" height="' + Math.max(0.8, Math.abs(hrt)) + '" fill="none" stroke="#e67e22" stroke-width="2"/>';
       s += '<text x="' + (xg + wEl / 2) + '" y="216" font-size="9.5" text-anchor="middle" fill="#888" font-family="sans-serif">e' + (e + 1) + '</text>';
-      if (e > lastId) s += '<text x="' + (xg + wEl / 2) + '" y="' + (yz - 6) + '" font-size="8.5" text-anchor="middle" fill="#9e9e9e" font-family="sans-serif">0</text>';
+      if (e > lastId && !active) s += '<text x="' + (xg + wEl / 2) + '" y="' + (yz - 6) + '" font-size="8.5" text-anchor="middle" fill="#9e9e9e" font-family="sans-serif">0</text>';
     }
     el('gl-svg-grad').innerHTML = s;
 
@@ -1162,7 +1162,7 @@
       '<li>' + (contact ? 'penalty stop at tip: gap g = ' + gap.toFixed(2) + ', k&#7580; known' : 'no contact in the model') + '</li>' +
       '<li>noise white, uncorrelated</li>' +
       '<li>forward solve converged: ' + convStr + '</li></ul></div>' +
-      '<div style="margin-bottom:7px;"><strong>Rank / identifiability:</strong> sensitivity rank = ' + Math.min(M, 8) + ' of 8; elements e &gt; ' + M + ' have <em>exactly zero</em> gradient<br><strong>cond. of Gauss&ndash;Newton block:</strong> &#954;<sup>1/2</sup>(S&#7488;S) = ' + fmtExp(kappa) + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Rank / identifiability:</strong> sensitivity rank = ' + Math.min(M, 8) + ' of 8; elements e &gt; ' + M + ' have ' + (active ? 'sensitivity only through the tip contact' : '<em>exactly zero</em> gradient') + '<br><strong>cond. of Gauss&ndash;Newton block:</strong> &#954;<sup>1/2</sup>(S&#7488;S) = ' + fmtExp(kappa) + '</div>' +
       '<div style="margin-bottom:7px;"><strong>Validation vs exact gradient:</strong><br>max rel. deviation: <span style="color:' + colV + ';font-weight:700;">' + (relErr < 1e-14 ? '&lt; 10&#8315;&#185;&#8308; (exact)' : relErr.toExponential(1)) + '</span></div>' +
       '<div style="font-size:11px;font-weight:700;color:#4a148c;border-top:1px solid #ddd;padding-top:6px;">the reference is the discrete adjoint at a tight solve &mdash; 2 solves, any n&#8346;</div>';
 

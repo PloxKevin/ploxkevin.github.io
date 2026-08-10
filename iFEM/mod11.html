@@ -66,11 +66,11 @@
 
     <h3 class="subsection-heading">Three Structural Facts Before Any Learning</h3>
 
-    <p><strong>Fact 1: linear iFEM inference is already real-time.</strong> The system matrix is assembled and factorized once; each new strain frame costs one matrix&ndash;vector product. So "neural networks because iFEM is slow" is a weak motivation for linear problems &mdash; a paper (or a page) that leads with speed has picked the wrong fight.</p>
+    <p><strong>Fact 1: linear iFEM inference is already real-time.</strong> The system matrix is assembled and factorized once; each new strain frame costs a right-hand-side assembly plus two triangular solves against the stored factors &mdash; or one matrix&ndash;vector product if you went further and precomputed the dense transfer map $\mathbf{K}^{-1}\mathbf{B}$. So "neural networks because iFEM is slow" is a weak motivation for linear problems &mdash; a paper (or a page) that leads with speed has picked the wrong fight.</p>
 
     <p><strong>Fact 2: iFEM is load-agnostic.</strong> No load model appears in the functional, so the reconstruction generalizes to any load case within its modeling assumptions: linearized kinematics and the inverse element's chosen beam/shell model, known geometry and sensor map. (Note what is <em>not</em> on that list: a constitutive law. Displacement reconstruction is material-free; elasticity only enters later, at stress recovery.) A learned map has no such property &mdash; it silently encodes the load distribution it was trained on. Claiming either method has the other's property is a standard error in both directions.</p>
 
-    <p><strong>Fact 3: iFEM's genuine weak points are where learning enters.</strong> It needs a mesh and a kinematic model. It needs strain data covering the inverse elements &mdash; elements without sensors get very small weights, degrading conditioning (Module 6). It inherits small-strain, model-form assumptions and struggles with unmodeled nonlinearity (large deflections, viscoelastic soft materials, damage) and with unconventional sensor modalities (cameras, resistive skins). Those four gaps &mdash; sparsity, nonlinearity, model error, modality &mdash; are the honest motivations.</p>
+    <p><strong>Fact 3: iFEM's genuine weak points are where learning enters.</strong> It needs a mesh and a kinematic model. It needs strain data covering the inverse elements &mdash; elements without sensors get very small weights against a target of <em>zero</em> &mdash; a weak zero-strain prior, not an absence of data. It can actually improve conditioning by supplying rank in directions no sensor sees; what it costs is bias, pulling dark regions toward zero section strain (Module 6). Learned completion swaps that zero for a better-informed guess, but the guess is still correlated pseudo-data rather than measurement. It inherits small-strain, model-form assumptions and struggles with unmodeled nonlinearity (large deflections, viscoelastic soft materials, damage) and with unconventional sensor modalities (cameras, resistive skins). Those four gaps &mdash; sparsity, nonlinearity, model error, modality &mdash; are the honest motivations.</p>
 
     <div class="insight-box">
       <div class="box-label">Trap &mdash; the speed motivation</div>
@@ -276,7 +276,7 @@
       <div id="ool-readout" style="font-size:13px;margin-top:10px;"></div>
     </div>
 
-    <p>Three behaviors deserve deliberate replay. In-window, the learned completion is essentially exact even from very sparse sensors &mdash; Section 2's span guarantee at work. Out-of-window, its error explodes <em>with no change in how confident its output looks</em>, while the GP's band widens and the raw physics route degrades only gently. And under specimen damage, the physics route is the only one whose assumptions still hold: $\kappa = \varepsilon/c$ is kinematics, valid whatever the stiffness &mdash; the learned completion keeps hallucinating the pristine training specimen.</p>
+    <p>Three behaviors deserve deliberate replay. In-window, the learned completion is essentially exact even from very sparse sensors &mdash; Section 2's span guarantee at work. Out-of-window, its error explodes <em>with no change in how confident its output looks</em>, while the GP reports a band that reflects only sensor geometry, kernel and noise level &mdash; be careful here: this posterior variance is <em>not</em> conditioned on load position or structural state, so it does not widen merely because the load moved out of distribution. It is spatial interpolation uncertainty, useful for "how far am I from a sensor", useless as an OOD alarm. The raw physics route, meanwhile, degrades only gently. And under specimen damage, the physics route is the only one whose assumptions still hold: $\kappa = \varepsilon/c$ is kinematics, valid whatever the stiffness &mdash; the learned completion keeps hallucinating the pristine training specimen.</p>
 
     <!-- ===== SECTION 4: TRAINING-DATA FACTORY ===== -->
     <h2 class="section-heading" id="synthetic-training-data">4. FEM as a Training-Data Factory &mdash; and the Sim-to-Real Gap</h2>
@@ -669,7 +669,7 @@
 
     <h3 class="subsection-heading">The Hybrid: iFEM Stays in the Loop</h3>
 
-    <p>Hong, Zhan, Guo, Liu, Zhu &amp; Liu (2026) integrate graph neural networks <em>with</em> the inverse finite element method for high-resolution shape sensing and stress reconstruction of offshore wind-turbine towers &mdash; the emblematic insertion-point-4 design: iFEM remains the physics backbone; the GNN supplies resolution and refinement on top of it. (That is the title-level description, and this page deliberately stops there.) The pattern is what makes it important: the learned component fills a gap the physics leaves open, and the physics bounds what the learned component can invent.</p>
+    <p>Hong, Zhan, Guo, Liu, Zhu &amp; Liu (2026) integrate graph neural networks <em>with</em> the inverse finite element method for high-resolution shape sensing and stress reconstruction of offshore wind-turbine towers &mdash; the emblematic insertion-point-4 design: iFEM remains the physics backbone; the GNN supplies resolution and refinement on top of it. (That is the title-level description, and this page deliberately stops there.) The pattern is what makes it important: the learned component fills a gap the physics leaves open, and the physics layer is what finally turns strain into displacement, so the reconstruction remains physically structured. Note the limit of that argument: unless the pipeline projects onto a constrained set or certifies a residual bound, nothing stops the network handing iFEM a plausible-but-wrong strain field, which iFEM will then faithfully reconstruct.</p>
 
     <div class="insight-box">
       <div class="box-label">Trap &mdash; not every GNN paper is a hybrid</div>
@@ -693,7 +693,7 @@
       <tr><td><strong>Prior requirements</strong></td><td>Mesh + kinematic model + sensor geometry</td><td>Measured known load cases</td><td>Large training set (usually synthetic &mdash; hence a model anyway)</td><td>PDE + constitutive assumption + BCs (partially relaxable)</td></tr>
       <tr><td><strong>Load-case generality</strong></td><td>Load-agnostic by construction</td><td>Exact only within the training span (linear case)</td><td>Interpolates $P_{\text{train}}$; no out-of-distribution guarantee</td><td>No training distribution to leave</td></tr>
       <tr><td><strong>Noise behavior</strong></td><td>Fixed linear gain, bounded by conditioning of $\mathbf{K}$</td><td>Amplification set by $\sigma_{\min}(\mathbf{E}_{\text{train}})$</td><td>Local Lipschitz behavior unknown a priori</td><td>Noise biases identified parameters unless regularized</td></tr>
-      <tr><td><strong>Inference cost</strong></td><td>One mat-vec (precomputed factorization)</td><td>One mat-vec</td><td>One forward pass</td><td>Full optimization per case</td></tr>
+      <tr><td><strong>Inference cost</strong></td><td>RHS assembly + 2 triangular solves</td><td>One mat-vec</td><td>One forward pass</td><td>Full optimization per case</td></tr>
       <tr><td><strong>Nonlinearity &amp; modality</strong></td><td>Linear kinematics; strain inputs only</td><td>Linear; sensor-vector inputs</td><td>Native: images, resistive skins, geometric/material nonlinearity</td><td>Nonlinear physics encodable in the loss</td></tr>
       <tr><td><strong>Self-diagnostics</strong></td><td>Functional value = residual, flags inconsistent data</td><td>None built in</td><td>Fails silently</td><td>Residual exists but measures the <em>assumed</em> physics</td></tr>
       <tr><td><strong>Certification story</strong></td><td>Mesh + residual + linear theory: arguable</td><td>Linear algebra: arguable in-span</td><td>Open problem</td><td>Open problem</td></tr>
@@ -746,7 +746,7 @@
           <circle cx="222" cy="222" r="4"/><circle cx="255" cy="165" r="4"/><circle cx="300" cy="140" r="4"/><circle cx="345" cy="138" r="4"/><circle cx="390" cy="170" r="4"/><circle cx="372" cy="228" r="4"/><circle cx="300" cy="250" r="4"/><circle cx="292" cy="196" r="4"/><circle cx="330" cy="190" r="4"/><circle cx="258" cy="222" r="4"/>
         </g>
         <text x="303" y="207" font-size="10.5" font-weight="600" fill="#4a148c" font-family="sans-serif" text-anchor="middle">training samples p&#7522;</text>
-        <text x="303" y="285" font-size="11" font-weight="600" fill="#7b1fa2" font-family="sans-serif" text-anchor="middle">interpolation: learned map reliable</text>
+        <text x="303" y="285" font-size="11" font-weight="600" fill="#7b1fa2" font-family="sans-serif" text-anchor="middle">inside sampled range: empirically reliable</text>
         <text x="303" y="300" font-size="10" fill="#7b1fa2" font-family="sans-serif" text-anchor="middle" dy="-3">(linear case: exact within span)</text>
         <!-- star outside -->
         <path d="M 590 110 l 6 14 15 1 -11 10 3 15 -13 -8 -13 8 3 -15 -11 -10 15 -1 Z" fill="#c62828"/>
@@ -755,10 +755,10 @@
         <text x="608" y="105" font-size="11" fill="#c62828" font-family="sans-serif" text-anchor="middle" dy="-2">error unbounded, fails silently</text>
         <!-- inset equations -->
         <rect x="486" y="212" width="212" height="72" rx="5" fill="#fff" stroke="#bbb" stroke-width="1"/>
-        <text x="592" y="238" font-size="12" fill="#e67e22" font-family="sans-serif" text-anchor="middle">learned: u = C &#949;  (valid on the hull)</text>
+        <text x="592" y="238" font-size="12" fill="#e67e22" font-family="sans-serif" text-anchor="middle">learned: u = C &#949;  (fitted, not certified)</text>
         <text x="592" y="264" font-size="12" fill="#1565c0" font-family="sans-serif" text-anchor="middle">physics: K u = f(&#949;)  (valid on the tint)</text>
       </svg>
-      <div class="figure-caption">Load-space generalization. The learned map is trustworthy on (approximately) the convex hull of its training samples &mdash; and, for linear structures, exactly on their span. iFEM's validity region is the entire plane, bounded not by data coverage but by its model assumptions. The two regions fail on orthogonal axes.</div>
+      <div class="figure-caption">Load-space generalization. The learned map is <em>empirically</em> reliable within the sampled range and increasingly suspect outside it. Resist upgrading that to a guarantee: convex-hull membership certifies nothing for a nonlinear learned map, and even here the underlying fields acquire a new kink at every unseen load position, so an interpolated load is not a linear combination of the training responses. Exactness belongs to the linear case &mdash; a genuine linear superposition of training loads, with a calibration map of sufficient rank. iFEM's validity region is the entire plane, bounded not by data coverage but by its model assumptions. The two regions fail on orthogonal axes.</div>
     </div>
 
     <h3 class="subsection-heading">Leakage: the Way Papers Fool Themselves</h3>
@@ -774,7 +774,7 @@
 
     <h3 class="subsection-heading">OOD Detection You Can Actually Deploy</h3>
 
-    <p>A learned map fails silently; the fix is to bolt a physics residual onto it. Run the reconstruction back through a forward model &mdash; or, when an iFEM layer exists, monitor its least-squares functional value online: measured strains inconsistent with any displacement field in the model class push the residual up, and a residual spike is a distribution alarm that requires no labels. This is iFEM's self-diagnostic (Section 9, row 6) recycled as a watchdog for its learned replacement &mdash; and it is the cheapest form of the hybrid argument.</p>
+    <p>A learned map fails silently; a partial defence is to bolt a physics residual onto it. Run the reconstruction back through a forward model &mdash; or, when an iFEM layer exists, monitor its least-squares functional value online: measured strains inconsistent with any displacement field in the model class push the residual up, and a residual spike is a label-free alarm. Read it in one direction only: a high residual is good evidence something is inconsistent, but a low residual certifies nothing. It is blind to errors living in the model&rsquo;s nullspace, to OOD states the model happens to explain, and to anything the residual does not observe &mdash; so treat it as a necessary consistency check to be paired with independent validation and explicit uncertainty, never as an OOD certificate. This is iFEM's self-diagnostic (Section 9, row 6) recycled as a watchdog for its learned replacement &mdash; and it is the cheapest form of the hybrid argument.</p>
 
     <div class="definition-box">
       <div class="box-label">The Evaluation Protocol (adopt verbatim)</div>
@@ -873,7 +873,7 @@
 
     <h3 class="subsection-heading">Why Not Just Run iFEM on the Skin?</h3>
 
-    <p>Three reasons, all structural. The pad is hyperelastic and routinely sees large strains, violating the small-strain kinematics of standard inverse elements &mdash; the model-based baseline breaks <em>before</em> the comparison starts, and any fair evaluation must say so. The sensor modality is wrong: images and marker fields are not strain components. And contact makes the boundary conditions unknown and changing &mdash; the one ingredient iFEM assumes fixed. This is why the published pattern for skins is the Section 4 factory: Sferrazza et al. (2019) train on FEM-generated force-distribution labels; Helmut et al. (2025) do so for the commercial GelSight Mini; Truby et al. (2020) map distributed embedded sensor signals to whole-body 3D configuration by deep learning.</p>
+    <p>Three reasons, all structural. The pad is hyperelastic and routinely sees large strains, violating the small-strain kinematics of standard inverse elements &mdash; the model-based baseline breaks <em>before</em> the comparison starts, and any fair evaluation must say so. The sensor modality is wrong: images and marker fields are not strain components. And contact is often blamed for this, but be precise: unknown contact tractions are <em>loads</em>, and load-free displacement iFEM never needed them. What actually breaks are the things iFEM does depend on &mdash; the pose and essential anchors, the geometry and sensor map, the strain modality, and the small-strain kinematics a soft skin cheerfully violates. This is why the published pattern for skins is the Section 4 factory: Sferrazza et al. (2019) train on FEM-generated force-distribution labels; Helmut et al. (2025) do so for the commercial GelSight Mini; Truby et al. (2020) map distributed embedded sensor signals to whole-body 3D configuration by deep learning.</p>
 
     <p>What iFEM <em>thinking</em> still contributes, as transferable principles: weighted least-squares functionals as the template for fusing heterogeneous measurements; the residual as an online consistency check (Section 10's watchdog); conditioning analysis for marker and sensor layout &mdash; the placement reasoning of Section 3 applies verbatim to marker density; and the model-distilled-into-data caveat &mdash; FEM labels inherit the hyperelastic model's constitutive error, so "ground truth" is model truth. A Mindlin-type inverse-shell treatment of a sensorized skin is the natural physics baseline against which learned skins should be benchmarked &mdash; where its small-strain assumptions hold, it is the honest yardstick; where they break, documenting <em>that</em> is itself the comparison.</p>
 
@@ -1222,7 +1222,7 @@
     p += '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><br>' +
       '<span style="color:#1565c0;">A:</span> EB kinematics, $\\hat{\\kappa} = \\varepsilon / c$, anchors $w(0) = w\'(0) = 0$ &mdash; material-free<br>' +
       '<span style="color:#7b1fa2;">B:</span> A + zero-mean GP, SE kernel $\\ell = ' + st.ell.toFixed(2) + '$ (a smoothness <em>prior</em>)<br>' +
-      '<span style="color:#e67e22;">C:</span> A + test load in span of window $[0.50, 0.70]$ + <em>pristine</em> specimen</div>';
+      '<span style="color:#e67e22;">C:</span> A + test load inside the sampled window $[0.50, 0.70]$ &mdash; empirical reliability, not a guarantee &mdash; + <em>pristine</em> specimen</div>';
     p += '<div style="margin-bottom:7px;"><strong>Rank / conditioning:</strong><br>' +
       'C: $\\operatorname{rank}(\\mathbf{E}_{\\text{train}}) = ' + r.rank + '$ of $m = 7$ cases, $\\kappa(\\mathbf{E}_{\\text{train}}) \\approx ' + (r.cond >= 1000 ? r.cond.toExponential(1) : r.cond.toFixed(0)) + '$<br>' +
       'B: ' + st.ns + ' independent readings &#8594; ' + NG + ' <em>correlated</em> pseudo-strains; corr of marked pair = ' + r.corr.toFixed(2) + '</div>';
@@ -1500,7 +1500,7 @@ initFlashcards('mod11-flashcards', [
   },
   {
     q: 'Why is ‘iFEM is too slow, use a neural network’ a weak motivation for linear problems?',
-    a: 'The iFEM matrix $\\mathbf{K}$ depends only on mesh, sensor layout, and weights &mdash; not on loads or measurements &mdash; so it is factorized once offline; each frame costs one matrix&ndash;vector product, already real-time. Legitimate ML motivations are sensor sparsity, nonlinearity, unknown BCs, and unconventional sensor modalities.'
+    a: 'The iFEM matrix $\\mathbf{K}$ depends only on mesh, sensor layout, and weights &mdash; not on loads or measurements &mdash; so it is factorized once offline; each frame costs a right-hand-side assembly plus two triangular solves &mdash; or a single matrix&ndash;vector product if the dense map $\\mathbf{K}^{-1}\\mathbf{B}$ was precomputed. Either way it is already real-time. Legitimate ML motivations are sensor sparsity, nonlinearity, unknown BCs, and unconventional sensor modalities.'
   },
   {
     q: 'List the ingredients of SenseNet’s physics-informed loss (Qiu, Arunachala &amp; Linder 2023).',
@@ -1516,7 +1516,7 @@ initFlashcards('mod11-flashcards', [
   },
   {
     q: 'What is strain pre-extrapolation and why does iFEM need it (Oboe, Sbarufatti &amp; Giglio 2022)?',
-    a: 'Estimating strains at unsensed locations from sparse measurements before the iFEM solve. iFEM assigns elements without sensors very small weights, which degrades accuracy and conditioning; physics-based pre-extrapolation uses model information to densify the input instead of adding hardware.'
+    a: 'Estimating strains at unsensed locations from sparse measurements before the iFEM solve. iFEM assigns elements without sensors very small weights against a target of zero &mdash; a weak zero-strain prior that supplies rank but biases those regions, which degrades accuracy though not necessarily conditioning; physics-based pre-extrapolation uses model information to densify the input instead of adding hardware.'
   },
   {
     q: 'How did Ghasemzadeh &amp; Kefal (2022) encode sensor placement for the genetic algorithm, and what practical lessons did they report?',
@@ -1576,7 +1576,7 @@ initFlashcards('mod11-flashcards', [
   },
   {
     q: 'How can a deployed learned shape sensor detect out-of-distribution inputs?',
-    a: 'Bolt a physics residual onto it: run the reconstruction through a forward model, or monitor the iFEM least-squares functional online &mdash; strains inconsistent with the model class push the residual up, a label-free distribution alarm. Ensemble disagreement is the complementary, purely statistical signal.'
+    a: 'Bolt a physics residual onto it: run the reconstruction through a forward model, or monitor the iFEM least-squares functional online &mdash; strains inconsistent with the model class push the residual up, a label-free alarm. Read it one way only: a high residual is evidence of inconsistency, a low one certifies nothing (it is blind to nullspace errors and to OOD states the model happens to explain). Ensemble disagreement is the complementary, purely statistical signal.'
   }
 ]);
 </script>
