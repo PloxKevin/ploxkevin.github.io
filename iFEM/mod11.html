@@ -47,9 +47,9 @@
 
     <div class="math-block">$$\Phi(\mathbf{u}) \;=\; \sum_{e=1}^{n_{el}} w_e \left\lVert \boldsymbol{\varepsilon}^{e}(\mathbf{u}) - \boldsymbol{\varepsilon}^{e}_{\text{meas}} \right\rVert^2 \;\longrightarrow\; \mathbf{K}\,\mathbf{u} = \mathbf{f}(\boldsymbol{\varepsilon}_{\text{meas}})$$</div>
 
-    <div class="math-block">$$\mathbf{u} \;=\; \mathbf{K}^{-1}\mathbf{f}(\boldsymbol{\varepsilon}_{\text{meas}}), \qquad \mathbf{K} \text{ factorized once offline, independent of loads}$$</div>
+    <div class="math-block">$$\mathbf{u} \;=\; \mathbf{K}^{-1}\mathbf{f}(\boldsymbol{\varepsilon}_{\text{meas}}), \qquad \mathbf{f}(\boldsymbol{\varepsilon}_{\text{meas}}) = \mathbf{B}\,\boldsymbol{\varepsilon}_{\text{meas}}, \qquad \mathbf{K} \text{ factorized once offline, independent of loads}$$</div>
 
-    <p>($\mathbf{K}$ is the assembled least-squares matrix of Module 4 &mdash; geometry and weights, not stiffness.) This module asks where, in that pipeline, a <em>trained</em> component earns its place. The question is sharper than "iFEM or machine learning?", and the recent literature has converged on treating it stage by stage.</p>
+    <p>($\mathbf{K}$ is the assembled least-squares matrix of Module 4 &mdash; geometry and weights, not stiffness &mdash; and $\mathbf{B}$ is the linear operator that assembles the right-hand side from the measured strains. Note the standing qualifier behind that inverse: strain data alone leaves the rigid-body pose unobservable, so $\mathbf{K}$ is singular until the essential constraints that pin the pose are applied. Every $\mathbf{K}^{-1}$ on this page means the constrained matrix.) This module asks where, in that pipeline, a <em>trained</em> component earns its place. The question is sharper than "iFEM or machine learning?", and across the work surveyed here the useful organizing question has been stage by stage.</p>
 
     <div class="definition-box">
       <div class="box-label">Core Problem</div>
@@ -87,7 +87,7 @@
       <li><strong>Sensor completion / virtual strains</strong> &mdash; estimate strains at unsensed locations before a standard iFEM solve; physics-based (Oboe, Sbarufatti &amp; Giglio 2022), Gaussian-process (Poloni et al. 2023), or neural. Section 3.</li>
       <li><strong>Learned priors and regularizers</strong> &mdash; the completion's kernel or training set <em>is</em> a prior on the strain field; more broadly, any data-fitted smoothness or subspace assumption inserted into the inversion. Section 3.</li>
       <li><strong>Surrogates</strong> &mdash; a trained stand-in for the forward model, used inside design loops and iterative inversion where thousands of FEM evaluations are too expensive. Sections 3 and 7.</li>
-      <li><strong>Residual correction / hybrid refinement</strong> &mdash; a physics solve stays in the loop and a network refines or enriches its output, as in the GNN + iFEM framework of Hong et al. (2026). Section 8.</li>
+      <li><strong>Residual correction / hybrid refinement</strong> &mdash; a physics solve stays in the loop and a network refines or enriches the reconstruction around it, as in the GNN + iFEM framework of Hong et al. (2026). Section 8. <span style="color:#666;">(Whether the learned stage sits upstream or downstream of the solve is a real distinction; this page does not claim to settle it for Hong et al. from the title alone &mdash; see Section 8.)</span></li>
       <li><strong>Placement optimization</strong> &mdash; the design-time loop that chooses sensor sites through repeated iFEM evaluation (Ghasemzadeh &amp; Kefal 2022); canonical treatment in Module 6, with the learning-specific angle in Section 3.</li>
       <li><strong>Amortized inversion</strong> &mdash; learn the measurement-to-field map end to end: the linear calibration matrix (de&nbsp;Mooij &amp; Martinez 2024), deep regression networks, and neural operators (Molinaro et al. 2023). Its physics-first counterpart, the per-instance PINN (Qiu, Arunachala &amp; Linder 2023), solves each case by optimization instead &mdash; the two are <em>distinct alternatives</em>, not variants of one idea. Sections 2, 5&ndash;7.</li>
     </ol>
@@ -123,7 +123,7 @@
         <rect x="534" y="170" width="136" height="52" rx="6" fill="#fdf1e3" stroke="#e67e22" stroke-width="1.5"/>
         <text x="602" y="189" font-size="12" font-weight="600" fill="#b35c0e" text-anchor="middle" font-family="sans-serif">learned refinement</text>
         <text x="602" y="204" font-size="10.5" fill="#8d6e63" text-anchor="middle" font-family="sans-serif">GNN on the mesh</text>
-        <text x="602" y="216" font-size="10.5" fill="#8d6e63" text-anchor="middle" font-family="sans-serif">(Hong et al. 2026)</text>
+        <text x="602" y="216" font-size="10.5" fill="#8d6e63" text-anchor="middle" font-family="sans-serif">(post-solve enrichment)</text>
         <circle cx="662" cy="177" r="9" fill="#e67e22"/><text x="662" y="181" font-size="10" font-weight="700" fill="#fff" text-anchor="middle" font-family="sans-serif">&#952;</text>
         <text x="602" y="246" font-size="11" font-weight="600" fill="#7b1fa2" text-anchor="middle" font-family="sans-serif">(4) residual correction</text>
         <line x1="670" y1="196" x2="702" y2="196" stroke="#555" stroke-width="1.5" marker-end="url(#ip-arr)"/>
@@ -158,10 +158,10 @@
         <rect x="92" y="18" width="12" height="12" fill="#fdf1e3" stroke="#e67e22"/><text x="110" y="28" font-size="11" fill="#555" font-family="sans-serif">learned (&#952; = trained parameters)</text>
         <line x1="300" y1="24" x2="330" y2="24" stroke="#7b1fa2" stroke-width="1.5" stroke-dasharray="6,4"/><text x="338" y="28" font-size="11" fill="#555" font-family="sans-serif">design-time loop</text>
       </svg>
-      <div class="figure-caption">Six insertion points for learning in the shape-sensing pipeline. Physics blocks (blue) can be kept, augmented, or bypassed; every orange block carries trained parameters $\theta$ &mdash; and therefore a training distribution. The recent literature's arc runs from the bypass arrow (replace everything) toward hybrids that keep a physics layer in the loop.</div>
+      <div class="figure-caption">Six insertion points for learning in the shape-sensing pipeline. Physics blocks (blue) can be kept, augmented, or bypassed; every orange block carries trained parameters $\theta$ &mdash; and therefore a training distribution. Across the papers surveyed here, the arc runs from the bypass arrow (replace everything) toward hybrids that keep a physics layer in the loop.</div>
     </div>
 
-    <p>The arc matters. The 2019&ndash;2023 wave was dominated by "replace iFEM with a network" demonstrations; the 2024&ndash;2026 literature increasingly keeps a physics layer in the loop and lets learned components fill specific gaps &mdash; completion front-ends feeding standard solves, and GNNs refining iFEM output rather than replacing it. The pre-ML comparison culture of the field (Gherlone, Cerracchio &amp; Mattone 2018 is the standard review and experimental comparison of shape-sensing families) set the template this module follows: methods are compared on stated assumptions and measured error, not on novelty.</p>
+    <p>The arc matters &mdash; stated, as it must be, over the work surveyed on this page rather than over the field: among the 2019&ndash;2023 papers collected here, "replace iFEM with a network" demonstrations predominate; the 2024&ndash;2026 ones more often keep a physics layer in the loop and let learned components fill specific gaps &mdash; completion front-ends feeding standard solves, and GNNs composed with iFEM rather than replacing it. A couple of dozen references chosen to populate a taxonomy cannot establish a field-wide trend, and nothing below depends on one. The pre-ML comparison culture of the field (Gherlone, Cerracchio &amp; Mattone 2018 is the standard review and experimental comparison of shape-sensing families) set the template this module follows: methods are compared on stated assumptions and measured error, not on novelty.</p>
 
     <!-- ===== SECTION 2: CALIBRATION MATRICES ===== -->
     <h2 class="section-heading" id="calibration-matrix">2. The Simplest Learned Map: Calibration Matrices, then Networks</h2>
@@ -172,7 +172,7 @@
       <div class="box-label">Calibration-Matrix Method</div>
       <div>
         $$\mathbf{u} \;=\; \mathbf{C}\,\boldsymbol{\varepsilon}, \qquad \mathbf{C} \;=\; \mathbf{U}_{\text{train}}\,\mathbf{E}_{\text{train}}^{+}$$
-        with $\mathbf{E}^{+}$ the Moore&ndash;Penrose pseudoinverse: $\mathbf{C}$ is the least-squares-optimal linear map from sensor readings to displacement DOFs over the training set. No mesh, no kinematic model, no material constants &mdash; only recorded load cases.
+        with $\mathbf{E}^{+}$ the Moore&ndash;Penrose pseudoinverse: $\mathbf{C}$ is the least-squares-optimal linear map from sensor readings to displacement DOFs over the training set. No mesh, no kinematic model, no material constants <em>at inference</em> &mdash; only recorded load cases. Read that qualifier strictly: if the calibration cases are simulated rather than measured, geometry, mesh, material and BCs were all required to produce them, and $\mathbf{C}$ inherits that FE model exactly as Section 4 describes. Only the inference step is model-free.
       </div>
     </div>
 
@@ -200,7 +200,7 @@
     <table>
       <tr><th>Method</th><th>Model?</th><th>Training data?</th><th>What the map encodes</th></tr>
       <tr><td><strong>iFEM</strong></td><td>Mesh + kinematics</td><td>None</td><td>Compatibility; load-agnostic within model assumptions</td></tr>
-      <tr><td><strong>Calibration matrix</strong></td><td>None</td><td>$m$ measured (or simulated) load cases</td><td>The span of the training loads, exactly</td></tr>
+      <tr><td><strong>Calibration matrix</strong></td><td>None at inference (an FE model if the cases are simulated)</td><td>$m$ measured (or simulated) load cases</td><td>The span of the training loads, exactly</td></tr>
       <tr><td><strong>NN on synthetic FEM data</strong></td><td>Distilled into data</td><td>Thousands of FEM solves</td><td>The FEM model evaluated over the sampled load distribution (Section 4)</td></tr>
     </table>
 
@@ -222,13 +222,15 @@
 
     <div class="math-block">$$w_e \;=\; \begin{cases} 1 & \text{element } e \text{ instrumented} \\ w_{\min} \ll 1 & \text{element } e \text{ without sensors} \end{cases}$$</div>
 
-    <p>Sparse coverage degrades both accuracy and the conditioning of $\mathbf{K}$. The completion strategy densifies the <em>data</em> instead of the hardware: estimate strains at unsensed points first, then run the standard iFEM solve with full coverage. Oboe, Sbarufatti &amp; Giglio (2022) developed the physics-based version &mdash; a pre-extrapolation that uses model information to construct the sparse-to-dense map; the full machinery, and its ordering after raw observability analysis, is Module 6's business. Here we care about the <em>learned</em> versions and what they change epistemically.</p>
+    <p>Sparse coverage degrades accuracy and biases the unsensed regions toward zero section strain; the small weights still supply rank in directions no sensor sees, so the conditioning of $\mathbf{K}$ is not necessarily the casualty (Fact 3 above; Module 6). The completion strategy densifies the <em>data</em> instead of the hardware: estimate strains at unsensed points first, then run the standard iFEM solve with full coverage. Oboe, Sbarufatti &amp; Giglio (2022) developed the physics-based version &mdash; a pre-extrapolation that uses model information to construct the sparse-to-dense map; the full machinery, and its ordering after raw observability analysis, is Module 6's business. Here we care about the <em>learned</em> versions and what they change epistemically.</p>
 
     <h3 class="subsection-heading">Gaussian-Process Completion: Uncertainty Included</h3>
 
     <p>Poloni, Oboe, Sbarufatti &amp; Giglio (2023) take the step toward a <em>stochastic</em> inverse finite element method: replace the deterministic extrapolation by Gaussian-process regression on the measured strains. A GP with kernel $k(\mathbf{x}, \mathbf{x}')$ conditioned on the $n_s$ measurements returns, at every unsensed point, both a mean and a variance:</p>
 
-    <div class="math-block">$$\hat{\varepsilon}(\mathbf{x}) \;=\; \mathbf{k}_{*}^{\mathsf{T}} \big( \mathbf{K}_{ss} + \sigma_n^2 \mathbf{I} \big)^{-1} \boldsymbol{\varepsilon}_{\text{meas}}, \qquad \operatorname{var}\big[\hat{\varepsilon}(\mathbf{x})\big] \;=\; k(\mathbf{x},\mathbf{x}) - \mathbf{k}_{*}^{\mathsf{T}} \big( \mathbf{K}_{ss} + \sigma_n^2 \mathbf{I} \big)^{-1} \mathbf{k}_{*}$$</div>
+    <div class="math-block">$$\hat{\varepsilon}(\mathbf{x}) \;=\; \mathbf{k}_{*}^{\mathsf{T}} \big( \mathbf{K}_{ss} + \sigma_n^2 \mathbf{I} \big)^{-1} \boldsymbol{\varepsilon}_{\text{meas}}, \qquad \operatorname{Var}\big[\varepsilon(\mathbf{x}) \mid \boldsymbol{\varepsilon}_{\text{meas}}\big] \;=\; k(\mathbf{x},\mathbf{x}) - \mathbf{k}_{*}^{\mathsf{T}} \big( \mathbf{K}_{ss} + \sigma_n^2 \mathbf{I} \big)^{-1} \mathbf{k}_{*}$$</div>
+
+    <p>Mind which quantity carries the variance: $\hat{\varepsilon}(\mathbf{x})$ is the posterior <em>mean</em>, a fixed number once the measurements are in hand. The second display is the posterior variance of the latent strain field given those measurements &mdash; that is the object the band on the plot draws.</p>
 
     <p>The mean feeds the iFEM solve as before; the variance is the new capability &mdash; the completion now <em>says where it does not know</em>, which no deterministic extrapolation and no plain regression network does. The kernel choice (length-scale, smoothness class) is an explicit, inspectable prior on the strain field. That the sparse-measurement regime is the rule rather than the exception in deployment is illustrated at scale by Huang et al. (2024), who monitor thermal deformation of large composite honeycomb spaceborne antennas from <em>limited</em> strain measurements &mdash; structures where instrumenting densely is simply not an option.</p>
 
@@ -250,13 +252,13 @@
       <div class="interactive-label">Interactive Tool &mdash; Virtual-Sensor &amp; OOD Laboratory</div>
       <p style="font-size:13px;color:#555;margin-bottom:12px;">A cantilever with sparse surface strain gauges, reconstructed three ways: (A) raw sparse physics inversion (integrate measured curvature), (B) GP strain completion feeding the same physics inversion, (C) a learned completion trained on load cases in the shaded window. Move the test load out of the window, add noise, or damage the specimen &mdash; and watch the persistent panel: who admits uncertainty, and who fails silently.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <button id="ool-preset-iid" style="border:1px solid #7b1fa2;color:#7b1fa2;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Preset: IID (in-window load)</button>
+        <button id="ool-preset-iid" style="border:1px solid #7b1fa2;color:#7b1fa2;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Preset: IID (unseen in-window load)</button>
         <button id="ool-preset-ood" style="border:1px solid #7b1fa2;color:#7b1fa2;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Preset: changed load (OOD)</button>
         <button id="ool-preset-sparse" style="border:1px solid #7b1fa2;color:#7b1fa2;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Preset: sensor-starved</button>
         <button id="ool-resample" style="border:1px solid #999;color:#555;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Resample noise</button>
       </div>
       <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;">
-        <div class="slider-control" style="flex:1;min-width:170px;"><label><span>Test load position $a$</span> <span id="ool-a-val">0.60</span></label><input type="range" id="ool-a" min="0.30" max="1.00" value="0.60" step="0.01"></div>
+        <div class="slider-control" style="flex:1;min-width:170px;"><label><span>Test load position $a$</span> <span id="ool-a-val">0.61</span></label><input type="range" id="ool-a" min="0.30" max="1.00" value="0.61" step="0.01"></div>
         <div class="slider-control" style="flex:1;min-width:170px;"><label><span>Load magnitude $P$</span> <span id="ool-P-val">0.80</span></label><input type="range" id="ool-P" min="-1" max="1" value="0.8" step="0.05"></div>
         <div class="slider-control" style="flex:1;min-width:170px;"><label><span>Sensors $n_s$</span> <span id="ool-ns-val">6</span></label><input type="range" id="ool-ns" min="3" max="12" value="6" step="1"></div>
         <div class="slider-control" style="flex:1;min-width:170px;"><label><span>Noise $\sigma$</span> <span id="ool-sig-val">0.020</span></label><input type="range" id="ool-sig" min="0" max="0.10" value="0.02" step="0.005"></div>
@@ -276,7 +278,9 @@
       <div id="ool-readout" style="font-size:13px;margin-top:10px;"></div>
     </div>
 
-    <p>Three behaviors deserve deliberate replay. In-window, the learned completion is essentially exact even from very sparse sensors &mdash; which is <em>empirical</em> interpolation within the sampled range, not Section 2's span guarantee &mdash; the underlying fields gain a new kink at every unseen load position, so an interpolated load is not a linear combination of the training responses. Out-of-window, its error explodes <em>with no change in how confident its output looks</em>, while the GP reports a band that reflects only sensor geometry, kernel and noise level &mdash; be careful here: this posterior variance is <em>not</em> conditioned on load position or structural state, so it does not widen merely because the load moved out of distribution. It is spatial interpolation uncertainty, useful for "how far am I from a sensor", useless as an OOD alarm. The raw physics route, meanwhile, degrades only gently. And under specimen damage, the physics route is the only one whose assumptions still hold: $\kappa = \varepsilon/c$ is kinematics, valid whatever the stiffness &mdash; the learned completion keeps hallucinating the pristine training specimen.</p>
+    <p>Four behaviors deserve deliberate replay, and the panel reports the error in <em>two</em> spaces because they do not tell the same story. <strong>In-window</strong>, the learned completion is the most accurate of the three even from very sparse sensors &mdash; which is <em>empirical</em> interpolation within the sampled range, not Section 2's span guarantee &mdash; the underlying fields gain a new kink at every unseen load position, so an interpolated load is not a linear combination of the training responses. <strong>Out-of-window</strong>, drag the load toward the free end and watch route C's <em>strain-space</em> error climb steadily until it is several times route A's, with no change in how confident its output looks; route A, which never knew there was a window, does not track the window at all &mdash; its error follows the geometry of the load, improving to the right and worsening to the left. Meanwhile the GP reports a band that reflects only sensor geometry, kernel and noise level &mdash; be careful here: this posterior variance is <em>not</em> conditioned on load position or structural state, so it does not widen merely because the load moved out of distribution. It is spatial interpolation uncertainty, useful for "how far am I from a sensor", useless as an OOD alarm.</p>
+
+    <p><strong>Under specimen damage</strong>, the ordering flips again: route A degrades least, because $\kappa = \varepsilon/c$ is kinematics and holds whatever the stiffness, while B and C both fight a curvature field their priors cannot represent. Do not over-read it &mdash; A is not prior-free either (it interpolates curvature linearly between sensors and holds it constant outside them, so it cannot represent the curvature jumps at the damage boundaries), and with only one of six sensors inside the damaged span the whole effect is modest. <strong>And the fourth behavior is the one about measurement, not method:</strong> almost all of the above is visible in strain space and largely washed out in deflection space, because $\hat{w}$ is two integrations away from $\hat{\kappa}$ and the NRMSE is normalized by $\max|w|$, which itself grows as the load moves outboard. That is the very metric Section 10's protocol recommends. A smoothing, self-normalizing error measure can hide the failure you built the experiment to find &mdash; report the error in the space where the method actually operates, not only in the space you care about.</p>
 
     <!-- ===== SECTION 4: TRAINING-DATA FACTORY ===== -->
     <h2 class="section-heading" id="synthetic-training-data">4. FEM as a Training-Data Factory &mdash; and the Sim-to-Real Gap</h2>
@@ -287,19 +291,22 @@
       <div class="box-label">The Synthetic Data Factory</div>
       <div>
         Define a parameter vector $\mathbf{p}$ collecting load position, magnitude, direction, spatial distribution, and possibly boundary conditions and material scatter. Sample $\mathbf{p}_i$ from a chosen distribution (uniform grids or Latin hypercube in practice), solve the FEM problem for each sample, extract strains at the modeled sensor locations as inputs and the full-field displacement (or a subsampled DOF set) as targets, and inject synthetic measurement noise and sensor-dropout augmentation:
-        $$\mathcal{D} \;=\; \left\{ \left(\boldsymbol{\varepsilon}(\mathbf{p}_i) + \boldsymbol{\eta}_i,\; \mathbf{u}(\mathbf{p}_i)\right) \right\}_{i=1}^{N}, \qquad \boldsymbol{\eta}_i \sim \mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I}), \quad \mathbf{p}_i \sim P_{\text{train}}$$
+        $$\mathcal{D} \;=\; \left\{ \left(\mathbf{m}_i \odot \big[\boldsymbol{\varepsilon}(\mathbf{p}_i) + \boldsymbol{\eta}_i\big],\; \mathbf{u}(\mathbf{p}_i)\right) \right\}_{i=1}^{N}, \qquad \boldsymbol{\eta}_i \sim \mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I}), \quad \mathbf{p}_i \sim P_{\text{train}}$$
+        with $\mathbf{m}_i \in \{0,1\}^{n_s}$ a random channel mask &mdash; the dropout augmentation, written into the dataset rather than promised in prose. Feed $\mathbf{m}_i$ to the network as well, or it cannot tell a dropped channel from a gauge reading zero.
       </div>
     </div>
 
     <p>The critical epistemic point: <strong>the network never learns physics &mdash; it learns the FEM model evaluated over the sampled parameter distribution.</strong></p>
 
-    <div class="math-block">$$f_{\theta} \;\approx\; \underbrace{\text{FEM}}_{\text{model form}} \circ \underbrace{P_{\text{train}}}_{\text{sampling}} \qquad \text{&mdash; both errors are inherited, neither is visible at inference}$$</div>
+    <div class="math-block">$$\theta^{\star} \;=\; \arg\min_{\theta} \; \mathbb{E}_{\,\mathbf{p} \sim P_{\text{train}},\; \boldsymbol{\eta}} \left\lVert f_{\theta}\big(\boldsymbol{\varepsilon}_{\text{FEM}}(\mathbf{p}) + \boldsymbol{\eta}\big) - \mathbf{u}_{\text{FEM}}(\mathbf{p}) \right\rVert^{2}$$</div>
+
+    <p>Two error sources sit in that one expression. $\boldsymbol{\varepsilon}_{\text{FEM}}$ and $\mathbf{u}_{\text{FEM}}$ carry the <em>model form</em>; $P_{\text{train}}$ carries the <em>sampling</em>. Both are inherited by $\theta^\star$, and neither is visible at inference.</p>
 
     <p>Model-form error (wrong constitutive fit, wrong boundary idealization) and sampling error (load cases you never generated) are baked into the weights silently. At inference the network produces fluent output either way; there is no residual to inspect, no assumption printed on the prediction.</p>
 
-    <h3 class="subsection-heading">The Cleanest Published Example: Tactile Labels No Instrument Can Measure</h3>
+    <h3 class="subsection-heading">The Cleanest Published Example: Tactile Labels No Available Instrument Supplies</h3>
 
-    <p>The vision-based tactile sensing literature made this pattern explicit before most of the structural community. Sferrazza, Wahlsten, Trueeb &amp; D'Andrea (2019) use a finite element analysis of a soft sensor pad to generate dense ground-truth contact force distributions &mdash; labels that <em>cannot be measured directly by any instrument at that density</em> &mdash; and train a learning-based vision-based tactile sensor on them. Helmut, Dziarski, Funk, Belousov &amp; Peters (2025) apply the same philosophy to commercial hardware, learning force-distribution estimation for the GelSight Mini from FEA-generated labels. The factory is not a convenience here; it is the only possible source of supervision.</p>
+    <p>The vision-based tactile sensing literature made this pattern explicit before most of the structural community. Sferrazza, Wahlsten, Trueeb &amp; D'Andrea (2019) use a finite element analysis of a soft sensor pad to generate dense ground-truth contact force distributions and train a learning-based vision-based tactile sensor on them. Their stated motivation is the one to quote: <em>the lack of ground truth sources for the entire contact force distribution</em> has confined learning-based tactile sensing largely to total force and contact centre. That is an availability claim, not an impossibility theorem &mdash; no readily available, non-disruptive instrument supplies the full distribution at that density. Helmut, Dziarski, Funk, Belousov &amp; Peters (2025) apply the same philosophy to commercial hardware, learning force-distribution estimation for the GelSight Mini from FEA-generated labels. The factory is not a convenience here; it is the only <em>practical</em> source of supervision at this density.</p>
 
     <div class="insight-box">
       <div class="box-label">Trap &mdash; "ground truth" from FEM is model truth</div>
@@ -346,7 +353,7 @@
         <text x="625" y="53" font-size="10.5" fill="#1565c0" font-family="sans-serif" text-anchor="middle">&#949;&#7522; + noise &#951;&#7522; (+ dropout)</text>
         <rect x="550" y="96" width="150" height="40" rx="5" fill="#e0f2f1" stroke="#00838f" stroke-width="1.2"/>
         <text x="625" y="113" font-size="10.5" font-weight="600" fill="#00838f" font-family="sans-serif" text-anchor="middle">labels: full-field u&#7522;</text>
-        <text x="625" y="127" font-size="10.5" fill="#00838f" font-family="sans-serif" text-anchor="middle">(unmeasurable at this density)</text>
+        <text x="625" y="127" font-size="10.5" fill="#00838f" font-family="sans-serif" text-anchor="middle">(not measurable in practice at this density)</text>
         <line x1="700" y1="42" x2="742" y2="70" stroke="#555" stroke-width="1.2" marker-end="url(#df-arr)"/>
         <line x1="700" y1="116" x2="742" y2="88" stroke="#555" stroke-width="1.2" marker-end="url(#df-arr)"/>
         <!-- network -->
@@ -382,13 +389,13 @@
         <text x="440" y="368" font-size="10" fill="#666" font-family="sans-serif" text-anchor="middle">FEM computes</text>
         <rect x="474" y="352" width="180" height="50" rx="5" fill="#e0f2f1" stroke="#00838f" stroke-width="1.4"/>
         <text x="564" y="372" font-size="10.5" font-weight="600" fill="#00838f" font-family="sans-serif" text-anchor="middle">dense force-distribution labels</text>
-        <text x="564" y="388" font-size="10.5" fill="#00838f" font-family="sans-serif" text-anchor="middle">(no instrument can measure them)</text>
+        <text x="564" y="388" font-size="10.5" fill="#00838f" font-family="sans-serif" text-anchor="middle">(no available sensor supplies them undisturbed)</text>
         <line x1="654" y1="378" x2="700" y2="378" stroke="#555" stroke-width="1.4" marker-end="url(#df-arr)"/>
         <rect x="704" y="356" width="110" height="44" rx="6" fill="#fdf1e3" stroke="#e67e22" stroke-width="1.5"/>
         <text x="759" y="376" font-size="11.5" font-weight="600" fill="#b35c0e" font-family="sans-serif" text-anchor="middle">train g&#952;</text>
         <text x="759" y="392" font-size="9.5" fill="#8d6e63" font-family="sans-serif" text-anchor="middle">Sferrazza 2019; Helmut 2025</text>
       </svg>
-      <div class="figure-caption">The synthetic training-data factory. Left of the jagged line, everything is simulation: the FE model and the sampling distribution jointly define what $f_\theta$ can know. Right of the line, the real structure differs in constitutive behavior, geometry, and sensing chain &mdash; the sim-to-real gap. Bottom: the tactile instance (Sferrazza et al. 2019; Helmut et al. 2025), where FEM labels are the <em>only</em> possible supervision.</div>
+      <div class="figure-caption">The synthetic training-data factory. Left of the jagged line, everything is simulation: the FE model and the sampling distribution jointly define what $f_\theta$ can know. Right of the line, the real structure differs in constitutive behavior, geometry, and sensing chain &mdash; the sim-to-real gap. Bottom: the tactile instance (Sferrazza et al. 2019; Helmut et al. 2025), where FEM labels are the only <em>practical</em> supervision at this density.</div>
     </div>
 
     <!-- ===== SECTION 5: PINNS ===== -->
@@ -410,7 +417,7 @@
 
     <p>Qiu, Arunachala &amp; Linder (2023) built SenseNet from two components: a displacement-prediction network and a physics part computing the loss. The prior knowledge in the loss comprises the boundary conditions, the strain&ndash;displacement relation, the material constitutive equation, and the governing equation from balance of linear momentum. The method is mesh-free &mdash; which the authors highlight for complex geometries &mdash; and was validated against finite element solutions on bending tests (nonlinear displacement fields) and fixed tension tests (stress fields) in both 2D and 3D. A sensor-density study showed accuracy improving with more strain data. Their key claim against purely data-driven networks: because the physics is in the loss, <strong>performance does not rely on the choice of training data</strong> &mdash; there is no training distribution to fall out of.</p>
 
-    <p>The neighboring results fill out the family. Haghighat, Raissi, Moure, G&oacute;mez &amp; Juanes (2021) established the reference PINN formulation for solid mechanics: a <em>multi-network</em> model &mdash; separate networks for displacement components and stress components, coupled through a constitutive residual &mdash; is more accurate than a single network, keeps the derivative order low, and extends to von Mises elastoplasticity; they also demonstrate transfer learning, with retraining on new parameters converging much faster than training from scratch. Zhang, Dao, Karniadakis &amp; Suresh (2022) push to geometry identification: from displacement measurements on the <em>outer boundary</em> of a loaded specimen, their PINN framework identifies the size, shape, and location of an internal void or inclusion plus its elastic modulus, with constitutive models spanning linear elasticity, hyperelasticity, and plasticity &mdash; mesh-free elasticity imaging. Chen &amp; Gu (2023) demonstrate physics-informed deep learning across forward, inverse, and <em>mixed</em> elasticity problems in one framework. And Sahin, von Danwitz &amp; Popp (2024) extend PINNs to forward and inverse problems of contact mechanics &mdash; directly relevant wherever the unknown includes contact, as on a tactile skin. For dynamics, Xu et al. (2024) fuse strain with acceleration measurements in one physics-informed network for static and dynamic displacement reconstruction &mdash; strain constrains the spatial shape, acceleration the temporal dynamics; the two modalities are spectrally complementary.</p>
+    <p>The neighboring results fill out the family. Haghighat, Raissi, Moure, G&oacute;mez &amp; Juanes (2021) established the reference PINN formulation for solid mechanics: a <em>multi-network</em> model &mdash; separate networks for displacement components and stress components, coupled through a constitutive residual &mdash; is more accurate than a single network, keeps the derivative order low, and extends to von Mises elastoplasticity; they also demonstrate transfer learning, with retraining on new parameters converging much faster than training from scratch. Zhang, Dao, Karniadakis &amp; Suresh (2022) push to geometry identification: from displacement measurements placed on the <em>outer boundary</em> of a loaded specimen &mdash; deliberately, to mimic the real-world situation where internal details are unavailable &mdash; their PINN framework identifies the size, shape, and location of an internal void or inclusion, with constitutive models spanning linear elasticity, hyperelasticity, and plasticity, and additionally recovers the elastic modulus in a combined material-plus-geometry case (a soft circular inclusion). Note the two honest exceptions they report: the slender-slit case needs a handful of measurement points <em>inside</em> the solid, because boundary displacement is relatively insensitive to slit geometry, and the combined material-and-geometry case needs the same help. Mesh-free elasticity imaging, with the identifiability caveats attached. Chen &amp; Gu (2023) demonstrate physics-informed deep learning across forward, inverse, and <em>mixed</em> elasticity problems in one framework. And Sahin, von Danwitz &amp; Popp (2024) extend PINNs to forward and inverse problems of contact mechanics &mdash; directly relevant wherever the unknown includes contact, as on a tactile skin. For dynamics, Xu et al. (2024) fuse strain with acceleration measurements in one physics-informed network for static and dynamic displacement reconstruction &mdash; strain constrains the spatial shape, acceleration the temporal dynamics. Note carefully where that one sits in this module's taxonomy, because the label misleads: theirs is a physics-<em>guided</em> convolutional network with two input branches, <em>trained</em> on a dataset with the acceleration equation imposed as a constraint and multi-task loss weights balanced during training. That makes it a trained, amortized map carrying Section 4's full distribution dependence &mdash; not a network re-optimized per measurement case, and not an inheritor of SenseNet's "no training distribution to fall out of" claim. "Physics-informed" in a title tells you where the physics went, not whether the method is per-instance.</p>
 
     <div class="figure-container">
       <svg viewBox="0 0 880 390" style="width:100%;max-width:880px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;">
@@ -504,7 +511,7 @@
       <li><strong>Near-incompressibility</strong> $\nu \to 0.5$ stiffens the volumetric residual and worsens the loss conditioning &mdash; precisely the regime of silicone skins.</li>
       <li><strong>Sharp contact indentation</strong> produces high-spatial-frequency strain fields that collide with spectral bias: networks learn low frequencies first.</li>
       <li><strong>The parameter gradient can be swamped</strong> &mdash; the signal driving the unknown $(\lambda, \mu)$ competes with noisy residual gradients over thousands of collocation points.</li>
-      <li><strong>Data noise biases identified moduli</strong> unless the parameter is explicitly regularized &mdash; ill-posedness (Module 3) did not go away because the solver changed.</li>
+      <li><strong>Data noise makes identified moduli unstable</strong>, and the nonlinearity of the parameter map converts that instability into bias. Explicit parameter regularization buys stability by <em>accepting</em> a known bias &mdash; it is the classic trade, not a cure. Ill-posedness (Module 3) did not go away because the solver changed.</li>
     </ul>
 
     <p>The mitigation checklist worth printing: nondimensionalize everything to $O(1)$; enforce Dirichlet BCs <em>hard</em> via a distance-function ansatz rather than penalty; use the mixed displacement&ndash;stress formulation to halve the derivative order; add Fourier features for sharp fields; balance loss weights adaptively (NTK- or gradient-norm-based); monitor the trajectory of the identified <em>parameter</em>, not just the total loss; run multiple seeds &mdash; PINN inversions have real run-to-run variance.</p>
@@ -533,7 +540,7 @@
         <svg id="pd-bars" viewBox="0 0 240 260" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;flex:0 1 240px;min-width:200px;max-width:100%;"></svg>
       </div>
       <div id="pd-readout" style="font-size:13px;margin-top:10px;"></div>
-      <p style="font-size:12.5px;color:#555;margin-top:8px;"><strong>The moral:</strong> the physics term pulls toward the <em>assumed</em> equations. When they are right (Truth A), raising $\lambda_p$ tames noisy, wiggly fits into near-perfect reconstructions. When they are wrong (Truth B), the same dial bends the reconstruction away from the truth even at $\sigma = 0$ &mdash; and the total loss looks excellent throughout.</p>
+      <p style="font-size:12.5px;color:#555;margin-top:8px;"><strong>The moral:</strong> the physics term pulls toward the <em>assumed</em> equations. When they are right (Truth A), raising $\lambda_p$ tames noisy, wiggly fits into near-perfect reconstructions. When they are wrong (Truth B), the same dial bends the reconstruction away from the truth even at $\sigma = 0$, driving reconstruction error from a fraction of a percent at $\lambda_p = 10^{-4}$ to about 17% at $\lambda_p = 10^{4}$. Watch the two bars while you turn it, because what they do is the real lesson: the <em>physics</em> residual is driven to zero exactly as it would be if the assumption were right &mdash; it is measuring agreement with the assumed equations, so it cannot object &mdash; and only the <em>data</em> term objects. It does object, and it objects in proportion: at the default settings ($n_s = 8$, $\sigma = 0.05$) $\mathcal{L}_{\text{data}}$ climbs about an order of magnitude across the dial &mdash; from roughly half the noise floor $\sigma^2$ to some six times it &mdash; while the reconstruction error goes from about 2% to about 17%. So the objection is there. Read what it actually gives you: one number that says <em>something here is inconsistent</em> and never <em>the assumed load model is wrong</em>, legible only if you already know what the noise floor should have been, and only if you look at that term on its own. Inspect the terms separately; never read the sum alone.</p>
     </div>
 
     <!-- ===== SECTION 7: NEURAL OPERATORS ===== -->
@@ -555,7 +562,7 @@
     <h3 class="subsection-heading">Three Ways to Use an Operator for Inversion</h3>
 
     <ol>
-      <li><strong>Forward surrogate + gradient descent</strong> (insertion point 3): train $\mathcal{G}_\theta$ on the forward map, then invert by descending through the surrogate with Module-10 gradients. Fast per iteration &mdash; but the gradient error inherits the surrogate error.</li>
+      <li><strong>Forward surrogate + gradient descent</strong> (insertion point 3): train $\mathcal{G}_\theta$ on the forward map, then invert by descending through the surrogate with Module-10 gradients. Fast per iteration &mdash; but the surrogate's <em>gradient</em> error is not controlled by its <em>value</em> error and must be validated separately against the true model's gradients. A perturbation of amplitude $\epsilon$ at spatial frequency $\omega$ costs $\epsilon$ in value and $\epsilon\omega$ in derivative, so a surrogate matching the forward map to $10^{-4}$ everywhere can still hand you descent directions pointing the wrong way.</li>
       <li><strong>Direct inverse map</strong> $\mathbf{d} \mapsto \mathbf{p}$: fastest, most brittle &mdash; a plain regression from measurements to parameters, with everything Section 10 says about distribution shift.</li>
       <li><strong>Neural Inverse Operators</strong> (Molinaro, Yang, Engquist &amp; Mishra 2023): the structural observation that a large class of PDE inverse problems &mdash; coefficient recovery from measurement data &mdash; are well-defined as maps <em>from operators to functions</em>: the datum is itself an operator (a boundary measurement map over many excitations). NIO composes DeepONet and FNO to learn such maps, reports robust, accurate solutions that significantly outperform baselines, and runs several orders of magnitude faster than direct and PDE-constrained optimization methods.</li>
     </ol>
@@ -612,7 +619,7 @@
         <text x="155" y="318" font-size="11" font-weight="600" fill="#333" font-family="sans-serif" text-anchor="middle">(a) forward surrogate</text>
         <text x="155" y="338" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="middle">G&#952; &#8776; forward map;</text>
         <text x="155" y="354" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="middle">invert by gradient descent (Mod. 10)</text>
-        <text x="155" y="376" font-size="10" fill="#c62828" font-family="sans-serif" text-anchor="middle">gradient error = surrogate error</text>
+        <text x="155" y="376" font-size="10" fill="#c62828" font-family="sans-serif" text-anchor="middle">gradients need separate validation</text>
         <rect x="308" y="296" width="250" height="106" rx="6" fill="#fafafa" stroke="#bbb" stroke-width="1.2"/>
         <text x="433" y="318" font-size="11" font-weight="600" fill="#333" font-family="sans-serif" text-anchor="middle">(b) direct inverse map d &#8594; p</text>
         <text x="433" y="338" font-size="10.5" fill="#666" font-family="sans-serif" text-anchor="middle">one forward pass per inversion</text>
@@ -631,20 +638,20 @@
 
     <p>"Up to $10^3\times$ faster" counts <em>inference only</em>. The dataset generation (thousands of FEM solves) and the training run are the hidden line items, and only the break-even count makes speed claims honest. With $C_{\text{per}}$ the cost of one per-instance inversion (a PINN training run, or an iterative physics inversion), amortization pays only when the number of inversions $N$ satisfies:</p>
 
-    <div class="math-block">$$N \;>\; \frac{N_{\text{train}}\,C_{\text{solve}} + C_{\text{train}}}{C_{\text{per}} - C_{\text{infer}}}$$</div>
+    <div class="math-block">$$N \;>\; \frac{N_{\text{train}}\,C_{\text{solve}} + C_{\text{train}}}{C_{\text{per}} - C_{\text{infer}}} \qquad \text{valid only when } C_{\text{per}} > C_{\text{infer}}$$</div>
 
-    <p>For a one-off material characterization, $N = 1$ and the operator never pays. For a tactile skin streaming force maps at camera rate, $N$ is millions per day and the operator wins by breakfast. The distinction to keep sharp &mdash; and the reason this page keeps PINNs and operators in separate sections:</p>
+    <p>Read the side condition, not just the fraction: if amortized inference is no cheaper than the per-instance route, the denominator is zero or negative and no $N$ ever recovers the offline cost. For a one-off material characterization, $N = 1$, and the offline cost is essentially never recovered unless $C_{\text{train}}$ and the dataset are negligible. For a tactile skin streaming force maps at camera rate, $N$ is millions per day and the operator wins by breakfast. The distinction to keep sharp &mdash; and the reason this page keeps PINNs and operators in separate sections:</p>
 
     <table>
       <tr><th></th><th>Per-instance PINN</th><th>Amortized neural operator</th></tr>
       <tr><td><strong>What is optimized</strong></td><td>One network per measurement instance</td><td>One operator over a distribution of instances, offline</td></tr>
-      <tr><td><strong>Training data</strong></td><td>None (physics in the loss)</td><td>Thousands of FEM solves (Section 4 factory)</td></tr>
+      <tr><td><strong>Training data</strong></td><td>No offline corpus; per-instance measurements + BC data + a collocation sample</td><td>Thousands of FEM solves (Section 4 factory)</td></tr>
       <tr><td><strong>Inference cost</strong></td><td>Full nonconvex optimization, minutes&ndash;hours</td><td>One forward pass, milliseconds</td></tr>
       <tr><td><strong>Distribution dependence</strong></td><td>None claimed (SenseNet's design goal)</td><td>Total &mdash; valid on $P_{\text{train}}$, silent elsewhere</td></tr>
       <tr><td><strong>Natural niche</strong></td><td>Data-poor, BC-uncertain, one-off inversions</td><td>High-rate repeated inversions of one configuration</td></tr>
     </table>
 
-    <p>Tactile-skin translation: generate an FEM dataset (indenter shape, location, depth $\to$ marker displacement field), train an operator, and get millisecond force-map inference for real-time sensing &mdash; with the out-of-distribution caveat held until Section 10, where it becomes the main event.</p>
+    <p>Tactile-skin translation, with the arrow pointing the way the capability requires: generate an FEM dataset of (indenter shape, location, depth) $\to$ (marker displacement field, traction distribution), then train the operator on the <em>inverse</em> pairing, marker displacement field $\to$ traction distribution, and get millisecond force-map inference for real-time sensing. Train the forward direction instead &mdash; parameters $\to$ observations &mdash; and you have a surrogate, not a sensor: recovering tractions from it means gradient descent through the surrogate (pattern (a) above), which is not one forward pass. The out-of-distribution caveat is held until Section 10, where it becomes the main event.</p>
 
     <!-- ===== SECTION 8: HYBRIDS ===== -->
     <h2 class="section-heading" id="hybrids">8. Structure and Hybrids: Shallow Decoders, GNNs, Residual Correction</h2>
@@ -669,11 +676,11 @@
 
     <h3 class="subsection-heading">The Hybrid: iFEM Stays in the Loop</h3>
 
-    <p>Hong, Zhan, Guo, Liu, Zhu &amp; Liu (2026) integrate graph neural networks <em>with</em> the inverse finite element method for high-resolution shape sensing and stress reconstruction of offshore wind-turbine towers &mdash; the emblematic insertion-point-4 design: iFEM remains the physics backbone; the GNN supplies resolution and refinement on top of it. (That is the title-level description, and this page deliberately stops there.) The pattern is what makes it important: the learned component fills a gap the physics leaves open, and the physics layer is what finally turns strain into displacement, so the reconstruction remains physically structured. Note the limit of that argument: unless the pipeline projects onto a constrained set or certifies a residual bound, nothing stops the network handing iFEM a plausible-but-wrong strain field, which iFEM will then faithfully reconstruct.</p>
+    <p>Hong, Zhan, Guo, Liu, Zhu &amp; Liu (2026) integrate graph neural networks <em>with</em> the inverse finite element method for high-resolution shape sensing and stress reconstruction of offshore wind-turbine towers &mdash; the emblematic hybrid: iFEM remains the physics backbone and the GNN supplies the resolution a sparse sensor set cannot. (That is the title-level description, and this page deliberately stops there &mdash; including on <em>where</em> the GNN sits. A strain-completion front end feeding iFEM and a post-solve enrichment of iFEM's output are different designs with different failure modes, and the title does not distinguish them. If you build on this paper, read the pipeline figure first.) The pattern is what makes it important: the learned component fills a gap the physics leaves open, and the physics layer is what finally turns strain into displacement, so the reconstruction remains physically structured. Note the limit of that argument: unless the pipeline projects onto a constrained set or certifies a residual bound, nothing stops the network handing iFEM a plausible-but-wrong strain field, which iFEM will then faithfully reconstruct.</p>
 
     <div class="insight-box">
       <div class="box-label">Trap &mdash; not every GNN paper is a hybrid</div>
-      <div>Lai et al. (2026) is a <em>standalone</em> learned reconstruction &mdash; no iFEM anywhere in its loop. Hong et al. (2026) <em>integrates</em> the GNN with iFEM. Lumping every GNN reconstruction paper under "GNN + iFEM hybrid" misdescribes both: the standalone carries all the distribution-shift risks of Section 10 with no physics backstop, while the hybrid inherits iFEM's assumptions along with its guarantees. Read the pipeline, not the keyword list.</div>
+      <div>Lai et al. (2026) is a <em>standalone</em> learned reconstruction &mdash; no iFEM anywhere in its loop. Hong et al. (2026) <em>integrates</em> the GNN with iFEM. Lumping every GNN reconstruction paper under "GNN + iFEM hybrid" misdescribes both: the standalone carries the distribution-shift risks of Section 10 with no iFEM in the loop &mdash; which is the claim this box is making, and is weaker than "no physics anywhere in the method" &mdash; while the hybrid inherits iFEM's assumptions along with its guarantees. Read the pipeline, not the keyword list.</div>
     </div>
 
     <div class="insight-box">
@@ -692,7 +699,7 @@
       <tr><th>Axis</th><th>iFEM</th><th>Calibration matrix</th><th>Trained network / operator</th><th>Per-instance PINN</th></tr>
       <tr><td><strong>Prior requirements</strong></td><td>Mesh + kinematic model + sensor geometry</td><td>Measured known load cases</td><td>Large training set (usually synthetic &mdash; hence a model anyway)</td><td>PDE + constitutive assumption + BCs (partially relaxable)</td></tr>
       <tr><td><strong>Load-case generality</strong></td><td>Load-agnostic by construction</td><td>Exact only within the training span (linear case)</td><td>Interpolates $P_{\text{train}}$; no out-of-distribution guarantee</td><td>No training distribution to leave</td></tr>
-      <tr><td><strong>Noise behavior</strong></td><td>Fixed linear gain, bounded by conditioning of $\mathbf{K}$</td><td>Amplification set by $\sigma_{\min}(\mathbf{E}_{\text{train}})$</td><td>Local Lipschitz behavior unknown a priori</td><td>Noise biases identified parameters unless regularized</td></tr>
+      <tr><td><strong>Noise behavior</strong></td><td>Fixed linear gain: $\lVert\delta\mathbf{u}\rVert \le \lVert\mathbf{K}^{-1}\mathbf{B}\rVert\,\lVert\boldsymbol{\eta}\rVert$ &mdash; known in advance, set by the full transfer map, not by $\kappa(\mathbf{K})$ alone</td><td>Amplification set by $\sigma_{\min}(\mathbf{E}_{\text{train}})$</td><td>Local Lipschitz behavior unknown a priori</td><td>Noise destabilizes identified parameters; regularizing trades that for a known bias</td></tr>
       <tr><td><strong>Inference cost</strong></td><td>RHS assembly + 2 triangular solves</td><td>One mat-vec</td><td>One forward pass</td><td>Full optimization per case</td></tr>
       <tr><td><strong>Nonlinearity &amp; modality</strong></td><td>Linear kinematics; strain inputs only</td><td>Linear; sensor-vector inputs</td><td>Native: images, resistive skins, geometric/material nonlinearity</td><td>Nonlinear physics encodable in the loss</td></tr>
       <tr><td><strong>Self-diagnostics</strong></td><td>Functional value = residual, flags inconsistent data</td><td>None built in</td><td>Fails silently</td><td>Residual exists but measures the <em>assumed</em> physics</td></tr>
@@ -701,7 +708,9 @@
 
     <p>The noise row deserves its equation, because it is the cleanest structural difference:</p>
 
-    <div class="math-block">$$\delta \mathbf{u}_{\text{iFEM}} \;=\; \mathbf{K}^{-1} \delta \mathbf{f}(\boldsymbol{\eta}) \quad \text{(fixed linear noise gain)} \qquad \text{vs.} \qquad \lVert f_{\theta}(\boldsymbol{\varepsilon} + \boldsymbol{\eta}) - f_{\theta}(\boldsymbol{\varepsilon}) \rVert \;\le\; L_{\theta}(\boldsymbol{\varepsilon})\, \lVert \boldsymbol{\eta} \rVert \quad \text{(unknown local Lipschitz)}$$</div>
+    <div class="math-block">$$\delta \mathbf{u}_{\text{iFEM}} \;=\; \mathbf{K}^{-1} \mathbf{B}\,\boldsymbol{\eta} \quad \text{(fixed linear noise gain, } \lVert \mathbf{K}^{-1}\mathbf{B} \rVert \text{)} \qquad \text{vs.} \qquad \lVert f_{\theta}(\boldsymbol{\varepsilon} + \boldsymbol{\eta}) - f_{\theta}(\boldsymbol{\varepsilon}) \rVert \;\le\; L_{\theta}(\boldsymbol{\varepsilon})\, \lVert \boldsymbol{\eta} \rVert \quad \text{(unknown local Lipschitz)}$$</div>
+
+    <p>Note which matrix does the bounding. The amplification is governed by the norm of the composite transfer map $\mathbf{K}^{-1}\mathbf{B}$, not by $\kappa(\mathbf{K})$ on its own: a well-conditioned $\mathbf{K}$ paired with a large $\lVert\mathbf{B}\rVert$ still amplifies, and $\kappa(\mathbf{K})$ bounds only <em>relative</em> error in any case. The structural point survives the correction &mdash; the gain is a fixed, computable number known before deployment, which is exactly what $L_\theta(\boldsymbol{\varepsilon})$ is not.</p>
 
     <p>On certification: a physics method with a mesh and a residual is easier to argue before a review board than a black box &mdash; but state this as the field's open problem, not a solved verdict. Nobody has yet certified either route for safety-critical shape sensing, and the honest sentence is that the physics route has more <em>arguable structure</em>, not more approvals.</p>
 
@@ -709,11 +718,11 @@
 
     <p>De&nbsp;Mooij &amp; Martinez (2024) is the anchor because its <em>design</em> is the template for honest comparisons: literature benchmarks plus the twisted, tapered NACA&nbsp;6412 blade, hexahedral solid elements, mixed displacement/strain sensor sets, both accuracy and cost scored, motivated by load-monitoring with discrete, irregularly distributed sensors. Outcome on those cases: CM below 0.01% average displacement and strain error against 21% and 99% for their iFEM implementation, with CM repeat solutions roughly 100&times; faster after set-up &mdash; conditional, as Section 2 established, on in-span load cases and those sensor layouts, not a general verdict.</p>
 
-    <p>And the regime where pure learning wins outright: soft robots. Truby, Della&nbsp;Santina &amp; Rus (2020) reconstruct the 3D configuration of soft, sensorized robots from distributed embedded sensors via deep learning &mdash; precisely because elastomeric bodies with hysteretic soft sensors defeat small-strain model-based inversion. Zhang, Wang, Truby, Chin &amp; Rus (2023) follow with machine-learning best practices for soft robot proprioception. When the model class is wrong, no model-based method is safe to prefer.</p>
+    <p>And the regime where learning is the demonstrated route: soft robots. Truby, Della&nbsp;Santina &amp; Rus (2020) reconstruct the 3D configuration of soft, sensorized robots from distributed embedded sensors via deep learning &mdash; precisely because elastomeric bodies with hysteretic soft sensors defeat <em>small-strain</em> model-based inversion. Take that at its actual strength, which is weaker than "learning wins": their contribution is a working learned proprioceptor (plus a sensorization strategy and a kinematic description), not a benchmark against a nonlinear model-based inversion, which they do not run. What the result establishes is that the small-strain model class is wrong for this hardware &mdash; not that no physics-based inversion could have worked. Zhang, Wang, Truby, Chin &amp; Rus (2023) follow with machine-learning best practices for soft robot proprioception. When the model class is wrong, no model-based method is safe to prefer.</p>
 
     <div class="insight-box">
       <div class="box-label">Key insight &mdash; complementary, not competing</div>
-      <div>Every axis in the table trades on what you can supply: a trustworthy model, known load cases, a large simulation budget, or per-case compute. The 2026 literature stopped picking sides and started composing &mdash; Hong et al. integrate rather than replace. The remaining question is Section 12's: which stage of <em>your</em> inversion earns the learned component.</div>
+      <div>Every axis in the table trades on what you can supply: a trustworthy model, known load cases, a large simulation budget, or per-case compute. Among the papers surveyed here, the later ones compose rather than pick sides &mdash; Hong et al. integrate a GNN with iFEM rather than replacing it. A reading list assembled to populate a taxonomy cannot date a turn in a field, so read that as the shape of this page's sample, not as a period claim. The remaining question is Section 12's: which stage of <em>your</em> inversion earns the learned component.</div>
     </div>
 
     <!-- ===== SECTION 10: GENERALIZATION ===== -->
@@ -721,7 +730,9 @@
 
     <p>"Does it generalize?" is not one question. Formalize it: the trained map is pinned down only on the support of $P_{\text{train}}$ in load space. Distinguish:</p>
 
-    <div class="math-block">$$\mathbf{p}_{\text{test}} \in \operatorname{conv}\{\mathbf{p}_i\}_{i=1}^{N} \;\; \text{(interpolation)} \qquad \text{vs.} \qquad \mathbf{p}_{\text{test}} \notin \operatorname{conv}\{\mathbf{p}_i\} \;\; \text{(extrapolation, no guarantee)}$$</div>
+    <div class="math-block">$$\mathbf{p}_{\text{test}} \in \operatorname{supp}(P_{\text{train}}) \;\; \text{(in-distribution)} \qquad \text{vs.} \qquad \mathbf{p}_{\text{test}} \notin \operatorname{supp}(P_{\text{train}}) \;\; \text{(out-of-distribution, no guarantee)}$$</div>
+
+    <p>The convex hull $\operatorname{conv}\{\mathbf{p}_i\}_{i=1}^{N}$ of the training samples is the usual stand-in for that test, because the hull is computable and the support is not. Keep it in its place: it is a geometric heuristic, not the criterion. The hull generally contains large regions the support never reached &mdash; a ring-shaped or discrete load distribution has a hull full of never-sampled points &mdash; so "inside the hull" neither implies in-distribution nor certifies anything about a nonlinear learned map. The figure below is drawn with a hull for exactly that reason, and its caption says so.</p>
 
     <p>And connect to the linear theory: for a linear structure, superposition makes the CM / linear-regression map exact on the <em>span</em> of the training loads &mdash; so apparent "generalization" in linear demos is often just linearity, and says nothing about nonlinear or out-of-span behavior. The concrete shift sources for a deployed shape sensor, in rough order of likelihood: unseen load positions and multi-load combinations; changed boundary conditions; temperature strains superposed on mechanical strains; sensor drift and dropout; and damage-induced stiffness change &mdash; which shifts the strain pattern <em>precisely when monitoring matters most</em>.</p>
 
@@ -796,9 +807,11 @@
 
     <p>Vision-based tactile sensing is the sibling inverse problem to iFEM shape sensing &mdash; with the sparsity regime inverted. Measure a field on or inside a soft elastic pad (camera-tracked marker displacements or image features: <em>dense</em> data, the opposite of strain-gauge scarcity), and infer the contact traction distribution and the deformed shape. It is an ill-posed elastic inverse problem that needs regularization either by physics or by a learned prior:</p>
 
-    <div class="math-block">$$\mathbf{d} \;=\; \mathbf{G}\,\mathbf{t} \quad \text{(elastic forward operator: traction} \to \text{marker displacement)}, \qquad \hat{\mathbf{t}} \;=\; g_{\theta}(\mathbf{d}) \quad \text{(learned inverse)}$$</div>
+    <div class="math-block">$$\mathbf{d} \;=\; \mathcal{M}(\mathbf{t}) \;\approx\; \mathbf{G}\,\mathbf{t}, \qquad \mathbf{G} \;=\; \left.\frac{\partial \mathcal{M}}{\partial \mathbf{t}}\right\rvert_{\mathbf{t} = \mathbf{0}} \quad \text{(forward map, and its small-deformation tangent)}, \qquad \hat{\mathbf{t}} \;=\; g_{\theta}(\mathbf{d}) \quad \text{(learned inverse)}$$</div>
 
     <div class="math-block">$$\hat{\mathbf{t}} \;=\; \arg\min_{\mathbf{t}} \; \lVert \mathbf{G}\mathbf{t} - \mathbf{d} \rVert^2 + \lambda \, \mathcal{R}(\mathbf{t}) \quad \text{(physics-regularized alternative &mdash; Module 8's route)}$$</div>
+
+    <p>Write the forward map nonlinearly and linearize on purpose. $\mathcal{M}$ is the hyperelastic traction-to-marker-displacement map; the constant matrix $\mathbf{G}$ is its tangent at the undeformed state, valid only for indentations light enough that the pad stays in its linear range &mdash; which is precisely the assumption the next subsection says a soft skin violates. The regularized least-squares form inherits that caveat: it is the linearized problem, not the one the hardware poses.</p>
 
     <p>Module 8 owns the model-based mechanics of tactile force inversion; this section covers only the learned-map angle and the correspondence that lets you transfer intuition between the two problems:</p>
 
@@ -873,7 +886,7 @@
 
     <h3 class="subsection-heading">Why Not Just Run iFEM on the Skin?</h3>
 
-    <p>Three reasons, all structural. The pad is hyperelastic and routinely sees large strains, violating the small-strain kinematics of standard inverse elements &mdash; the model-based baseline breaks <em>before</em> the comparison starts, and any fair evaluation must say so. The sensor modality is wrong: images and marker fields are not strain components. And contact is often blamed for this, but be precise: unknown contact tractions are <em>loads</em>, and load-free displacement iFEM never needed them. What actually breaks are the things iFEM does depend on &mdash; the pose and essential anchors, the geometry and sensor map, the strain modality, and the small-strain kinematics a soft skin cheerfully violates. This is why the published pattern for skins is the Section 4 factory: Sferrazza et al. (2019) train on FEM-generated force-distribution labels; Helmut et al. (2025) do so for the commercial GelSight Mini; Truby et al. (2020) map distributed embedded sensor signals to whole-body 3D configuration by deep learning.</p>
+    <p>Three reasons, all structural. The pad is hyperelastic and routinely sees large strains, violating the small-strain kinematics of standard inverse elements &mdash; the model-based baseline breaks <em>before</em> the comparison starts, and any fair evaluation must say so. The sensor modality is wrong: images and marker fields are not strain components. And contact is often blamed for this, but be precise: unknown contact tractions are <em>loads</em>, and load-free displacement iFEM never needed them. Read that for exactly what it buys, though: load-agnosticism says iFEM can recover the <em>shape</em> without knowing the tractions &mdash; not that it can recover the tractions, and traction is half of the task this section stated. Getting $\mathbf{t}$ back needs a constitutive law and a contact model bolted on top, so iFEM's load-agnosticism hands you the deformed shape and nothing more. What actually breaks are the things iFEM does depend on &mdash; the pose and essential anchors, the geometry and sensor map, the strain modality, and the small-strain kinematics a soft skin cheerfully violates. This is why the published pattern for skins is the Section 4 factory: Sferrazza et al. (2019) train on FEM-generated force-distribution labels; Helmut et al. (2025) do so for the commercial GelSight Mini; Truby et al. (2020) map distributed embedded sensor signals to whole-body 3D configuration by deep learning.</p>
 
     <p>What iFEM <em>thinking</em> still contributes, as transferable principles: weighted least-squares functionals as the template for fusing heterogeneous measurements; the residual as an online consistency check (Section 10's watchdog); conditioning analysis for marker and sensor layout &mdash; the placement reasoning of Section 3 applies verbatim to marker density; and the model-distilled-into-data caveat &mdash; FEM labels inherit the hyperelastic model's constitutive error, so "ground truth" is model truth. A Mindlin-type inverse-shell treatment of a sensorized skin is the natural physics baseline against which learned skins should be benchmarked &mdash; where its small-strain assumptions hold, it is the honest yardstick; where they break, documenting <em>that</em> is itself the comparison.</p>
 
@@ -887,8 +900,8 @@
       <li><strong>Sensor-starved but linear</strong> &rarr; keep iFEM; add strain completion &mdash; physics-based (Oboe et al. 2022) or GP with uncertainty (Poloni et al. 2023) &mdash; or optimize placement before hardware is committed (Module 6; Ghasemzadeh &amp; Kefal 2022). Remember what the completion smuggles in (Section 3).</li>
       <li><strong>Known load classes, no trustworthy model, calibration loads applicable</strong> &rarr; calibration matrix (de&nbsp;Mooij &amp; Martinez 2024), respecting the span limitation.</li>
       <li><strong>Nonlinear, soft, or camera-based sensing</strong> &rarr; learned map trained on synthetic FEM data with noise and material randomization (Sferrazza 2019 pattern). Shallow MLP first (Erichson et al. 2020's lesson: small decoders suffice for low-rank response spaces); GNN only if mesh-level output or transfer across geometries is needed (Lai et al. 2026); temporal module only for dynamics.</li>
-      <li><strong>Extrapolation-critical or data-poor</strong> &rarr; physics-informed loss (SenseNet 2023; strain + acceleration fusion per Xu et al. 2024), accepting per-instance optimization cost unless amortized &mdash; and carrying Section 6's failure-mode checklist.</li>
-      <li><strong>Certification-sensitive or real-time at scale</strong> &rarr; hybrid: iFEM as the final estimator with ML as pre-processor, monitoring the iFEM residual online (the direction of Hong et al. 2026); or an amortized operator with an OOD watchdog and a physics fallback, if the break-even algebra of Section 7 clears.</li>
+      <li><strong>Extrapolation-critical or data-poor</strong> &rarr; physics-informed loss, per-instance (SenseNet: Qiu et al. 2023), accepting the per-case optimization cost and carrying Section 6's failure-mode checklist. Keep the neighbouring option distinct: a physics-<em>guided</em> network trained offline (Xu et al. 2024 fuse strain with acceleration this way) buys cheap inference but is a trained map, so item 4's training-distribution caveats apply to it in full &mdash; it does not get the per-instance route's freedom from a training distribution.</li>
+      <li><strong>Certification-sensitive or real-time at scale</strong> &rarr; hybrid: iFEM as the final estimator with ML as pre-processor, monitoring the iFEM residual online. (Hong et al. 2026 is the published instance of keeping iFEM in the loop rather than replacing it; which side of the solve their GNN sits on is not something this page settles &mdash; Section 8.) Or an amortized operator with an OOD watchdog and a physics fallback, if the break-even algebra of Section 7 clears.</li>
     </ol>
 
     <p>Build checklist, with typical orders of magnitude (practice guidance, not citation): validate the FE model statically before trusting it as a data factory; expect thousands to tens of thousands of FEM solves for smooth strain-to-displacement maps; z-score inputs; hold out entire load cases; sweep noise at inference; report NRMSE against maximum deflection; and compare against the iFEM baseline in every experiment &mdash; no exceptions, including the experiments where it loses.</p>
@@ -957,7 +970,7 @@
   var aTrain = []; for (var j = 0; j < M; j++) aTrain.push(0.5 + 0.2 * j / (M - 1));
   var WIN = [0.5, 0.7];
 
-  var st = { a: 0.6, P: 0.8, ns: 6, sig: 0.02, ell: 0.15, damaged: false };
+  var st = { a: 0.61, P: 0.8, ns: 6, sig: 0.02, ell: 0.15, damaged: false };
   var noiseDraws = [];
 
   function randn() {
@@ -1066,7 +1079,7 @@
     var wA = integrate2(kapA, grid);
 
     // Method B: GP completion
-    var sn2 = Math.max(st.sig * st.sig, 1e-6);
+    var sn2 = st.sig * st.sig + 1e-8;   // likelihood = the actual sensor noise; 1e-8 is numerical jitter, not an assumed noise floor
     var Kss = [];
     for (var i = 0; i < ns; i++) { Kss.push([]); for (var j = 0; j < ns; j++) {
       var d = (Xs[i] - Xs[j]) / st.ell;
@@ -1125,19 +1138,28 @@
     for (var g = 0; g < NG; g++) { var s = 0; for (var j = 0; j < M; j++) s += G[g][j] * beta[j]; epsC.push(s); }
     var wC = integrate2(epsC, grid);
 
-    var wmax = 0;
-    for (var g = 0; g < NG; g++) wmax = Math.max(wmax, Math.abs(wTrue[g]));
-    if (wmax < 1e-9) wmax = 1e-9;
-    function nrmse(w) {
-      var s = 0;
-      for (var g = 0; g < NG; g++) { var e = w[g] - wTrue[g]; s += e * e; }
-      return Math.sqrt(s / NG) / wmax;
+    var wmax = 0, emax = 0;
+    for (var g = 0; g < NG; g++) {
+      wmax = Math.max(wmax, Math.abs(wTrue[g]));
+      emax = Math.max(emax, Math.abs(epsTrueGrid[g]));
     }
+    // at P = 0 the true curvature and deflection are identically zero: NRMSE has no denominator
+    var degenerate = (wmax < 1e-9 || emax < 1e-9);
+    function rmse(v, ref) {
+      var s = 0;
+      for (var g = 0; g < NG; g++) { var e = v[g] - ref[g]; s += e * e; }
+      return Math.sqrt(s / NG);
+    }
+    function nrmse(w) { return rmse(w, wTrue) / (degenerate ? 1 : wmax); }
+    function nrmseE(e) { return rmse(e, epsTrueGrid) / (degenerate ? 1 : emax); }
 
     return { Xs: Xs, eps: eps, epsTrueGrid: epsTrueGrid, wTrue: wTrue, kapA: kapA, wA: wA,
              gpMean: gpMean, gpSd: gpSd, wB: wB, corr: corr, xp: xp, xq: xq,
              epsC: epsC, wC: wC, rank: rank, cond: Math.sqrt(lmax / lminKept),
-             nA: nrmse(wA), nB: nrmse(wB), nC: nrmse(wC) };
+             degenerate: degenerate,
+             nA: nrmse(wA), nB: nrmse(wB), nC: nrmse(wC),
+             eA: nrmseE(kapA), eB: nrmseE(gpMean), eC: nrmseE(epsC),
+             rA: rmse(wA, wTrue), rB: rmse(wB, wTrue), rC: rmse(wC, wTrue) };
   }
 
   // --- drawing helpers ---
@@ -1211,26 +1233,40 @@
     document.getElementById('ool-svg-w').innerHTML = s2;
 
     // panel
-    var badge = function(v, warn) {
+    var badge = function(v) {
       var c = v < 0.03 ? '#2e7d32' : (v < 0.15 ? '#e67e22' : '#c62828');
-      return '<span style="font-weight:700;color:' + c + ';">' + (100 * v).toFixed(1) + '%</span>' + (warn ? ' <span style="color:#c62828;">&#9888;</span>' : '');
+      return '<span style="font-weight:700;color:' + c + ';">' + (100 * v).toFixed(1) + '%</span>';
     };
     var inWin2 = st.a >= WIN[0] && st.a <= WIN[1];
+    var oracleFlag = (!inWin2 || st.damaged) ? ' <span style="color:#c62828;">&#9888;</span>' : '';
+    var condStr = (r.cond >= 1000 ? r.cond.toExponential(1) : r.cond.toFixed(0));
     var p = '<div style="font-weight:700;color:#7b1fa2;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Inversion audit panel</div>';
     p += '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + st.ns + ' noisy surface strains $\\varepsilon(x_i)$, $\\sigma = ' + st.sig.toFixed(3) + '$' + (st.damaged ? ', from the <em>damaged</em> specimen' : '') + '</div>';
     p += '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> deflection $w(x)$ on $[0,1]$; routes B and C also estimate the dense strain field $\\hat{\\varepsilon}(x)$</div>';
     p += '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><br>' +
-      '<span style="color:#1565c0;">A:</span> EB kinematics, $\\hat{\\kappa} = \\varepsilon / c$, anchors $w(0) = w\'(0) = 0$ &mdash; material-free<br>' +
-      '<span style="color:#7b1fa2;">B:</span> A + zero-mean GP, SE kernel $\\ell = ' + st.ell.toFixed(2) + '$ (a smoothness <em>prior</em>)<br>' +
+      '<span style="color:#1565c0;">A:</span> EB kinematics, $\\hat{\\kappa} = \\varepsilon / c$, anchors $w(0) = w\'(0) = 0$; curvature interpolated linearly between sensors and held <em>constant</em> beyond the outermost ones &mdash; material-free, but not prior-free<br>' +
+      '<span style="color:#7b1fa2;">B:</span> A + zero-mean GP, SE kernel $\\ell = ' + st.ell.toFixed(2) + '$, likelihood $\\sigma_n = \\sigma$ plus a $10^{-4}$ numerical jitter (a smoothness <em>prior</em>)<br>' +
       '<span style="color:#e67e22;">C:</span> A + test load inside the sampled window $[0.50, 0.70]$ &mdash; empirical reliability, not a guarantee &mdash; + <em>pristine</em> specimen</div>';
     p += '<div style="margin-bottom:7px;"><strong>Rank / conditioning:</strong><br>' +
-      'C: $\\operatorname{rank}(\\mathbf{E}_{\\text{train}}) = ' + r.rank + '$ of $m = 7$ cases, $\\kappa(\\mathbf{E}_{\\text{train}}) \\approx ' + (r.cond >= 1000 ? r.cond.toExponential(1) : r.cond.toFixed(0)) + '$<br>' +
+      'C: $\\operatorname{rank}(\\mathbf{E}_{\\text{train}}) = ' + r.rank + '$ of $m = 7$ cases' +
+      (r.rank < M
+        ? ' &mdash; so $\\kappa(\\mathbf{E}_{\\text{train}})$ is infinite; over the retained subspace ($\\sigma_i > 10^{-4}\\sigma_{\\max}$), $\\kappa_{\\text{eff}} \\approx ' + condStr + '$'
+        : ', $\\kappa(\\mathbf{E}_{\\text{train}}) \\approx ' + condStr + '$') + '<br>' +
       'B: ' + st.ns + ' independent readings &#8594; ' + NG + ' <em>correlated</em> pseudo-strains; corr of marked pair = ' + r.corr.toFixed(2) + '</div>';
-    p += '<div><strong>Validation error (NRMSE vs withheld truth):</strong><br>' +
-      'A sparse physics: ' + badge(r.nA, false) + '<br>' +
-      'B GP &#8594; physics: ' + badge(r.nB, false) + '<br>' +
-      'C learned: ' + badge(r.nC, !inWin2 || st.damaged) +
-      '<div style="color:#888;font-size:11px;margin-top:5px;">available only in simulation &mdash; deployment needs the residual watchdog of &sect;10</div></div>';
+    p += '<div><strong>Validation error vs withheld truth:</strong>';
+    if (r.degenerate) {
+      p += '<div style="color:#c62828;margin-top:4px;">$P = 0$: the true curvature and deflection are identically zero, so NRMSE has no denominator. Absolute deflection RMSE (all three are reconstructing noise): A ' + r.rA.toExponential(1) + ', B ' + r.rB.toExponential(1) + ', C ' + r.rC.toExponential(1) + '.</div>';
+    } else {
+      p += '<div style="display:grid;grid-template-columns:1fr auto auto;gap:2px 9px;margin:4px 0 0;align-items:baseline;">' +
+        '<span></span><span style="font-size:10.5px;color:#666;">strain</span><span style="font-size:10.5px;color:#666;">deflection</span>' +
+        '<span style="color:#1565c0;">A sparse physics</span><span>' + badge(r.eA) + '</span><span>' + badge(r.nA) + '</span>' +
+        '<span style="color:#7b1fa2;">B GP &#8594; physics</span><span>' + badge(r.eB) + '</span><span>' + badge(r.nB) + '</span>' +
+        '<span style="color:#e67e22;">C learned</span><span>' + badge(r.eC) + oracleFlag + '</span><span>' + badge(r.nC) + '</span>' +
+        '</div>';
+      p += '<div style="color:#888;font-size:11px;margin-top:5px;">NRMSE in each space, normalized by $\\max|\\varepsilon|$ and $\\max|w|$ respectively. Available only in simulation &mdash; deployment needs the residual watchdog of &sect;10.</div>';
+      if (oracleFlag) p += '<div style="color:#888;font-size:11px;margin-top:3px;">&#9888; simulation-oracle annotation: the true load sits outside C\'s training window, or the specimen is damaged. Neither fact is available to the estimator &mdash; C\'s own output looks no different.</div>';
+    }
+    p += '</div>';
     var panel = document.getElementById('ool-panel');
     panel.innerHTML = p;
     renderMath(panel);
@@ -1265,7 +1301,7 @@
     document.getElementById(id + '-val').textContent = fmt(v);
   }
   document.getElementById('ool-preset-iid').addEventListener('click', function() {
-    setSlider('ool-a', 'a', 0.6, function(v) { return v.toFixed(2); });
+    setSlider('ool-a', 'a', 0.61, function(v) { return v.toFixed(2); });
     setSlider('ool-ns', 'ns', 6, function(v) { return v.toFixed(0); });
     setSlider('ool-sig', 'sig', 0.02, function(v) { return v.toFixed(3); });
     st.damaged = false; document.getElementById('ool-damage').checked = false;
@@ -1279,7 +1315,7 @@
     update();
   });
   document.getElementById('ool-preset-sparse').addEventListener('click', function() {
-    setSlider('ool-a', 'a', 0.6, function(v) { return v.toFixed(2); });
+    setSlider('ool-a', 'a', 0.61, function(v) { return v.toFixed(2); });
     setSlider('ool-ns', 'ns', 3, function(v) { return v.toFixed(0); });
     setSlider('ool-sig', 'sig', 0.04, function(v) { return v.toFixed(3); });
     st.damaged = false; document.getElementById('ool-damage').checked = false;
@@ -1415,7 +1451,7 @@
     var ro = document.getElementById('pd-readout');
     var lamStr = r.lam >= 1 ? r.lam.toFixed(r.lam >= 100 ? 0 : 1) : r.lam.toExponential(1);
     ro.innerHTML = '$\\mathcal{L} = \\mathcal{L}_{\\text{data}} + \\lambda_p\\,\\mathcal{L}_{\\text{phys}} + \\lambda_{bc}\\,\\mathcal{L}_{\\text{BC}}$ with $\\lambda_p = ' + lamStr + '$ &nbsp;&mdash;&nbsp; reconstruction NRMSE = <strong>' + (100 * r.nrmse).toFixed(2) + '%</strong>' +
-      (st.truth === 'B' && st.lamExp > 1 ? ' &nbsp;<span style="color:#c62828;font-weight:600;">biased by wrong assumed physics &mdash; and the loss never says so</span>' : '');
+      (st.truth === 'B' && st.lamExp > 1 ? ' &nbsp;<span style="color:#c62828;font-weight:600;">biased by wrong assumed physics &mdash; the physics bar still reads &asymp;&nbsp;0; only the data bar objects, and only if you read the terms separately</span>' : '');
     renderMath(ro);
   }
 
@@ -1475,13 +1511,13 @@ initWalkthrough('recipe-walkthrough', [
   {
     tab: '5. Data-poor',
     title: 'Extrapolation-critical or data-poor: physics in the loss',
-    text: 'A per-instance PINN (SenseNet: Qiu et al. 2023; strain + acceleration fusion: Xu et al. 2024) has no training distribution to fall out of &mdash; at the price of a nonconvex optimization per case, loss-weight balancing (NTK), and the full Section-6 failure-mode checklist.',
+    text: 'A per-instance PINN (SenseNet: Qiu et al. 2023) has no training distribution to fall out of &mdash; at the price of a nonconvex optimization per case, loss-weight balancing (NTK), and the full Section-6 failure-mode checklist. Do not lump the physics-guided TRAINED networks in with it (Xu et al. 2024 fuse strain and acceleration that way): those are fitted offline on a dataset and keep every distribution dependence of tab 4.',
     insight: 'A low training loss proves neither uniqueness nor accuracy: the physics term pulls toward the assumed equations, which regularizes when they are right and biases when they are wrong.'
   },
   {
     tab: '6. Certify',
     title: 'Real-time at scale, or certification-sensitive: hybridize',
-    text: 'If the break-even algebra clears (many inversions of one configuration), an amortized operator gives millisecond inference &mdash; pair it with an OOD watchdog through the forward-model or iFEM residual. If a reviewer must sign off, keep iFEM as the final estimator with learning as pre-processor (the Hong et al. 2026 direction).',
+    text: 'If the break-even algebra clears (many inversions of one configuration), an amortized operator gives millisecond inference &mdash; pair it with an OOD watchdog through the forward-model or iFEM residual. If a reviewer must sign off, keep iFEM as the final estimator with learning as pre-processor. Hong et al. 2026 compose the two rather than replacing iFEM &mdash; read their pipeline figure for which side of the solve their GNN actually sits on.',
     insight: 'The mature question is not "iFEM or ML?" but which stage of the inversion earns a learned component &mdash; and which keeps the physics.'
   }
 ]);
@@ -1512,7 +1548,7 @@ initFlashcards('mod11-flashcards', [
   },
   {
     q: 'What role does FEM play in learning-based vision-based tactile sensing (Sferrazza et al. 2019; Helmut et al. 2025)?',
-    a: 'It is the label factory: FEM computes dense ground-truth contact force distributions that no instrument can measure directly, and these model-generated labels supervise the network. Caveat: ‘ground truth’ is model truth &mdash; constitutive error in the hyperelastic model propagates into the labels.'
+    a: 'It is the label factory: FEM computes dense ground-truth contact force distributions that no readily available, non-disruptive instrument supplies at that density, and these model-generated labels supervise the network. Caveat: ‘ground truth’ is model truth &mdash; constitutive error in the hyperelastic model propagates into the labels.'
   },
   {
     q: 'What is strain pre-extrapolation and why does iFEM need it (Oboe, Sbarufatti &amp; Giglio 2022)?',
@@ -1532,7 +1568,7 @@ initFlashcards('mod11-flashcards', [
   },
   {
     q: 'Contrast noise propagation in iFEM and in a trained regression network.',
-    a: 'iFEM: $\\delta\\mathbf{u} = \\mathbf{K}^{-1}\\delta\\mathbf{f}(\\boldsymbol{\\eta})$ &mdash; a fixed linear gain bounded by the conditioning of $\\mathbf{K}$. Network: sensitivity is the local Lipschitz behavior of $f_\\theta$, unknown a priori and possibly large off-distribution; mitigate with training-time noise augmentation and ensembling.'
+    a: 'iFEM: $\\delta\\mathbf{u} = \\mathbf{K}^{-1}\\delta\\mathbf{f}(\\boldsymbol{\\eta}) = \\mathbf{K}^{-1}\\mathbf{B}\\boldsymbol{\\eta}$ &mdash; a fixed linear gain, $\\lVert\\delta\\mathbf{u}\\rVert \\le \\lVert\\mathbf{K}^{-1}\\mathbf{B}\\rVert\\,\\lVert\\boldsymbol{\\eta}\\rVert$, computable before deployment. Note it is the composite transfer map that bounds it, not $\\kappa(\\mathbf{K})$ on its own: a well-conditioned $\\mathbf{K}$ with a large $\\lVert\\mathbf{B}\\rVert$ still amplifies. Network: sensitivity is the local Lipschitz behavior of $f_\\theta$, unknown a priori and possibly large off-distribution; mitigate with training-time noise augmentation and ensembling.'
   },
   {
     q: 'What happens at the two extremes of the physics-loss weight $\\lambda_p$ in a physics-informed shape sensor?',
@@ -1560,7 +1596,7 @@ initFlashcards('mod11-flashcards', [
   },
   {
     q: 'When does an amortized neural-operator inverse map beat a per-instance inversion economically?',
-    a: 'Only after enough inversions amortize the offline cost: $N > \\dfrac{N_{\\text{train}}\\,C_{\\text{solve}}+C_{\\text{train}}}{C_{\\text{per}}-C_{\\text{infer}}}$. For one-off characterizations the per-instance method wins; for real-time tactile streams the operator wins &mdash; if inputs stay in-distribution.'
+    a: 'Only after enough inversions amortize the offline cost: $N > \\dfrac{N_{\\text{train}}\\,C_{\\text{solve}}+C_{\\text{train}}}{C_{\\text{per}}-C_{\\text{infer}}}$, valid only when $C_{\\text{per}} > C_{\\text{infer}}$ &mdash; if amortized inference is no cheaper than the per-instance route, the denominator is zero or negative and no $N$ ever recovers the offline cost. For one-off characterizations ($N = 1$) the per-instance method wins; for real-time tactile streams the operator wins &mdash; if inputs stay in-distribution.'
   },
   {
     q: 'Why does GP strain completion not make iFEM ‘more measured’?',
