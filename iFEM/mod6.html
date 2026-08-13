@@ -300,7 +300,7 @@
     <!-- ===== INTERACTIVE: FBG LAB ===== -->
     <div class="interactive-container" id="fbg-lab">
       <div class="interactive-label">Interactive Tool &mdash; FBG Interrogation &amp; Temperature Cross-Sensitivity</div>
-      <p style="font-size:13px;color:#555;margin-bottom:12px;">One sensing grating at $\lambda_B = 1550$&nbsp;nm, $K_\varepsilon = 1.2$&nbsp;pm/$\mu\varepsilon$, $K_T = 11$&nbsp;pm/K. Apply strain and temperature, watch the reflected peak move, and see what the interrogator <em>thinks</em> the strain is &mdash; with and without a strain-free reference grating. The reference is parked at its own nominal 1552&nbsp;nm: WDM requires every grating to own a guard band wide enough for its expected shift, so a reference sharing 1550&nbsp;nm with the sensing grating would be optically indistinguishable from it.</p>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">One sensing grating at $\lambda_B = 1550$&nbsp;nm, $K_\varepsilon = 1.2$&nbsp;pm/$\mu\varepsilon$, $K_T = 11$&nbsp;pm/K. Apply strain and temperature, watch the reflected peak move, and see what the interrogator <em>thinks</em> the strain is &mdash; with and without a strain-free reference grating. The reference is parked at its own nominal 1552&nbsp;nm: WDM requires every grating to own a guard band wide enough for its expected shift, so a reference sharing 1550&nbsp;nm with the sensing grating would be optically indistinguishable from it. Read the strain slider literally: it is the <em>fiber's own mechanical strain</em>, which is what a free reference grating cancels down to exactly, so compensation here is clean by construction. On a grating bonded to a host that quantity is $\varepsilon_{\text{host}} - \alpha_f\Delta T$, and the leftover $\alpha_f\Delta T \approx 0.55\ \mu\varepsilon$/K against host strain is the residual Section 7 discusses.</p>
       <div class="slider-group" style="display:flex;gap:18px;flex-wrap:wrap;">
         <div class="slider-control" style="min-width:220px;">
           <label><span>Mechanical strain $\varepsilon$ ($\mu\varepsilon$)</span> <span id="fbg-eps-val">200</span></label>
@@ -336,11 +336,11 @@
 
     <div class="math-block">$$\mathbf{k}^e = \int_{A_e} \left( w_m\, \mathbf{B}_m^{\mathsf{T}} \mathbf{B}_m + (2h)^2 w_b\, \mathbf{B}_b^{\mathsf{T}} \mathbf{B}_b + w_s\, \mathbf{B}_s^{\mathsf{T}} \mathbf{B}_s \right) dA, \qquad \mathbf{K}\,\mathbf{U} = \mathbf{F}$$</div>
 
-    <p>$\mathbf{K}$ depends only on geometry, mesh, and weights &mdash; factorize once <em>per weight pattern</em>; each new strain frame then costs one cheap back-substitution. That is the real-time property, and it survives sparsity untouched. Read the qualifier literally: the weights are part of $\mathbf{K}$, so the dropout discipline of Section 7 &mdash; demoting a dead channel's element &mdash; changes $\mathbf{K}$ and invalidates the stored factorization. Refactorize on a weight change, or precompute one factorization per anticipated failure pattern.</p>
+    <p>$\mathbf{K}$ depends only on geometry, mesh, and weights &mdash; factorize once <em>per weight pattern</em>; each new strain frame then costs one cheap back-substitution. That is the real-time property, and it survives sparsity untouched. Read the qualifier literally: the weights are part of $\mathbf{K}$, so demoting a dead channel's element to the small-weight regime (the dropout discipline of Section 7) changes $\mathbf{K}$ and invalidates the stored factorization. Refactorize on a weight change, or precompute one factorization per anticipated failure pattern. Absorb the same dropout by pre-extrapolation instead (Section 6) and the weights never move &mdash; the element still gets a datum &mdash; so $\mathbf{K}$ survives and only the smoother is refitted.</p>
 
     <h3 class="subsection-heading">Where Sparse Sensing Enters: the Weights</h3>
 
-    <p>If an element has no strain station, simply dropping its contribution can leave $\mathbf{K}$ singular &mdash; whole patches of the mesh lose their connection to any data. The Tessler&ndash;Spangler remedy, formalized for realistic sensor networks by Kefal &amp; Yildiz (2017), keeps the analytic term with a <em>small</em> weight: set the &ldquo;measured&rdquo; value to zero and the weight to $10^{-4}$ (the literature uses $10^{-3}$&ndash;$10^{-5}$) instead of $1$ for instrumented components:</p>
+    <p>If an element has no strain station, simply dropping its contribution can leave $\mathbf{K}$ singular &mdash; whole patches of the mesh lose their connection to any data. The Tessler&ndash;Spangler remedy, spelled out for &ldquo;strain-less&rdquo; inverse elements by Kefal et al. (2016), keeps the analytic term with a <em>small</em> weight: drop the measured value from the squared norm &mdash; equivalently, set the datum to zero &mdash; and set the weight to $10^{-4}$ (the literature uses $10^{-3}$&ndash;$10^{-5}$) instead of $1$ for instrumented components:</p>
 
     <div class="math-block">$$w = \begin{cases} 1 & \text{station present (measured component)} \\ 10^{-4} \text{ (typ.)} & \text{no measurement — analytic term retained, datum set to } 0 \end{cases}$$</div>
 
@@ -356,10 +356,10 @@
       <li><strong>Graceful degradation &mdash; conditionally.</strong> Reconstruction error usually grows smoothly as the instrumented fraction shrinks, because the kinematic interpolation keeps supplying smoothness &mdash; but only while every excited deformation mode keeps at least one station. Lose the last sensor constraining a mode and that mode drops onto the zero-strain prior in one step; drive the small weights to zero and $\mathbf{K}$ goes singular outright. The graceful part is a property of the layout, not of the method.</li>
       <li><strong>Dark load paths hurt most.</strong> The error concentrates where whole load-carrying regions have no sensors: the fill-in defaults toward zero strain exactly where the true strain is largest.</li>
       <li><strong>Conditioning degrades.</strong> $\text{cond}(\mathbf{K})$ grows as coverage thins and weights shrink, and a worse-conditioned solve amplifies measurement noise into the reconstruction.</li>
-      <li><strong>Low-signal sensors waste budget.</strong> A sensor in a near-zero-strain region still contributes its full $w\,\mathbf{B}^{\mathsf{T}}\mathbf{B}$ block to $\mathbf{K}$ &mdash; that block is geometry and shape functions, independent of what the gauge happens to read &mdash; so an extra unbiased station never <em>increases</em> the estimator covariance. It is not a noise source. It is a wasted slot: the deformation modes it constrains are ones the load envelope barely excites, so it buys almost no error reduction per channel while a station on a load path buys a lot. Rank candidate positions by sensitivity to the envelope, not by count. (The one way a quiet station does actively hurt is <em>bias</em>, not variance: a debond or an uncompensated $\Delta T$ is the same absolute error there as anywhere, and locally it dwarfs the signal.)</li>
+      <li><strong>Low-signal sensors waste budget.</strong> A sensor in a near-zero-strain region still contributes its full $w\,\mathbf{B}^{\mathsf{T}}\mathbf{B}$ block to $\mathbf{K}$ &mdash; that block is geometry and shape functions, independent of what the gauge happens to read. What it buys is the removal of the zero-strain prior's <em>bias</em> in its element; what it costs is <em>variance</em>, because a deterministic pseudo-datum has just been replaced by a noisy reading. Be careful with the textbook result here: &ldquo;an extra correctly weighted observation never increases the estimator covariance&rdquo; holds when you <em>add</em> a measurement to an existing set, and that is not what happens in this formulation &mdash; you also delete a zero-variance regularizer. The Sensor-Layout Challenge below shows it directly: leave the tip element bare and its reconstructed surface strain sits at essentially $0\ \mu\varepsilon$ with no scatter at all (biased, but noiseless); instrument it and the same quantity becomes unbiased and scatters at the sensor noise level. So the argument against a quiet channel is <em>not</em> that it injects noise into the rest of the network. It is opportunity cost: the deformation modes it constrains are ones the load envelope barely excites, so it buys almost no error reduction per channel while a station on a load path buys a lot. Rank candidate positions by sensitivity to the envelope, not by count &mdash; and compare layouts on mean-squared error or posterior uncertainty, which carry bias and variance together, rather than on either alone. (A quiet station can also hurt through gross <em>bias</em>: a debond or an uncompensated $\Delta T$ is the same absolute error there as anywhere, and locally it dwarfs the signal.)</li>
     </ul>
 
-    <p>The evidence base: Kefal &amp; Yildiz's wing-shaped sandwich panel study (2017) shows that a refined inverse mesh with few sensors plus small-weight fill-in still reconstructs displacement fields accurately under bending, torsion, and membrane loading &mdash; <em>provided</em> the sensors sit where the strain gradients are informative. Which is the cue for the next section.</p>
+    <p>The evidence base, with the two strands kept apart. For small-weight fill-in itself, Kefal et al. (2016) strip the back-to-back rosettes from 2160 of their iQS4 elements &mdash; leaving 240 instrumented stations &mdash; carry every stripped element at $w = 10^{-4}$, and still land within 3% of the high-fidelity FEM maximum displacement. For <em>placement</em>, Kefal &amp; Yildiz's wing-shaped sandwich panel study (2017) sweeps sensor density and alignment under bending, torsion, and membrane loading; note what it actually runs, because it is easy to miscite: SEA pre-extrapolation (Section 6) is applied for <em>every</em> sensor configuration, and its small weights ($10^{-3}$) mark strain <em>components</em> the uniaxial sensors cannot see, not sensor-free elements filled with zero. Both strands agree on the caveat: accuracy survives sparsity only <em>provided</em> the sensors sit where the strain gradients are informative. Which is the cue for the next section.</p>
 
     <!-- ===== SECTION 5: PLACEMENT ===== -->
     <h2 class="section-heading" id="placement-optimization">5. Sensor Count and Placement</h2>
@@ -380,7 +380,7 @@
 
     <div class="insight-box">
       <div class="box-label">Trap &mdash; &ldquo;more sensors is always better&rdquo;</div>
-      <div>Under measurement noise, returns diminish once the informative regions are covered. Placement quality dominates raw count: an optimized sparse layout can approach dense-coverage accuracy at a fraction of the budget, while a channel spent in a quiet region returns almost nothing for its cost &mdash; it is not that the extra station injects error (it does not; see Section 4), it is that the same channel on a load path would have bought real accuracy. Buy placement first, count second.</div>
+      <div>Under measurement noise, returns diminish once the informative regions are covered. Placement quality dominates raw count: an optimized sparse layout can approach dense-coverage accuracy at a fraction of the budget, while a channel spent in a quiet region returns almost nothing for its cost &mdash; not because the extra station poisons the rest of the network, but because the same channel on a load path would have bought real accuracy. (Locally it does trade the fill-in's bias for measurement variance; Section 4 has that version of the argument.) Buy placement first, count second.</div>
     </div>
 
     <h3 class="subsection-heading">Formal Optimization: the GA Template</h3>
@@ -469,8 +469,8 @@
       <div class="box-label">The SEA Functional (KEY EQUATION)</div>
       <div>
         Over a dedicated smoothing mesh (typically triangles), interpolate the smoothed field $\hat{\varepsilon}$ and an <em>independent</em> gradient field $\boldsymbol{\theta}$ with $C^0$ shape functions, and minimize
-        $$\Phi_{\text{SEA}}(\hat{\varepsilon}, \boldsymbol{\theta}) = \frac{1}{N} \sum_{i=1}^{N} \left[ \hat{\varepsilon}(\mathbf{x}_i) - \varepsilon_i \right]^2 + \lambda \int_{A} \left( \nabla\hat{\varepsilon} - \boldsymbol{\theta} \right)^{\mathsf{T}} \left( \nabla\hat{\varepsilon} - \boldsymbol{\theta} \right) dA + \beta \int_{A} \left[ \theta_{x,x}^2 + \theta_{y,y}^2 + \tfrac{1}{2}\left( \theta_{x,y} + \theta_{y,x} \right)^2 \right] dA$$
-        &mdash; a normalized least-squares misfit at the $N$ data points; a penalty forcing $\boldsymbol{\theta} \to \nabla\hat{\varepsilon}$; and a second penalty on the gradients of $\boldsymbol{\theta}$, which is what actually controls how hard the field is smoothed. <strong>Two hyperparameters, not one.</strong> The $\lambda$ penalty structure mirrors Mindlin-plate shear penalties; in the large-$\lambda$ limit the fit is effectively $C^1$, and the solve is a small sparse SPD linear system. Crucially, the fitted field can then be <strong>evaluated anywhere</strong>.
+        $$\Phi_{\text{SEA}}(\hat{\varepsilon}, \boldsymbol{\theta}) = \sum_e \left\{ \frac{1}{n_e} \sum_{i=1}^{n_e} \left[ \hat{\varepsilon}(\mathbf{x}_i) - \varepsilon_i \right]^2 + \lambda \int_{A_e} \left( \nabla\hat{\varepsilon} - \boldsymbol{\theta} \right)^{\mathsf{T}} \left( \nabla\hat{\varepsilon} - \boldsymbol{\theta} \right) dA + \beta\, A_e \int_{A_e} \left[ \theta_{x,x}^2 + \theta_{y,y}^2 + \tfrac{1}{2}\left( \theta_{x,y} + \theta_{y,x} \right)^2 \right] dA \right\}$$
+        &mdash; assembled element by element over the smoothing mesh: a normalized least-squares misfit at the $n_e$ data points falling inside each element; a penalty forcing $\boldsymbol{\theta} \to \nabla\hat{\varepsilon}$; and a second penalty on the gradients of $\boldsymbol{\theta}$, which is what actually controls how hard the field is smoothed. <strong>Two hyperparameters, not one.</strong> Do not drop the element area $A_e$ in front of the $\beta$ integral: $\theta$ has units of 1/length, so that integral scales as $1/\text{length}^2$, and only the $A_e$ factor leaves $\beta$ (like $\lambda$) dimensionless and the smoothing strength consistent across element sizes on a nonuniform mesh (the elementwise form is spelled out in Del Priore &amp; Lampani 2024, Eq. 12). The $\lambda$ penalty structure mirrors Mindlin-plate shear penalties; in the large-$\lambda$ limit (typically $10^2$&ndash;$10^6$) the fit is effectively $C^1$, and the solve is a small sparse symmetric system &mdash; positive <em>semi</em>definite in general, since any affine $\hat{\varepsilon} = a + bx + cy$ with $\boldsymbol{\theta} = (b, c)$ costs both penalties nothing, and positive-definite once the misfit term pins that affine mode down (three non-collinear stations suffice). Crucially, the fitted field can then be <strong>evaluated anywhere</strong>.
       </div>
     </div>
 
@@ -480,7 +480,7 @@
       <li>Measure strains at the sparse physical stations.</li>
       <li>Run SEA separately on each of the six section-strain components &mdash; three membrane from half-sums, three curvature from half-differences.</li>
       <li>Sample the smoothed fields at <em>every</em> inverse element's strain stations &mdash; these are the <strong>virtual sensors</strong>.</li>
-      <li>Run iFEM with full coverage and (near-)uniform weights, instead of zero-filled small-weight gaps.</li>
+      <li>Run iFEM with full coverage: every element now carries a datum from the fit, so the zero-filled gaps are gone. The <em>weights</em> are a separate, implementation-dependent choice &mdash; unity at the physical stations, and commonly a reduced weight on elements whose datum was extrapolated rather than measured (Poloni et al. 2023 use $10^{-1}$&ndash;$10^{-3}$ there), because an extrapolated strain is not as trustworthy as a reading. Replacing the zero target is the part SEA guarantees; raising the weight to unity is not.</li>
     </ol>
 
     <p>The evidence. Oboe et al. (2021) compared pre-extrapolation techniques &mdash; SEA against polynomial fitting &mdash; on a composite plate in compression buckling, a deliberately nonuniform strain field, and found that pre-extrapolation markedly improves both shape and strain reconstruction over the plain small-weight approach at equal sensor count. Roy et al. (2022) showed SEA-aided iFEM on plates reaching accuracy comparable to much denser physical networks: sensor count bought back in software. The family keeps growing: Oboe, Sbarufatti &amp; Giglio (2022) introduced a physics-based pre-extrapolation technique that informs the fill-in with structural knowledge rather than generic smoothness, and Poloni et al. (2023) extended pre-extrapolation to variable-thickness structures &mdash; thickness steps induce strain-field discontinuities that violate naive smoothing, and extrapolating in a thickness-normalized space, where the thickness-induced trends are removed, restores accuracy.</p>
@@ -547,7 +547,7 @@
           <rect x="428" y="240" width="24" height="18" fill="#f5c08a"/><rect x="452" y="240" width="24" height="18" fill="#f5c08a"/><rect x="476" y="240" width="24" height="18" fill="#f5c08a"/><rect x="500" y="240" width="24" height="18" fill="#f5c08a"/>
           <rect x="428" y="258" width="24" height="18" fill="#f5c08a"/><rect x="452" y="258" width="24" height="18" fill="#f5c08a"/><rect x="476" y="258" width="24" height="18" fill="#f5c08a"/><rect x="500" y="258" width="24" height="18" fill="#f5c08a"/>
         </g>
-        <text x="476" y="292" font-size="10.5" fill="#555" text-anchor="middle" font-family="sans-serif">virtual sensors everywhere, w &#8776; 1</text>
+        <text x="476" y="292" font-size="10.5" fill="#555" text-anchor="middle" font-family="sans-serif">virtual sensors everywhere, datum &#8800; 0</text>
         <path d="M528 248 h20" stroke="#555" stroke-width="1.3" marker-end="url(#m6arr2)"/>
         <rect x="553" y="228" width="70" height="40" rx="5" fill="#e67e22" opacity="0.9"/>
         <text x="588" y="252" font-size="12" fill="#fff" text-anchor="middle" font-family="sans-serif">iFEM</text>
@@ -560,13 +560,13 @@
         <text x="440" y="330" font-size="11.5" fill="#555" text-anchor="middle" font-family="sans-serif">dashed = true deflection.  Same physical sensors in both paths — only the treatment of the gaps differs (Oboe et al. 2021; Roy et al. 2022).</text>
         <text x="440" y="350" font-size="11" fill="#888" text-anchor="middle" font-family="sans-serif">Caution: Path B's virtual stations are correlated pseudo-data — the information still comes from the three orange dots.</text>
       </svg>
-      <div class="figure-caption">Two treatments of the same sparse measurement set. Path A retains uninstrumented elements at $w = 10^{-4}$ with zero datum &mdash; robust, but the reconstruction sags toward zero strain in dark regions. Path B fits a $C^1$ SEA field through the physical readings, samples it at every element (&ldquo;virtual sensors&rdquo;), and runs iFEM at near-uniform weights &mdash; markedly more accurate at equal sensor count on smooth-but-nonuniform fields.</div>
+      <div class="figure-caption">Two treatments of the same sparse measurement set. Path A retains uninstrumented elements at $w = 10^{-4}$ with zero datum &mdash; robust, but the reconstruction sags toward zero strain in dark regions. Path B fits a $C^1$ SEA field through the physical readings and samples it at every element (&ldquo;virtual sensors&rdquo;), so no element is left with a zero datum &mdash; markedly more accurate at equal sensor count on smooth-but-nonuniform fields. What weight an extrapolated datum then carries is an implementation choice: unity at the physical stations, often deliberately less where the value was invented.</div>
     </div>
 
     <!-- ===== MAIN INTERACTIVE: SENSOR LAYOUT CHALLENGE ===== -->
     <div class="interactive-container" id="layout-challenge">
       <div class="interactive-label">Interactive Tool &mdash; Sensor-Layout Challenge</div>
-      <p style="font-size:13px;color:#555;margin-bottom:12px;">A cantilever strip (L = 500&nbsp;mm, thickness 2h = 3&nbsp;mm, 10 inverse elements) with a channel budget of <strong>12</strong>. Click an element chip to cycle its sensor: none &rarr; back-to-back axial pair (2&nbsp;ch, gives $\mathbf{e}$ and $\boldsymbol{\kappa}$) &rarr; top-only axial gauge (1&nbsp;ch, assumes $e{=}0$) &rarr; FBG grating (1&nbsp;ch, 5&nbsp;mm gauge-length average, $\Delta T$-sensitive). The strip is a 1-D bending problem, so one axial component per station is all the model can use &mdash; that is why a pair costs 2 channels here. Instrument a plate with triaxial rosettes instead and the accounting triples: 3 channels per rosette, 6 for a back-to-back pair. Then inject faults &mdash; temperature, debonding, dropout &mdash; and judge the layout by the <em>withheld-gauge error</em>: six held-out top-surface gauges (&#9671;) that the solve never sees, each carrying its own independent noise, exactly as a real validation channel would. Even a flawless, fully instrumented network leaves this metric at $\approx 20$&ndash;$25\ \mu\varepsilon$ here: each inverse element consumes one constant curvature sampled at its midpoint, so the reconstructed surface strain is a staircase across a field that genuinely varies, and a withheld gauge sitting away from its element's midpoint reads that discretization bias directly. Compare it against the training residual, which is scored per physical channel against the raw readings each channel returned. Under the small-weight strategy that residual comes out <em>identically zero</em> for every instrumented layout here &mdash; the fit passes exactly through the readings it consumed, however wrong the reconstruction is between them, which is the sharpest possible statement of &ldquo;small residual $\neq$ valid reconstruction&rdquo;; under pre-extrapolation the solve consumes the smoothed field instead of those readings, so the residual reports the smoother's disagreement with them rather than the solve's. The panel tracks measurements, unknowns, assumptions, conditioning, and validation throughout.</p>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A cantilever strip (L = 500&nbsp;mm, thickness 2h = 3&nbsp;mm, 10 inverse elements) with a <strong>12-channel reconstruction budget</strong> &mdash; the six withheld validation gauges described below are test-only instrumentation and are deliberately not counted against it, so the physical channel count on the specimen is the budget plus six. Click an element chip to cycle its sensor: none &rarr; back-to-back axial pair (2&nbsp;ch, gives $\mathbf{e}$ and $\boldsymbol{\kappa}$) &rarr; top-only axial gauge (1&nbsp;ch, no membrane reading of its own) &rarr; FBG grating (1&nbsp;ch, 5&nbsp;mm gauge-length average, $\Delta T$-sensitive). Only the FBG averages over a gauge length here; the foil pairs, the top-only gauges, and the withheld validators are idealized as point samples, so the gauge-length physics of Section 1 shows up in exactly one place rather than everywhere. The strip is a 1-D bending problem, so one axial component per station is all the model can use &mdash; that is why a pair costs 2 channels here. Instrument a plate with triaxial rosettes instead and the accounting triples: 3 channels per rosette, 6 for a back-to-back pair. Then inject faults &mdash; temperature, debonding, dropout &mdash; and judge the layout by the <em>withheld-gauge error</em>: six held-out top-surface gauges (&#9671;) that the solve never sees, each carrying its own independent noise, exactly as a real validation channel would. Even a flawless, fully instrumented network leaves this metric at $\approx 20$&ndash;$25\ \mu\varepsilon$ here: each inverse element consumes one constant curvature sampled at its midpoint, so the reconstructed surface strain is a staircase across a field that genuinely varies, and a withheld gauge sitting away from its element's midpoint reads that discretization bias directly. Compare it against the training residual, which is scored per physical channel against the raw readings each channel returned. Under the small-weight strategy that residual comes out <em>identically zero</em> for every instrumented layout here &mdash; the fit passes exactly through the readings it consumed, however wrong the reconstruction is between them, which is the sharpest possible statement of &ldquo;small residual $\neq$ valid reconstruction&rdquo;; under pre-extrapolation the solve consumes the smoothed field instead of those readings, so the residual reports the smoother's disagreement with them rather than the solve's. The panel tracks measurements, unknowns, assumptions, conditioning, and validation throughout.</p>
 
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;">Stations (click to cycle type)</div>
@@ -717,7 +717,7 @@
       <tr><td><strong>Registration</strong></td><td>a station whose surveyed coordinates are wrong is a correct reading attached to the wrong row of the observation operator &mdash; a systematic error no averaging removes</td><td>survey positions and orientations into the model frame; treat coordinates as calibration data</td></tr>
       <tr><td><strong>Synchronization</strong></td><td>channels sampled at different instants mix load states within one &ldquo;frame&rdquo; &mdash; harmless for statics, poison for dynamics</td><td>common clock / triggered acquisition across interrogators and bridges</td></tr>
       <tr><td><strong>Drift</strong></td><td>slow zero-shift accumulates into a phantom quasi-static deformation</td><td>scheduled zero-load re-referencing; temperature logging; drift audits</td></tr>
-      <tr><td><strong>Dropout</strong></td><td>a dead channel that keeps reporting zero is a fake measurement of zero strain at full weight &mdash; far worse than an acknowledged gap</td><td>detect and demote: mark the element as a gap and let the active gap strategy handle it &mdash; small-weight fill-in at $w = 10^{-4}$, or a pre-extrapolated virtual sensor (Section 6) &mdash; but never ingest zeros as data. Either way the weights changed, so refactorize $\mathbf{K}$</td></tr>
+      <tr><td><strong>Dropout</strong></td><td>a dead channel that keeps reporting zero is a fake measurement of zero strain at full weight &mdash; far worse than an acknowledged gap</td><td>detect and demote: mark the element as a gap and let the active gap strategy handle it &mdash; small-weight fill-in at $w = 10^{-4}$, or a pre-extrapolated virtual sensor (Section 6) &mdash; but never ingest zeros as data. Which system needs rebuilding depends on which route you took: under small-weight fill-in the element's weight just went $1 \to 10^{-4}$, so $\mathbf{K}$ changed and must be refactorized; under pre-extrapolation the element still receives a datum at the same weight, so $\mathbf{K}$ stands and it is the <em>SEA</em> fit &mdash; whose live measurement set just shrank &mdash; that has to be rebuilt</td></tr>
     </table>
 
     <div class="insight-box">
@@ -737,7 +737,7 @@
       <li><strong>Place sensors:</strong> heuristic layout from the forward model's strain map, then GA refinement over the load envelope (Ghasemzadeh &amp; Kefal 2022); injecting measurement noise into the fitness is prudent practice beyond the original noise-free study. Li et al. (2025) unify this step with the next.</li>
       <li><strong>Choose the sparse strategy:</strong> small-weight fill-in ($w \approx 10^{-4}$) when coverage is moderate and fields are smooth; SEA pre-extrapolation when the network is sparse or the gradients are structured (Roy et al. 2022; Oboe et al. 2021; Poloni et al. 2023 for variable thickness).</li>
       <li><strong>Calibrate:</strong> apply known static loads; compare iFEM output against dial gauges, DIC, or laser displacement sensors; tune weights and station coordinates.</li>
-      <li><strong>Operate:</strong> pre-factorize $\mathbf{K}$ for the current weight pattern; each frame costs assembling $\mathbf{F}$ from the strain vector plus one back-substitution &mdash; kHz-capable. Refactorize whenever a weight changes (a dropout, a strategy switch).</li>
+      <li><strong>Operate:</strong> pre-factorize $\mathbf{K}$ for the current weight pattern; each frame costs assembling $\mathbf{F}$ from the strain vector plus one back-substitution &mdash; kHz-capable. Refactorize whenever a weight changes &mdash; a strategy switch, or a dropout handled by small-weight demotion; a dropout absorbed by pre-extrapolation changes the smoother's input, not $\mathbf{K}$.</li>
       <li><strong>Maintain:</strong> scheduled zero-load re-referencing, temperature logging, drift audits, dropout detection (Section 7).</li>
     </ol>
 
@@ -777,6 +777,7 @@
       <li>Roy, R.; Tessler, A.; Surace, C.; Gherlone, M. (2022). <em>Efficient shape sensing of plate structures using the inverse Finite Element Method aided by strain pre-extrapolation</em>. Thin-Walled Structures. doi:10.1016/j.tws.2022.109798</li>
       <li>Ghasemzadeh, M.; Kefal, A. (2022). <em>Sensor Placement Optimization for Shape Sensing of Plates and Shells Using Genetic Algorithm and Inverse Finite Element Method</em>. Sensors. doi:10.3390/s22239252</li>
       <li>Poloni, D.; Oboe, D.; Sbarufatti, C.; Giglio, M. (2023). <em>Variable Thickness Strain Pre-Extrapolation for the Inverse Finite Element Method</em>. Sensors. doi:10.3390/s23031733</li>
+      <li>Del Priore, E.; Lampani, L. (2024). <em>Shape Sensing in Plate Structures through Inverse Finite Element Method Enhanced by Multi-Objective Genetic Optimization of Sensor Placement and Strain Pre-Extrapolation</em>. Sensors, vol. 24, no. 2, art. 608. doi:10.3390/s24020608</li>
       <li>Zhao, L.; You, R.; Ren, L. (2024). <em>Inverse finite element method and support vector regression for automated crack detection with OFDR-Distributed fiber optic sensors</em>. Measurement. doi:10.1016/j.measurement.2024.114916</li>
       <li>Li, K.; Xiao, L.; Wei, H.; Kou, Y.; Shan, M. (2025). <em>A unified framework for enhancing inverse finite element method through strain pre-extrapolation and sensor placement optimization</em>. Mechanical Systems and Signal Processing, vol. 234, 112836. doi:10.1016/j.ymssp.2025.112836</li>
       <li>Wu, M.; Tan, S.; Pang, R.; Fan, Q. (2025). <em>A Universal Shape Sensing Strategy Based on Distributed Fiber-Optic Sensing: Extended Inverse Finite Element Method Using Solid Elements</em>. IEEE Transactions on Instrumentation and Measurement. doi:10.1109/tim.2025.3547086</li>
@@ -906,6 +907,9 @@
 (function() {
   var NE = 10, L = 500, ell = 50, h = 1.5, NDOF = 33, LAM = 1e-4, BUDGET = 12;
   var KT_over_Ke = 11 / 1.2; // ue per K, apparent strain on uncompensated FBG
+  var ALPHA_F = 0.55;        // ue per K, silica CTE: differencing against a free reference grating
+                             // recovers the FIBER's mechanical strain, i.e. eps_host - alpha_f*dT,
+                             // so a small residual survives compensation (Section 7)
   var LG = 5; // mm, FBG grating length (Section 3: a few millimetres)
   var GP = [0.2113248654, 0.7886751346];
   var TYPES = ['none', 'pair', 'top', 'fbg'];
@@ -997,6 +1001,9 @@
   // penalized smoothing fit over element midpoints (second-difference penalty)
   function smoothFit(idx, vals) {
     if (idx.length === 0) return new Array(NE).fill(0);
+    // One datum leaves the second-difference penalty with a one-dimensional nullspace (the slope):
+    // the normal matrix is rank NE-1 and every affine sequence through the reading is a minimizer.
+    // Break the tie explicitly with a zero-slope condition; the readout states that this happened.
     if (idx.length === 1) return new Array(NE).fill(vals[0]);
     var alpha = 2.0, A = [], b = new Array(NE).fill(0), i, j;
     for (i = 0; i < NE; i++) A.push(new Array(NE).fill(0));
@@ -1041,7 +1048,7 @@
     var cost = 0;
     for (var e2 = 0; e2 < NE; e2++) cost += TCOST[types[e2]];
     if (el('lc-ref').checked) cost += 1; // the T-reference grating occupies its own WDM slot and channel
-    el('lc-budget').innerHTML = 'channels: <span style="color:' + (cost > BUDGET ? '#c62828' : '#2e7d32') + ';">' + cost + ' / ' + BUDGET + '</span>' + (cost > BUDGET ? ' &mdash; over budget!' : '');
+    el('lc-budget').innerHTML = 'reconstruction channels: <span style="color:' + (cost > BUDGET ? '#c62828' : '#2e7d32') + ';">' + cost + ' / ' + BUDGET + '</span>' + (cost > BUDGET ? ' &mdash; over budget!' : '') + ' <span style="font-weight:400;color:#888;">(validation gauges not counted)</span>';
   }
 
   function avgTop(T, e) { // gauge-length average of top-surface strain over the grating (LG mm)
@@ -1088,7 +1095,8 @@
       } else if (t2 === 'fbg') {
         var epf = avgTop(T, e) * bondF + sig * 1e-6 * noisePool[e * 4];
         if (!ref) epf += KT_over_Ke * dT * 1e-6; // uncompensated thermal apparent strain
-        else epf -= refNoise;                    // compensated: the reference's own noise rides along
+        else epf -= refNoise + ALPHA_F * dT * 1e-6; // compensated: the reference's own noise rides along,
+                                                    // and the alpha_f*dT residual of Section 7 survives
         m.km = epf / h; m.wb = 1; // assumes e = 0, axial = x
         m.raw = epf; m.chP = epf;
         kIdx.push(e); kVals.push(m.km);
@@ -1204,7 +1212,7 @@
     var tipErr = sol.x ? Math.abs(wRecTip - wTrue) / Math.abs(wTrue) * 100 : NaN;
 
     draw(T, meas, q, sol, dropIdx, debondIdx);
-    panel(meas, act, sol, cond, vErr, res, tipErr, caseId, strat, dT, ref, debondIdx, dropIdx, nVirtual, eIdx.length);
+    panel(meas, act, sol, cond, vErr, res, tipErr, caseId, strat, dT, ref, debondIdx, dropIdx, nVirtual, eIdx.length, kIdx.length);
     readout(strat, vErr, res, sol);
 
     function draw(T, meas, q, sol, dropIdx, debondIdx) {
@@ -1279,7 +1287,7 @@
       el('lc-svg').innerHTML = s;
     }
 
-    function panel(meas, act, sol, cond, vErr, res, tipErr, caseId, strat, dT, ref, debondIdx, dropIdx, nVirtual, nPairs) {
+    function panel(meas, act, sol, cond, vErr, res, tipErr, caseId, strat, dT, ref, debondIdx, dropIdx, nVirtual, nPairs, nSeed) {
       var nP = 0, nT = 0, nF = 0, chan = 0;
       for (var e = 0; e < NE; e++) {
         chan += TCOST[types[e]];
@@ -1290,16 +1298,28 @@
       var kSamp = live, eSamp = nP - (dropIdx >= 0 && types[dropIdx] === 'pair' ? 1 : 0);
       var assume = '<li>linear profile &#949;(z) = e + z&#954;; EB kinematics (shear negligible in this 1D testbed)</li>';
       if (nT + nF > 0) {
-        assume += '<li>one-sided / FBG stations assume e = 0' +
-          (caseId === 'tipax' ? ' <span style="color:#c62828;font-weight:600;">&#9888; axial load present &mdash; membrane aliases into curvature as e/h</span>' : '') + '</li>';
+        // The e = 0 assumption is only live where nothing re-derives the membrane part. Under
+        // pre-extrapolation with at least one live pair, the code fits e(x) and subtracts it back
+        // out of every one-sided reading before the solve, so the aliasing warning would be false.
+        var eRederived = (strat === 'sea' && nPairs > 0);
+        assume += eRederived
+          ? '<li>one-sided / FBG stations carry no membrane reading, but the pre-extrapolated e(x) field (from ' + nPairs + ' live pair' + (nPairs > 1 ? 's' : '') + ') is subtracted back out of each of them before the solve &mdash; no e/h aliasing</li>'
+          : '<li>one-sided / FBG stations assume e = 0' +
+            (caseId === 'tipax' ? ' <span style="color:#c62828;font-weight:600;">&#9888; axial load present &mdash; membrane aliases into curvature as e/h</span>' : '') + '</li>';
       }
       if (nF > 0) {
         assume += '<li>FBG = axial strain averaged over its ' + LG + '&nbsp;mm grating; ' +
-          (ref ? 'reference grating compensates &#916;T &mdash; costs 1 channel, and its own noise rides into every compensated reading' : (dT > 0 ? '<span style="color:#c62828;font-weight:600;">&#9888; uncompensated: ' + dT + ' K &#8594; +' + (KT_over_Ke * dT).toFixed(0) + ' &#956;&#949; fake strain per FBG</span>' : 'no compensation (harmless at &#916;T = 0)')) + '</li>';
+          (ref ? 'reference grating compensates &#916;T &mdash; costs 1 channel, its own noise rides into every compensated reading' + (dT > 0 ? ', and a &#8722;' + (ALPHA_F * dT).toFixed(0) + ' &#956;&#949; residual (&#945;<sub>f</sub>&#916;T, Section 7) survives against host strain' : '') : (dT > 0 ? '<span style="color:#c62828;font-weight:600;">&#9888; uncompensated: ' + dT + ' K &#8594; +' + (KT_over_Ke * dT).toFixed(0) + ' &#956;&#949; fake strain per FBG</span>' : 'no compensation (harmless at &#916;T = 0)')) + '</li>';
       }
       if (nP + nT > 0) assume += '<li>foil gauges self-temperature-compensated</li>';
       assume += (debondIdx >= 0) ? '<li><span style="color:#c62828;font-weight:600;">&#9888; bond assumed perfect &mdash; actually &#215;0.6 at el ' + (debondIdx + 1) + ' (solver does not know)</span></li>' : '<li>perfect strain transfer through the bond</li>';
-      assume += (strat === 'sea') ? '<li>pre-extrapolation: the smoothed field is resampled at <em>every</em> element, sensed ones included (' + nVirtual + ' of them have no station of their own) &mdash; <em>correlated pseudo-data</em> at w = 1</li>'
+      // With no live curvature station there is nothing to fit, so the SEA branch never runs and
+      // every element silently falls back to the small-weight path. Say so instead of claiming
+      // virtual sensors that were never manufactured.
+      assume += (strat === 'sea')
+        ? (nSeed > 0
+            ? '<li>pre-extrapolation: the smoothed field is resampled at <em>every</em> element, sensed ones included (' + nVirtual + ' of them have no <em>live</em> station of their own) &mdash; <em>correlated pseudo-data</em>, carried here at w = 1, though real implementations often keep a reduced weight on extrapolated values</li>'
+            : '<li><span style="color:#c62828;font-weight:600;">pre-extrapolation unavailable &mdash; no live curvature reading to seed the fit</span>; every element falls back to w = 10<sup>&#8722;4</sup>, datum 0</li>')
         : '<li>gaps: analytic term kept, w = 10<sup>&#8722;4</sup>, datum 0</li>';
       var rankStr = sol.x ? sol.rank + ' / ' + sol.n + ' &mdash; full rank'
         : '<span style="color:#c62828;font-weight:700;">' + sol.rank + ' / ' + sol.n + ' &mdash; deficient</span>';
@@ -1312,7 +1332,7 @@
       var resStr = isFinite(res) ? res.toFixed(1) + ' &#956;&#949;' : '&mdash;';
       el('lc-panel').innerHTML =
         '<div style="font-weight:700;margin-bottom:8px;color:#e67e22;">System panel</div>' +
-        '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + chan + ' channels installed (' + nP + ' pairs, ' + nT + ' top-only, ' + nF + ' FBG' + (ref ? ', 1 T-reference' : '') + ')' + (dropIdx >= 0 ? ', 1 dark' : '') + ' &rarr; ' + kSamp + ' &#954; samples, ' + eSamp + ' e samples' + (strat === 'sea' && nVirtual > 0 ? ' + ' + nVirtual + ' virtual' : '') + '</div>' +
+        '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + chan + ' reconstruction channels installed (' + nP + ' pairs, ' + nT + ' top-only, ' + nF + ' FBG' + (ref ? ', 1 T-reference' : '') + ')' + (dropIdx >= 0 ? ', 1 dark' : '') + ' &rarr; ' + kSamp + ' &#954; samples, ' + eSamp + ' e samples' + (strat === 'sea' && nVirtual > 0 ? ' + ' + nVirtual + ' virtual' : '') + '<br><span style="color:#888;">plus ' + XV.length + ' withheld validation gauges &mdash; physical channels too, but test-only and outside the ' + BUDGET + '-channel budget</span></div>' +
         '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> 33 nodal DOFs (11 nodes &#215; (u, w, &#952;)), 3 anchored at root &rarr; 30 free</div>' +
         '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
         '<div style="margin-bottom:7px;"><strong>Rank:</strong> ' + rankStr + '<br><strong>cond(K):</strong> ' + condStr + '</div>' +
@@ -1322,8 +1342,17 @@
 
     function readout(strat, vErr, res, sol) {
       var r;
-      if (strat === 'sea') {
+      if (strat === 'sea' && kIdx.length === 0) {
+        // No live station means no data to fit: the SEA branch never runs and everything silently
+        // reverts to the small-weight path. Do not advertise virtual sensors that do not exist.
+        r = '<p style="font-size:12.5px;color:#c62828;"><strong>Pre-extrapolation has no seed.</strong> With no live curvature reading there is nothing to fit, so no virtual sensors are manufactured and every element reverts to the small-weight fallback ($w_b = w_m = 10^{-4}$, datum 0). Instrument at least one element to see the smoother work.</p>';
+      } else if (strat === 'sea') {
         r = '<div class="math-block">$$\\hat\\kappa = \\arg\\min\\; \\sum_{j \\in \\text{sensed}} (\\hat\\kappa_j - \\kappa_j^{\\varepsilon})^2 + \\alpha \\sum_j (\\hat\\kappa_{j-1} - 2\\hat\\kappa_j + \\hat\\kappa_{j+1})^2 \\;\\;\\rightarrow\\;\\; \\text{virtual } \\kappa^{\\varepsilon} \\text{ at all 10 elements, } w = 1$$</div>';
+        if (kIdx.length === 1) {
+          // One datum leaves the second-difference penalty blind to the slope: every affine sequence
+          // through that reading scores exactly zero. The code resolves it with a zero-slope choice.
+          r += '<p style="font-size:12.5px;color:#c62828;"><strong>One live station &mdash; the objective above does not have a unique minimizer.</strong> Every affine sequence $\\hat\\kappa_j = \\kappa^{\\varepsilon} + s\\,(j - j_0)$ through that single reading annihilates the second-difference penalty and scores exactly zero, whatever the slope $s$. This widget breaks the tie with an unstated zero-slope condition, $s = 0$, and extrapolates the reading as a constant across the strip. Two distinct live stations are the minimum for the displayed problem to determine the field on its own.</p>';
+        }
       } else {
         r = '<div class="math-block">$$w_b = \\begin{cases} 1 & \\text{any station (pair, top-only, FBG)} \\\\ 10^{-4} & \\text{no station} \\end{cases} \\qquad w_m = \\begin{cases} 1 & \\text{back-to-back pair only} \\\\ 10^{-4} & \\text{otherwise} \\end{cases}$$</div>';
         r += '<p style="font-size:12.5px;color:#555;">The weights are per <em>component</em>, not per station: a top-only or FBG station measures a surface strain, so it constrains curvature at full weight while its membrane component stays in the small-weight, zero-datum regime &mdash; which is exactly how membrane strain aliases into curvature as $e/h$.</p>';
@@ -1394,13 +1423,13 @@
     {
       tab: '5. Fill gaps',
       title: 'Step 5: Choose the Sparse Strategy',
-      text: 'Moderate coverage with smooth fields: small-weight fill-in, robust and assumption-light. Sparse networks or structured gradients: SEA pre-extrapolation &mdash; fit the C&sup1; smoothing field through the physical readings, sample virtual sensors at every element, run near-uniform weights. Variable thickness: extrapolate in thickness-normalized space (Poloni et al. 2023).',
+      text: 'Moderate coverage with smooth fields: small-weight fill-in, robust and assumption-light. Sparse networks or structured gradients: SEA pre-extrapolation &mdash; fit the C&sup1; smoothing field through the physical readings and sample virtual sensors at every element, so no element keeps a zero datum. Weight those extrapolated values at or below the physical readings &mdash; never above. Variable thickness: extrapolate in thickness-normalized space (Poloni et al. 2023).',
       insight: 'Virtual sensors are correlated pseudo-data. They redistribute information; they do not create it. What the physical layout cannot observe, no fill-in can restore.'
     },
     {
       tab: '6. Operate',
       title: 'Step 6: Calibrate, Operate, Maintain',
-      text: 'Calibrate against known static loads with independent displacement references (dial gauges, DIC, laser). Then operate: pre-factorize $\\mathbf{K}$ for the current weight pattern; every frame is an $\\mathbf{F}$ assembly plus one back-substitution &mdash; kHz-capable. Maintain: zero-load re-referencing, temperature logging, drift audits, and dropout detection that marks a dead channel\'s element as a gap for the active gap strategy instead of ingesting zeros &mdash; then refactorize, because the weights just changed.',
+      text: 'Calibrate against known static loads with independent displacement references (dial gauges, DIC, laser). Then operate: pre-factorize $\\mathbf{K}$ for the current weight pattern; every frame is an $\\mathbf{F}$ assembly plus one back-substitution &mdash; kHz-capable. Maintain: zero-load re-referencing, temperature logging, drift audits, and dropout detection that marks a dead channel\'s element as a gap for the active gap strategy instead of ingesting zeros. Under small-weight fill-in that gap changes the weights, so refactorize $\\mathbf{K}$; under pre-extrapolation the weights hold and only the smoothing fit is rebuilt on the surviving stations.',
       insight: 'Validate on withheld sensors and withheld load cases &mdash; never on the training residual, and never on random frame-level splits, which leak nearly identical frames across the divide.'
     }
   ]);
@@ -1439,7 +1468,7 @@
     },
     {
       q: 'What is Smoothing Element Analysis (SEA) and its role in sparse iFEM?',
-      a: 'A Tessler&ndash;Riggs&ndash;Macy (1994) finite-element least-squares fit producing a $C^1$-continuous field from discrete strain data via a penalty $\\lambda\\int \\|\\nabla\\hat{\\varepsilon}-\\boldsymbol{\\theta}\\|^2 dA$ tying independent gradients $\\boldsymbol{\\theta}$ to the field, plus a second penalty on $\\nabla\\boldsymbol{\\theta}$ that sets the actual degree of smoothing (two hyperparameters). For sparse iFEM it pre-extrapolates measured strains to &ldquo;virtual sensors&rdquo; at every element, replacing zero-filled small-weight gaps and markedly improving reconstruction (Roy 2022; Oboe 2021).'
+      a: 'A Tessler&ndash;Riggs&ndash;Macy (1994) finite-element least-squares fit producing a $C^1$-continuous field from discrete strain data via a penalty $\\lambda\\int \\|\\nabla\\hat{\\varepsilon}-\\boldsymbol{\\theta}\\|^2 dA$ tying independent gradients $\\boldsymbol{\\theta}$ to the field, plus a second penalty on $\\nabla\\boldsymbol{\\theta}$, carrying the element area $A_e$ (which is what keeps both parameters dimensionless), that sets the actual degree of smoothing &mdash; two hyperparameters. For sparse iFEM it pre-extrapolates measured strains to &ldquo;virtual sensors&rdquo; at every element, so no element keeps a zero datum, and markedly improves reconstruction (Roy 2022; Oboe 2021). What weight an extrapolated datum then earns is a separate implementation choice, commonly below unity.'
     },
     {
       q: 'How does GA sensor-placement optimization for iFEM encode and score a layout?',
@@ -1447,7 +1476,7 @@
     },
     {
       q: 'Why is iFEM unusually deployment-friendly compared with model-based estimators &mdash; and what is the catch?',
-      a: 'It is purely kinematic: no loads, no material constants, no damping model &mdash; only geometry, station positions, and strains; $\\mathbf{K}$ is pre-factorized (per weight pattern &mdash; a dropout changes the weights and forces a refactorization) so each frame is a back-substitution. Catch: displacements/strains come free, but stresses still require constitutive data, and thermal deformation is reconstructed as deformation (it is not filtered out).'
+      a: 'It is purely kinematic: no loads, no material constants, no damping model &mdash; only geometry, station positions, and strains; $\\mathbf{K}$ is pre-factorized (per weight pattern &mdash; a dropout demoted to the small-weight regime changes the weights and forces a refactorization, whereas one absorbed by pre-extrapolation leaves the weights, and $\\mathbf{K}$, alone) so each frame is a back-substitution. Catch: displacements/strains come free, but stresses still require constitutive data, and thermal deformation is reconstructed as deformation (it is not filtered out).'
     },
     {
       q: 'WDM-FBG array vs OFDR distributed sensing for an iFEM network: the trade?',
@@ -1455,7 +1484,7 @@
     },
     {
       q: 'Your budget is 6 sensors on a cantilever plate. Why is clustering them near the free tip the worst choice?',
-      a: 'Bending strain scales with the moment, $\\sim(L-x)$, so tip stations sit in near-zero strain and buy almost no error reduction &mdash; while the informative root region falls back on small-weight fill-in and sags toward zero strain. The cost is the opportunity cost of the budget, not added noise: an extra unbiased station never increases the estimator covariance, it just earns nothing where the envelope is quiet. Root-biased or optimizer-chosen layouts approach dense-coverage accuracy at the same count.'
+      a: 'Bending strain scales with the moment, $\\sim(L-x)$, so tip stations sit in near-zero strain and buy almost no error reduction &mdash; while the informative root region falls back on small-weight fill-in and sags toward zero strain. The cost is opportunity cost, not noise injected into the rest of the network: the tip station earns almost nothing where the envelope is quiet. Locally it does trade bias for variance &mdash; it replaces a noiseless zero-strain prior with a noisy reading &mdash; so rank layouts on mean-squared error, not on variance alone. Root-biased or optimizer-chosen layouts approach dense-coverage accuracy at the same count.'
     },
     {
       q: 'What does a strain sensor actually report, in observation-model terms?',

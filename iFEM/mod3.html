@@ -255,7 +255,7 @@
 
     <p><strong>Fact 1 — white noise is flat in the singular basis.</strong> The exact coefficients $\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}$ decay with $i$ (Section 6), but for white noise of standard deviation $s$, every $|\mathbf{u}_i^\mathsf{T}\mathbf{e}| \approx s$ regardless of $i$ — an orthogonal rotation preserves white noise. So component $i$ of the naive solution carries a noise term of size $s/\sigma_i$: and once $\sigma_i$ is small that term is enormous. Be careful about the exact criterion, though: what decides whether component $i$ is <em>recoverable</em> is not $\sigma_i$ against $s$, but the exact data coefficient $|\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}|$ against $s$. Once the signal in a direction has sunk below the noise, inverting it returns amplified noise no matter how the singular value compares.</p>
 
-    <p><strong>Fact 2 — small-$\sigma$ singular vectors are oscillatory.</strong> In discrete ill-posed problems, singular vectors associated with small $\sigma_i$ have increasingly many sign changes — the matrix version of "the forward map kills high frequencies". Hence the amplified garbage is <em>high-frequency</em>, which is why an unregularized solution looks like noise rather than like a slightly-wrong answer.</p>
+    <p><strong>Fact 2 — small-$\sigma$ singular vectors are usually oscillatory.</strong> For discretized smoothing kernels — the deconvolution and load-to-strain maps this guide is about — the singular vectors associated with small $\sigma_i$ have increasingly many sign changes, the matrix version of "the forward map kills high frequencies". Hence the amplified garbage is <em>high-frequency</em>, which is why an unregularized solution looks like noise rather than like a slightly-wrong answer. Treat this as a property of that class of operators, not as a consequence of ill-conditioning: a diagonal $\mathbf{A}$ with decaying diagonal entries has exactly the gradually decaying spectrum of a discrete ill-posed problem, yet its singular vectors are the coordinate axes — no sign changes, no spatial length scale at all. Check that your own $\mathbf{v}_i$ really do order spatial frequency before reading resolution off them (Section 8).</p>
 
     <h3 class="subsection-heading">A Taxonomy of Singular Spectra</h3>
 
@@ -337,7 +337,7 @@
 
     <div class="figure-container">
       <svg id="fig-picard-anatomy" viewBox="0 0 700 300" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div class="figure-caption">Anatomy of a Picard plot. The crossing index $i^*$ — where the data coefficients $|\mathbf{u}_i^\mathsf{T}\mathbf{b}|$ flatten onto the noise plateau — is the information content of the experiment: more unknowns do not raise it; better sensors do. ($\sigma_i$ reaching that same level, further right, is a different and later event.)</div>
+      <div class="figure-caption">Anatomy of a Picard plot. The crossing index $i^*$ — where the data coefficients $|\mathbf{u}_i^\mathsf{T}\mathbf{b}|$ flatten onto the noise plateau — is the information content of the experiment: refining the unknowns does not raise it; better sensors do. ($\sigma_i$ reaching that same level, further right, is a different and later event.) Ratio markers that run off the top of the axis are drawn as triangles on the frame rather than silently dropped.</div>
     </div>
     <script>
     (function(){
@@ -372,11 +372,20 @@
         s += '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(c).toFixed(1)+'" r="2.6" fill="#333"/>';
       }
       s += '<text x="'+x(7)+'" y="'+(y(exact(7))+18)+'" font-size="11" font-weight="600" fill="#333">|u&#7522;&#7488;b|</text>';
+      // The ratio explodes past i*; without a top clamp its markers would be drawn
+      // at negative y and vanish from the viewport exactly where they matter most.
+      var clipped=0;
       for(i=0;i<=n;i+=2){
         var c2 = Math.max(exact(i), floor*jit(i))/sig(i);
         var xx=x(i), yy=y(c2);
-        s += '<path d="M'+(xx-3)+' '+(yy-3)+' L'+(xx+3)+' '+(yy+3)+' M'+(xx-3)+' '+(yy+3)+' L'+(xx+3)+' '+(yy-3)+'" stroke="#e67e22" stroke-width="1.6"/>';
+        if(yy<T){
+          clipped++;
+          s += '<path d="M'+(xx-4)+' '+(T+9)+' L'+xx+' '+(T+1)+' L'+(xx+4)+' '+(T+9)+' Z" fill="#e67e22"/>';
+        } else {
+          s += '<path d="M'+(xx-3)+' '+(yy-3)+' L'+(xx+3)+' '+(yy+3)+' M'+(xx-3)+' '+(yy+3)+' L'+(xx+3)+' '+(yy-3)+'" stroke="#e67e22" stroke-width="1.6"/>';
+        }
       }
+      if(clipped){ s += '<text x="'+(R-4)+'" y="'+(T+9)+'" text-anchor="end" font-size="9.5" fill="#e67e22">&#9650; ratio off scale (above 10&#185;)</text>'; }
       s += '<text x="'+x(41)+'" y="'+(y(3e-1))+'" font-size="11" font-weight="600" fill="#e67e22">|u&#7522;&#7488;b| / &#963;&#7522; grows like s/&#963;&#7522;</text>';
       s += '<line x1="'+L+'" y1="'+y(floor)+'" x2="'+R+'" y2="'+y(floor)+'" stroke="#666" stroke-width="1.2" stroke-dasharray="5,4"/>';
       s += '<text x="'+(R-4)+'" y="'+(y(floor)+16)+'" text-anchor="end" font-size="10.5" fill="#666">noise floor &#8776; s</text>';
@@ -388,9 +397,9 @@
     })();
     </script>
 
-    <p>Define the <strong>crossing index</strong> $i^*$: the index at which the measured coefficients stop tracking the exact ones and flatten onto the noise plateau — equivalently, where $|\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}|$ sinks to $s$. Read $i^*$ as a <em>budget</em>, not a partition. Below it most components carry recoverable signal; above it most are noise, the ratio grows like $s/\sigma_i$, and inverting those directions amplifies noise — but $i^*$ is the centre of a transition band, not a hard boundary, and individual exact coefficients do resurface above the floor past it (Section 8's selective-filtering caveat). In the lab configuration quoted at the end of this paragraph the exact coefficients cross the noise floor five times before settling below it for good. Note also what $i^*$ is <em>not</em>: the index where $\sigma_i$ itself drops below $s$. That crossing is a different (and later) event — in the figure above the coefficients flatten at $i^* \approx 16$ while $\sigma_i$ only reaches the noise level near $i = 25$ — and using it would overstate the information you actually hold. Recoverability is decided by the data coefficients, not by the singular values alone. $i^*$ is the honest measure of the information content of the experiment — often brutally small, and always <em>independent of how many unknowns you discretized</em>. The count depends on the kernel, the true signal and the noise level, so quote it with its configuration: in the 64-point periodic Gaussian deconvolution of the lab below (PSF width $w = 1.5$ grid units, 1% relative noise), only about two dozen of the 64 exact-data coefficients sit above the noise floor.</p>
+    <p>Define the <strong>crossing index</strong> $i^*$: the index at which the measured coefficients stop tracking the exact ones and flatten onto the noise plateau — equivalently, where $|\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}}|$ sinks to $s$. Read $i^*$ as a <em>budget</em>, not a partition. Below it most components carry recoverable signal; above it most are noise, the ratio grows like $s/\sigma_i$, and inverting those directions amplifies noise — but $i^*$ is the centre of a transition band, not a hard boundary, and individual exact coefficients do resurface above the floor past it (Section 8's selective-filtering caveat). In the lab configuration quoted at the end of this paragraph the exact coefficients cross the noise floor five times before settling below it for good. Note also what $i^*$ is <em>not</em>: the index where $\sigma_i$ itself drops below $s$. That crossing is a different (and later) event — in the figure above the coefficients flatten at $i^* \approx 16$ while $\sigma_i$ only reaches the noise level near $i = 25$ — and using it would overstate the information you actually hold. Recoverability is decided by the data coefficients, not by the singular values alone. $i^*$ is the honest measure of the information content of the experiment — often brutally small, and, once the unknown grid is fine enough to resolve what the sensors can see, <em>stable under further refinement of the unknowns</em>. It is not a discretization invariant in the strict sense: changing $n$ changes $\mathbf{A}$, its left singular vectors and the coefficients $\mathbf{u}_i^\mathsf{T}\mathbf{b}$, so while the grid is still too coarse the count can move by an index or two. What refinement never does is create new experimental information. The count depends on the kernel, the true signal and the noise level, so quote it with its configuration: in the 64-point periodic Gaussian deconvolution of the lab below (PSF width $w = 1.5$ grid units, 1% relative noise), only about two dozen of the 64 exact-data coefficients sit above the noise floor.</p>
 
-    <p>The experiment-design reading: adding sensors, moving them closer to the source, or reducing noise raises $i^*$. Adding unknowns does not.</p>
+    <p>The experiment-design reading: adding sensors, moving them closer to the source, or reducing noise raises $i^*$. Adding unknowns does not — past the point where the grid resolves the measurement-supported subspace, refinement leaves $i^*$ where it was.</p>
 
     <div class="insight-box">
       <div class="box-label">Key insight — the plateau is not a violation</div>
@@ -406,17 +415,23 @@
 
     <div class="math-block">$$\mathbf{x}_\lambda = \arg\min_{\mathbf{x}}\left\{ \|\mathbf{A}\mathbf{x}-\mathbf{b}\|_2^2 + \lambda^2\|\mathbf{L}(\mathbf{x}-\mathbf{x}_0)\|_2^2 \right\}$$</div>
 
-    <p>The seminorm matrix $\mathbf{L}$ and reference $\mathbf{x}_0$ encode the prior. Standard form: $\mathbf{L}=\mathbf{I}$, $\mathbf{x}_0=\mathbf{0}$ — penalize magnitude. Common general forms: $\mathbf{L}$ = discrete first-derivative (bidiagonal) or Laplacian (tridiagonal) operator — penalize <em>roughness</em>, appropriate when the unknown field (e.g. a contact pressure distribution under a smooth indenter) is expected smooth. Setting the gradient to zero gives the regularized normal equations, uniquely solvable — and, for $\lambda$ not too small, far better conditioned than $\mathbf{A}^\mathsf{T}\mathbf{A}$ alone — provided $\mathbf{L}$ actually covers what $\mathbf{A}$ cannot see, i.e. $\ker\mathbf{A}\cap\ker\mathbf{L}=\{\mathbf{0}\}$. That condition is automatic for $\mathbf{L}=\mathbf{I}$ but not for derivative penalties: a first-difference $\mathbf{L}$ has constants in its nullspace and a Laplacian has constants and linears, so if $\mathbf{A}$ is also blind to those modes, no $\lambda$ will pin them down.</p>
+    <p>The seminorm matrix $\mathbf{L}$ and reference $\mathbf{x}_0$ encode the prior. Standard form: $\mathbf{L}=\mathbf{I}$, $\mathbf{x}_0=\mathbf{0}$ — penalize magnitude. Common general forms: $\mathbf{L}$ = discrete first-derivative (bidiagonal) or Laplacian (tridiagonal) operator — penalize <em>roughness</em>, appropriate when the unknown field (e.g. a contact pressure distribution under a smooth indenter) is expected smooth. Setting the gradient to zero gives the regularized normal equations, uniquely solvable provided $\mathbf{L}$ actually covers what $\mathbf{A}$ cannot see, i.e. $\ker\mathbf{A}\cap\ker\mathbf{L}=\{\mathbf{0}\}$. That kernel condition buys <em>uniqueness</em>, and by itself nothing more. Conditioning is a separate question with a separate answer: for $\mathbf{L}=\mathbf{I}$ the eigenvalues of the left-hand side are $\sigma_i^2+\lambda^2$, so for $\lambda$ not too small the condition number drops to $(\sigma_1^2+\lambda^2)/(\sigma_n^2+\lambda^2)$ — a genuine and large improvement. For a general $\mathbf{L}$ it depends on the scaling of $\mathbf{L}$ and on the generalized spectrum of the pair $(\mathbf{A},\mathbf{L})$, and it can come out far <em>worse</em> than $\mathbf{A}^\mathsf{T}\mathbf{A}$ alone: a badly scaled $\mathbf{L}$ with a trivial kernel is enough to do it, since the penalty then adds its own dynamic range to the matrix. Compute $\kappa$ of the regularized system; do not assume it improved. The kernel condition itself is automatic for $\mathbf{L}=\mathbf{I}$ but not for derivative penalties: a first-difference $\mathbf{L}$ has the constants in its nullspace, and what a discrete Laplacian has depends entirely on its boundary rows — a boundary-free 1-D second-difference stencil (the $(n-2)\times n$ operator) has constants <em>and</em> linears, a Neumann or graph Laplacian has constants only, and a Dirichlet Laplacian is nonsingular. If $\mathbf{A}$ is also blind to whatever that nullspace turns out to contain, no $\lambda$ will pin those modes down.</p>
 
     <div class="math-block">$$\left(\mathbf{A}^\mathsf{T}\mathbf{A} + \lambda^2\mathbf{L}^\mathsf{T}\mathbf{L}\right)\mathbf{x}_\lambda = \mathbf{A}^\mathsf{T}\mathbf{b} + \lambda^2\mathbf{L}^\mathsf{T}\mathbf{L}\,\mathbf{x}_0$$</div>
 
     <h3 class="subsection-heading">Filter Factors: Tikhonov in the Singular Basis</h3>
 
-    <p>For $\mathbf{L}=\mathbf{I}$ the SVD diagonalizes everything, and the Tikhonov solution is a <strong>filtered</strong> version of the least-squares expansion:</p>
+    <p>For $\mathbf{L}=\mathbf{I}$ <em>and</em> $\mathbf{x}_0=\mathbf{0}$ — standard form, assumed for the rest of this section and for the bias&ndash;noise split below — the SVD diagonalizes everything, and the Tikhonov solution is a <strong>filtered</strong> version of the least-squares expansion:</p>
 
     <div class="math-block">$$\mathbf{x}_\lambda = \sum_{i=1}^{r} f_i\,\frac{\mathbf{u}_i^\mathsf{T}\mathbf{b}}{\sigma_i}\,\mathbf{v}_i = \sum_{i=1}^{r} \frac{\sigma_i}{\sigma_i^2+\lambda^2}\,(\mathbf{u}_i^\mathsf{T}\mathbf{b})\,\mathbf{v}_i, \qquad f_i = \frac{\sigma_i^2}{\sigma_i^2+\lambda^2} \quad (\mathbf{L}=\mathbf{I})$$</div>
 
     <p>The filter factors interpolate smoothly between keep and kill: $f_i \approx 1$ for $\sigma_i \gg \lambda$ (component kept), $f_i \approx \sigma_i^2/\lambda^2 \to 0$ for $\sigma_i \ll \lambda$ (component suppressed). Tikhonov is a low-pass filter in the singular basis, with $\lambda$ the cutoff singular value. The two forms above are algebraically identical wherever $\sigma_i &gt; 0$; the right-hand one is what you implement, since it never divides by a small (or zero) $\sigma_i$.</p>
+
+    <p>With a nonzero reference the same algebra applies to the <em>shifted</em> problem — filter the residual data $\mathbf{b}-\mathbf{A}\mathbf{x}_0$ and add the reference back:</p>
+
+    <div class="math-block">$$\mathbf{x}_\lambda = \mathbf{x}_0 + \left(\mathbf{A}^\mathsf{T}\mathbf{A}+\lambda^2\mathbf{I}\right)^{-1}\mathbf{A}^\mathsf{T}\left(\mathbf{b}-\mathbf{A}\mathbf{x}_0\right) = \mathbf{x}_0 + \sum_{i=1}^{r} \frac{\sigma_i}{\sigma_i^2+\lambda^2}\,\big(\mathbf{u}_i^\mathsf{T}(\mathbf{b}-\mathbf{A}\mathbf{x}_0)\big)\,\mathbf{v}_i \qquad (\mathbf{L}=\mathbf{I})$$</div>
+
+    <p>and every statement below then reads with $\mathbf{x}_{\mathrm{exact}}$ replaced by $\mathbf{x}_{\mathrm{exact}}-\mathbf{x}_0$: the bias is bias <em>towards the reference</em>, not towards zero.</p>
 
     <h3 class="subsection-heading">The Bias&ndash;Noise Trade-Off Is a U-Shaped Curve</h3>
 
@@ -429,8 +444,10 @@
       <div class="collapsible-body">
         <p>Write the exact data as $\mathbf{b}_{\mathrm{exact}} = \mathbf{A}\mathbf{x}_{\mathrm{exact}}$. Then $\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}} = \mathbf{u}_i^\mathsf{T}\mathbf{A}\mathbf{x}_{\mathrm{exact}} = \sigma_i\,\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}}$, because $\mathbf{u}_i^\mathsf{T}\mathbf{A} = \sigma_i \mathbf{v}_i^\mathsf{T}$. Substituting $\mathbf{b} = \mathbf{b}_{\mathrm{exact}} + \mathbf{e}$ into the filtered expansion:</p>
         <div class="math-block">$$\mathbf{x}_\lambda = \sum_{i=1}^{n} f_i\,(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i + \sum_{i=1}^{r} f_i\,\frac{\mathbf{u}_i^\mathsf{T}\mathbf{e}}{\sigma_i}\,\mathbf{v}_i$$</div>
-        <p>Subtract $\mathbf{x}_{\mathrm{exact}} = \sum_i (\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i$ and the two terms above appear. As $\lambda$ grows, every $f_i$ falls: the bias term (the signal components you filtered away) grows, and the noise term (the amplified noise you let through) shrinks. Take squared norms and average over noise realizations: the cross term vanishes, and the <em>expected</em> squared error is <strong>U-shaped in $\lambda$</strong> — it starts strictly decreasing at $\lambda = 0$, because the noise term falls like $O(\lambda^2)$ there while the bias term only rises like $O(\lambda^4)$. The entire parameter-choice problem of Section 9 is locating the bottom of that U without knowing $\mathbf{x}_{\mathrm{exact}}$.</p>
-        <p>Be careful with the word "the": a single <em>realized</em> error curve is a vector sum, not a sum of squares, and its cross term $-2\sum_i (1-f_i)f_i(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})(\mathbf{u}_i^\mathsf{T}\mathbf{e})/\sigma_i$ has no fixed sign. Realized curves are usually U-shaped but need not be: with $\mathbf{e}=\mathbf{0}$ the error is monotone increasing, and the lab below is monotone increasing over its whole $\lambda$ range at PSF width $w=0.5$, where the problem is well enough conditioned ($\kappa \approx 1.7$) that the cross term dominates the noise-reduction term. Nothing is broken there — the answer is simply "do not regularize".</p>
+        <p>Subtract $\mathbf{x}_{\mathrm{exact}} = \sum_i (\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i$ and the two terms above appear. As $\lambda$ grows, every $f_i$ falls: the bias term (the signal components you filtered away) grows, and the noise term (the amplified noise you let through) shrinks. Take squared norms and average over noise realizations of standard deviation $s$: the cross term vanishes and</p>
+        <div class="math-block">$$\mathbb{E}\left\|\mathbf{x}_\lambda-\mathbf{x}_{\mathrm{exact}}\right\|_2^2 = \sum_{i=1}^{n}(1-f_i)^2(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})^2 \;+\; s^2\sum_{i=1}^{r}\frac{f_i^2}{\sigma_i^2}$$</div>
+        <p>This is <em>usually</em> a U. It starts strictly decreasing at $\lambda=0$ whenever $s&gt;0$, because the noise term falls like $O(\lambda^2)$ there while the bias term only rises like $O(\lambda^4)$, and it turns back up once the bias term takes over. But "U-shaped" describes the common case rather than a theorem: the sum of the two terms can carry more than one local minimum when the spectrum has well-separated scales, and if $\mathbf{x}_{\mathrm{exact}}$ has no significant content the bias term never takes over and the curve just falls to the end of the range — a boundary optimum, meaning "regularize as hard as the range allows". The parameter-choice problem of Section 9 is locating that minimum without knowing $\mathbf{x}_{\mathrm{exact}}$; part of doing it honestly is checking that a minimum was bracketed at all.</p>
+        <p>Be careful with the word "the": a single <em>realized</em> error curve is a vector sum, not a sum of squares, and its cross term $-2\sum_i (1-f_i)f_i(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})(\mathbf{u}_i^\mathsf{T}\mathbf{e})/\sigma_i$ has no fixed sign. Realized curves are usually U-shaped but need not be: with $\mathbf{e}=\mathbf{0}$ the error is monotone increasing. At PSF width $w=0.5$ the lab below is well enough conditioned ($\kappa \approx 1.7$) that regularization buys almost nothing, and at the default 1% noise the first draw rises monotonically across the whole $\lambda$ range — the answer there is simply "do not regularize". That is a statement about a draw, not about the setting: press "Redraw noise" at 1% and a shallow interior minimum appears for many seeds, and at the 10% end of the noise slider the first draw already dips from $0.254$ to $0.244$ before turning up. Read the shape off the curve you actually have.</p>
       </div>
     </div>
 
@@ -445,7 +462,7 @@
       <div>The literature writes the penalty either as $\lambda^2\|\cdot\|^2$ (Hansen's convention, used on this page throughout) or as $\alpha\|\cdot\|^2$ (ridge regression, $\alpha = \lambda^2$). Filter factors, GCV formulas, and L-curve code all silently change form between the two. Mixing them mid-derivation is a classic source of off-by-a-square bugs — fix one convention and state it.</div>
     </div>
 
-    <p><strong>Caveat for general $\mathbf{L}$:</strong> the SVD filter-factor formulas above hold for $\mathbf{L}=\mathbf{I}$ only. For derivative-type $\mathbf{L}$ the correct analysis uses the generalized SVD (GSVD), and components in null$(\mathbf{L})$ — the constant mode for a first-derivative $\mathbf{L}$ — pass through completely <em>unregularized</em>. Verify that $\mathbf{A}$ constrains them, or the "regularized" solution can still contain an arbitrarily wild unpenalized component.</p>
+    <p><strong>Caveat for general $\mathbf{L}$:</strong> the SVD filter-factor formulas above hold for $\mathbf{L}=\mathbf{I}$ only. For derivative-type $\mathbf{L}$ the correct analysis uses the generalized SVD (GSVD), and components in null$(\mathbf{L})$ — the constant mode for a first-derivative $\mathbf{L}$ — pass through completely <em>unregularized</em>. Verify that $\mathbf{A}$ constrains them, or the "regularized" solution can still contain an arbitrarily wild unpenalized component. The same caveat decides <em>where $\lambda$ lives</em>: the $[\sigma_n,\sigma_1]$ sweep range of Section 9 is calibrated to $\mathbf{L}=\mathbf{I}$, because replacing $\mathbf{L}$ by $c\mathbf{L}$ rescales the useful $\lambda$ by $1/c$ while leaving every $\sigma_i(\mathbf{A})$ untouched — $\mathbf{x}_\lambda$ for the pair $(\lambda,\mathbf{L})$ is exactly $\mathbf{x}_{\lambda/c}$ for $(\lambda/c,c\mathbf{L})$. For a general $\mathbf{L}$, bracket the sweep with the generalized singular value ratios $\alpha_i/\beta_i$ of the pair $(\mathbf{A},\mathbf{L})$, or widen it adaptively until the residual and the penalty have each gone flat at their respective ends.</p>
 
     <!-- ===== SECTION 8: TSVD ===== -->
     <h2 class="section-heading" id="truncated-svd">8. Truncated SVD and Friends</h2>
@@ -454,7 +471,7 @@
 
     <div class="math-block">$$\mathbf{x}_k = \sum_{i=1}^{k} \frac{\mathbf{u}_i^\mathsf{T}\mathbf{b}}{\sigma_i}\,\mathbf{v}_i \;\;(k \le r) \qquad\qquad f_i^{\mathrm{TSVD}} = \begin{cases} 1, &amp; i \le k \\ 0, &amp; i &gt; k \end{cases} \qquad \text{vs.} \qquad f_i^{\mathrm{Tik}} = \frac{\sigma_i^2}{\sigma_i^2 + \lambda^2}$$</div>
 
-    <p>The truncation index $k$ plays exactly the role of $\lambda$, with the correspondence $\lambda \approx \sigma_k$: Tikhonov at parameter $\lambda$ and TSVD at the $k$ where $\sigma_k \approx \lambda$ produce nearly identical solutions whenever the singular values decay fast, because the smooth roll-off and the hard cutoff then bracket the same components (Hansen 2010).</p>
+    <p>The truncation index $k$ and the parameter $\lambda$ are <em>analogous controls</em> — each sets where the expansion stops being trusted — and $\lambda \approx \sigma_k$ is the usual rule of thumb for translating one into the other (Hansen 2010). Read it as a hint, not an identity: at $\lambda = \sigma_k$ Tikhonov keeps that component at $f_k = 1/2$ while TSVD keeps it whole, so wherever component $k$ carries real weight the two solutions part company. The pairing is dependable only across a genuine spectral gap, $\sigma_{k+1} \ll \lambda \ll \sigma_k$, where the ambiguous component is negligible either way; under gradual decay there is no one-to-one mapping, and how close the two land also depends on the data coefficients, not on spectral decay alone. In the lab below at $w=3$ — fast decay, exactly the regime where the rule is supposed to be safest — TSVD at $k=24$ and Tikhonov at $\lambda=\sigma_{24}$ differ by 64% in relative norm.</p>
 
     <table>
       <tr><th>Situation</th><th>Natural choice</th><th>Why</th></tr>
@@ -474,7 +491,7 @@
 
     <div class="math-block">$$\mathbf{x}_{\mathrm{filtered}} = \sum_{i=1}^{n} f_i\,(\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}})\,\mathbf{v}_i$$</div>
 
-    <p>— the true solution seen through a low-pass filter. For TSVD this is exactly the orthogonal projection onto $\mathrm{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$: features of $\mathbf{x}_{\mathrm{exact}}$ outside the first $k$ singular vectors are invisible, no matter how good the data. Since small-$\sigma$ singular vectors are the oscillatory ones (Section 5), the spatial resolution of any honest reconstruction is capped at the length scale of $\mathbf{v}_{i^*}$ — the Picard index again, now read as a resolution limit.</p>
+    <p>— the true solution seen through a low-pass filter. For TSVD this is exactly the orthogonal projection onto $\mathrm{span}\{\mathbf{v}_1,\dots,\mathbf{v}_k\}$: features of $\mathbf{x}_{\mathrm{exact}}$ outside the first $k$ singular vectors are gone from <em>this</em> reconstruction. That is a property of the truncation you chose, not of the physics — as long as $\sigma_i &gt; 0$ the data do contain $\mathbf{u}_i^\mathsf{T}\mathbf{b}_{\mathrm{exact}} = \sigma_i\,\mathbf{v}_i^\mathsf{T}\mathbf{x}_{\mathrm{exact}}$, and raising $k$ recovers the component whenever the data are clean enough to support it. Only exact-nullspace directions, $\sigma_i = 0$, are invisible no matter how good the data (Section 2). What the noise level fixes is where raising $k$ stops paying: past $i^*$ the recovered component is mostly amplified noise, so <em>at a given noise level</em> the spatial resolution of an honest reconstruction is capped near the length scale of $\mathbf{v}_{i^*}$ — the Picard index again, now read as a resolution limit. That last reading assumes the singular vectors of your $\mathbf{A}$ genuinely order spatial frequency (Fact 2, Section 5); on an operator where they do not, $i^*$ still counts recoverable components but no longer converts into a length.</p>
 
     <div class="insight-box">
       <div class="box-label">Key insight — regularization does not recover information</div>
@@ -484,7 +501,7 @@
     <!-- ===== SECTION 9: PARAMETER CHOICE ===== -->
     <h2 class="section-heading" id="choosing-the-parameter">9. Choosing the Regularization Parameter</h2>
 
-    <p>The U-shaped expected-error curve of Section 7 must be located <em>blind</em> — $\mathbf{x}_{\mathrm{exact}}$ is not available. Three standard criteria exist, each with an honest failure profile. None is ground truth; all three are estimators of the U's bottom.</p>
+    <p>The bias&ndash;noise curve of Section 7 must be located <em>blind</em> — $\mathbf{x}_{\mathrm{exact}}$ is not available. Three standard criteria exist, each with an honest failure profile. None is ground truth, and — worth being exact about — none of them actually estimates the parameter-space error you would like to minimize: Morozov matches a <em>residual</em> to the noise level, the L-curve locates a <em>corner</em> in a trade-off plot, and GCV estimates <em>predictive risk in data space</em>. They are computable proxies for the bottom of the U, and they land on it only to the extent that their proxy tracks it.</p>
 
     <h3 class="subsection-heading">9.1 Morozov's Discrepancy Principle</h3>
 
@@ -492,7 +509,7 @@
 
     <div class="math-block">$$\|\mathbf{A}\mathbf{x}_\lambda - \mathbf{b}\|_2 = \tau\,\delta, \qquad \delta = \|\mathbf{e}\|_2, \quad \tau \gtrsim 1 \;\;(\text{e.g. } 1.05)$$</div>
 
-    <p>The residual norm is monotone increasing in $\lambda$, so this is a 1-D root find. Behavior: theoretically convergent as $\delta \to 0$ (Engl, Hanke &amp; Neubauer 1996); tends to slightly over-smooth; its quality stands or falls with the $\delta$ estimate. It is the best default in engineering settings where sensor noise is characterizable.</p>
+    <p>The residual norm is monotone increasing in $\lambda$, so this is a 1-D root find. Read $\tau\delta$ as a <em>selection target</em> — the level you deliberately push the residual up to — and not as a prediction of what a well-fitted residual should equal: a correct model leaves an expected residual <em>below</em> $\delta$, because the fit absorbs part of the noise (Section 13 gives the expression). Pushing the residual up to $\tau\delta$ is precisely why the principle over-smooths. Behavior: theoretically convergent as $\delta \to 0$ (Engl, Hanke &amp; Neubauer 1996); tends to slightly over-smooth; its quality stands or falls with the $\delta$ estimate. It is the best default in engineering settings where sensor noise is characterizable.</p>
 
     <div class="insight-box">
       <div class="box-label">Why it matters — $s$ is not $\delta$</div>
@@ -572,11 +589,11 @@
 
     <div class="math-block">$$G(\lambda) = \frac{\|\mathbf{A}\mathbf{x}_\lambda-\mathbf{b}\|_2^2}{\left[\operatorname{trace}\!\left(\mathbf{I}_m - \mathbf{A}\mathbf{A}_\lambda^{\#}\right)\right]^2}, \qquad \operatorname{trace}\!\left(\mathbf{I}_m - \mathbf{A}\mathbf{A}_\lambda^{\#}\right) = m - n + \sum_{i=1}^{n}\frac{\lambda^2}{\sigma_i^2+\lambda^2} \qquad (\mathbf{L}=\mathbf{I})$$</div>
 
-    <p>where $\mathbf{A}_\lambda^{\#}$ is the regularized inverse mapping $\mathbf{b} \mapsto \mathbf{x}_\lambda$. The trace costs nothing once the filter factors are known: $\operatorname{trace} = m - \sum_i f_i$. GCV estimates predictive risk without needing a noise estimate, and is <em>asymptotically</em> optimal for that risk under white Gaussian noise (Golub, Heath &amp; Wahba 1979) — an asymptotic result, not a finite-sample guarantee. Its failure profile: <strong>positively correlated noise typically drives GCV to under-smooth badly</strong>, because the smooth part of the noise reads as signal — GCV is not assumption-free; it assumes white (uncorrelated, equal-variance) noise, exactly what camera-based measurements with spatial post-processing violate (Section 4). And its minimum is often very flat, demanding careful 1-D minimization rather than eyeballing.</p>
+    <p>where $\mathbf{A}_\lambda^{\#}$ is the regularized inverse mapping $\mathbf{b} \mapsto \mathbf{x}_\lambda$. The trace costs nothing once the filter factors are known: $\operatorname{trace} = m - \sum_i f_i$. GCV estimates predictive risk without needing a noise estimate. Its optimality result is narrower than the usual one-line quotation of it: Golub, Heath &amp; Wahba (1979) bound the <em>expectation inefficiency</em> — the ratio of the risk at the GCV minimizer to the smallest attainable risk — and that bound tends to 1 only when the normalized traces of the influence matrix $\mathbf{H}_\lambda = \mathbf{A}\mathbf{A}_\lambda^{\#}$, namely $\tfrac{1}{m}\operatorname{trace}\mathbf{H}_\lambda$ and $(\operatorname{trace}\mathbf{H}_\lambda)^2/(m\operatorname{trace}\mathbf{H}_\lambda^2)$, both vanish as the problem grows. White Gaussian noise alone does not deliver that: it is a limit statement about a sequence of problems, carrying its own conditions on the spectrum, and never a finite-sample guarantee for the matrix on your desk. Its failure profile: <strong>positively correlated noise typically drives GCV to under-smooth badly</strong>, because the smooth part of the noise reads as signal — GCV is not assumption-free; it assumes white (uncorrelated, equal-variance) noise, exactly what camera-based measurements with spatial post-processing violate (Section 4). And its minimum is often very flat, demanding careful 1-D minimization rather than eyeballing.</p>
 
     <h3 class="subsection-heading">Practice</h3>
 
-    <p>Sweep 50&ndash;100 log-spaced $\lambda$ values across $[\sigma_n, \sigma_1]$ — padded a couple of decades either side, so that all three criteria are actually <em>bracketed</em> rather than pinned to an endpoint — then evaluate them on the sweep and inspect the selected solutions side by side. If a criterion's condition is met nowhere in the range, say so; do not report the boundary value as a pick. <strong>Agreement is evidence; disagreement is diagnosis</strong> — a GCV pick far below the discrepancy pick suggests correlated noise; a wandering L-curve corner suggests slowly decaying singular values — a poorly separated signal-to-noise transition. The criteria estimate the optimum, they do not certify it.</p>
+    <p>Sweep 50&ndash;100 log-spaced $\lambda$ values across $[\sigma_n, \sigma_1]$ — padded a decade or two beyond each end, so that all three criteria are actually <em>bracketed</em> rather than pinned to an endpoint — then evaluate them on the sweep and inspect the selected solutions side by side. That range is calibrated to $\mathbf{L}=\mathbf{I}$; for a general $\mathbf{L}$ the useful $\lambda$ moves with the scaling of $\mathbf{L}$ (Section 7's caveat), so bracket it from the generalized singular values of $(\mathbf{A},\mathbf{L})$ or by widening until both ends go flat. If a criterion's condition is met nowhere in the range, say so; do not report the boundary value as a pick — and if $\sigma_n$ sits at the roundoff level so that the lower end had to be clamped, disclose the clamp with the answer. <strong>Agreement is evidence; disagreement is diagnosis</strong> — a GCV pick far below the discrepancy pick suggests correlated noise; a wandering L-curve corner suggests slowly decaying singular values — a poorly separated signal-to-noise transition. The criteria estimate the optimum, they do not certify it.</p>
 
     <!-- ===== INTERACTIVE: PICARD & REGULARIZATION LAB ===== -->
     <div class="interactive-container" id="picard-lab">
@@ -617,10 +634,10 @@
       </div>
       <div style="font-size:10px;color:#888;margin:8px 0 2px;">Reconstruction: x_true (thin), regularized estimate (thick)</div>
       <svg id="pl-recon" width="700" height="200" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
-      <div style="font-size:10px;color:#888;margin:8px 0 2px;">True relative-error curve vs the regularization parameter (the "oracle", computable only because x_true is known) with the blind criteria's picks. Usually U-shaped &mdash; but not always: at w = 0.5 it rises monotonically, because the problem needs no regularization at all (Section 7).</div>
+      <div style="font-size:10px;color:#888;margin:8px 0 2px;">True relative-error curve vs the regularization parameter (the "oracle", computable only because x_true is known) with the blind criteria's picks. Usually U-shaped &mdash; but not always: at w = 0.5 the problem needs no regularization at all (Section 7), and the curve can rise monotonically across the whole range. Whether it does depends on the draw and the noise level, so read the shape off the curve rather than the caption; the picks below are flagged when one lands on a sweep endpoint instead of a bracketed minimum.</div>
       <svg id="pl-ucurve" width="700" height="190" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
       <div id="pl-readout" style="font-size:13px;margin-top:10px;"></div>
-      <p style="font-size:12px;color:#777;margin-top:10px;">Things to try: (a) set $\lambda$ tiny — the reconstruction is high-frequency garbage of enormous norm, exactly the $s/\sigma_i$ amplification of Section 5; (b) raise the noise — the Picard plateau rises, $i^*$ drops, and the optimal $\lambda$ moves right; (c) widen the PSF — the $\sigma_i$ decay steepens and the recoverable budget shrinks no matter what you do; (d) press "Redraw noise" repeatedly at low noise and watch GCV occasionally collapse to under-smoothing while the discrepancy pick stays put; (e) switch to TSVD and find the $k$ that matches $\lambda \approx \sigma_k$.</p>
+      <p style="font-size:12px;color:#777;margin-top:10px;">Things to try: (a) set $\lambda$ tiny — the reconstruction is high-frequency garbage of enormous norm, exactly the $s/\sigma_i$ amplification of Section 5; (b) raise the noise — the Picard plateau rises, $i^*$ drops, and the optimal $\lambda$ moves right; (c) widen the PSF — the $\sigma_i$ decay steepens and the recoverable budget shrinks no matter what you do; (d) press "Redraw noise" repeatedly at low noise and watch GCV occasionally collapse to under-smoothing while the discrepancy pick stays put; (e) switch to TSVD, set $k$ to the index where $\sigma_k$ is nearest the $\lambda$ you were using, and compare the two reconstructions &mdash; analogous controls, not equal ones (Section 8). At $w = 0.5$, note that GCV pins itself to the smallest $\lambda$ in the sweep and is flagged as an endpoint rather than a bracketed minimum: nothing in the range is a minimum, which is itself the answer.</p>
     </div>
 
     <!-- ===== SECTION 10: GAUSS-NEWTON / LM ===== -->
@@ -668,7 +685,7 @@
       <li><strong>The posterior comes with error bars.</strong> In the linear-Gaussian setting the posterior is fully Gaussian, so regularized inversion silently carries an uncertainty estimate (details in the collapsible below).</li>
     </ul>
 
-    <p><strong>Caveats, stated bluntly:</strong> MAP = Tikhonov requires Gaussian noise <em>and</em> a Gaussian prior; a Laplace/sparsity prior breaks it outright, replacing the quadratic penalty with an $\ell_1$ one. A nonlinear forward model and a positivity constraint do <em>not</em> break it — they give nonlinear Tikhonov (Section 10) and constrained Tikhonov respectively, with the same objective. What linearity is needed for is the <em>Gaussian posterior</em>: only then is the posterior mean the MAP point and the closed-form covariance below valid. And the posterior quantifies uncertainty <em>only within the assumed model</em>: model error — wrong $E$, wrong geometry, the bias term $\mathbf{b}$ of Section 2's spine — is not included in those error bars.</p>
+    <p><strong>Caveats, stated bluntly:</strong> MAP = Tikhonov requires Gaussian noise <em>and</em> a Gaussian prior; a Laplace/sparsity prior breaks it outright, replacing the quadratic penalty with an $\ell_1$ one. A nonlinear forward model and a positivity constraint do <em>not</em> break it — they give nonlinear Tikhonov (Section 10) and constrained Tikhonov respectively, with the same objective. Keep two things apart for the constrained case: with a linear $\mathbf{A}$, positivity-constrained Tikhonov still <em>minimizes a quadratic</em> (it is a bound-constrained quadratic program, solved by projected gradient / active-set methods rather than one factorization), but its solution is no longer a linear function of $\mathbf{b}$, so closed-form filter factors and the Gaussian posterior go, while the objective stays exactly the one above. What linearity is needed for is the <em>Gaussian posterior</em>: only then is the posterior mean the MAP point and the closed-form covariance below valid. And the posterior quantifies uncertainty <em>only within the assumed model</em>: model error — wrong $E$, wrong geometry, the bias term $\mathbf{b}$ of Section 2's spine — is not included in those error bars.</p>
 
     <div class="collapsible">
       <div class="collapsible-header">Full derivation, posterior covariance, and where the field went after 2018</div>
@@ -685,7 +702,7 @@
     <!-- ===== SECTION 12: TAXONOMY ===== -->
     <h2 class="section-heading" id="taxonomy-solid-mechanics">12. A Taxonomy of Inverse Problems in Solid Mechanics</h2>
 
-    <p>Organize the field by <strong>which ingredient of the boundary-value problem is unknown</strong>, everything else given — the organizing scheme of Bonnet &amp; Constantinescu's (2005) review. Read it alongside Section 2's spine, not as a refinement of it: the two partitions cut differently. Classes 1 and 2 map cleanly onto the spine's $\mathbf{f}$ and $\mathbf{p}$; class 3 lumps together $\mathbf{u}$-type shape sensing, the reference-configuration problem $\mathbf{X}_0$ of Module 9, and defect geometry (which is not an argument of $\mathcal{H}$ at all); and class 4's unknown boundary tractions are $\mathbf{f}$ again, but restricted to an inaccessible surface, which is what makes it the severe case.</p>
+    <p>Organize the field by <strong>which ingredient of the boundary-value problem is unknown</strong>, everything else given. The four-class cut below is this guide's own synthesis, not a scheme lifted from a source: Bonnet &amp; Constantinescu's (2005) review, the standard entry point for classes 2 and 3, states its own scope as the identification of distributions of elastic moduli, of model parameters, and of buried objects such as cracks. Read the four classes alongside Section 2's spine, not as a refinement of it: the two partitions cut differently. Classes 1 and 2 map cleanly onto the spine's $\mathbf{f}$ and $\mathbf{p}$; class 3 lumps together $\mathbf{u}$-type shape sensing, the reference-configuration problem $\mathbf{X}_0$ of Module 9, and defect geometry (which is not an argument of $\mathcal{H}$ at all); and class 4's unknown boundary tractions are $\mathbf{f}$ again, but restricted to an inaccessible surface, which is what makes it the severe case.</p>
 
     <div class="figure-container">
       <svg viewBox="0 0 700 470" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;" xmlns="http://www.w3.org/2000/svg">
@@ -748,9 +765,9 @@
         <!-- footer -->
         <rect x="15" y="418" width="670" height="38" rx="6" fill="#f5f8ff" stroke="#1565c0"/>
         <text x="350" y="437" text-anchor="middle" font-size="12" font-weight="600" fill="#1565c0">after discretization + linearization, all four admit a regularized least-squares form</text>
-        <text x="350" y="451" text-anchor="middle" font-size="10" fill="#5a7fa8">geometric (level-set) and sparsity/positivity formulations leave it &#8212; Sections 11&#8211;12</text>
+        <text x="350" y="451" text-anchor="middle" font-size="10" fill="#5a7fa8">geometric (level-set) and sparsity/&#8467;&#8321; formulations leave it; a positivity constraint does not &#8212; Sections 11&#8211;12</text>
       </svg>
-      <div class="figure-caption">Four classes of inverse problem in solid mechanics, organized by the unknown ingredient — the scheme follows Bonnet &amp; Constantinescu (2005), whose review covers elastic-moduli and parameter identification, buried defects, and the Cauchy/data-completion problem. Placing strain-based shape sensing (iFEM) as the benign member of class 3, and the comparative severity ranking across the four cards, are this guide's own reading; the review discusses neither.</div>
+      <div class="figure-caption">Four classes of inverse problem in solid mechanics, organized by the unknown ingredient. The four-class cut, the placement of strain-based shape sensing (iFEM) as the benign member of class 3, and the comparative severity ranking across the cards are all this guide's own reading. Bonnet &amp; Constantinescu (2005) is the reference for classes 2 and 3 — its stated scope is elastic-moduli distributions, model parameters, and buried objects such as cracks — and it neither organizes the field into these four cards nor supplies the severity ranking.</div>
     </div>
 
     <h3 class="subsection-heading">Class 1 — Load Identification</h3>
@@ -759,23 +776,23 @@
     <p>with $\mathbf{A}$ an influence/transfer matrix assembled from the FE model (columns = responses to unit loads) — directly a linear discrete ill-posed problem to which Sections 4&ndash;9 apply verbatim. Ill-posedness worsens with sensor-to-load distance (Saint-Venant smoothing, Section 1). Dynamic variants add time deconvolution on top; Liu et al. (2022) review the frequency- and time-domain machinery, the ill-posedness handling, and the ML variants. Contact-force-map reconstruction in tactile skin is squarely this class.</p>
 
     <h3 class="subsection-heading">Class 2 — Material / Parameter Identification</h3>
-    <p>Constitutive parameters or spatial modulus fields unknown. The response is generally <em>nonlinear</em> in the parameters even when the physics is linear, so the problem is solved iteratively — each Gauss&ndash;Newton step (Section 10) is a regularized linear least-squares problem in the parameter update. For full-field data the method families are FEMU (finite element model updating), the constitutive equation gap, the virtual fields method, the equilibrium gap, and the reciprocity gap (Avril et al. 2008). Römer et al. (2025) recast these as <strong>reduced</strong> (a forward solver in the loop) versus <strong>all-at-once</strong> (field and parameters jointly unknown) formulations, with PINN-type approaches in the all-at-once family. Elastography / elasticity imaging is the field-identification version of this class.</p>
+    <p>Constitutive parameters or spatial modulus fields unknown. The response is generally <em>nonlinear</em> in the parameters even when the physics is linear, so the problem is solved iteratively — each Gauss&ndash;Newton step (Section 10) is a regularized linear least-squares problem in the parameter update. For full-field data the method families are FEMU (finite element model updating), the constitutive equation gap, the virtual fields method, the equilibrium gap, and the reciprocity gap (Avril et al. 2008). Römer et al. (2025) recast these as <strong>reduced</strong> (a forward solver in the loop) versus <strong>all-at-once</strong> (field and parameters jointly unknown) formulations. PINNs land on both sides of that cut in their treatment: the conventional "inverse PINN", which identifies material and network parameters simultaneously, belongs to the all-at-once family, while a <em>parametric</em> PINN — one taking the material parameters as extra network inputs — is a surrogate forward model and therefore supports a reduced formulation. Elastography / elasticity imaging is the field-identification version of this class.</p>
 
     <h3 class="subsection-heading">Class 3 — Shape, Configuration, and Defect Identification</h3>
     <p>Unknown geometry. The hard direction: cracks, voids, inclusions — nonlinear, handled with adjoint fields, level sets, and topological derivatives. The benign direction: <strong>shape sensing</strong> — reconstructing the deformed configuration from discrete strain measurements. This is where iFEM lives (Module 4): a variational least-squares <em>state-reconstruction</em> problem, much better conditioned than the other classes — but still an inverse problem, with observability that depends on sensor placement.</p>
 
     <h3 class="subsection-heading">Class 4 — Boundary-Condition Identification</h3>
-    <p>Unknown tractions or displacements on an inaccessible boundary, from overdetermined data on the accessible part — the Cauchy problem of elasticity. Severely (exponentially) ill-posed; regularization is indispensable, not optional (Bonnet &amp; Constantinescu 2005).</p>
+    <p>Unknown tractions or displacements on an inaccessible boundary, from overdetermined data on the accessible part — the Cauchy problem of elasticity. Severely ill-posed: it is the elasticity analogue of Hadamard's Cauchy problem for Laplace's equation, whose boundary perturbations of spatial frequency $k$ are amplified like $e^{k}$ (Hadamard 1923; Section 3). Regularization is indispensable, not optional.</p>
 
     <div class="insight-box">
       <div class="box-label">Key insight</div>
-      <div>After discretization and linearization, every class <em>whose misfit is a squared residual with a quadratic penalty</em> funnels through the same regularized least-squares machinery of this module; what then changes between classes is the <em>conditioning</em> of the resulting operator and the <em>prior</em> that is defensible, not the mathematics of the solve. The exceptions are flagged on this page where they arise: edge-preserving and $\ell_1$/positivity-constrained formulations (Section 11) and the geometric ones — level sets, topological derivatives (class 3) — give estimators that are not quadratic and not linear in $\mathbf{b}$, and they leave this machinery behind.</div>
+      <div>After discretization and linearization, every class <em>whose misfit is a squared residual with a quadratic penalty</em> funnels through the same regularized least-squares machinery of this module; what then changes between classes is the <em>conditioning</em> of the resulting operator and the <em>prior</em> that is defensible, not the mathematics of the solve. The exceptions are flagged on this page where they arise, and they are not all the same size. A positivity constraint keeps the quadratic objective and only makes the estimator nonlinear in $\mathbf{b}$: the same functional, solved as a bound-constrained quadratic program. What genuinely leaves this machinery behind is a non-quadratic objective — edge-preserving and $\ell_1$/sparsity penalties (Section 11) and the geometric formulations, level sets and topological derivatives (class 3).</div>
     </div>
 
     <!-- ===== INTERACTIVE: OBSERVABILITY & SENSOR PLACEMENT LAB ===== -->
     <div class="interactive-container" id="observability-lab">
       <div class="interactive-label">Interactive Tool — Observability, Rank &amp; Nullspace Lab</div>
-      <p style="font-size:13px;color:#555;margin-bottom:12px;">A toy load-identification problem, live: 16 unknown contact-pressure patches on a soft skin, sensed by markers you place at depth $h$ (click the slots to toggle sensors). The influence of each patch spreads over a width $\approx h$ — Saint-Venant smoothing made tangible. Watch the singular spectrum, the invisible mode, and the LS vs. Tikhonov reconstructions react to every change.  <em>What this lab is for:</em> reading rank, nullspaces and conditioning off an SVD &mdash; the diagnostic vocabulary of this module. Sensor <em>placement optimization</em> as a design discipline (budgets, genetic search, withheld-sensor scoring) is Module 6&rsquo;s subject; here, moving sensors is simply the fastest way to watch the spectrum move.</p>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">A toy load-identification problem, live: 16 unknown contact-pressure patches on a soft skin, sensed by markers you place at depth $h$ (click the slots to toggle sensors). The influence of each patch spreads over a width $\approx h$ — Saint-Venant smoothing made tangible. Watch the singular spectrum, the least-observable mode, and the LS vs. Tikhonov reconstructions react to every change.  <em>What this lab is for:</em> reading rank, nullspaces and conditioning off an SVD &mdash; the diagnostic vocabulary of this module. Sensor <em>placement optimization</em> as a design discipline (budgets, genetic search, withheld-sensor scoring) is Module 6&rsquo;s subject; here, moving sensors is simply the fastest way to watch the spectrum move.</p>
       <div class="slider-group">
         <div class="slider-control">
           <label><span>embedding depth $h$</span> <span id="ob-h-val">1.5</span></label>
@@ -813,7 +830,7 @@
               <svg id="ob-spec" width="225" height="170" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
             </div>
             <div style="flex:1;min-width:210px;">
-              <div style="font-size:10px;color:#888;margin-bottom:2px;">Hardest-to-see mode v&#8345; (smallest &#963;)</div>
+              <div style="font-size:10px;color:#888;margin-bottom:2px;">Least-observable mode v&#7523; (smallest <em>nonzero</em> &#963;)</div>
               <svg id="ob-null" width="225" height="170" style="border:1px solid #e0e0e0;border-radius:6px;background:#fff;display:block;max-width:100%;"></svg>
             </div>
           </div>
@@ -823,7 +840,7 @@
         <div id="ob-panel" style="flex:0 0 215px;min-width:200px;background:#fff;border:1px solid #d5dde5;border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.55;"></div>
       </div>
       <div id="ob-readout" style="font-size:13px;margin-top:10px;"></div>
-      <p style="font-size:12px;color:#777;margin-top:10px;">Things to try: (a) "8 clustered" vs "8 spread" — same sensor count, wildly different conditioning: information is about <em>geometry</em>, not just quantity. Both layouts see only 8 of the 16 patch directions, so $\kappa_2(\mathbf{A})$ reads $\infty$ for both; the number that separates them is the observable-subspace ratio $\sigma_1/\sigma_r$ in the panel — about 7 spread against about 1900 clustered; (b) increase the depth $h$ — the singular values collapse and the invisible mode becomes smoother: deeper sensing loses finer detail; (c) note that every 8-sensor preset is <em>already</em> rank-deficient (8 observable directions, 16 unknowns), so plain LS has a genuine nullspace before you touch anything; dropping to "4 sparse" only grows it from 8 to 12 dimensions, and "all 20" is the one layout with full rank 16 and a finite $\kappa \approx 1\times10^4$; (d) switch Plain LS &#8596; Tikhonov at 1% noise and watch the amplified-garbage vs. biased-but-stable trade; (e) switch to correlated noise — the reconstruction degrades <em>at the same noise level</em>, because smooth noise masquerades as signal in exactly the components the filter keeps. At and above a sensibly chosen $\lambda$ the narrow central spike of the true pressure comes out attenuated: that is the resolution limit and bias of Section 8, not a bug. Push $\lambda$ to the left end on "all 20" and you get the opposite failure — the estimate rings and overshoots the true peak by an order of magnitude.</p>
+      <p style="font-size:12px;color:#777;margin-top:10px;">Things to try: (a) "8 clustered" vs "8 spread" — same sensor count, wildly different conditioning: information is about <em>geometry</em>, not just quantity. Both layouts see only 8 of the 16 patch directions, so $\kappa_2(\mathbf{A})$ reads $\infty$ for both; the number that separates them is the observable-subspace ratio $\sigma_1/\sigma_r$ in the panel — about 7 spread against about 1900 clustered; (b) increase the depth $h$ — read the spectrum panel carefully, it plots the <em>normalized</em> $\sigma_i/\sigma_1$: $\sigma_1$ itself rises with $h$ (each sensor integrates more of the surface), while the normalized tail collapses, so what deepening actually does is worsen the conditioning of the observable subspace. Deeper sensing loses finer detail; (c) note that every 8-sensor preset is <em>already</em> rank-deficient (8 observable directions, 16 unknowns), so plain LS has a genuine nullspace before you touch anything; dropping to "4 sparse" only grows it from 8 to 12 dimensions, and at the default depth "all 20" is the one layout with full rank 16 and a finite $\kappa \approx 1\times10^4$; (d) switch Plain LS &#8596; Tikhonov at 1% noise and watch the amplified-garbage vs. biased-but-stable trade; (e) switch to correlated noise — the per-sample noise level is unchanged, but the contamination moves into the smooth, well-observed modes. Do not expect the picture to get worse: in a smoothing forward map it is the <em>white</em> draw that puts energy into the small-$\sigma$ directions where inversion amplifies it, so at these settings the correlated draw usually reconstructs <em>better</em>. What correlation breaks is the diagnostics — GCV's white-noise assumption, the discrepancy target, and residual-whiteness checks are all mis-calibrated now (Sections 4 and 9). It is a threat to your error bars and your parameter choice before it is a threat to the picture. At and above a sensibly chosen $\lambda$ the narrow central spike of the true pressure comes out attenuated: that is the resolution limit and bias of Section 8, not a bug. Push $\lambda$ to the left end on "all 20" and you get the opposite failure — the estimate rings and overshoots the true peak by an order of magnitude.</p>
     </div>
 
     <!-- ===== SECTION 13: PRACTICAL WORKFLOW ===== -->
@@ -832,12 +849,14 @@
     <p>A field recipe consolidating the module. Follow it in order; each step is cheap compared to debugging its omission.</p>
 
     <ol>
-      <li><strong>Scale first.</strong> Non-dimensionalize the rows by dividing each by its sensor channel's noise standard deviation (whitening, Section 4). Non-dimensionalize the columns by the change of variables $\mathbf{x} = \mathbf{D}\mathbf{z}$, $\mathbf{D} = \operatorname{diag}(c_1,\dots,c_n)$ with $c_j$ the characteristic magnitude of unknown $j$: solve for $\mathbf{z}$ in $\mathbf{A}\mathbf{D}$ — i.e. <em>multiply</em> column $j$ by $c_j$, not divide — then recover $\mathbf{x}=\mathbf{D}\mathbf{z}$, and transform the penalty operator to $\mathbf{L}\mathbf{D}$ to match. Conditioning and the SVD are <em>not</em> scale-invariant: a $\kappa = 10^9$ that drops to $10^3$ after sensible scaling was a units problem, not an ill-posed problem.</li>
+      <li><strong>Scale first.</strong> Whiten the rows: multiply $\mathbf{A}$ and $\mathbf{b}$ by $\mathbf{C}^{-1/2}$ (Section 4). Dividing each row by its sensor channel's noise standard deviation is the <em>diagonal special case</em> — it equalizes variances and leaves every correlation in place, so for camera-derived data with spatially correlated noise it is not whitening and does not license the clean statements that follow. Non-dimensionalize the columns by the change of variables $\mathbf{x} = \mathbf{D}\mathbf{z}$, $\mathbf{D} = \operatorname{diag}(c_1,\dots,c_n)$ with $c_j$ the characteristic magnitude of unknown $j$: solve for $\mathbf{z}$ in $\mathbf{A}\mathbf{D}$ — i.e. <em>multiply</em> column $j$ by $c_j$, not divide — then recover $\mathbf{x}=\mathbf{D}\mathbf{z}$, and transform the penalty operator to $\mathbf{L}\mathbf{D}$ to match. Conditioning and the SVD are <em>not</em> scale-invariant: a $\kappa = 10^9$ that drops to $10^3$ after sensible scaling was a units problem, not an ill-posed problem.</li>
       <li><strong>Compute the SVD</strong> of the scaled $\mathbf{A}$ and classify the spectrum (Section 5): flat &#8594; ordinary least squares, stop here; gap &#8594; rank-deficient, TSVD at the gap; gradual decay &#8594; discrete ill-posed, continue.</li>
       <li><strong>Picard plot</strong> with real data (Section 6); read off the crossing index $i^*$ = number of recoverable components. If $i^*$ is far below the number of unknowns, consider re-parameterizing coarser — fewer basis functions for the pressure field — instead of fighting with heavy regularization.</li>
       <li><strong>Choose $\mathbf{L}$ from prior physics</strong> (Section 7): identity for magnitude, gradient/Laplacian for smoothness; check that null$(\mathbf{L})$ is observable through $\mathbf{A}$.</li>
-      <li><strong>Sweep $\lambda$</strong> over 50&ndash;100 log-spaced values spanning $[\sigma_n, \sigma_1]$ padded a couple of decades either side (so a criterion cannot silently return an endpoint); evaluate discrepancy (if $\delta$ is known), L-curve corner, and GCV (Section 9); compare the selected $\lambda$'s and inspect the corresponding solutions side by side.</li>
-      <li><strong>Validate honestly.</strong> (a) <em>Residual check:</em> after whitening, the residual should look like sensor noise — but compare it against what the fit itself does to the noise, not against raw white noise. With hat matrix $\mathbf{H}_\lambda$, $\operatorname{cov}(\mathbf{r}) = \sigma^2(\mathbf{I}-\mathbf{H}_\lambda)(\mathbf{I}-\mathbf{H}_\lambda)^\mathsf{T} \neq \sigma^2\mathbf{I}$, and $\mathbb{E}\|\mathbf{r}\|^2 = \sigma^2(m - \text{effective DOF})$, not $\sigma^2 m$ — plain full-rank least squares already gives $\sigma^2(m-n)$. Structure <em>beyond</em> what the hat matrix predicts means model error (the bias term $\mathbf{b}$ of Section 2's spine). (b) <em>Withheld data:</em> hold out sensors or whole loading cases from the fit and score the reconstruction on predicting them — a solution that only explains the data it was fitted to has explained nothing. (c) <em>No inverse crimes</em> (box below). (d) <em>Report the bias:</em> at the $\lambda$ you actually selected, Tikhonov attenuates narrow peaks and sharpens nothing — state this wherever peak values (e.g. peak contact pressure) are the quantity of interest. (Under-regularized solutions err the other way, ringing and overshooting; check which regime you are in before reporting a direction.)</li>
+      <li><strong>Sweep $\lambda$</strong> over 50&ndash;100 log-spaced values spanning $[\sigma_n, \sigma_1]$ padded a decade or two beyond each end (so a criterion cannot silently return an endpoint), and remember that this range assumes $\mathbf{L}=\mathbf{I}$ — a general $\mathbf{L}$ moves the useful $\lambda$ with its own scaling (Section 7). Evaluate discrepancy (if $\delta$ is known), L-curve corner, and GCV (Section 9); compare the selected $\lambda$'s and inspect the corresponding solutions side by side. Report any pick that landed on an endpoint as unbracketed, and disclose any clamp you put on the low end.</li>
+      <li><strong>Validate honestly.</strong> (a) <em>Residual check:</em> after whitening, the residual should look like sensor noise — but compare it against what the fit itself does to the noise, not against raw white noise. With hat matrix $\mathbf{H}_\lambda$ the residual is $\mathbf{r} = (\mathbf{I}-\mathbf{H}_\lambda)\mathbf{b}$, so $\operatorname{cov}(\mathbf{r}) = \sigma^2(\mathbf{I}-\mathbf{H}_\lambda)(\mathbf{I}-\mathbf{H}_\lambda)^\mathsf{T} \neq \sigma^2\mathbf{I}$ and
+        $$\mathbb{E}\|\mathbf{r}\|_2^2 = \underbrace{\left\|(\mathbf{I}-\mathbf{H}_\lambda)\mathbf{b}_{\mathrm{exact}}\right\|_2^2}_{\text{regularization bias}} + \sigma^2\operatorname{trace}\!\left[(\mathbf{I}-\mathbf{H}_\lambda)(\mathbf{I}-\mathbf{H}_\lambda)^\mathsf{T}\right], \qquad \operatorname{trace}[\cdot] = m - 2\operatorname{trace}\mathbf{H}_\lambda + \operatorname{trace}\mathbf{H}_\lambda^2$$
+        for symmetric $\mathbf{H}_\lambda$ — equivalently $\sigma^2\big[(m-n) + \sum_i (1-f_i)^2\big]$ in filter-factor terms. Use that expression, not $\sigma^2(m-\text{effective DOF})$: the "effective degrees of freedom" shortcut, $\sigma^2(m-\operatorname{trace}\mathbf{H}_\lambda)$, is exact only when $\mathbf{H}_\lambda$ is an orthogonal projection (idempotent), which is plain full-rank least squares, where it gives the familiar $\sigma^2(m-n)$. A regularized $\mathbf{H}_\lambda$ is not idempotent, and at usable $\lambda$ the shortcut can be wrong by tens of percent — enough to turn a healthy residual into a false model-error alarm. Note also what this is <em>not</em>: Morozov's $\tau\delta$ (Section 9.1) is a rule for <em>choosing</em> $\lambda$, not a prediction of the post-fit residual. With the bias term small the fitted residual sits <em>below</em> $\delta$, by the amount the fit absorbed; it climbs back above $\delta$ only when the bias term grows, which is what over-smoothing and model error both look like. Structure <em>beyond</em> what the expression above predicts means model error (the bias term $\mathbf{b}$ of Section 2's spine). (b) <em>Withheld data:</em> hold out sensors or whole loading cases from the fit and score the reconstruction on predicting them — a solution that only explains the data it was fitted to has explained nothing. (c) <em>No inverse crimes</em> (box below). (d) <em>Report the bias:</em> at the $\lambda$ you actually selected, Tikhonov attenuates narrow peaks and sharpens nothing — state this wherever peak values (e.g. peak contact pressure) are the quantity of interest. (Under-regularized solutions err the other way, ringing and overshooting; check which regime you are in before reporting a direction.)</li>
       <li><strong>For repeated real-time inversion</strong> (fixed $\mathbf{A}$, streaming $\mathbf{b}$): precompute the SVD, or the QR/Cholesky factorization of the augmented system at the chosen $\lambda$; the per-frame cost drops to two matrix&ndash;vector products, $O(mn)$.</li>
     </ol>
 
@@ -961,6 +980,10 @@
     // narrow for well-conditioned kernels (small w): there the whole sweep sits in
     // the over-regularized regime, so neither the discrepancy crossing nor the true
     // optimum is bracketed. Pad two decades below sigma_n and one above sigma_1.
+    // sigma_n can be pure roundoff (w = 4 gives ~3e-17), so the low end is clamped at
+    // 1e-12. That clamp is disclosed in the readout whenever it bites -- an undisclosed
+    // floor turns "no crossing in range" into a range artefact nobody can see.
+    var lamFloorHit = sig[n-1]<1e-10;
     var lo=Math.max(sig[n-1],1e-10)*1e-2, hi=sig[0]*10;
     var lams=[]; for(i=0;i<60;i++) lams.push(Math.pow(10, Math.log10(lo)+(Math.log10(hi)-Math.log10(lo))*i/59));
     function evalParams(phiOf){
@@ -1009,7 +1032,7 @@
     var cutIdx;
     if(isK){ cutIdx=state.k; }
     else { cutIdx=n; for(i=0;i<n;i++){ if(sig[i]<params[iCur]){ cutIdx=i; break; } } }
-    return { modes:modes, sig:sig, beta:beta, s:s, delta:delta, b:b, x:x, xtn:xtn,
+    return { modes:modes, sig:sig, beta:beta, s:s, delta:delta, b:b, x:x, xtn:xtn, lamFloorHit:(isK?false:lamFloorHit),
              params:params, sweep:sweep, isK:isK, iCur:iCur, iOpt:iOpt, iGcv:iGcv, iDsc:iDsc, cur:cur, cutIdx:cutIdx };
   }
 
@@ -1095,8 +1118,9 @@
       s+='<line x1="'+X(idx)+'" y1="'+T+'" x2="'+X(idx)+'" y2="'+B+'" stroke="'+color+'" stroke-width="1.1" stroke-dasharray="2,3"/>';
       s+='<text x="'+X(idx)+'" y="'+(T+dy)+'" text-anchor="middle" font-size="9.5" font-weight="600" fill="'+color+'">'+label+'</text>';
     }
-    mark(r.iOpt,'#2e7d32','oracle',10);
-    mark(r.iGcv,'#7b1fa2','GCV',22);
+    function endp(idx){ return (idx===0||idx===N-1) ? ' (endpoint)' : ''; }
+    mark(r.iOpt,'#2e7d32','oracle'+endp(r.iOpt),10);
+    mark(r.iGcv,'#7b1fa2','GCV'+endp(r.iGcv),22);
     if(r.iDsc>=0) mark(r.iDsc,'#333','discrepancy',34);
     else s+='<text x="'+((L+R)/2)+'" y="'+(T+34)+'" text-anchor="middle" font-size="9.5" font-weight="600" fill="#333">discrepancy: no crossing in the swept range</text>';
     s+='<circle cx="'+X(r.iCur)+'" cy="'+Y(errs[r.iCur])+'" r="4.5" fill="#1565c0"/>';
@@ -1115,14 +1139,20 @@
     var eq = r.isK
       ? '$$\\mathbf{x}_k = \\sum_{i=1}^{k} \\frac{\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}}{\\sigma_i}\\,\\mathbf{v}_i, \\qquad k = '+parVal+', \\qquad \\frac{\\|\\mathbf{x}_k-\\mathbf{x}_{\\mathrm{true}}\\|}{\\|\\mathbf{x}_{\\mathrm{true}}\\|} = '+fmtPlain(r.cur.err/r.xtn)+'$$'
       : '$$\\mathbf{x}_\\lambda = \\sum_{i=1}^{n} f_i\\,\\frac{\\mathbf{u}_i^\\mathsf{T}\\mathbf{b}}{\\sigma_i}\\,\\mathbf{v}_i, \\quad f_i = \\frac{\\sigma_i^2}{\\sigma_i^2+\\lambda^2}, \\qquad \\lambda = '+parVal+', \\qquad \\frac{\\|\\mathbf{x}_\\lambda-\\mathbf{x}_{\\mathrm{true}}\\|}{\\|\\mathbf{x}_{\\mathrm{true}}\\|} = '+fmtPlain(r.cur.err/r.xtn)+'$$';
+    var NP=r.sweep.length;
+    // A minimum sitting on the first or last swept value was never bracketed: the sweep
+    // ran out before the criterion turned around. Say so instead of dressing it up.
+    var endTag=function(i){ return (i===0||i===NP-1) ? ' <span style="color:#c62828;">(endpoint &mdash; unbracketed, extend the range)</span>' : ''; };
     var pk=function(i){ return r.isK ? ('k='+r.params[i]) : ('&#955;='+fmt(r.params[i])); };
-    var dscPick = r.iDsc>=0 ? pk(r.iDsc) : '<span style="color:#888;">no crossing in range</span>';
+    var dscPick = r.iDsc>=0 ? pk(r.iDsc)+endTag(r.iDsc) : '<span style="color:#888;">no crossing in range</span>';
     var dscErr  = r.iDsc>=0 ? fmt(r.sweep[r.iDsc].err/r.xtn) : '<span style="color:#888;">&mdash;</span>';
     ro.innerHTML = eq +
       '<table style="margin-top:6px;"><tr><th></th><th>current</th><th>discrepancy (&#964;=1.05, uses &#948;='+fmt(r.delta)+')</th><th>GCV (blind)</th><th>oracle (cheats)</th></tr>' +
-      '<tr><td><strong>pick</strong></td><td>'+pk(r.iCur)+'</td><td>'+dscPick+'</td><td>'+pk(r.iGcv)+'</td><td>'+pk(r.iOpt)+'</td></tr>' +
+      '<tr><td><strong>pick</strong></td><td>'+pk(r.iCur)+'</td><td>'+dscPick+'</td><td>'+pk(r.iGcv)+endTag(r.iGcv)+'</td><td>'+pk(r.iOpt)+endTag(r.iOpt)+'</td></tr>' +
       '<tr><td><strong>rel. error</strong></td><td>'+fmt(r.cur.err/r.xtn)+'</td><td>'+dscErr+'</td><td>'+fmt(r.sweep[r.iGcv].err/r.xtn)+'</td><td>'+fmt(r.sweep[r.iOpt].err/r.xtn)+'</td></tr></table>' +
-      '<div style="margin-top:4px;color:#555;">residual $\\|\\mathbf{A}\\mathbf{x}-\\mathbf{b}\\|_2$ = '+fmt(r.cur.res)+' &nbsp;&middot;&nbsp; solution norm $\\|\\mathbf{x}\\|_2$ = '+fmt(r.cur.nrm)+' &nbsp;&middot;&nbsp; noise norm $\\delta$ = '+fmt(r.delta)+' &nbsp;&middot;&nbsp; per-sample std $s$ = '+fmt(r.s)+'</div>';
+      '<div style="margin-top:4px;color:#555;">residual $\\|\\mathbf{A}\\mathbf{x}-\\mathbf{b}\\|_2$ = '+fmt(r.cur.res)+' &nbsp;&middot;&nbsp; solution norm $\\|\\mathbf{x}\\|_2$ = '+fmt(r.cur.nrm)+' &nbsp;&middot;&nbsp; noise norm $\\delta$ = '+fmt(r.delta)+' &nbsp;&middot;&nbsp; per-sample std $s$ = '+fmt(r.s)+'</div>' +
+      '<div style="margin-top:4px;color:#555;">sweep: '+(r.isK?'k = 1 &hellip; '+n:'&#955; from '+fmt(r.params[0])+' to '+fmt(r.params[NP-1])+' (two decades below &#963;&#8345;, one above &#963;&#8321;)')+
+      (r.lamFloorHit?' &mdash; <span style="color:#c62828;">&#963;&#8345; is at the roundoff level here, so the low end of the sweep is clamped at 10<sup>&#8722;12</sup>, not at &#963;&#8345;/100</span>':'')+'</div>';
     if (typeof renderMath === 'function') renderMath(ro);
   }
 
@@ -1210,6 +1240,11 @@
     order.sort(function(a,b){ return eg.d[b]-eg.d[a]; });
     var sig=order.map(function(ix){ return Math.sqrt(Math.max(eg.d[ix],0)); });
     var Vc=order.map(function(ix){ var col=[]; for(var k2=0;k2<n;k2++) col.push(eg.V[k2][ix]); return col; });
+    // rank(A) <= min(m,n), always. A is squared into AtA before the eigensolve, so the
+    // eigenvalues past index m-1 are pure roundoff and their square roots land right at
+    // the sqrt(eps) tolerance below -- which used to report rank 6 for four sensors.
+    // Zero them: they are known a priori to be exactly 0.
+    for(i=Math.min(m,n);i<n;i++) sig[i]=0;
     // data
     var bex=A.map(function(row){ var s3=0; for(var jj=0;jj<n;jj++) s3+=row[jj]*ptrue[jj]; return s3; });
     var bmax=0; for(i=0;i<m;i++) bmax=Math.max(bmax,Math.abs(bex[i]));
@@ -1232,21 +1267,26 @@
     // reconstruction
     var lam = state.mode==='tik' ? Math.pow(10,state.lamExp)*(sig[0]||1) : 0;
     var x=new Array(n).fill(0);
-    var rank=0;
+    var rank=0, trH=0, trH2=0;
     for(i=0;i<n;i++){
       if(sig[i]>TOL*(sig[0]||1)) rank++;
       // Use the SAME tolerance the rank readout and the "dead mode" markers use.
-      // A is squared into AtA before the eigensolve, so ratios below sqrt(eps) are
-      // pure roundoff: inverting them returns garbage, not a reconstruction.
       if(sig[i]<=TOL*(sig[0]||1)) continue;
-      // u_i^T b = (A v_i . b)/sigma_i
+      // (A v_i) . b = sigma_i * (u_i^T b): keep it in this form and never divide by
+      // sigma_i only to multiply it back -- the Tikhonov coefficient is sigma-free.
       var Av=[], k3;
       for(k3=0;k3<m;k3++){ var s4=0; for(j=0;j<n;j++) s4+=A[k3][j]*Vc[i][j]; Av.push(s4); }
-      var uib=0; for(k3=0;k3<m;k3++) uib+=Av[k3]*b[k3];
-      uib/=sig[i];
-      var coef = state.mode==='tik' ? sig[i]*uib/(sig[i]*sig[i]+lam*lam) : uib/sig[i];
+      var Avb=0; for(k3=0;k3<m;k3++) Avb+=Av[k3]*b[k3];
+      var coef = state.mode==='tik' ? Avb/(sig[i]*sig[i]+lam*lam) : Avb/(sig[i]*sig[i]);
+      var fi = state.mode==='tik' ? sig[i]*sig[i]/(sig[i]*sig[i]+lam*lam) : 1;
+      trH+=fi; trH2+=fi*fi;
       for(j=0;j<n;j++) x[j]+=coef*Vc[i][j];
     }
+    // E||r||^2 = ||(I-H)b_exact||^2 + s^2 tr[(I-H)(I-H)^T]; the noise part of that,
+    // s*sqrt(m - 2 tr H + tr H^2), is the residual a correct model leaves behind.
+    // NOT s*sqrt(m) (= the noise norm) and NOT s*sqrt(m - tr H) (the "effective DOF"
+    // shortcut, exact only for an idempotent H, i.e. plain least squares).
+    var resNoise = s*Math.sqrt(Math.max(m-2*trH+trH2,0));
     // residual and errors
     var res2=0;
     for(i=0;i<m;i++){ var pr=0; for(j=0;j<n;j++) pr+=A[i][j]*x[j]; res2+=Math.pow(pr-b[i],2); }
@@ -1257,6 +1297,7 @@
     var last=0; for(i=0;i<n;i++) if(sig[i]>TOL*(sig[0]||1)) last=i;
     var kappaObs = (sig[last]>0) ? sig[0]/sig[last] : Infinity;
     return { act:act, m:m, A:A, sig:sig, Vc:Vc, s:s, delta:delta, b:b, x:x, lam:lam, rank:rank, kappa:kappa, kappaObs:kappaObs,
+             trH:trH, trH2:trH2, resNoise:resNoise,
              res:Math.sqrt(res2), relerr:Math.sqrt(errN/ptN) };
   }
 
@@ -1332,7 +1373,11 @@
 
   function drawNull(r){
     var L=14,R=215,T=16,B=140, s='', i;
-    var v=r.Vc[n-1];
+    // Show the LAST OBSERVABLE right singular vector. v_n is not a well-defined object
+    // when the layout is rank-deficient: the nullspace is (n - rank)-dimensional and the
+    // eigensolver returns an arbitrary basis for it, whose "smoothness" is meaningless.
+    var iv=Math.max(0,Math.min(r.rank-1,n-1));
+    var v=r.Vc[iv];
     var mid=(T+B)/2;
     s+='<line x1="'+L+'" y1="'+mid+'" x2="'+R+'" y2="'+mid+'" stroke="#ddd"/>';
     var bw=(R-L)/n;
@@ -1342,8 +1387,11 @@
       var yy=hh>0?mid-hh:mid;
       s+='<rect x="'+(L+i*bw+1).toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+Math.abs(hh).toFixed(1)+'" fill="#7b1fa2" opacity="0.8"/>';
     }
-    var lbl = (r.sig[n-1]<=TOL*(r.sig[0]||1)) ? 'invisible (in the nullspace: &#963; &#8776; 0)' : 'barely visible: &#963;&#8345;/&#963;&#8321; = '+fmt(r.sig[n-1]/(r.sig[0]||1));
+    var lbl = 'barely visible: &#963;&#7523;/&#963;&#8321; = '+fmt(r.sig[iv]/(r.sig[0]||1));
     s+='<text x="'+((L+R)/2)+'" y="'+(B+16)+'" text-anchor="middle" font-size="9" fill="#666">'+lbl+'</text>';
+    if(r.rank<n){
+      s+='<text x="'+((L+R)/2)+'" y="'+(B+27)+'" text-anchor="middle" font-size="8.5" fill="#c62828">+ a '+(n-r.rank)+'-dim nullspace, every direction in it equally invisible</text>';
+    }
     document.getElementById('ob-null').innerHTML=s;
   }
 
@@ -1373,7 +1421,7 @@
       + head('Assumed known') + 'geometry &amp; depth; influence matrix A (calibrated forward model); noise level; '+prior
       + head('Rank / conditioning') + 'rank '+r.rank+' / '+n+'; &#954;&#8322;(A) = '+kap
       + '<br>&#963;&#8321;/&#963;&#7523; = '+fmt(r.kappaObs)+' <span style="color:#888;">(conditioning on the '+r.rank+' observable directions &mdash; the number to compare across sensor layouts)</span>'
-      + head('Validation') + 'residual = '+fmt(r.res)+' vs. noise norm &#948; = '+fmt(r.delta)+'<br>oracle rel. error = '+fmt(r.relerr)+' <span style="color:#888;">(known only because this is synthetic)</span>';
+      + head('Validation') + 'residual = '+fmt(r.res)+' vs. noise-only expectation '+fmt(r.resNoise)+' <span style="color:#888;">(not &#948; = '+fmt(r.delta)+'; the fit absorbs part of the noise)</span><br>oracle rel. error = '+fmt(r.relerr)+' <span style="color:#888;">(known only because this is synthetic)</span>';
   }
 
   function update(){
@@ -1383,8 +1431,10 @@
     document.getElementById('ob-lam-val').innerHTML = state.mode==='tik' ? fmt(r.lam) : '&mdash;';
     var ro=document.getElementById('ob-readout');
     ro.innerHTML = '<strong>'+(state.mode==='tik'?'Tikhonov':'Plain LS')+'</strong>: rel. error '+fmt(r.relerr)
-      + ' &nbsp;&middot;&nbsp; residual '+fmt(r.res)+' (target &#8776; &#948; = '+fmt(r.delta)+')'
-      + ' &nbsp;&middot;&nbsp; a residual far <em>below</em> &#948; means the model is fitting noise; far above, it is missing signal or the model is wrong. (Compare against &#948;&#8730;(1&#8722;DOF/m), not &#948; itself: the fit removes what it can explain, so even a correct model leaves a residual short of the full noise norm &mdash; and with fewer sensors than unknowns it can reach zero.)';
+      + ' &nbsp;&middot;&nbsp; residual '+fmt(r.res)
+      + ' &nbsp;&middot;&nbsp; expected from noise alone, <em>s</em>&#8730;(m &#8722; 2&#183;tr H<sub>&#955;</sub> + tr H<sub>&#955;</sub>&#178;) = '+fmt(r.resNoise)
+      + ' &nbsp;&middot;&nbsp; noise norm &#948; = '+fmt(r.delta)
+      + '<br><span style="color:#555;">Compare the residual against that middle number, not against &#948;. The fit absorbs part of the noise, so even a perfect model lands below the noise norm &mdash; here tr H<sub>&#955;</sub> = '+fmt(r.trH)+', tr H<sub>&#955;</sub>&#178; = '+fmt(r.trH2)+', and with fewer sensors than unknowns plain LS interpolates the data, driving both the residual and its expectation to zero. Far below the target means the fit is chasing noise; far above means bias (over-smoothing) or a wrong model &mdash; any excess is the regularization bias &#8214;(I&#8722;H<sub>&#955;</sub>)b<sub>exact</sub>&#8214; plus model error. Morozov&#8217;s &#964;&#948; (Section 9.1) is a rule for <em>choosing</em> &#955;, not a prediction of this residual.</span>';
   }
 
   function styleToggle(onBtn, offBtn){
@@ -1450,14 +1500,14 @@
     {
       tab: '5. Regularize',
       title: 'Step 5: Choose L, Sweep λ, Cross-Check the Criteria',
-      text: 'Pick $\\mathbf{L}$ from prior physics (identity for magnitude, gradient/Laplacian for smoothness — and check null$(\\mathbf{L})$ is observable through $\\mathbf{A}$). Sweep 50–100 log-spaced $\\lambda$ values across $[\\sigma_n, \\sigma_1]$, padded a couple of decades either side so no criterion can return an endpoint by default, and evaluate all three: discrepancy (needs $\\delta = \\|\\mathbf{e}\\| \\approx s\\sqrt{m}$ — not $s$!), L-curve corner (on log-log axes), and GCV (assumes white noise).',
+      text: 'Pick $\\mathbf{L}$ from prior physics (identity for magnitude, gradient/Laplacian for smoothness — and check null$(\\mathbf{L})$ is observable through $\\mathbf{A}$; what a discrete Laplacian has in its nullspace depends on its boundary rows). Sweep 50–100 log-spaced $\\lambda$ values across $[\\sigma_n, \\sigma_1]$, padded a decade or two beyond each end so no criterion can return an endpoint by default, and evaluate all three: discrepancy (needs $\\delta = \\|\\mathbf{e}\\| \\approx s\\sqrt{m}$ — not $s$!), L-curve corner (on log-log axes), and GCV (assumes white noise). The $[\\sigma_n,\\sigma_1]$ bracket is calibrated to $\\mathbf{L}=\\mathbf{I}$: rescaling $\\mathbf{L}$ by $c$ moves the useful $\\lambda$ by $1/c$ without touching any $\\sigma_i$, so for a general $\\mathbf{L}$ bracket from the generalized singular values of $(\\mathbf{A},\\mathbf{L})$ instead. A pick that lands on an endpoint was not bracketed — report it as such, and disclose any clamp on the low end.',
       visual: '<div class="math-block">$$\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2 = \\tau\\delta \\qquad\\quad \\text{corner of } (\\log\\rho, \\log\\eta) \\qquad\\quad \\min_\\lambda G(\\lambda)$$</div>',
       insight: 'Agreement between the criteria is evidence; disagreement is diagnosis. A GCV pick far below the discrepancy pick usually means positively correlated noise; a wandering corner means slowly decaying singular values — the two L-curve branches are not cleanly separated.'
     },
     {
       tab: '6. Validate',
       title: 'Step 6: Validate Honestly',
-      text: 'Check the residual against what the fit does to the noise, not against raw white noise: $\\operatorname{cov}(\\mathbf{r}) = \\sigma^2(\\mathbf{I}-\\mathbf{H}_\\lambda)(\\mathbf{I}-\\mathbf{H}_\\lambda)^\\mathsf{T}$ and $\\mathbb{E}\\|\\mathbf{r}\\|^2 = \\sigma^2(m-\\text{effective DOF})$, not $\\sigma^2 m$. Structure beyond that is model error. Score the fit on <em>withheld</em> sensors or loading cases, never only on the data it was fitted to. Never commit an inverse crime: synthetic test data must come from a finer or different discretization with realistic noise. And report the bias: at the $\\lambda$ you selected, filtered solutions attenuate narrow peaks (under-regularized ones ring and overshoot instead).',
+      text: 'Check the residual against what the fit does to the noise, not against raw white noise: $\\operatorname{cov}(\\mathbf{r}) = \\sigma^2(\\mathbf{I}-\\mathbf{H}_\\lambda)(\\mathbf{I}-\\mathbf{H}_\\lambda)^\\mathsf{T}$ and $\\mathbb{E}\\|\\mathbf{r}\\|^2 = \\|(\\mathbf{I}-\\mathbf{H}_\\lambda)\\mathbf{b}_{\\mathrm{exact}}\\|^2 + \\sigma^2(m - 2\\operatorname{tr}\\mathbf{H}_\\lambda + \\operatorname{tr}\\mathbf{H}_\\lambda^2)$ — bias plus covariance, not $\\sigma^2 m$ and not the $\\sigma^2(m-\\operatorname{tr}\\mathbf{H}_\\lambda)$ "effective DOF" shortcut, which is exact only for plain least squares where $\\mathbf{H}$ is a projection. And $\\tau\\delta$ is how you <em>chose</em> $\\lambda$ (Step 5), not what the residual should come out at. Structure beyond that is model error. Score the fit on <em>withheld</em> sensors or loading cases, never only on the data it was fitted to. Never commit an inverse crime: synthetic test data must come from a finer or different discretization with realistic noise. And report the bias: at the $\\lambda$ you selected, filtered solutions attenuate narrow peaks (under-regularized ones ring and overshoot instead).',
       visual: '<div class="definition-box"><div class="box-label">Validation checklist</div><div>residual whiteness &nbsp;&#183;&nbsp; withheld-data error &nbsp;&#183;&nbsp; no inverse crime &nbsp;&#183;&nbsp; bias reported</div></div>',
       insight: 'The parameter-choice criteria of Step 5 estimate the optimum <em>inside</em> your model. Only withheld real data tests the model itself — including everything sitting silently in the "assumed known" column of Step 1.'
     }
@@ -1501,11 +1551,11 @@
     },
     {
       q: 'What is GCV’s key advantage over the discrepancy principle, and its two classic failure modes?',
-      a: 'GCV (Golub–Heath–Wahba 1979) minimizes $G(\\lambda)=\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2^2/[\\mathrm{trace}(\\mathbf{I}-\\mathbf{A}\\mathbf{A}_\\lambda^{\\#})]^2$ and needs no noise-level estimate; it is asymptotically optimal for predictive risk under white Gaussian noise, which is an asymptotic result rather than a finite-sample guarantee. It fails (under-smooths badly) for positively correlated noise, and its minimum is often very flat, making it numerically delicate to locate.'
+      a: 'GCV (Golub–Heath–Wahba 1979) minimizes $G(\\lambda)=\\|\\mathbf{A}\\mathbf{x}_\\lambda-\\mathbf{b}\\|_2^2/[\\mathrm{trace}(\\mathbf{I}-\\mathbf{A}\\mathbf{A}_\\lambda^{\\#})]^2$ and needs no noise-level estimate. Its optimality claim is narrower than usually quoted: Golub–Heath–Wahba bound the expectation inefficiency, and that bound approaches 1 only under extra conditions on the influence matrix\'s normalized traces as the problem grows — white Gaussian noise alone is not enough, and it is never a finite-sample guarantee (Section 9.3). It fails (under-smooths badly) for positively correlated noise, and its minimum is often very flat, making it numerically delicate to locate.'
     },
     {
       q: 'Under what assumptions does MAP estimation reduce to Tikhonov regularization, and what is $\\lambda$ then?',
-      a: 'Linear forward model, Gaussian noise $\\mathbf{e}\\sim\\mathcal{N}(\\mathbf{0},\\sigma^2\\mathbf{I})$, Gaussian prior $\\mathbf{x}\\sim\\mathcal{N}(\\mathbf{x}_0,\\gamma^2(\\mathbf{L}^\\mathsf{T}\\mathbf{L})^{-1})$. Then $\\mathbf{x}_{\\mathrm{MAP}}$ is the Tikhonov solution with $\\lambda^2 = \\sigma^2/\\gamma^2$ — the noise-to-prior <em>variance</em> ratio &mdash; so $\\lambda$ itself is the ratio of standard deviations, not a fudge factor.'
+      a: 'Gaussian noise $\\mathbf{e}\\sim\\mathcal{N}(\\mathbf{0},\\sigma^2\\mathbf{I})$ and a Gaussian prior $\\mathbf{x}\\sim\\mathcal{N}(\\mathbf{x}_0,\\gamma^2(\\mathbf{L}^\\mathsf{T}\\mathbf{L})^{-1})$ — that is all. Then $\\mathbf{x}_{\\mathrm{MAP}}$ minimizes a Tikhonov functional with $\\lambda^2 = \\sigma^2/\\gamma^2$, the noise-to-prior <em>variance</em> ratio, so $\\lambda$ itself is the ratio of standard deviations, not a fudge factor. Linearity of the forward map is <em>not</em> required for the correspondence: a nonlinear $G$ gives nonlinear Tikhonov. What linearity buys is separate — a Gaussian posterior, MAP = posterior mean, an estimate linear in $\\mathbf{b}$, and the closed-form covariance $\\sigma^2(\\mathbf{A}^\\mathsf{T}\\mathbf{A}+\\lambda^2\\mathbf{L}^\\mathsf{T}\\mathbf{L})^{-1}$.'
     },
     {
       q: 'Compute the Tikhonov filter factors for $\\sigma = (1,\\ 0.1,\\ 10^{-3})$ at $\\lambda = 0.03$.',
@@ -1513,7 +1563,7 @@
     },
     {
       q: 'How do rank-deficient and discrete ill-posed problems differ in their singular spectra, and which regularizer fits each?',
-      a: 'Rank-deficient: a gap in the spectrum defines a numerical rank — truncate there (TSVD is natural). Discrete ill-posed: gradual decay with no gap — no natural truncation index; Tikhonov’s smooth filter (or TSVD with $k$ chosen by a parameter-choice rule, $\\lambda \\approx \\sigma_k$) is used.'
+      a: 'Rank-deficient: a gap in the spectrum defines a numerical rank — truncate there (TSVD is natural). Discrete ill-posed: gradual decay with no gap — no natural truncation index; Tikhonov’s smooth filter (or TSVD with $k$ chosen by a parameter-choice rule) is used. $\\lambda \\approx \\sigma_k$ translates roughly between the two controls and is dependable only across a genuine gap, $\\sigma_{k+1} \\ll \\lambda \\ll \\sigma_k$ — at $\\lambda = \\sigma_k$ exactly, Tikhonov keeps that component at $f_k = 1/2$ while TSVD keeps it whole.'
     },
     {
       q: 'Name the four classes in the taxonomy of inverse problems in solid mechanics, with the unknown of each.',
@@ -1521,7 +1571,7 @@
     },
     {
       q: 'Write the guide’s observation model and name each term.',
-      a: '$\\mathbf{y} = \\mathcal{H}(\\mathbf{u}, \\mathbf{p}, \\mathbf{f}, \\mathbf{X}_0) + \\mathbf{b} + \\boldsymbol{\\eta}$: measurements $\\mathbf{y}$, observation operator $\\mathcal{H}$ (physics + sensor model), state $\\mathbf{u}$, material parameters $\\mathbf{p}$, loads $\\mathbf{f}$, reference configuration $\\mathbf{X}_0$, systematic bias $\\mathbf{b}$, random noise $\\boldsymbol{\\eta}$. Every inverse method picks one argument as unknown and assumes the rest — and must state what remains unobservable.'
+      a: '$\\mathbf{y} = \\mathcal{H}(\\mathbf{u}, \\mathbf{p}, \\mathbf{f}, \\mathbf{X}_0) + \\mathbf{b} + \\boldsymbol{\\eta}$: measurements $\\mathbf{y}$, observation operator $\\mathcal{H}$ (physics + sensor model), state $\\mathbf{u}$, material parameters $\\mathbf{p}$, loads $\\mathbf{f}$, reference configuration $\\mathbf{X}_0$, systematic bias $\\mathbf{b}$, random noise $\\boldsymbol{\\eta}$. Every inverse method picks a <em>primary target</em> among those arguments; each remaining argument must then be explicitly declared either assumed known or carried as a jointly estimated nuisance unknown (the all-at-once formulations of Section 12) — and the method must state what remains unobservable.'
     },
     {
       q: 'Distinguish observability from identifiability, and give mechanics’ canonical example of an unobservable component.',
