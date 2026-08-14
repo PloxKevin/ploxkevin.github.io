@@ -226,7 +226,7 @@
 
     <h3 class="subsection-heading">The Three Properties That Make It a Twin Engine</h3>
     <ol>
-      <li><strong>No applied loads required.</strong> Wave slamming, gusts, thermal gradients &mdash; the measured strains already contain the structure's response; no $\mathbf{F}(\text{loads})$ appears anywhere.</li>
+      <li><strong>No applied loads required.</strong> Wave slamming, gusts, thermal gradients &mdash; the measured strains already contain the structure's response; no $\mathbf{F}(\text{loads})$ appears anywhere. (Thermal loading is load-free only for the <em>displacement</em> reconstruction: the thermal part of the strain moves the structure but carries no stress, so stress recovery has to subtract it &mdash; &sect;4.)</li>
       <li><strong>No elastic constants required for displacement.</strong> The matching is purely kinematic. Material enters only later, at stress recovery (&sect;4) &mdash; which is also exactly where material errors start to matter, and not before.</li>
       <li><strong>$\mathbf{K}$ depends only on mesh, sensor positions, and weights &mdash; not on the data.</strong> It is fixed for as long as those things are &mdash; which is most of the time, and not always. Re-mesh, move or lose a sensor, reweight a channel after a dropout, change the kinematic model, and $\mathbf{K}$ changes with it, so the factorization has to be redone. The practical answer is to pre-factorize the handful of masks you expect (all channels healthy, each single-channel dropout) and refactorize only on a genuine configuration change. This third property is the entire subject of &sect;3.</li>
     </ol>
@@ -304,20 +304,24 @@
 
     <p>Shape is the headline; operators buy twins for stress and damage. Once $\mathbf{U}$ is known, section strains follow <em>anywhere on the structure</em> &mdash; not just at sensors &mdash; via the element operators: $\mathbf{e}(\mathbf{x}) = \mathbf{B}_m \mathbf{u}^e$, $\boldsymbol{\kappa}(\mathbf{x}) = \mathbf{B}_b \mathbf{u}^e$. Through-thickness in-plane strain at height $z$, and &mdash; now, and only now &mdash; the material entering through the plane-stress constitutive law:</p>
 
-    <div class="math-block">$$\boldsymbol{\varepsilon}(\mathbf{x},z) = \mathbf{e}(\mathbf{x}) + z\,\boldsymbol{\kappa}(\mathbf{x}), \qquad \boldsymbol{\sigma}(\mathbf{x},z) = \mathbf{C}(z)\,\boldsymbol{\varepsilon}(\mathbf{x},z)$$</div>
+    <div class="math-block">$$\boldsymbol{\varepsilon}(\mathbf{x},z) = \mathbf{e}(\mathbf{x}) + z\,\boldsymbol{\kappa}(\mathbf{x}), \qquad \boldsymbol{\sigma}(\mathbf{x},z) = \mathbf{C}(z)\big(\boldsymbol{\varepsilon}(\mathbf{x},z) - \boldsymbol{\varepsilon}^{\text{th}} - \boldsymbol{\varepsilon}^{0}\big)$$</div>
 
-    <p>with $\mathbf{C}(z)$ piecewise per lamina for composites. For isotropic metallic structures, the plane-stress von Mises stress closes the fatigue-relevant chain:</p>
+    <p>Only the <em>mechanical</em> part of the strain carries stress, which is why the eigenstrain terms are written explicitly. The reconstructed $\boldsymbol{\varepsilon}(\mathbf{x},z)$ is a <em>total</em> strain: it contains whatever the structure actually did, including free thermal expansion $\boldsymbol{\varepsilon}^{\text{th}} = \boldsymbol{\alpha}\,\Delta T$ and any locked-in initial strain $\boldsymbol{\varepsilon}^{0}$ (weld residuals, cure shrinkage). Drop them and a uniformly heated, unrestrained plate &mdash; total strain $\boldsymbol{\alpha}\Delta T$, true stress zero &mdash; comes back with a fictitious stress field. Note also what temperature compensation at the gauge does and does not buy you: it removes the sensor's <em>apparent</em> thermal output, not the structure's real thermal expansion. So $\Delta T$, the CTEs, and any initial-strain state are stress-recovery inputs in their own right, on the constitutive side of &sect;2's boundary &mdash; and unknown or badly modelled, they land in the systematics $\mathbf{b}$ of &sect;1 rather than in the displacement reconstruction.</p>
+
+    <p>With $\mathbf{C}(z)$ piecewise per lamina for composites, and for isotropic metallic structures, the plane-stress von Mises stress closes the fatigue-relevant chain:</p>
 
     <div class="math-block">$$\sigma_{vM} = \sqrt{\sigma_x^2 - \sigma_x\sigma_y + \sigma_y^2 + 3\tau_{xy}^2}$$</div>
 
     <p>This ordering is important pedagogy: <strong>iFEM displacement reconstruction is material-free; stress recovery is exactly as good as your constitutive knowledge.</strong> The founding marine application was framed this way from the start &mdash; Kefal &amp; Oterkus's 2016 Ocean Engineering paper is titled "Displacement and <em>stress</em> monitoring of a Panamax containership using inverse finite element method": both quantities, delivered from strain data alone plus a constitutive law for the second.</p>
 
     <h3 class="subsection-heading">Damage Indices</h3>
-    <p>With a healthy-state baseline field recorded at commissioning, a localized anomaly in the reconstructed equivalent strain/stress field flags and locates damage. The generic relative-anomaly index &mdash; <em>a synthesis pattern distilled from the marine iFEM SHM literature, not a single canonical formula</em> &mdash; is:</p>
+    <p>With a healthy-state baseline field recorded at commissioning, a localized anomaly in the reconstructed von Mises stress field flags and locates damage. The generic relative-anomaly index &mdash; <em>a synthesis pattern distilled from the marine iFEM SHM literature, not a single canonical formula</em> &mdash; is built on the $\sigma_{vM}$ just defined, so that no second, unstated equivalent measure has to be introduced:</p>
 
-    <div class="math-block">$$D_i = \frac{\varepsilon^{vM}_i - \varepsilon^{vM}_{i,\text{baseline}}}{\left|\varepsilon^{vM}_{i,\text{baseline}}\right| + \varepsilon_{\text{ref}}}$$</div>
+    <div class="math-block">$$D_i = \frac{\sigma^{vM}_i - \sigma^{vM}_{i,\text{baseline}}}{\left|\sigma^{vM}_{i,\text{baseline}}\right| + \sigma_{\text{ref}}}$$</div>
 
-    <p>The $\varepsilon_{\text{ref}}$ in the denominator is not cosmetic. A raw relative index blows up wherever the baseline strain passes through zero &mdash; near neutral axes, at nodal lines, anywhere the healthy structure happens to be unstrained &mdash; manufacturing spectacular "damage" out of noise. Stabilize the denominator with a reference level at the noise floor, and normalize for load and temperature before comparing to commissioning, or you are measuring the weather. The simulator below deliberately does <em>not</em> implement this: it stores no baseline at all, fitting the current amplitude to the expected profile and reporting the departure from that <em>shape</em>. That is a genuinely useful detector with a genuinely different blind spot &mdash; switch ageing on and watch a uniform stiffness loss sail straight past it, because scaling the whole field leaves the shape untouched.</p>
+    <p>(An equivalent-<em>strain</em> version exists and is also used, but it is not obtained by swapping $\sigma$ for $\varepsilon$ in the formula above: an equivalent strain has to declare its own convention for the shear terms &mdash; tensor or engineering &mdash; and its plane-stress or 3-D setting. Declare it if you use it; the stress form is chosen here because $\sigma_{vM}$ is already defined.)</p>
+
+    <p>The $\sigma_{\text{ref}}$ in the denominator is not cosmetic. A raw relative index blows up wherever the baseline stress passes through zero &mdash; near neutral axes, at nodal lines, anywhere the healthy structure happens to be unstrained &mdash; manufacturing spectacular "damage" out of noise. Stabilize the denominator with a reference level at the noise floor, and normalize for load and temperature before comparing to commissioning, or you are measuring the weather. The simulator below deliberately does <em>not</em> implement this: it stores no baseline at all, fitting the current amplitude to the expected profile and reporting the departure from that <em>shape</em>. That is a genuinely useful detector with a genuinely different blind spot &mdash; switch ageing on and watch a uniform stiffness loss sail straight past it, because scaling the whole field leaves the shape untouched.</p>
 
     <p>Three cautions to internalize immediately, because they are the difference between a damage index and a false-alarm generator:</p>
     <ol>
@@ -351,7 +355,7 @@
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:#555;">
         <label style="cursor:pointer;"><input type="checkbox" id="ts-drop" style="vertical-align:-2px;"> dropout: channel 3 dies (hold last value)</label>
         <label style="cursor:pointer;"><input type="checkbox" id="ts-contact" style="vertical-align:-2px;"> contact change: prop appears at x = 0.55</label>
-        <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: the slow parameter loop, accelerated (2%/s of stiffness to a 30% floor)</label>
+        <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: the slow parameter loop, accelerated (2%/s stiffness loss, capped at 30% loss &mdash; a 70% stiffness floor)</label>
         <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on a shape-residual index &gt; 30%)</label>
         <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-val" style="vertical-align:-2px;"> independent validation (laser at tip)</label>
       </div>
@@ -459,7 +463,7 @@
 
     <p>Marine structures are the flagship large-scale iFEM domain, for a structural reason: <strong>wave loads are stochastic and poorly known in service</strong>, so a method that reconstructs state without load knowledge is exactly what a hull needs. Nobody has a trustworthy real-time model of the sea; the strains, however, are right there in the steel.</p>
 
-    <p><strong>The template study.</strong> Kefal &amp; Oterkus (Ocean Engineering 2016) modeled a full Panamax containership with iQS4 inverse shell elements and demonstrated displacement and stress monitoring of the hull under wave-induced loading &mdash; the template for ship-scale iFEM SHM. Be precise about what it was, though: a numerical study in which high-fidelity FEM <em>generated</em> the strains that iFEM then consumed. There was no instrumented hull in the loop, so it is a digital-twin-enabling state-reconstruction study rather than a twin. Full-field state, driven by strain data, load-blind. It is also, evidence-class-wise, a <em>numerical</em> study &mdash; keep that flag raised.</p>
+    <p><strong>The template study.</strong> Kefal &amp; Oterkus (Ocean Engineering 2016) demonstrated displacement and stress monitoring of a Panamax containership &mdash; the template for ship-scale iFEM SHM. Be precise about the extent of the model as well as its evidence class. A hydrodynamic analysis of the <em>whole</em> ship in beam seas supplied the vertical and horizontal wave bending moments and the torsional wave moment; the structure that was actually discretized, in both the direct FEM and the three iFEM case studies (pure vertical bending, pure horizontal bending, pure torsion), is the <strong>parallel mid-body</strong> &mdash; and, exploiting double symmetry, one quarter of it, meshed with 15,318 iQS4 elements. It is also a numerical study: high-fidelity FEM <em>generated</em> the strains that iFEM then consumed. There was no instrumented hull in the loop, so it is a digital-twin-enabling state-reconstruction study rather than a twin. Full-field state, driven by strain data, load-blind. It is also, evidence-class-wise, a <em>numerical</em> study &mdash; keep that flag raised.</p>
 
     <h3 class="subsection-heading">The Single-Sided Reality</h3>
     <p>Hull instrumentation is usually single-sided: sensors go on the inner surface, because the outer shell is wetted. Recall &sect;2's extraction formulas &mdash; separating membrane strain $\mathbf{e}$ from curvature $\boldsymbol{\kappa}$ at a station <em>requires</em> both surfaces. With one surface you have one equation and two unknowns per component: an ill-posed split that must be closed by a through-thickness assumption (e.g., a known bending-to-membrane ratio for the load regime) or by additional sensors. Whatever you choose, document it; the assumption silently shapes every reconstructed field downstream.</p>
@@ -586,7 +590,7 @@
     <p>Four fronts, each with its grounded anchor. These are not embarrassments; they are the map of where the field's 2026 papers are being written.</p>
 
     <h3 class="subsection-heading">Front 1 &mdash; Geometric Nonlinearity</h3>
-    <p>The operators $\mathbf{B}_m, \mathbf{B}_b, \mathbf{B}_s$ are <em>linear</em> strain&ndash;displacement maps: valid for infinitesimal rotations. Hulls in extreme seas, 60-meter blades, and soft bodies all leave that regime, and the superposition $\mathbf{e} + z\boldsymbol{\kappa}$ fails with it. The remedies mirror forward nonlinear FEM &mdash; incremental linearization about the current configuration, and co-rotational decomposition of rigid rotation from strain-producing deformation &mdash; but now inside a least-squares inverse formulation, where linearization error feeds directly into the reconstructed state. Grounded marker that this front is active: Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025), "Nonlinear inverse finite element method for large deformation reconstruction of hull structures". The generic incremental schema (<em>synthesis &mdash; a schema, not the paper's specific algorithm</em>):</p>
+    <p>The operators $\mathbf{B}_m, \mathbf{B}_b, \mathbf{B}_s$ are <em>linear</em> strain&ndash;displacement maps: valid for infinitesimal rotations. Hulls in extreme seas, 60-meter blades, and soft bodies all leave that regime, and what fails with it is the <em>fixed global linear map</em> from nodal DOFs to section strains. The through-thickness superposition $\mathbf{e} + z\boldsymbol{\kappa}$ is a separate casualty with a separate trigger &mdash; finite strain, or shell kinematics richer than FSDT (&sect;9) &mdash; and that separation is exactly why co-rotational formulations pay: a body can rotate far while its local strain stays small, so the section split survives in the rotating frame even after the global linear $\mathbf{B}$ map has gone. The remedies mirror forward nonlinear FEM &mdash; incremental linearization about the current configuration, and co-rotational decomposition of rigid rotation from strain-producing deformation &mdash; but now inside a least-squares inverse formulation, where linearization error feeds directly into the reconstructed state. Grounded marker that this front is active: Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025), "Nonlinear inverse finite element method for large deformation reconstruction of hull structures". The generic incremental schema (<em>synthesis &mdash; a schema, not the paper's specific algorithm</em>):</p>
 
     <div class="math-block">$$\mathbf{K}(\mathbf{U}_k)\,\Delta\mathbf{U}_{k+1} = \mathbf{F}\big(\boldsymbol{\varepsilon}^{\text{meas}}\big) - \mathbf{F}\big(\boldsymbol{\varepsilon}(\mathbf{U}_k)\big)$$</div>
 
@@ -850,7 +854,7 @@
   var lastVals = [null, null, null, null, null];
   // Both slow pathologies integrate from the moment the user asks for them, not
   // from t = 0. Keying them to absolute t made ticking the ageing box at t = 40 s
-  // apply the full 30% decay instantly instead of starting a decay.
+  // apply the full 30% stiffness loss instantly instead of starting a decay.
   var ageT0 = null, driftT0 = null;
   function since(t0, tt) { return t0 === null ? 0 : Math.max(0, tt - t0); }
   // Re-arm from the CONTROL state, not from the flag: after a Reset (or a browser
@@ -864,8 +868,9 @@
 
   // ---- truth (analytic cantilever, optional prop at x=A, stiffness ageing) ----
   function loadP(tt) { return 0.55 + 0.3 * Math.sin(0.9 * tt) + 0.13 * Math.sin(2.7 * tt + 1); }
-  // 2 %/s to a 30% floor: fast for a lab clock, "slow" only relative to the state
-  // loop. The label on the checkbox states the rate so the word does not mislead.
+  // 2 %/s of stiffness, capped at a 30% LOSS -- i.e. EI bottoms out at 70% of the
+  // commissioning value, not at 30% of it. Fast for a lab clock, "slow" only
+  // relative to the state loop; the checkbox label states rate, cap and floor.
   function ageEI(tt) { return el('ts-age').checked ? Math.max(0.7, 1 - 0.02 * since(ageT0, tt)) : 1; }
   function propR(P) { return -P * (3 - A) / (2 * A); } // reaction so that w(A)=0
   function kTrue(x, tt) {
@@ -1240,7 +1245,7 @@ initWalkthrough('twin-walkthrough', [
     },
     {
       q: "Which two inputs of forward FEM does iFEM NOT need for displacement reconstruction?",
-      a: "Applied loads and elastic material constants. The least-squares matching of section strains is purely kinematic. Material properties enter only afterwards, at stress recovery via $\\boldsymbol{\\sigma}=\\mathbf{C}(z)\\,\\boldsymbol{\\varepsilon}$."
+      a: "Applied loads and elastic material constants. The least-squares matching of section strains is purely kinematic. Material properties enter only afterwards, at stress recovery via $\\boldsymbol{\\sigma}=\\mathbf{C}(z)(\\boldsymbol{\\varepsilon}-\\boldsymbol{\\varepsilon}^{\\text{th}}-\\boldsymbol{\\varepsilon}^{0})$ — note that only the <em>mechanical</em> strain carries stress, so the reconstructed total strain must have its thermal and initial eigenstrains removed first (a freely heated plate has strain $\\boldsymbol{\\alpha}\\Delta T$ and zero stress)."
     },
     {
       q: "Give the formulas converting a top/bottom surface-gauge pair (plate thickness $2h$) into experimental membrane strain and curvature.",
@@ -1272,7 +1277,7 @@ initWalkthrough('twin-walkthrough', [
     },
     {
       q: "How does iFEM-based damage detection work, and what is its most insidious false positive?",
-      a: "Compare the reconstructed equivalent strain/stress field to a healthy baseline, e.g. $D_i=(\\varepsilon^{vM}_i-\\varepsilon^{vM}_{i,\\text{base}})/(|\\varepsilon^{vM}_{i,\\text{base}}|+\\varepsilon_{\\text{ref}})$; a localized anomaly flags damage. Sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
+      a: "Compare the reconstructed von Mises stress field to a healthy baseline, e.g. $D_i=(\\sigma^{vM}_i-\\sigma^{vM}_{i,\\text{base}})/(|\\sigma^{vM}_{i,\\text{base}}|+\\sigma_{\\text{ref}})$ — written on $\\sigma_{vM}$, which the module defines, rather than on an equivalent strain, which would need its own shear and dimensionality convention stated; a localized anomaly flags damage. Sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
     },
     {
       q: "Per-snapshot iFEM has no inertial term. Is reconstructing a vibrating structure therefore invalid?",
