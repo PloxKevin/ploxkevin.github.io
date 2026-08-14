@@ -49,9 +49,11 @@
       <div>Given section-strain data at discrete stations, which <em>discrete displacement space</em> &mdash; which element, which interpolation, which constraint scheme &mdash; turns the least-squares principle into a well-posed linear solve whose reconstruction you can trust between the sensors? This module is about the elements: what they assume, how they are built, and how they fail.</div>
     </div>
 
-    <p>Summing element contributions and demanding stationarity gives a linear system per element, exactly as in direct FEM:</p>
+    <p>Each element contributes a quadratic $\Phi_e$, and the gradient of that contribution defines the element arrays $\mathbf{k}^e, \mathbf{f}^e$ exactly as in direct FEM. Write $\mathbf{u}^e = \mathbf{S}_e\mathbf{U}$ for the gather of the element's DOFs from the global vector:</p>
 
-    <div class="math-block">$$\Phi(\mathbf{u}) \;=\; \sum_{e} \Phi_e(\mathbf{u}^e), \qquad \frac{\partial \Phi_e}{\partial \mathbf{u}^e} = \mathbf{0} \;\Rightarrow\; \mathbf{k}^e \mathbf{u}^e = \mathbf{f}^e$$</div>
+    <div class="math-block">$$\Phi(\mathbf{U}) = \sum_{e} \Phi_e(\mathbf{S}_e\mathbf{U}), \qquad \frac{\partial \Phi_e}{\partial \mathbf{u}^e} = \mathbf{k}^e \mathbf{u}^e - \mathbf{f}^e, \qquad \frac{\partial \Phi}{\partial \mathbf{U}} = \sum_e \mathbf{S}_e^{\mathsf T}\bigl(\mathbf{k}^e \mathbf{S}_e \mathbf{U} - \mathbf{f}^e\bigr) = \mathbf{0}$$</div>
+
+    <p>&mdash; which is $\mathbf{K}\mathbf{U} = \mathbf{F}$ (&sect;9). Read the middle expression as a <em>definition</em> of $\mathbf{k}^e$ and $\mathbf{f}^e$, not as an equation that holds element by element. Shared nodal DOFs are not independent across elements, so $\mathbf{k}^e\mathbf{u}^e - \mathbf{f}^e$ is the element's gradient contribution and does not vanish on its own at the solution; what vanishes is the assembled sum. The sources write the element form (Kefal et al. 2016, eq.&nbsp;10a) in the same compact way, and it is worth knowing what it does and does not assert.</p>
 
     <p>Three structural consequences follow from what $\Phi_e$ contains &mdash; and they define iFEM's character:</p>
 
@@ -96,7 +98,7 @@
         <p style="margin-top:0;">Two conventions are load-bearing and silently corrupt results when mixed:</p>
         <ul style="margin-bottom:0;">
           <li><strong>Thickness.</strong> Here surfaces sit at $z = \pm h$, so the plate thickness is $t = 2h$. Substituting the <em>full</em> thickness where $h$ (the half-thickness) belongs silently halves every curvature and corrupts the $(2h)^2$ factor of &sect;5. Always check which convention a paper uses before copying a formula.</li>
-          <li><strong>Rotations.</strong> We use the <em>plane-labelled</em>, displacement-generating convention declared in <a href="mod2.html">Module 2</a>: $u_x = u + z\theta_x$, so $\theta_x$ is the rotation that moves material at $z&gt;0$ in $+x$. This is <strong>not</strong> the lettering of the iFEM sources, which name rotations after the axis they turn <em>about</em>: Tessler &amp; Spangler (NASA/TM-2003-212445, &sect;2.1) write $u_x = u + z\theta_y$, $u_y = v + z\theta_x$, and Kefal et al. 2016 (eq.&nbsp;5) write $u_x = u + z\theta_y$, $u_y = v - z\theta_x$. Their $\theta_y$ is our $\theta_x$ in both cases; the <em>other</em> rotation matches only up to a sign, and the sign differs between the two sources &mdash; Tessler &amp; Spangler's $\theta_x$ is our $+\theta_y$, Kefal et al.'s is our $-\theta_y$. Mixing the two swaps subscripts and flips curvature signs &mdash; and a sign-flipped $\boldsymbol{\kappa}^{\varepsilon}$ feeds the solver data from a mirror-image structure. Copying $\mathbf{B}$-matrix rows between papers without reconciling conventions is a classic silent failure. <a href="#inverse-timoshenko-beam">&sect;6</a> deliberately switches to the axis-rotation convention for the 3D beam, and says so on the spot.</li>
+          <li><strong>Rotations.</strong> We use the <em>plane-labelled</em>, displacement-generating convention declared in <a href="mod2.html">Module 2</a>: $u_x = u + z\theta_x$, so $\theta_x$ is the rotation that moves material at $z&gt;0$ in $+x$. This is <strong>not</strong> the lettering of the iFEM sources, which name rotations after the axis they turn <em>about</em>: Tessler &amp; Spangler (NASA/TM-2003-212445, &sect;2.1) write $u_x = u + z\theta_y$, $u_y = v + z\theta_x$, and Kefal et al. 2016 (eqs.&nbsp;4a&ndash;4b) write $u_x = u + z\theta_y$, $u_y = v - z\theta_x$. Their $\theta_y$ is our $\theta_x$ in both cases; the <em>other</em> rotation matches only up to a sign, and the sign differs between the two sources &mdash; Tessler &amp; Spangler's $\theta_x$ is our $+\theta_y$, Kefal et al.'s is our $-\theta_y$. Mixing the two swaps subscripts and flips curvature signs &mdash; and a sign-flipped $\boldsymbol{\kappa}^{\varepsilon}$ feeds the solver data from a mirror-image structure. Copying $\mathbf{B}$-matrix rows between papers without reconciling conventions is a classic silent failure. <a href="#inverse-timoshenko-beam">&sect;6</a> deliberately switches to the axis-rotation convention for the 3D beam, and says so on the spot.</li>
         </ul>
       </div>
     </div>
@@ -299,11 +301,13 @@
       <li>all measures in elements that carry no sensors at all.</li>
     </ul>
 
-    <p>The small weights act as Tikhonov-style regularization (Module 3): they restore rank that the missing data terms would otherwise cost, and let the displacement interpolation bridge uninstrumented regions smoothly, while barely biasing instrumented ones. <strong>Setting them to zero is a bug</strong> &mdash; the assembled $\mathbf{K}$ loses rank, as the test bench below demonstrates. Note the limit of what a positive weight can do, though: it only reaches modes that appear in <em>some</em> weighted strain row. A displacement mode that every $\mathbf{B}$ block annihilates &mdash; iQS4's constant drilling mode, &sect;8 &mdash; stays in the null space for any $\lambda$ whatsoever, and has to be removed by the assembly or the boundary conditions instead. Setting them large is the opposite bug &mdash; and it is worth being exact about what the prior actually does: $\lambda\lVert\mathbf{g}(\mathbf{u}^e)\rVert^2$ pushes the <em>analytic transverse shear</em> toward zero, which is the Kirchhoff constraint imposed as if it were data &mdash; not a push toward zero displacement. Pure bending of a thin plate has $\mathbf{g} = 0$ identically while deflecting freely. In a locking-free space a large $\lambda$ therefore bites only in the <em>thick</em> regime, where it erases the genuine transverse-shear deflection &mdash; and since that deflection vanishes as the structure thins, the thin limit is precisely where the prior is harmless. In such a space the damage barely depends on how large $\lambda$ is, because the deflection DOFs enter no data term for the prior to compete against (the bench's tip-force case at low slenderness, unchanged across the whole $w_s$ slider). Where a large $\lambda$ <em>does</em> destroy the thin limit is a locking-prone equal-order space: there it collapses the reconstruction outright (&sect;7), because that space cannot bend without parasitic shear. Where a <em>whole</em> element is sensorless, all three measures carry $\lambda$ &mdash; and there the bias really is toward no deformation. Deployment-side strategies for missing measurements &mdash; pre-extrapolation, virtual strains, weight tuning &mdash; are <a href="mod6.html">Module 6</a>'s territory.</p>
+    <p><strong>Mind $n$ in the second case.</strong> $n$ counts <em>measurement stations</em>, so a sensorless element has $n = 0$ and the $A_e/n$ station average of the displays above is undefined, not merely small. The source resolves this by dropping the data term and keeping the plain area integral (Kefal et al. 2016, eq.&nbsp;9): each squared norm becomes $\int_{A_e}\lVert\boldsymbol{\alpha}(\mathbf{u}^e)\rVert^{2}dA$ at weight $\lambda$, so the prior contributes $\lambda\int_{A_e}\mathbf{B}^{\mathsf T}\mathbf{B}\,dA$ to $\mathbf{k}^e$ and nothing at all to $\mathbf{f}^e$. An implementation that would rather collocate needs a quadrature count $n_q \ge 1$ of its own choosing; $n_q$ is not $n$.</p>
+
+    <p>The small weights act as Tikhonov-style regularization (Module 3): they restore rank that the missing data terms would otherwise cost, and let the displacement interpolation bridge uninstrumented regions smoothly, while barely biasing instrumented ones. <strong>Setting them to zero is a bug wherever those rows are load-bearing</strong> &mdash; the assembled $\mathbf{K}$ <em>can</em> lose rank, and does exactly when dropping them destroys the full column rank of the remaining weighted-$\mathbf{B}$ stack on the free DOFs (&sect;9 states the condition properly). The test bench below is a case where it does: zeroing $w_s$ there costs six directions. Note the limit of what a positive weight can do, though: it only reaches modes that appear in <em>some</em> weighted strain row. A displacement mode that every $\mathbf{B}$ block annihilates &mdash; iQS4's constant drilling mode, &sect;8 &mdash; stays in the null space for any $\lambda$ whatsoever, and has to be removed by the assembly or the boundary conditions instead. Setting them large is the opposite bug &mdash; and it is worth being exact about what the prior actually does: $\lambda\lVert\mathbf{g}(\mathbf{u}^e)\rVert^2$ pushes the <em>analytic transverse shear</em> toward zero, which is the Kirchhoff constraint imposed as if it were data &mdash; not a push toward zero displacement. Pure bending of a thin plate has $\mathbf{g} = 0$ identically while deflecting freely. In a locking-free space a large $\lambda$ therefore bites only in the <em>thick</em> regime, where it erases the genuine transverse-shear deflection &mdash; and since that deflection vanishes as the structure thins, the thin limit is precisely where the prior is harmless. In such a space the damage barely depends on how large $\lambda$ is, because the deflection DOFs enter no data term for the prior to compete against (the bench's tip-force case at low slenderness, unchanged across the whole $w_s$ slider). Where a large $\lambda$ <em>does</em> destroy the thin limit is a locking-prone equal-order space: there it collapses the reconstruction outright (&sect;7), because that space cannot bend without parasitic shear. Where a <em>whole</em> element is sensorless, all three measures carry $\lambda$ &mdash; and there the bias really is toward no deformation. Deployment-side strategies for missing measurements &mdash; pre-extrapolation, virtual strains, weight tuning &mdash; are <a href="mod6.html">Module 6</a>'s territory.</p>
 
     <h3 class="subsection-heading">Stationarity: The Normal Equations</h3>
 
-    <p>$\Phi_e$ is quadratic in $\mathbf{u}^e$, so $\partial\Phi_e/\partial\mathbf{u}^e = \mathbf{0}$ gives linear normal equations $\mathbf{k}^{e}\mathbf{u}^{e}=\mathbf{f}^{e}$ with</p>
+    <p>$\Phi_e$ is quadratic in $\mathbf{u}^e$, so its gradient is affine: $\partial\Phi_e/\partial\mathbf{u}^e = \mathbf{k}^{e}\mathbf{u}^{e}-\mathbf{f}^{e}$, which is what defines the element arrays (&sect;1 &mdash; the element residual is a contribution to the assembled normal equations, not an equation that holds on its own):</p>
 
     <div class="math-block">$$\mathbf{k}^{e}=\frac{A_{e}}{n}\sum_{i=1}^{n}\Bigl(w_{m}\mathbf{B}^{m\mathsf T}_{i}\mathbf{B}^{m}_{i}+w_{b}(2h)^{2}\mathbf{B}^{b\mathsf T}_{i}\mathbf{B}^{b}_{i}+w_{s}\mathbf{B}^{s\mathsf T}_{i}\mathbf{B}^{s}_{i}\Bigr)$$</div>
 
@@ -311,7 +315,7 @@
 
     <div class="insight-box">
       <div class="box-label">Small print &mdash; this is the collocation form, not the source's integral form</div>
-      <div>Both displays above sample $\mathbf{B}$ at the $n$ stations and multiply by $A_e/n$. Kefal et al. 2016 eq.&nbsp;(10c) instead keeps the area integral, $\mathbf{k}^{e}=\int_{A_e}\bigl(w_m\mathbf{B}^{m\mathsf T}\mathbf{B}^{m}+w_b(2h)^2\mathbf{B}^{b\mathsf T}\mathbf{B}^{b}+w_s\mathbf{B}^{s\mathsf T}\mathbf{B}^{s}\bigr)\,dA$, with the station average appearing only in $\mathbf{f}^e$ (eq.&nbsp;10d). The two agree exactly when $\mathbf{B}$ is constant over the element &mdash; true of iMIN3's CST-like $\mathbf{B}^m$ and $\mathbf{B}^b$, false of iQS4's Allman-enriched $\mathbf{B}^m$ and of any anisoparametric $\mathbf{B}^s$. Station collocation is an approximation you are choosing, so choose it knowingly.</div>
+      <div>Both displays above sample $\mathbf{B}$ at the $n$ stations and multiply by $A_e/n$. Kefal et al. 2016 eq.&nbsp;(10c) instead keeps the area integral, $\mathbf{k}^{e}=\int_{A_e}\bigl(w_m\mathbf{B}^{m\mathsf T}\mathbf{B}^{m}+w_b(2h)^2\mathbf{B}^{b\mathsf T}\mathbf{B}^{b}+w_s\mathbf{B}^{s\mathsf T}\mathbf{B}^{s}\bigr)\,dA$, with the station average appearing only in $\mathbf{f}^e$ (eq.&nbsp;10d). Constant $\mathbf{B}$ guarantees the two agree &mdash; true of iMIN3's CST-like $\mathbf{B}^m$ and $\mathbf{B}^b$, false of iQS4's Allman-enriched $\mathbf{B}^m$ and of any anisoparametric $\mathbf{B}^s$. But constancy is <em>sufficient, not necessary</em>: a varying $\mathbf{B}$ still agrees exactly whenever the station rule happens to integrate $\mathbf{B}^{\mathsf T}\mathbf{B}$ exactly. The bench below is its own counterexample &mdash; it samples at the two Gauss points of the element, which integrates the product of its $\xi$-linear $\mathbf{B}^s$ to machine precision. So exactness depends on station locations, quadrature weights, and the data treatment together, not on $\mathbf{B}$ alone. Station collocation is an approximation you are choosing, so choose it knowingly.</div>
     </div>
 
     <p>$\mathbf{k}^e$ is symmetric positive <em>semi</em>definite; uniqueness comes only after global assembly and boundary conditions (&sect;9). Note the asymmetry of roles: $\mathbf{k}^e$ is <strong>data-independent</strong> &mdash; geometry, stations, weights &mdash; while $\mathbf{f}^e$ is <strong>where the measurements live</strong>. The entire time-dependence of a monitoring problem flows through $\mathbf{f}^e$.</p>
@@ -343,9 +347,9 @@
 
     <p>Sign conventions for the shear entries vary between texts; the physical content &mdash; 1 axial + 2 bending + 1 torsion + 2 shear = 6 &mdash; does not. (The test bench below uses the planar convention $\gamma = w' - \theta$, with $\theta$ measured in the same sense as $w'$. Note what does <em>not</em> distinguish the two: pure bending gives $\gamma = 0$ in either, because zero transverse shear in the Euler&ndash;Bernoulli limit is a property of Timoshenko kinematics, not of a sign choice. Only the sign of $\theta$ differs.)</p>
 
-    <p><strong>Interpolation.</strong> The inverse element is two-node with 6 DOF per node (12 DOF), and uses locking-free <em>interdependent</em> (anisoparametric) interpolation: transverse deflections cubic, rotations quadratic, tied together so that each element represents a state of <strong>constant transverse shear exactly</strong> &mdash; the beam analogue of the constraint schemes of iMIN3/iQS4. Equal-order interpolation would lock, least squares or not (&sect;7).</p>
+    <p><strong>Interpolation.</strong> The inverse element is two-node with 6 DOF per node (12 DOF), and uses locking-free <em>interdependent</em> (anisoparametric) interpolation. The orders are <em>not</em> uniform across the six variables, and the sloppy summary "deflections cubic, rotations quadratic" gets two of them wrong: the axial displacement $u$ and the torsional rotation $\theta_x$ are <strong>linear</strong>, the bending rotations $\theta_y, \theta_z$ are <strong>quadratic</strong>, and the transverse deflections $v, w$ are <strong>cubic</strong> &mdash; tied together so that each element represents a state of <strong>constant transverse shear exactly</strong>, the beam analogue of the constraint schemes of iMIN3/iQS4. (The pattern follows the shear definitions $e_4 = w_{,x}+\theta_y$, $e_5 = v_{,x}-\theta_z$: only the variables that meet inside a shear measure need matching orders, which is why $u$ and $\theta_x$ stay linear. Gherlone et&nbsp;al., NASA/TP-2011-217315, &sect;3.1.) Equal-order interpolation would lock, least squares or not (&sect;7).</p>
 
-    <p><strong>Functional.</strong> The element functional is the weighted least-squares sum over the six measures sampled at stations along the axis, and the transverse shears typically go undata'd and receive small weights, as $\mathbf{g}$ does in plates. The analogy is close but <em>not</em> exact, and the difference is worth keeping: plate transverse shear leaves no surface signature at all (&sect;3), whereas the beam shears do appear in the &plusmn;45&deg; wall-shear readings &mdash; see the algebra below. On a beam they are usually unobserved by gauge budget and convention, not by kinematics.</p>
+    <p><strong>Functional.</strong> The element functional is the weighted least-squares sum over the six measures sampled at stations along the axis. Here the beam parts company with the plate, and in the opposite direction from the obvious guess. The published formulation treats <em>all six</em> measures as data-carrying: its weight vector is $\{w_k^{0}, \ldots\}$ with uniform $w_k^{0} = 1$ $(k = 1,\ldots,6)$ in the numerical examples, transverse shears included. Eight axial gauge readings per element determine the six measures of the constant-shear element directly; six suffice if $e_4, e_5$ are instead <em>solved</em> from the Timoshenko equilibrium and constitutive relations rather than measured &mdash; which the authors describe as a way of reducing the gauge count, not as a zero prior (Gherlone et&nbsp;al., NASA/TP-2011-217315, &sect;4.2, eqs.&nbsp;30). Dropping beam shear to a small weight is a later <em>deployment</em> choice: Esposito et&nbsp;al. 2023, for instance, declare the beam's shear and torsion measures unknown and set those weights to $10^{-4}$. Behind all of it is a kinematic difference worth keeping: plate transverse shear leaves no surface signature at all (&sect;3), whereas the beam shears <em>do</em> appear in the &plusmn;45&deg; wall-shear readings &mdash; see the algebra below. On a beam they go undata'd by gauge budget and convention, not by kinematics.</p>
 
     <h3 class="subsection-heading">The Data Side: Gauges Around the Cross-Section</h3>
 
@@ -513,7 +517,7 @@
     <table>
       <tr><th>Assumption</th><th>How it fails</th><th>Remedy</th></tr>
       <tr><td>FSDT kinematics, monolithic section</td><td>sandwich cores and thick laminates warp in zigzag; reconstruction degrades through the thickness</td><td>RZT family (&sect;10)</td></tr>
-      <tr><td>Flat element geometry</td><td>curved surfaces need fine faceting &rarr; dense meshes &rarr; dense instrumentation</td><td>curved/isogeometric elements (&sect;11)</td></tr>
+      <tr><td>Flat element geometry</td><td>curved surfaces need fine faceting &rarr; many more elements, each of which must then be instrumented or regularized away</td><td>curved/isogeometric elements (&sect;11)</td></tr>
       <tr><td>Drilling DOFs carry no measurement of their own</td><td>$\theta_z$ enters only through the <em>differences</em> driving the Allman edge modes, so a spatially uniform drilling rotation is strain-free and a flat, weakly constrained patch keeps it in the null space</td><td>rely on non-coplanar assembly and drilling boundary conditions; check the drilling columns of the assembled system rather than reaching for an artificial spring</td></tr>
       <tr><td>Per-element local axes</td><td>wrong or inconsistent local frames scramble the assembled system &mdash; silently on flat regions, catastrophically at folds</td><td>transformation discipline (&sect;9); see the bench's "skip transformation" toggle</td></tr>
       <tr><td>Small strains, linear kinematics</td><td>large deflections / elastomeric substrates violate linearity</td><td>co-rotational and large-deformation variants (&sect;11 pointer)</td></tr>
@@ -525,7 +529,7 @@
     <div class="interactive-container" id="element-bench">
       <div class="interactive-label">Interactive Tool &mdash; Inverse-Element Test Bench</div>
       <p style="font-size:13px;color:#555;margin-bottom:12px;">The same test cases &mdash; membrane, pure bending, bending + shear, a graded mesh, a folded frame &mdash; pushed through a planar 3-DOF-per-node inverse beam, with the plate elements' two rival design choices selectable: <strong>equal-order</strong> interpolation (what iMIN3/iQS4 refuse to use) vs an <strong>interdependent anisoparametric</strong> scheme (constant shear per element). Thin the structure, raise the shear weight, zero it, skip the local-axis transformation &mdash; and watch the panel, not just the picture. Failures are the curriculum here.</p>
-      <p style="font-size:12px;color:#777;margin-bottom:12px;border-left:3px solid #ddd;padding-left:9px;"><strong>What this bench is and is not.</strong> It is a deliberately reduced surrogate, not the published inverse Timoshenko beam. Here each element carries $(u, w, \theta)$ per node with element-constant curvature &mdash; so rotations are <em>linear</em> and the interdependent deflection is <em>quadratic</em>, one order below the published element's quadratic rotations and cubic deflections (&sect;6), which reach that order via extra midpoint rotation DOFs that are then statically condensed out. The bench also drops torsion and the out-of-plane bending pair, and it weights the curvature term by $(2h)^2$ &mdash; the plate convention of &sect;5 &mdash; where the 3D beam functional uses section ratios $I/A$ and $J_T/A$ (for a rectangle of depth $2h$, $I/A = (2h)^2/12$). The mechanisms on display &mdash; locking, the $w_s = 0$ rank collapse, the missing local-axis transformation &mdash; are properties of the discrete space and the assembly, and survive the reduction; the absolute error percentages are the surrogate's, not the published element's.</p>
+      <p style="font-size:12px;color:#777;margin-bottom:12px;border-left:3px solid #ddd;padding-left:9px;"><strong>What this bench is and is not.</strong> It is a deliberately reduced surrogate, not the published inverse Timoshenko beam. Here each element carries $(u, w, \theta)$ per node with element-constant curvature &mdash; so rotations are <em>linear</em> and the interdependent deflection is <em>quadratic</em>, one order below the published element's quadratic <em>bending</em> rotations and cubic deflections (&sect;6), which reach that order via extra interior DOFs that are then condensed out. The bench also drops torsion and the out-of-plane bending pair, and it weights the curvature term by $(2h)^2$ &mdash; the plate convention of &sect;5 &mdash; where the 3D beam functional uses section ratios $I/A$ and $J_T/A$ (for a rectangle of depth $2h$, $I/A = (2h)^2/12$). The mechanisms on display &mdash; locking, the $w_s = 0$ rank collapse, the missing local-axis transformation &mdash; are properties of the discrete space and the assembly, and survive the reduction; the absolute error percentages are the surrogate's, not the published element's.</p>
 
       <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;">
         <div style="min-width:180px;">
@@ -656,7 +660,8 @@
           <rect x="35" y="215" width="330" height="85" rx="5" fill="#fafafa" stroke="#999" stroke-dasharray="6,4" stroke-width="1.5"/>
           <text x="200" y="238" font-size="11.5" font-weight="600" fill="#555" text-anchor="middle">optional post-processing: stress recovery</text>
           <text x="200" y="258" font-size="10.5" fill="#333" text-anchor="middle">&sigma; = C(E, &nu;) &middot; &epsilon;(U)</text>
-          <text x="200" y="280" font-size="10" font-weight="600" fill="#2e7d32" text-anchor="middle">material properties enter HERE only &mdash; no loads anywhere</text>
+          <text x="200" y="276" font-size="10" font-weight="600" fill="#2e7d32" text-anchor="middle">material properties enter HERE only &mdash; no loads anywhere</text>
+          <text x="200" y="291" font-size="8.5" fill="#666" text-anchor="middle">(plain FSDT iFEM; RZT also needs the layer shear moduli, &sect;10)</text>
           <!-- arrows -->
           <line x1="155" y1="106" x2="180" y2="106" stroke="#666" stroke-width="1.5" marker-end="url(#arr5)"/>
           <line x1="325" y1="106" x2="350" y2="106" stroke="#666" stroke-width="1.5" marker-end="url(#arr5)"/>
@@ -671,7 +676,7 @@
 
     <h3 class="subsection-heading">Post-Processing and Practical Craft</h3>
 
-    <p><strong>Post-processing.</strong> With $\mathbf{U}$ in hand: strains anywhere in the structure from $\mathbf{B}\mathbf{U}$; stresses through the constitutive law &mdash; the first and only place material properties appear; damage metrics from discrepancies between reconstructed and measured strain fields.</p>
+    <p><strong>Post-processing.</strong> With $\mathbf{U}$ in hand: strains anywhere in the structure from $\mathbf{B}\mathbf{U}$; stresses through the constitutive law &mdash; in plain FSDT iFEM the first and only place material properties appear, though RZT-iFEM has already spent the layer shear moduli up in its kinematics (&sect;10); damage metrics from discrepancies between reconstructed and measured strain fields.</p>
 
     <p><strong>Craft, three items.</strong> (a) Elements without sensors get the small $\lambda$ weights &mdash; but very large uninstrumented patches with tiny $\lambda$ degrade conditioning and accuracy together, so the sensor layout should track expected strain gradients. (b) Deformation patterns that generate <em>no signal</em> in the instrumented set &mdash; torsion of a plate instrumented only with axial gauges on the neutral axis &mdash; are reconstructed arbitrarily badly. Observability is a placement property; systematic placement optimization is treated in <a href="mod6.html">Module 6</a>. (c) Absolute displacement requires known supports; anchor the pose or report relative deformation only.</p>
 
@@ -689,7 +694,9 @@
     <div class="math-block">$$\varepsilon_{xx}^{(k)} = u_{,x} + z\,\theta_{x,x} + \phi_x^{(k)}\,\psi_{x,x}, \qquad \phi^{(k)}(\pm h) = 0$$</div>
     <div class="math-block">$$\gamma_{xz}^{(k)} = w_{,x} + \theta_x + \beta_x^{(k)}\,\psi_x, \qquad \beta_x^{(k)} = \frac{d\phi_x^{(k)}}{dz} = \frac{G_x}{G_x^{(k)}} - 1$$</div>
 
-    <p>with $G_x$ the thickness-weighted harmonic mean $\bigl[\tfrac{1}{2h}\sum_k h^{(k)}/G_x^{(k)}\bigr]^{-1}$ of the layer transverse-shear stiffnesses (Kefal, Tessler &amp; Oterkus 2017, eqs.&nbsp;5b&ndash;5c). Read that formula before drawing the zigzag: because the harmonic mean sits close to the <em>softest</em> layer, $|\beta^{(k)}|$ is <strong>largest in the stiff face sheets</strong> ($\beta \to -1$ as $G^{(k)}$ grows) and small in the compliant core. The steep-looking part of the physical displacement profile is still the core &mdash; that is where the shear strain is &mdash; but the steep part of $\phi(z)$ itself is the faces. Identical layers necessarily get identical $\beta$.</p>
+    <p>with $G_x$ the thickness-weighted harmonic mean $\bigl[\tfrac{1}{2h}\sum_k h^{(k)}/G_x^{(k)}\bigr]^{-1}$ of the layer transverse-shear stiffnesses (Kefal, Tessler &amp; Oterkus 2017, eqs.&nbsp;5b&ndash;5c). Read that formula before drawing the zigzag. For the thick-soft-core sandwich drawn below &mdash; core at about two thirds of the thickness, $G_{\text{face}}/G_{\text{core}} = 100$ &mdash; the harmonic mean sits close to the <em>softest</em> layer, and $|\beta^{(k)}|$ comes out <strong>largest in the stiff face sheets</strong> ($\beta_{\text{face}} \approx -0.98$) and smaller in the compliant core ($\beta_{\text{core}} \approx +0.51$). The steep-looking part of the physical displacement profile is still the core &mdash; that is where the shear strain is &mdash; but the steep part of $\phi(z)$ itself is the faces. Identical layers necessarily get identical $\beta$.</p>
+
+    <p>Do not promote that ordering to a rule, though: it depends on the thickness fractions as much as on the moduli. Since $\bar{G}$ is a harmonic mean it lies between the smallest and largest layer stiffness, so the <em>stiffest</em> layer always has $-1 &lt; \beta \le 0$, hence $|\beta| &lt; 1$; the <em>softest</em> layer always has $\beta \ge 0$, with no upper bound. Shrink the soft layer to a tenth of the section at the same modulus ratio and $\bar{G} = 9.17\,G_{\text{soft}}$, giving $\beta_{\text{soft}} = 8.17$ against $\beta_{\text{stiff}} = -0.91$ &mdash; the ordering flips. Thick compliant core: steepest $\phi$ in the faces. Thin compliant interlayer: steepest $\phi$ in that interlayer.</p>
 
     <div class="figure-container">
       <svg viewBox="0 0 780 320" style="max-width:100%;background:#fff;border:1px solid #eee;" xmlns="http://www.w3.org/2000/svg">
@@ -734,12 +741,12 @@
             <text x="30" y="27" font-size="9.5" fill="#333">z=+h</text>
             <text x="30" y="214" font-size="9.5" fill="#333">z=&minus;h</text>
             <text x="140" y="245" font-size="10.5" fill="#333" text-anchor="middle">&phi;(z): piecewise linear, slope &beta;&#8317;&#7503;&#8318; = G/G&#8317;&#7503;&#8318; &minus; 1,</text>
-            <text x="140" y="260" font-size="10.5" fill="#333" text-anchor="middle">steepest in the stiff faces, pinned &phi;(&plusmn;h) = 0</text>
+            <text x="140" y="260" font-size="10.5" fill="#333" text-anchor="middle">steepest in the faces <tspan font-style="italic">here</tspan>; pinned &phi;(&plusmn;h) = 0</text>
             <text x="140" y="278" font-size="9.5" fill="#c62828" text-anchor="middle">&rArr; surface strains carry no direct zigzag signature</text>
           </g>
         </g>
       </svg>
-      <div class="figure-caption">FSDT vs RZT through a sandwich section: the straight normal cannot follow the layerwise warping; RZT's zigzag term $\phi^{(k)}(z)\psi$ can. The displacement profile bends most in the compliant core, because that is where the transverse shear strain is. Inset: $\phi(z)$ itself, whose piecewise slope is $\beta^{(k)} = G/G^{(k)} - 1$ &mdash; equal in the two identical faces, and largest there rather than in the core. $\phi$ is pinned to zero at both outer surfaces, which is exactly why surface rosettes cannot see the zigzag amplitudes.</div>
+      <div class="figure-caption">FSDT vs RZT through a sandwich section: the straight normal cannot follow the layerwise warping; RZT's zigzag term $\phi^{(k)}(z)\psi$ can. The displacement profile bends most in the compliant core, because that is where the transverse shear strain is. Inset: $\phi(z)$ itself, whose piecewise slope is $\beta^{(k)} = G/G^{(k)} - 1$ &mdash; equal in the two identical faces, and largest there rather than in the core <em>for this thick-soft-core geometry</em> (with a thin compliant layer instead, the soft layer carries the larger $|\beta|$ &mdash; see the text). $\phi$ is pinned to zero at both outer surfaces, which is exactly why surface rosettes cannot see the zigzag amplitudes.</div>
     </div>
 
     <h3 class="subsection-heading">The Inverse Extension</h3>
@@ -751,7 +758,7 @@
       <div>
         <p style="margin-top:0;">Count the DOFs against the measures and something does not add up: none of the 13 physical strain measures involves $\psi_z$, so the three artificial $\psi_{zi}$ DOFs have identically zero columns in every $\mathbf{B}_\alpha$. The raw element matrix is therefore singular by construction &mdash; and, exactly as in &sect;5, no positive weight $w_\alpha$ can fix it, because a weight only scales rows that already exist. Kefal, Tessler &amp; Oterkus handle this explicitly (2017, Appendix C): a diagonal block is <em>added</em> to the element matrix,</p>
         <div class="math-block" style="margin:6px 0;">$$\boldsymbol{\Gamma}_{\psi_z}=\operatorname{diag}\bigl(k^{1}_{\psi_z},\,k^{2}_{\psi_z},\,k^{3}_{\psi_z}\bigr),\qquad k^{i}_{\psi_z}=\lambda\,\min\bigl(k^{i}_{\psi_x},\,k^{i}_{\psi_y}\bigr),\quad \lambda \approx 10^{-5}$$</div>
-        <p style="margin-bottom:0;">where $k^i_{\psi_x}, k^i_{\psi_y}$ are the existing diagonal entries for the real zigzag-amplitude DOFs, and the corresponding right-hand-side entries are zero. This is <em>not</em> a fourteenth physical strain mismatch: it is an artificial stabilization, and it is the one place on this page where the element matrix is not purely a sum of $w\,\mathbf{B}^{\mathsf T}\mathbf{B}$ terms (&sect;1). Its cousin in iQS4 is the constant drilling mode of &sect;8, with the opposite resolution &mdash; iQS4 leans on the assembly instead of adding a spring, i3-RZT adds the diagonal because assembly cannot reach a DOF that no strain measure touches.</p>
+        <p style="margin-bottom:0;">where $k^i_{\psi_x}, k^i_{\psi_y}$ are the existing diagonal entries for the real zigzag-amplitude DOFs, and the corresponding right-hand-side entries are zero. This is <em>not</em> a fourteenth physical strain mismatch: it is an artificial stabilization, and it is the one place on this page where the element matrix is not purely a sum of $w\,\mathbf{B}^{\mathsf T}\mathbf{B}$ terms (&sect;1). Its cousin in iQS4 is the constant drilling mode of &sect;8, with the opposite resolution: iQS4 leans on the assembly, i3-RZT adds the diagonal. Be precise about <em>why</em>, because the tempting explanation is wrong. It is not that assembly can never reach $\psi_z$ &mdash; Appendix A of the same paper builds $\mathbf{T}^e$ as nine copies of one $3\times3$ direction-cosine block (eq.&nbsp;A.9), so each nodal $(\psi_x, \psi_y, \psi_z)$ triplet rotates exactly like the translation and rotation triplets do. At a fold, a direction that is pure local $\psi_z$ in one element generally has visible local $\psi_x, \psi_y$ components in its neighbour, and does pick up stiffness. The diagonal is there because that rescue is <em>unreliable</em>: on an isolated or coplanar patch there is no fold to perform it, and the element matrix is singular by construction before assembly is even reached. The added diagonal regularizes every locally invisible $\psi_z$ direction unconditionally &mdash; which is what a general-purpose element has to do.</p>
       </div>
     </div>
 
@@ -770,7 +777,7 @@
 
     <p>Where the element technology has gone since the classics &mdash; all of it composing with, rather than replacing, the iQS4/beam/RZT core.</p>
 
-    <p><strong>Curved geometry.</strong> iCS8 (Kefal, Ocean Engineering 2019) is an eight-node curved inverse-shell element combining solid-shell kinematics with FSDT assumptions in a curvilinear isoparametric coordinate system. Its stated motivation: coarse iCS8 meshes model cylindrical and curved marine geometry accurately &mdash; and in iFEM, coarse meshes translate directly into sparser sensor deployments. <em>Mesh economy is sensor economy</em>: every element you don't need is a station you don't have to instrument or regularize away.</p>
+    <p><strong>Curved geometry.</strong> iCS8 (Kefal, Ocean Engineering 2019) is an eight-node curved inverse-shell element combining solid-shell kinematics with FSDT assumptions in a curvilinear isoparametric coordinate system. Its stated motivation, in the paper's own words: the curvilinear coordinate system lets iCS8 model cylindrical and curved geometry "with a coarse discretization", and this "can allow a relatively sparse placement of sensors" (Kefal 2019). Read the modal verb. <em>Can allow</em>, not <em>implies</em> &mdash; the two densities remain the independent axes of &sect;1, and the same paper demonstrates coarse iCS8 discretizations with <em>both</em> dense and sparse sensor deployments. Coarse geometry is what makes a sparse layout practical; it does not make one automatic.</p>
 
     <p><strong>Higher-order flat elements.</strong> An eight-node quadrilateral inverse element for 2D problems (Li, Oterkus &amp; Oterkus, Sensors 2023) continues the pattern of porting the direct-FEM element catalogue, one entry at a time.</p>
 
@@ -786,7 +793,7 @@
       <tr><th>Situation</th><th>Element choice</th><th>Why</th></tr>
       <tr><td>General thin-walled assemblies</td><td><strong>iQS4</strong> (default)</td><td>6-DOF nodes, folds and junctions assemble cleanly; the field's workhorse</td></tr>
       <tr><td>Slender frame members, stiffeners</td><td>inverse Timoshenko beam &mdash; or the hybrid shell&ndash;beam strategy</td><td>1D economy; stiffeners modeled at their own scale</td></tr>
-      <tr><td>Strong geometric curvature</td><td>curved (iCS8) or isogeometric elements</td><td>coarse meshes stay accurate &rarr; fewer sensors</td></tr>
+      <tr><td>Strong geometric curvature</td><td>curved (iCS8) or isogeometric elements</td><td>coarse meshes stay accurate, which makes a sparse sensor layout practical</td></tr>
       <tr><td>Core shear compliance, thick laminates</td><td>RZT family (i3-RZT)</td><td>zigzag kinematics; accepts the material-input price</td></tr>
     </table>
 
@@ -809,6 +816,7 @@
       <li>Tessler, A.; Spangler, J. L. (2003). <em>A Variational Principle for Reconstruction of Elastic Deformations in Shear Deformable Plates and Shells</em>. NASA/TM-2003-212445, NASA Langley Research Center.</li>
       <li>Tessler, Alexander; Spangler, Jan L. (2005). <em>A least-squares variational method for full-field reconstruction of elastic deformations in shear-deformable plates and shells</em>. Computer Methods in Applied Mechanics and Engineering, vol. 194, pp. 327&ndash;339. doi:10.1016/j.cma.2004.03.015</li>
       <li>Tessler, A.; Di Sciuva, M.; Gherlone, M. (2010). <em>A consistent refinement of first-order shear deformation theory for laminated composite and sandwich plates using improved zigzag kinematics</em>. Journal of Mechanics of Materials and Structures, vol. 5, pp. 341&ndash;367. doi:10.2140/jomms.2010.5.341</li>
+      <li>Gherlone, M.; Cerracchio, P.; Mattone, M.; Di Sciuva, M.; Tessler, A. (2011). <em>Dynamic Shape Reconstruction of Three-Dimensional Frame Structures Using the Inverse Finite Element Method</em>. NASA/TP-2011-217315, NASA Langley Research Center, December 2011. (Companion report to the 2012 IJSS paper; carries the element interpolation orders in &sect;3.1 and the strain-gauge/weight discussion in &sect;4.2.)</li>
       <li>Gherlone, M.; Cerracchio, P.; Mattone, M.; Di Sciuva, M.; Tessler, A. (2012). <em>Shape sensing of 3D frame structures using an inverse Finite Element Method</em>. International Journal of Solids and Structures, vol. 49, pp. 3100&ndash;3112. doi:10.1016/j.ijsolstr.2012.06.009</li>
       <li>Gherlone, M.; Cerracchio, P.; Mattone, M.; Di Sciuva, M.; Tessler, A. (2014). <em>An inverse finite element method for beam shape sensing: theoretical framework and experimental validation</em>. Smart Materials and Structures, vol. 23, 045027. doi:10.1088/0964-1726/23/4/045027</li>
       <li>Cerracchio, Priscilla; Gherlone, Marco; Di Sciuva, Marco; Tessler, Alexander (2015). <em>A novel approach for displacement and stress monitoring of sandwich structures based on the inverse Finite Element Method</em>. Composite Structures, vol. 127, pp. 69&ndash;76. doi:10.1016/j.compstruct.2015.02.081</li>
@@ -841,11 +849,17 @@
   function update() {
     var et = parseFloat(el('rw-et').value);      // microstrain
     var eb = parseFloat(el('rw-eb').value);
-    var th2 = Math.pow(10, parseFloat(el('rw-th').value)); // mm
+    // Round the thickness ONCE to the precision that is displayed, then compute
+    // with the rounded value. Computing from the raw 10^slider while showing two
+    // decimals made every derived number irreproducible from the visible 2h --
+    // e.g. slider -0.281 showed 0.52 mm but divided by 0.5236004, printing
+    // kappa = 1.910 where 0.52 mm gives 1.923.
+    var thStr = (function(v) { return v < 3 ? v.toFixed(2) : v.toFixed(1); })(Math.pow(10, parseFloat(el('rw-th').value)));
+    var th2 = parseFloat(thStr);                 // mm, exactly what is displayed
     var sig = parseFloat(el('rw-sig').value);    // microstrain
     el('rw-et-val').textContent = et;
     el('rw-eb-val').textContent = eb;
-    el('rw-th-val').textContent = th2 < 3 ? th2.toFixed(2) : th2.toFixed(1);
+    el('rw-th-val').textContent = thStr;
     el('rw-sig-val').textContent = sig.toFixed(1);
 
     var e = (et + eb) / 2;                        // microstrain
@@ -871,7 +885,7 @@
     s += '<line x1="50" y1="' + cy + '" x2="415" y2="' + cy + '" stroke="#bbb" stroke-width="1" stroke-dasharray="6,4"/>';
     s += '<text x="54" y="' + (cy - hpx - 5) + '" font-size="10.5" fill="#333" font-family="sans-serif">z = +h</text>';
     s += '<text x="54" y="' + (cy + hpx + 13) + '" font-size="10.5" fill="#333" font-family="sans-serif">z = &minus;h</text>';
-    s += '<text x="360" y="' + (cy - hpx - 5) + '" font-size="10" fill="#666" font-family="sans-serif">2h = ' + (th2 < 3 ? th2.toFixed(2) : th2.toFixed(1)) + ' mm</text>';
+    s += '<text x="360" y="' + (cy - hpx - 5) + '" font-size="10" fill="#666" font-family="sans-serif">2h = ' + thStr + ' mm</text>';
     // rosette glyphs on surfaces
     [[70, cy - hpx], [70, cy + hpx]].forEach(function(p) {
       s += '<g stroke="#e67e22" stroke-width="1.8">'
@@ -917,7 +931,7 @@
     // ---- readout ----
     var punch = '';
     if (sig > 0 && th2 <= 1.01) {
-      punch = '<div class="insight-box" style="margin-top:10px;"><div class="box-label">Thin-structure blow-up</div><div>Same gauges, same noise &mdash; but at $2h = ' + th2.toFixed(2) + '$ mm the curvature uncertainty is $' + (sigK * 1000).toFixed(1) + '\\times10^{-3}\\ \\text{m}^{-1}$, versus $' + (Math.SQRT2 * sig / 2 * 1e-3 * 1000).toFixed(1) + '\\times10^{-3}$ at 2 mm. $\\sigma_{\\kappa}\\propto 1/(2h)$; $\\sigma_e$ never moves.</div></div>';
+      punch = '<div class="insight-box" style="margin-top:10px;"><div class="box-label">Thin-structure blow-up</div><div>Same gauges, same noise &mdash; but at $2h = ' + thStr + '$ mm the curvature uncertainty is $' + (sigK * 1000).toFixed(1) + '\\times10^{-3}\\ \\text{m}^{-1}$, versus $' + (Math.SQRT2 * sig / 2 * 1e-3 * 1000).toFixed(1) + '\\times10^{-3}$ at 2 mm. $\\sigma_{\\kappa}\\propto 1/(2h)$; $\\sigma_e$ never moves.</div></div>';
     }
     var ro = el('rw-readout');
     ro.innerHTML =
@@ -1375,7 +1389,7 @@
     assume += '<li>interpolation: ' + (formulation === 'naive'
       ? '<span style="color:#b36118;font-weight:600;">equal-order linear &mdash; parasitic shear in the space</span>'
       : 'interdependent anisoparametric (constant shear exact)') + '</li>';
-    assume += '<li>shear &gamma;: zero-strain prior at weight w&#8347; = ' + wsStr + ' (no data term &mdash; left unmeasured here, as is standard; &sect;6)</li>';
+    assume += '<li>shear &gamma;: zero-strain prior at weight w&#8347; = ' + wsStr + ' (no data term &mdash; this bench&#39;s own reduction, <em>not</em> the published beam element, which datas all six measures at unit weight; &sect;6)</li>';
     if (caseId === 'frame') {
       assume += '<li>local&rarr;global transformation: ' + (bug
         ? '<span style="color:#c62828;font-weight:700;">SKIPPED &mdash; member B assembled in wrong axes</span>'
@@ -1402,23 +1416,36 @@
       '<div style="font-size:11px;font-weight:700;color:#2e7d32;border-top:1px solid #ddd;padding-top:6px;">E, &nu;: not used &nbsp;&middot;&nbsp; loads: not used</div>';
   }
 
-  function readout(sol, rms, caseId, formulation, S, ws, wszero, bug, meshMode, alpha, sig) {
+  function readout(sol, rms, caseId, formulation, S, ws, wszero, bug, meshMode, alpha, sig, rmsUni, rmsRef) {
+    var pct = function(v) { return v === null ? '&mdash;' : v.toFixed(2) + '%'; };
     var wsTex = wszero ? '0' : '10^{' + ws + '}';
     var r = '$$\\Phi_e = \\frac{\\ell_e}{n}\\sum_{i=1}^{2}\\Big( \\big[e_i - e^{\\varepsilon}_i\\big]^2 + (2h)^2\\big[\\kappa_i - \\kappa^{\\varepsilon}_i\\big]^2 + w_s\\,\\gamma_i^2 \\Big), \\qquad 2h = L_{\\mathrm{ref}}/' + S + ',\\; w_s = ' + wsTex + '$$';
     var notes = [];
     notes.push('<span style="color:#888;">Bench convention: the curvature term carries $(2h)^2$, the plate factor of &sect;5. The 3D beam functional instead weights each curvature by the section ratio $I/A$ and torsion by $J_T/A$ &mdash; for a rectangle of depth $2h$ that is $(2h)^2/12$, so read the absolute $\\Phi_e$ values as this bench&#39;s, not as a published beam element&#39;s.</span>');
     if (wszero) {
-      notes.push('<strong>Rank-deficient, as promised (&sect;5):</strong> with $w_s = 0$ nothing ties the deflection DOFs to the rotations &mdash; the bending data only touches $\\theta$, the membrane data only touches $u$. The rank readout shows exactly 6 missing directions' + (caseId === 'frame' ? ': six inextensional transverse-translation mechanisms. Only in a straight, axis-aligned member do those coincide with the global $w$ coordinates &mdash; once the fold angle is nonzero, a member&#39;s axial data couples global $u$ and $w$, and the null vectors mix the two while the nullity stays six.' : ': here, with every member along the global axis, they <em>are</em> the 6 free $w$ DOFs. (In a folded frame the count is the same but the directions are inextensional mechanisms, not global $w$ coordinates.)') + ' The small weight is not a nicety; it is what keeps the inverse problem posed.');
+      notes.push('<strong>Rank-deficient, as promised (&sect;5):</strong> with $w_s = 0$ nothing ties the deflection DOFs to the rotations &mdash; the bending data only touches $\\theta$, the membrane data only touches $u$. The rank readout shows exactly 6 missing directions' + (caseId === 'frame' ? (bug ? ': six inextensional transverse-translation mechanisms &mdash; but with the transformation skipped, $\\mathbf{T} = \\mathbf{I}$ and member B is assembled as though it ran along global $x$, so its axial rows touch global $u$ only. The six null directions are then exactly the six free global $w$ DOFs, <em>not</em> mixed $u,w$ mechanisms. Restore the transformation and they mix.' : ': six inextensional transverse-translation mechanisms. Only in a straight, axis-aligned member do those coincide with the global $w$ coordinates &mdash; once the fold angle is nonzero, a member&#39;s axial data couples global $u$ and $w$, and the null vectors mix the two while the nullity stays six.') : ': here, with every member along the global axis, they <em>are</em> the 6 free $w$ DOFs. (In a folded frame the count is the same but the directions are inextensional mechanisms, not global $w$ coordinates.)') + ' The small weight is not a nicety; it is what keeps the inverse problem posed.');
     }
     if (!wszero && formulation === 'naive' && caseId === 'axial') {
       notes.push('<strong>Nothing for locking to bite on:</strong> the membrane block of $\\mathbf{k}^e$ is decoupled from $(w, \\theta)$, and this truth has $\\kappa \\equiv 0$, $w \\equiv 0$. The shear weight cannot touch the drawn $u(x)$ at any value, so no collapse is possible here whatever you do to $w_s$ or $L_{\\mathrm{ref}}/2h$. Switch to pure bending or tip force to see locking.');
-    } else if (!wszero && formulation === 'naive' && ws >= -2) {
-      notes.push('<strong>Locking, live:</strong> the equal-order element evaluates $\\gamma = w&#39; - \\theta(\\xi)$ pointwise, and its parasitic linear part fights the bending data. With $w_s$ this large the shear prior wins &mdash; watch the reconstruction collapse toward zero as you thin the structure ($L_{\\mathrm{ref}}/2h$ up). The interdependent element is immune: its constant-shear space contains pure bending exactly. Same data, same functional &mdash; different discrete space.');
-    } else if (!wszero && formulation === 'naive') {
-      notes.push('At $w_s = 10^{' + ws + '}$ the naive element&#39;s locking is latent &mdash; the tiny weight barely disturbs the fit. Raise $w_s$ toward 1 (someone &ldquo;enforcing&rdquo; the thin-plate assumption as if it were data) and the same element detonates. Locking is in the space; the weight only sets how hard you push against it.');
+    } else if (!wszero && formulation === 'naive' && rms !== null) {
+      // Classify against the measured w_s -> 0 baseline, not against w_s itself.
+      // The parasitic-shear competition scales as w_s (l_e/2h)^2, so a fixed
+      // cutoff on w_s calls locking "latent" at w_s = 10^-2.5 while the same
+      // element is already 9.9% off at L_ref/2h = 200.
+      var excess = (rmsRef === null) ? null : rms - rmsRef;
+      var group = Math.pow(S / NE, 2);
+      if (excess !== null && excess > 0.5) {
+        notes.push('<strong>Locking, live:</strong> the equal-order element evaluates $\\gamma = w&#39; - \\theta(\\xi)$ pointwise, and its parasitic linear part fights the bending data. At these settings it is off by ' + pct(rms) + ' against ' + pct(rmsRef) + ' at the $w_s \\to 0$ end of the slider &mdash; that gap <em>is</em> the shear prior winning. Thin the structure ($L_{\\mathrm{ref}}/2h$ up) at fixed mesh and it grows. The interdependent element is immune: its constant-shear space contains pure bending exactly. Same data, same functional &mdash; different discrete space.');
+      } else {
+        notes.push('<strong>Locking, latent &mdash; at these settings:</strong> the error is ' + pct(rms) + ', essentially the ' + pct(rmsRef) + ' this mesh already scores at the $w_s \\to 0$ end, so the weight is too small to disturb the fit. Note what &ldquo;these settings&rdquo; is doing. Latency is not a property of $w_s$ alone: the parasitic shear competes against bending on the order of $w_s(\\ell_e/2h)^2$, which at six elements and $L_{\\mathrm{ref}}/2h = ' + S + '$ means $w_s \\times ' + group.toFixed(0) + '$. Raise $w_s$, <em>or</em> thin the structure at fixed mesh, and the same element detonates. Locking is in the space; the weight only sets how hard you push against it.');
+      }
     }
-    if (caseId === 'tip' && S <= 15 && !wszero) {
-      notes.push('<strong>Thick-beam honesty check:</strong> the truth includes a shear deflection $\\gamma_0 x$ that this bench gives the solver no data for, and the zero-shear prior erases it. The error you see is not a bug &mdash; it is the unobservability of $\\mathbf{g}$, visible because $L_{\\mathrm{ref}}/2h$ is small.');
+    if (caseId === 'tip' && S <= 15 && !wszero && rms !== null) {
+      if (formulation === 'naive') {
+        notes.push('<strong>Thick-beam honesty check &mdash; two errors superposed.</strong> The truth includes a shear deflection $\\gamma_0 x$ that this bench gives the solver no data for, and the zero-shear prior erases it: that part is the unobservability of $\\mathbf{g}$, and it is what survives at the $w_s \\to 0$ end of the slider (' + pct(rmsRef) + ' here). Everything above that in the ' + pct(rms) + ' on display is parasitic-shear locking, which is a defect of the equal-order space and not honest physics. Switch the formulation to interdependent at these same settings to see the unobservability on its own &mdash; and note that pure bending, where the true shear is exactly zero, still costs the equal-order element real error while the interdependent one is exact.');
+      } else {
+        notes.push('<strong>Thick-beam honesty check:</strong> the truth includes a shear deflection $\\gamma_0 x$ that this bench gives the solver no data for, and the zero-shear prior erases it. The error you see is not a bug &mdash; it is the unobservability of $\\mathbf{g}$, visible because $L_{\\mathrm{ref}}/2h$ is small, and it does not move as you sweep $w_s$. The equal-order element at the same settings adds locking on top of it.');
+      }
     }
     if (caseId === 'frame' && wszero) {
       notes.push('With $w_s = 0$ the frame is singular before the transformation toggle can show you anything: there is no reconstruction to compare against. Restore a small $w_s$ first, then turn the transformation bug on.');
@@ -1431,8 +1458,8 @@
         notes.push('Two members, per-member rotation transformation $\\mathbf{T}^{e\\mathsf T}\\mathbf{k}^e\\mathbf{T}^e$, rigid joint at the fold &mdash; standard frame assembly (&sect;6, &sect;9). Note the truth here needs no load model at all: any kinematically integrable strain field is fair game for shape sensing.');
       }
     }
-    if (meshMode !== 'uniform' && caseId === 'tip' && !wszero && sol.U) {
-      var mnote = '<strong>Mesh grading, honestly:</strong> against the uniform mesh at identical element and sensor count, <em>both</em> gradings score worse here &mdash; fine-near-root by a little, fine-near-tip by more. This truth has $\\kappa = \\kappa_0(1 - x/L)$: $|\\kappa|$ peaks at the root but $\\kappa&#39;$ is constant, so there is no localised feature for refinement to chase, and grading only buys a longer longest element. Coarsening where $|\\kappa|$ is largest (fine-near-tip) costs the most. The &sect;9 craft point survives, but stated properly: resolution should track where the field is <em>hard to interpolate</em>, which is not the same as where the strain is biggest.';
+    if (meshMode !== 'uniform' && caseId === 'tip' && !wszero && sol.U && rms !== null && rmsUni !== null) {
+      var mnote = '<strong>Mesh grading, measured:</strong> at identical element and sensor count this grading scores ' + pct(rms) + ' against the uniform mesh&#39;s ' + pct(rmsUni) + ' &mdash; <em>' + (rms < rmsUni ? 'better' : 'worse') + '</em> at these settings. Do not read a rule off one comparison, because the sign depends on the discrete space. This truth has $\\kappa = \\kappa_0(1 - x/L)$: $|\\kappa|$ peaks at the root but $\\kappa&#39;$ is constant, so there is no localised feature for refinement to chase &mdash; for the locking-free interdependent element grading therefore only buys a longer longest element, and <em>both</em> gradings lose to uniform. The equal-order element changes the arithmetic: its parasitic-shear error grows with element length, so shortening the elements where $|\\kappa|$ is largest can more than pay for the longer ones elsewhere, and fine-near-root comes out ahead. The &sect;9 craft point survives, stated properly: resolution should track where the field is <em>hard to interpolate</em>, which is neither where the strain is biggest nor a property of the mesh alone.';
       if (sig > 0) {
         mnote += ' <span style="color:#b36118;">At $\\sigma_{\\varepsilon} &gt; 0$ read this comparison with care: the three meshes share the same standardized noise draws, but they place their stations at different points, so the realized errors are not identical. Reroll a few times, or set the noise to zero, before attributing a difference to the mesh.</span>';
       }
@@ -1470,10 +1497,37 @@
     var sol = assembleSolve(mesh, formulation, twoH, ws, truth.at, sig * 1e-6, isFrame && bug);
     var rms = validate(mesh, sol, truth, caseId, formulation);
 
+    // Two auxiliary solves so the readout can state comparisons it has actually
+    // computed rather than remembered ones. Both are 18x18 and reuse the same
+    // standardized noise draws, because assembleSolve resets its pool index.
+    //   (a) uniform-mesh baseline: the grading verdict is NOT fixed -- against
+    //       uniform, fine-near-root loses with the interdependent element and
+    //       wins with the equal-order one, across the whole slider range.
+    //   (b) near-zero-w_s baseline at the same mesh and formulation: locking
+    //       latency scales as w_s (l_e/2h)^2, not as w_s alone, so any fixed
+    //       w_s cutoff misclassifies at high slenderness.
+    var rmsUni = null;
+    if (!isFrame && meshMode !== 'uniform' && sol.U) {
+      var meshU = cantileverMesh('uniform');
+      var truthU = makeTruth(caseId, S, meshU, alpha);
+      var solU = assembleSolve(meshU, formulation, twoH, ws, truthU.at, sig * 1e-6, false);
+      rmsUni = validate(meshU, solU, truthU, caseId, formulation);
+    }
+    var WS_REF = 1e-8;                      // the low end of the shear-weight slider
+    var rmsRef = null;
+    if (!wszero && sol.U) {
+      if (ws > WS_REF) {
+        var solR = assembleSolve(mesh, formulation, twoH, WS_REF, truth.at, sig * 1e-6, isFrame && bug);
+        rmsRef = validate(mesh, solR, truth, caseId, formulation);
+      } else {
+        rmsRef = rms;
+      }
+    }
+
     if (isFrame) drawFrame(mesh, sol, truth, alpha, formulation, wszero);
     else drawCantilever(mesh, sol, truth, caseId, formulation, wszero);
     panel(sol, rms, caseId, formulation, S, ws10, wszero, sig, meshMode, bug, alpha);
-    readout(sol, rms, caseId, formulation, S, ws10, wszero, bug, meshMode, alpha, sig);
+    readout(sol, rms, caseId, formulation, S, ws10, wszero, bug, meshMode, alpha, sig, rmsUni, rmsRef);
   }
 
   ['eb-slen', 'eb-ws', 'eb-noise', 'eb-fold'].forEach(function(id) { el(id).addEventListener('input', update); });
@@ -1514,13 +1568,13 @@ initWalkthrough('element-walkthrough', [
   {
     tab: '4. Weigh',
     title: 'Build the element functional',
-    text: 'Sum weighted squared mismatches over the stations: membrane and curvature terms at weight 1 (they have data), the curvature norm carrying $(2h)^2$ for unit consistency, and every measure without data &mdash; shear always, everything in sensorless elements &mdash; at a small weight $\\lambda \\approx 10^{-4}$ on the analytic strain alone.',
-    insight: '$\\lambda = 0$ costs $\\mathbf{K}$ its rank; $\\lambda$ large imposes the unmeasured measure&#39;s zero as if it were data &mdash; for $\\mathbf{g}$ that is the Kirchhoff constraint, and only in a sensorless element is it a bias toward no deformation. The small positive weight is Tikhonov regularization wearing element clothing &mdash; but it only reaches modes some $\\mathbf{B}$ row actually sees, never a mode every $\\mathbf{B}$ annihilates.'
+    text: 'Sum weighted squared mismatches over the stations: membrane and curvature terms at weight 1 (they have data), the curvature norm carrying $(2h)^2$ for unit consistency, and every measure without data at a small weight $\\lambda \\approx 10^{-4}$ on the analytic strain alone. Which measures those are is a property of the instrumentation, not a fixed list: plate transverse shear has no surface signature and is the standard case, and so is everything in a sensorless element &mdash; but the published inverse <em>beam</em> element datas all six of its measures, shears included (&sect;6). In a sensorless element $n = 0$, so the prior is the plain area integral, not a station average.',
+    insight: '$\\lambda = 0$ <em>can</em> cost $\\mathbf{K}$ its rank &mdash; it does exactly when the dropped rows were the ones giving the weighted-$\\mathbf{B}$ stack full column rank on the free DOFs (&sect;9), which is the usual situation but not a theorem; $\\lambda$ large imposes the unmeasured measure&#39;s zero as if it were data &mdash; for $\\mathbf{g}$ that is the Kirchhoff constraint, and only in a sensorless element is it a bias toward no deformation. The small positive weight is Tikhonov regularization wearing element clothing &mdash; but it only reaches modes some $\\mathbf{B}$ row actually sees, never a mode every $\\mathbf{B}$ annihilates.'
   },
   {
     tab: '5. Stationarity',
     title: 'Differentiate: the normal equations',
-    text: 'The functional is quadratic, so stationarity gives $\\mathbf{k}^e\\mathbf{u}^e = \\mathbf{f}^e$: the matrix from $w\\,\\mathbf{B}^{\\mathsf T}\\mathbf{B}$ blocks (geometry, stations, weights &mdash; no data, no moduli), the right side from $w\\,\\mathbf{B}^{\\mathsf T}(\\text{measured strain})$ blocks (all the data, nothing else).',
+    text: 'The functional is quadratic, so each element&#39;s gradient is affine, $\\partial\\Phi_e/\\partial\\mathbf{u}^e = \\mathbf{k}^e\\mathbf{u}^e - \\mathbf{f}^e$: the matrix from $w\\,\\mathbf{B}^{\\mathsf T}\\mathbf{B}$ blocks (geometry, stations, weights &mdash; never the data, and no moduli in plain FSDT iFEM, though RZT&#39;s $\\mathbf{B}$ carries fixed layer moduli), the right side from $w\\,\\mathbf{B}^{\\mathsf T}(\\text{measured strain})$ blocks (all the data, nothing else). Stationarity is imposed on the <em>assembled</em> $\\Phi$, so what vanishes is $\\sum_e \\mathbf{S}_e^{\\mathsf T}(\\mathbf{k}^e\\mathbf{u}^e - \\mathbf{f}^e)$, not each element residual separately.',
     insight: 'The entire time-dependence of a monitoring problem flows through $\\mathbf{f}^e$. The matrix never hears about the measurements.'
   },
   {
@@ -1528,7 +1582,7 @@ initWalkthrough('element-walkthrough', [
     title: 'Transform, assemble, anchor, factor once',
     text: 'Rotate element arrays to global axes ($\\mathbf{T}^{e\\mathsf T}\\mathbf{k}^e\\mathbf{T}^e$), scatter-add, prescribe displacement BCs that kill every rigid-body mode. That is necessary but not sufficient for positive definiteness: $\\mathbf{K}$ is SPD only if the whole stack of weighted strain operators has full column rank on the free DOFs, so spurious non-rigid modes (a constant drilling rotation on a flat patch, an inextensional mechanism) must be removed by the assembly or constrained too. Then Cholesky-factor offline; each measurement frame rebuilds $\\mathbf{F}$ and back-substitutes. Full-field shape, in real time, with no loads and &mdash; in plain FSDT iFEM &mdash; no material model.',
     visual: '<svg viewBox="0 0 400 90" style="max-width:100%;background:#fff;border:1px solid #eee;"><rect x="15" y="25" width="120" height="40" rx="4" fill="#e67e22" opacity="0.15" stroke="#e67e22"/><text x="75" y="43" font-size="10" fill="#333" text-anchor="middle" font-family="sans-serif">K = LL&#7511;</text><text x="75" y="57" font-size="9" fill="#666" text-anchor="middle" font-family="sans-serif">once, offline</text><rect x="215" y="25" width="170" height="40" rx="4" fill="#1565c0" opacity="0.12" stroke="#1565c0"/><text x="300" y="43" font-size="10" fill="#333" text-anchor="middle" font-family="sans-serif">U(t) = L&#8315;&#7511;L&#8315;&sup1;F(t)</text><text x="300" y="57" font-size="9" fill="#666" text-anchor="middle" font-family="sans-serif">every frame, online</text><line x1="140" y1="45" x2="208" y2="45" stroke="#666" stroke-width="1.5"/><polygon points="212,45 203,40 203,50" fill="#666"/></svg>',
-    insight: 'K depends only on mesh + sensor layout + weights. That one sentence is the real-time argument, the sensor-placement design problem, and the offline/online split, all at once.'
+    insight: 'K depends only on mesh + sensor layout + weights &mdash; plus, for RZT, the fixed layer modulus ratios baked into $\\mathbf{B}$ and i3-RZT&#39;s stabilization diagonal. Never on the current measurements. That one sentence is the real-time argument, the sensor-placement design problem, and the offline/online split, all at once.'
   }
 ]);
 </script>
@@ -1566,19 +1620,19 @@ initFlashcards('mod5-flashcards', [
   },
   {
     q: 'List the six section strains of the inverse Timoshenko beam element.',
-    a: 'Axial stretch $u&#39;$; two bending curvatures $\\theta_y&#39;$, $\\theta_z&#39;$; torsion rate $\\theta_x&#39;$; two transverse shears $v&#39;-\\theta_z$ and $w&#39;+\\theta_y$ (sign conventions vary by text). Unlike the plate case, all six leave a surface signature on a thin-walled section &mdash; a &plusmn;45&deg; pair reads $\\gamma(\\phi) = (w&#39;+\\theta_y)\\cos\\phi - (v&#39;-\\theta_z)\\sin\\phi + R\\theta_x&#39;$, so torsion needs diametrically opposite pairs to separate it from the shears. The shears are usually left undata&#39;d at small weight anyway.'
+    a: 'Axial stretch $u&#39;$; two bending curvatures $\\theta_y&#39;$, $\\theta_z&#39;$; torsion rate $\\theta_x&#39;$; two transverse shears $v&#39;-\\theta_z$ and $w&#39;+\\theta_y$ (sign conventions vary by text). Unlike the plate case, all six leave a surface signature on a thin-walled section &mdash; a &plusmn;45&deg; pair reads $\\gamma(\\phi) = (w&#39;+\\theta_y)\\cos\\phi - (v&#39;-\\theta_z)\\sin\\phi + R\\theta_x&#39;$, so torsion needs diametrically opposite pairs to separate it from the shears. The published element datas all six at unit weight &mdash; eight gauge readings per element determine them, or six if $e_4, e_5$ are solved from the Timoshenko equilibrium relations instead of measured. Dropping the shears to a small weight is a deployment choice made later (Esposito et al. 2023), not part of the element.'
   },
   {
     q: 'What weight do sensorless elements receive in the iFEM functional, and why not zero?',
-    a: 'A small positive regularization weight, typically $\\lambda \\approx 10^{-4}$ (range $10^{-3}$&ndash;$10^{-5}$), on the squared analytic strains. Zero would cost the assembled matrix rank; $\\lambda$ lets the interpolation bridge uninstrumented regions while barely biasing instrumented ones. It is not a universal cure, though: a weight can only restore rank for modes that appear in some weighted strain row, so a mode every $\\mathbf{B}$ block annihilates &mdash; iQS4&#39;s constant drilling rotation, i3-RZT&#39;s artificial $\\psi_z$ &mdash; needs the assembly, a boundary condition, or an explicit artificial diagonal instead.'
+    a: 'A small positive regularization weight, typically $\\lambda \\approx 10^{-4}$ (range $10^{-3}$&ndash;$10^{-5}$), on the squared analytic strains &mdash; applied to the plain area integral, since a sensorless element has $n = 0$ stations to average over. Zero <em>can</em> cost the assembled matrix rank, and does whenever those rows are the only ones covering some free-DOF direction, which is the usual situation for a sensorless element; state it as the condition, not as a law (&sect;9). A positive $\\lambda$ lets the interpolation bridge uninstrumented regions while barely biasing instrumented ones. It is not a universal cure, though: a weight can only restore rank for modes that appear in some weighted strain row, so a mode every $\\mathbf{B}$ block annihilates &mdash; iQS4&#39;s constant drilling rotation, i3-RZT&#39;s artificial $\\psi_z$ &mdash; needs the assembly, a boundary condition, or an explicit artificial diagonal instead.'
   },
   {
     q: 'Why is iFEM real-time capable even for large meshes?',
-    a: '$\\mathbf{K}$ depends only on mesh, sensor layout, and weights &mdash; never on data &mdash; so it is factorized once offline. Each measurement frame only rebuilds $\\mathbf{F}$ (linear in the strain data) and performs a back-substitution.'
+    a: '$\\mathbf{K}$ depends only on mesh, sensor layout, weights, and fixed kinematic coefficients (RZT&#39;s layer modulus ratios, i3-RZT&#39;s stabilization diagonal) &mdash; never on the measured strains &mdash; so it is factorized once offline. Each measurement frame only rebuilds $\\mathbf{F}$ (linear in the strain data) and performs a back-substitution.'
   },
   {
     q: 'What kinematics does RZT add to FSDT, and what does that cost the sensing problem?',
-    a: 'Zigzag amplitudes $\\psi_x, \\psi_y$ times piecewise-linear zigzag functions $\\phi^{(k)}(z)$ whose layer slopes are $\\beta^{(k)} = G/G^{(k)} - 1$ (so $|\\beta|$ is largest in the <em>stiff</em> layers), with $\\phi(\\pm h)=0$. Costs: material data now enters the kinematics &mdash; so &ldquo;$\\mathbf{K}$ contains no moduli&rdquo; is an FSDT-only claim &mdash; and surface strains alone carry no direct zigzag signature, so unmeasured zigzag measures get small weights or require in-stack sensing. i3-RZT additionally needs an artificial diagonal block for its $\\psi_z$ DOFs, which no strain measure touches (Kefal, Tessler &amp; Oterkus 2017, Appendix C).'
+    a: 'Zigzag amplitudes $\\psi_x, \\psi_y$ times piecewise-linear zigzag functions $\\phi^{(k)}(z)$ whose layer slopes are $\\beta^{(k)} = G/G^{(k)} - 1$ with $G$ the thickness-weighted harmonic mean, and $\\phi(\\pm h)=0$. (Which layer gets the steepest $\\phi$ depends on thickness fractions, not moduli alone: the stiffest layer always has $|\\beta| &lt; 1$, the softest always has $\\beta \\ge 0$ unbounded. Thick soft core &rarr; steepest in the faces; thin soft interlayer &rarr; steepest in the interlayer.) Costs: material data now enters the kinematics &mdash; so &ldquo;$\\mathbf{K}$ contains no moduli&rdquo; is an FSDT-only claim &mdash; and surface strains alone carry no direct zigzag signature, so unmeasured zigzag measures get small weights or require in-stack sensing. i3-RZT additionally needs an artificial diagonal block for its $\\psi_z$ DOFs, which no strain measure touches (Kefal, Tessler &amp; Oterkus 2017, Appendix C).'
   },
   {
     q: 'A 0/45/90 rosette reads $\\varepsilon_0, \\varepsilon_{45}, \\varepsilon_{90}$. What is $\\gamma_{xy}$?',
@@ -1586,7 +1640,7 @@ initFlashcards('mod5-flashcards', [
   },
   {
     q: 'How does the inverse Timoshenko beam element avoid shear locking?',
-    a: 'Interdependent (anisoparametric) interpolation: transverse deflections cubic, rotations quadratic, tied together so each element represents a state of constant transverse shear exactly (Gherlone et al. 2012) &mdash; the beam analogue of the iMIN3/iQS4 edge-constraint schemes.'
+    a: 'Interdependent (anisoparametric) interpolation, with orders that differ per variable: axial $u$ and torsional rotation $\\theta_x$ <em>linear</em>, bending rotations $\\theta_y, \\theta_z$ <em>quadratic</em>, transverse deflections $v, w$ <em>cubic</em> &mdash; tied together so each element represents a state of constant transverse shear exactly (Gherlone et al. 2012; NASA/TP-2011-217315 &sect;3.1). The beam analogue of the iMIN3/iQS4 edge-constraint schemes. &ldquo;Deflections cubic, rotations quadratic&rdquo; is the common shorthand and it is wrong about $u$ and $\\theta_x$, which meet no shear measure and stay linear.'
   },
   {
     q: 'Must strain sensors sit at element centroids or Gauss points?',
@@ -1594,7 +1648,7 @@ initFlashcards('mod5-flashcards', [
   },
   {
     q: 'You must shape-sense a cylindrical marine structure. Which inverse element, and what is the argument?',
-    a: 'iCS8 (Kefal 2019): an eight-node curved inverse-shell combining solid-shell kinematics with FSDT in curvilinear coordinates. Coarse curved meshes stay accurate on cylindrical geometry, and in iFEM mesh economy is sensor economy &mdash; fewer elements means fewer stations to instrument.'
+    a: 'iCS8 (Kefal 2019): an eight-node curved inverse-shell combining solid-shell kinematics with FSDT in curvilinear coordinates. Coarse curved meshes stay accurate on cylindrical geometry, which the paper says &ldquo;can allow a relatively sparse placement of sensors&rdquo;. Note the modal verb: coarse geometry makes a sparse layout <em>practical</em>, it does not force one. Mesh resolution and sensor density stay the two independent axes &mdash; the same paper reports coarse iCS8 meshes with both dense and sparse deployments.'
   },
   {
     q: 'Name the two independent axes that control iFEM reconstruction accuracy.',

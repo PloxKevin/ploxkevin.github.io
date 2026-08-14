@@ -69,7 +69,7 @@
 
     <div class="math-block">$$\text{cost of } \nabla_{\mathbf{p}} J: \quad \underbrace{(n_p+1)\,C_{\text{solve}}}_{\text{finite differences}} \quad \text{vs.} \quad \underbrace{C_{\text{solve}} + C_{\text{lin}}}_{\text{adjoint}}$$</div>
 
-    <p>For a modulus map with $n_p = 10^4$ elements, finite differences means ten thousand FEM solves <em>per gradient evaluation</em>, with accuracy capped near $\sqrt{\varepsilon_{\text{mach}}}$ for one-sided differences. The adjoint method delivers the same gradient &mdash; exactly, for the discrete objective &mdash; at the price of <strong>one forward solve plus one linear solve</strong>, independent of $n_p$. Only when the forward problem is itself linear do the two cost the same, collapsing the bill to the familiar $2\,C_{\text{solve}}$; for the nonlinear problems above the forward solve is a Newton loop and the adjoint is the cheaper of the pair. The routes on the menu:</p>
+    <p>For a modulus map with $n_p = 10^4$ elements, finite differences means ten thousand FEM solves <em>per gradient evaluation</em>, with accuracy capped near $\sqrt{\varepsilon_{\text{mach}}}$ for one-sided differences. The adjoint method delivers the same gradient &mdash; exactly, for the discrete objective &mdash; at the price of <strong>one forward solve plus one linear solve</strong>, independent of $n_p$. Even when the forward problem is itself linear the two halves of that bill are not equal: the adjoint system carries the <em>same</em> matrix, so it reuses the factorization the forward solve already paid for and costs a pair of triangular substitutions, not a second $C_{\text{solve}}$ (Section 2 makes this precise). For the nonlinear problems above the gap only widens &mdash; the forward solve is a Newton loop, the adjoint solve a single linear system. The routes on the menu:</p>
 
     <ul>
       <li><strong>(a) Finite differences</strong> &mdash; $(n_p+1)$ full FEM solves per gradient; step-size dilemma; Section 4.</li>
@@ -301,7 +301,7 @@
       </div>
       <div class="slider-group">
         <div class="slider-control"><label><span>$\log_{10}\alpha$ (Tikhonov on $\log E$)</span> <span id="bi-alpha-val">&minus;4</span></label><input type="range" id="bi-alpha" min="-6" max="0" value="-4" step="0.25"></div>
-        <div class="slider-control"><label><span>Step size $\eta$</span> <span id="bi-eta-val">8</span></label><input type="range" id="bi-eta" min="1" max="30" value="8" step="1"></div>
+        <div class="slider-control"><label><span>Step size $\eta$</span> <span id="bi-eta-val">8</span></label><input type="range" id="bi-eta" min="0.25" max="30" value="8" step="0.25"></div>
         <div class="slider-control" style="display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;">
           <button id="bi-play" style="border:1px solid #7b1fa2;color:#fff;background:#7b1fa2;padding:6px 16px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:600;">&#9654; Play</button>
           <button id="bi-step" style="border:1px solid #7b1fa2;color:#7b1fa2;background:none;padding:6px 12px;border-radius:3px;cursor:pointer;font-size:12px;">Step</button>
@@ -323,7 +323,7 @@
     <table>
       <tr><th>Route</th><th>Cost per gradient</th><th>Exactness</th><th>Memory</th><th>Breaks down when</th></tr>
       <tr><td><strong>FD one-sided</strong></td><td>$(n_p+1)\,C_{\text{solve}}$</td><td>$O(h)$ truncation; best $\sim\sqrt{\varepsilon_{\text{mach}}}$</td><td>$O(n_u)$</td><td>$h$ ill-chosen; $n_p$ large; $J$ noisy or loosely solved</td></tr>
-      <tr><td><strong>FD central</strong></td><td>$2 n_p\,C_{\text{solve}}$</td><td>$O(h^2)$; $h^\star \sim \sqrt[3]{\varepsilon_{\text{mach}}}\,|p_i|$</td><td>$O(n_u)$</td><td>same, at double the price</td></tr>
+      <tr><td><strong>FD central</strong></td><td>$2 n_p\,C_{\text{solve}}$</td><td>$O(h^2)$; heuristic $h^\star \sim \sqrt[3]{\varepsilon_{\text{mach}}}\,\max(|p_i|,s_i)$, $s_i>0$</td><td>$O(n_u)$</td><td>same, at double the price</td></tr>
       <tr><td><strong>Direct (tangent)</strong></td><td>1 forward + $n_p$ linearized solves (factorization reused)</td><td>exact to solver tolerance</td><td>$O(n_u)$</td><td>$n_p$ large</td></tr>
       <tr><td><strong>Adjoint</strong></td><td>1 forward + 1 transposed linear solve</td><td>exact to solver tolerance</td><td>$O(n_u)$ static</td><td>you must code $\partial\mathbf{R}/\partial\mathbf{p}$ and the transpose by hand</td></tr>
       <tr><td><strong>AD — unrolled</strong></td><td>1 forward, backprop through <em>every</em> solver iteration</td><td>gradient of the <em>unconverged iterate</em>, not of the solution</td><td>$O(\text{iters}\cdot n_u)$ tape</td><td>many iterations; tape memory; iterate far from converged</td></tr>
@@ -337,15 +337,15 @@
 
     <div class="insight-box">
       <div class="box-label">Tighten the solve before blaming the math</div>
-      <div>Implicit differentiation (and the adjoint, which is its hand-written form) assumes $\mathbf{R}(\mathbf{u}^*,\mathbf{p})=\mathbf{0}$ holds <em>exactly</em>. If the forward solve stops at a residual of $10^{-4}$, the gradient inherits an error of that <em>origin</em> &mdash; but not of that size: the state error carries a factor $(\partial\mathbf{R}/\partial\mathbf{u})^{-1}$ and is then contracted against the objective's own derivatives, so the finite-difference plateau is the residual filtered by problem-dependent constants that the conditioning of the tangent bounds rather than predicts. Expect a floor unequal to $10^{-4}$ &mdash; it can land above it or, through cancellation, well below &mdash; and no choice of $h$ removes it. The diagnostic is free: if the V-curve bottoms out early and flat, the limit is the solver, not the adjoint code. Unconverged solves give unreliable gradients on <em>every</em> route: FD differentiates solver noise, unrolling differentiates a wrong iterate, implicit differentiation differentiates a violated identity.</div>
+      <div>Implicit differentiation (and the adjoint, which is its hand-written form) assumes $\mathbf{R}(\mathbf{u}^*,\mathbf{p})=\mathbf{0}$ holds <em>exactly</em>. If the forward solve stops at a residual of $10^{-4}$, the gradient inherits an error of that <em>origin</em> &mdash; but not of that size: the state error carries a factor $(\partial\mathbf{R}/\partial\mathbf{u})^{-1}$ and is then contracted against the objective's own derivatives, so the finite-difference plateau is the residual filtered by problem-dependent constants that the conditioning of the tangent bounds rather than predicts. Expect a floor unequal to $10^{-4}$ &mdash; it can land above it or, through cancellation, well below &mdash; and no choice of $h$ removes it. The diagnostic is free but not conclusive: an early, flat bottom in the V-curve says only that the error is <em>$h$-independent</em>, and a loose solve is one of several ways to produce that &mdash; a wrong $\partial\mathbf{R}/\partial\mathbf{p}$ term, a dropped sign, a missing transpose, or an OTD inconsistency (Section 2) all plateau the same way. The cheap disambiguation is to tighten the forward solve and re-run the sweep: if the floor drops, the solver was the limit; if it refuses to move, the gradient code is. Unconverged solves give unreliable gradients on <em>every</em> route: FD differentiates solver noise, unrolling differentiates a wrong iterate, implicit differentiation differentiates a violated identity.</div>
     </div>
 
-    <p>The laboratory below runs all six implementations on the Section 3 bar &mdash; same data, same unknowns &mdash; and puts the bills side by side. The two panels at the bottom hold the module's two cautionary plots: the FD step-size V-curve (with a loose-solver toggle), and the kink that a contact active-set change leaves in an otherwise smooth objective.</p>
+    <p>The laboratory below runs these route families on the Section 3 bar &mdash; same data, same unknowns &mdash; and puts the bills side by side. Its menu has six entries for five families, and the sixth is not a sixth implementation: the implicit-AD entry runs the <em>identical</em> code as the hand-written adjoint, because that is the claim &mdash; a framework's <code>custom_vjp</code> for the solve computes what Section 2 derives by hand, and there is nothing left for a separate implementation to do. The genuinely distinct code paths are the two FD stencils, the tangent sweep, the adjoint, and the taped unrolling. The two panels at the bottom hold the module's two cautionary plots: the FD step-size V-curve (with a loose-solver toggle), and the kink that a contact active-set change leaves in an otherwise smooth objective.</p>
 
     <!-- ===== INTERACTIVE: GRADIENT-ROUTES LABORATORY ===== -->
     <div class="interactive-container" id="gradient-lab">
       <div class="interactive-label">Interactive Tool — Gradient-Routes Laboratory</div>
-      <p style="font-size:13px;color:#555;margin-bottom:12px;">One inverse problem, six gradient implementations across five families. Pick a route and compare its per-element gradient (orange) against the exact discrete gradient (purple), with the running cost meter. Then stress it: loosen the forward solve, shrink the unrolling budget, or push the bar tip into a contact stop and watch the objective grow a kink.</p>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">One inverse problem, five gradient families on a six-entry menu &mdash; implicit AD is the adjoint under its autodiff name and executes the same code, by design. Pick a route and compare its per-element gradient (orange) against the exact discrete gradient (purple), with the running cost meter. Then stress it: loosen the forward solve, shrink the unrolling budget, or push the bar tip into a contact stop and watch the objective grow a kink.</p>
       <div class="slider-group">
         <div class="slider-control" style="flex:1.4;"><label><span>Gradient route</span></label>
           <select id="gl-route" style="width:100%;font-size:12px;padding:3px;">
@@ -528,8 +528,9 @@
       <li><strong>Establish the linear baseline first.</strong> Classical iFEM / Tikhonov reconstruction from the earlier modules is the sanity check every fancy method must beat. If the linear regime genuinely holds, stop there &mdash; nothing below is faster than a prefactorized one-shot solve.</li>
       <li><strong>In the nonlinear regime, move to differentiable FEM or a hand adjoint.</strong> Silicone at 10&ndash;50% strain with $E$ of tens to hundreds of kPa is hyperelastic territory. Before optimizing anything, rescale to units in which the numbers sit near unity &mdash; kPa and mm are usually a good start, though they are still dimensional and guarantee nothing by themselves. Where parameters and residual still span decades in those units, nondimensionalize properly: divide displacements by a characteristic length $L_0$, moduli by a reference modulus $E_0$, and the residual by its own characteristic scale, so both the parameter vector and the residual come out $O(1)$.</li>
       <li><strong>Always verify gradients.</strong> Central differences on a handful of parameters, $h$ swept over decades, V-shaped error curve, minimum relative error $\sim 10^{-6}$&ndash;$10^{-8}$:
-        <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}p_i}\bigg|_{\text{FD}} = \frac{J(p_i+h)-J(p_i-h)}{2h} + \mathcal{O}(h^2), \qquad h^{\star} \sim \sqrt[3]{\varepsilon_{\text{mach}}}\,|p_i|$$</div>
-        If the curve bottoms out early, your solver tolerance &mdash; not the adjoint &mdash; is the limit; implicit differentiation assumes $\mathbf{R}=\mathbf{0}$ holds, so tighten the forward solve before blaming the math.</li>
+        <div class="math-block">$$\frac{\mathrm{d}J}{\mathrm{d}p_i}\bigg|_{\text{FD}} = \frac{J(p_i+h)-J(p_i-h)}{2h} + \mathcal{O}(h^2), \qquad h^{\star} \sim \sqrt[3]{\varepsilon_{\text{mach}}}\,\max\big(|p_i|,\,s_i\big), \quad s_i > 0$$</div>
+        The step rule is a <em>heuristic</em>, and the nonzero scale $s_i$ is not decoration: a centred or log-parameterized coefficient routinely sits at $p_i = 0$ &mdash; the bar inverter below resets to exactly $\theta = \mathbf{0}$ &mdash; where $\sqrt[3]{\varepsilon_{\text{mach}}}\,|p_i|$ prescribes $h = 0$ and the quotient is undefined. Set $s_i$ to a typical magnitude for that parameter. The true optimum also depends on the size of $J$ and of its third derivative, which the rule does not know.
+        If the curve bottoms out early and flat, the error is $h$-independent and the step size is not what is capping you. Tighten the forward solve first &mdash; implicit differentiation assumes $\mathbf{R}=\mathbf{0}$ holds &mdash; and re-run the sweep: a floor that drops was the solver, a floor that does not move is a wrong adjoint term or an OTD inconsistency.</li>
       <li><strong>Parameterize for positivity.</strong> $E = \exp(\theta)$ or softplus; a plain gradient step on raw $E$ can produce a negative modulus and an indefinite $\mathbf{K}$.</li>
       <li><strong>Regularize deliberately.</strong> Tikhonov on the log-field for smooth modulus maps, total variation for inclusions and defects, and multiple load cases (different indentation sites) to shrink the null space &mdash; recall the exactly-zero gradients of Section 3:
         <div class="math-block">$$E(\mathbf{x}) = \exp\big(\theta(\mathbf{x})\big), \qquad \Phi(\theta) = \tfrac12\lVert \nabla \theta \rVert_2^2 \;\;\text{or}\;\; \lVert \nabla \theta \rVert_1 \;\;\text{(TV)}$$</div>
@@ -701,6 +702,13 @@
     return 'rgb(' + c.join(',') + ')';
   }
   function fm(x, dgt) { return (x === 0 ? '0' : Math.abs(x) < 0.001 || Math.abs(x) >= 1e4 ? x.toExponential(dgt === undefined ? 2 : dgt) : x.toFixed(dgt === undefined ? 3 : dgt)); }
+  // fm() is a 3-decimal display format. Printing "8 x (fm(du)) x (fm(dl)) = fm(gE)" with it
+  // asserts an equality between three INDEPENDENTLY rounded numbers, and the assertion is false
+  // about a third of the time: du = 0.1290, dl = -0.0074979 prints as "8 x (0.129) x (-0.007)",
+  // whose face value is -0.00722, next to a result printed as "-0.008". The operands therefore
+  // get four significant figures (enough that the product reproduces the shown result), and the
+  // final step is stated with an approximate sign, since it still is one.
+  function fmp(x) { return x === 0 ? '0' : (Math.abs(x) < 1e-4 || Math.abs(x) >= 1e4) ? x.toExponential(3) : x.toPrecision(4); }
 
   function draw() {
     var c = compute();
@@ -792,12 +800,19 @@
     // one sensor at the tip makes all 8 elements sensitive but still gives a rank-1 H, so a
     // single "identifiable: n/8" would lie.
     var nSens = c.last + 1;
+    // These are the solves CHARGED TO THE COMPLETED UPDATES, not a tally of this page's
+    // executions. The gradient displayed for the current iterate cost a further forward +
+    // adjoint pair that boot() already spent before iteration 0 was shown, and every slider
+    // change re-solves as well — so the real call count is 2(it+1) plus one per control move.
+    // The number priced here is the update rule's bill, which is what the FD comparison is about.
     var fdSolves = 9 * it, adjSolves = 2 * it;
     el('bi-counter').innerHTML = '<strong>iteration ' + it + '</strong> &nbsp;&middot;&nbsp; misfit J = ' + fm(c.J) +
-      ' &nbsp;&middot;&nbsp; solves used: <span style="color:#7b1fa2;font-weight:700;">' + adjSolves + '</span> (adjoint: 2/iter)' +
+      ' &nbsp;&middot;&nbsp; solves charged to the ' + it + ' completed update' + (it === 1 ? '' : 's') + ': <span style="color:#7b1fa2;font-weight:700;">' + adjSolves + '</span> (adjoint: 2/iter)' +
       ' vs <span style="color:#c62828;">' + fdSolves + '</span> if finite differences (9/iter)' +
       ' &nbsp;&middot;&nbsp; nonzero sensitivity: ' + nSens + '/8 elements, rank &#8804; ' + Math.min(c.sens.length, 8) +
-      (diverged ? ' &nbsp; <span style="color:#c62828;font-weight:700;">DIVERGED — step size too large; reset and reduce &#951;</span>' : '');
+      (diverged ? ' &nbsp; <span style="color:#c62828;font-weight:700;">DIVERGED — the explicit step is unstable at this (&#951;, &#945;); reset and reduce &#951;, or reduce &#945;</span>' +
+        '<span style="color:#c62828;"> &nbsp;(the prior alone needs &#951;&#945;&#955;<sub>max</sub> &lt; 2 with &#955;<sub>max</sub>(D<sup>T</sup>D) = 2 + 2cos(&#960;/8) = 3.85, so &#945; = 1 needs &#951; &lt; 0.52)</span>' : '') +
+      '<div style="font-size:11px;color:#888;margin-top:2px;">the tally prices the update rule, not this page: the gradient drawn for the <em>current</em> iterate cost one more forward + adjoint pair, and moving a slider re-solves too</div>';
     return c;
   }
 
@@ -813,7 +828,7 @@
     var c = lastC;
     var du = c.u[e] - (e > 0 ? c.u[e - 1] : 0);
     var dl = c.lam[e] - (e > 0 ? c.lam[e - 1] : 0);
-    el('bi-hover').innerHTML = 'element ' + (e + 1) + ':&nbsp; dJ<sub>data</sub>/dE = (A/L)(&#916;u)(&#916;&#955;) = 8 &times; (' + fm(du) + ') &times; (' + fm(dl) + ') = <strong>' + fm(c.gE[e]) + '</strong>' +
+    el('bi-hover').innerHTML = 'element ' + (e + 1) + ':&nbsp; dJ<sub>data</sub>/dE = (A/L)(&#916;u)(&#916;&#955;) = 8 &times; (' + fmp(du) + ') &times; (' + fmp(dl) + ') &#8776; <strong>' + fm(c.gE[e]) + '</strong>' +
       (e > c.last ? ' &nbsp;&mdash; beyond the last sensor: &#916;&#955; = 0, so the data cannot move it at all; only the prior &#945;&#8711;&#934; does' : '');
   });
   el('bi-svg').addEventListener('mouseleave', function() { el('bi-hover').innerHTML = ''; });
@@ -821,7 +836,7 @@
   function renderReadout() {
     var ro = el('bi-readout');
     ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\theta \\leftarrow \\theta - \\eta\\,\\nabla_\\theta\\Big[\\tfrac12\\lVert \\mathbf{S}\\mathbf{u}(e^\\theta)-\\mathbf{d}\\rVert^2 + \\alpha\\,\\tfrac12\\lVert \\mathbf{D}\\theta\\rVert^2\\Big], \\qquad \\eta = ' + eta + ',\\; \\alpha = 10^{' + logAlpha.toFixed(2).replace(/\.00$/, '') + '}$$</div>' +
-      '<div style="font-size:12.5px;color:#555;">Each step: one forward solve $\\mathbf{K}\\mathbf{u}=\\mathbf{f}$, one adjoint solve $\\mathbf{K}\\boldsymbol{\\lambda}=-\\mathbf{S}^{\\mathsf{T}}(\\mathbf{S}\\mathbf{u}-\\mathbf{d})$, then the per-element product formula. With noise on and $\\alpha \\to 0$ the recovered profile oscillates; raising $\\alpha$ smooths it toward the mean — Module 3\'s bias&ndash;variance trade-off in eight parameters.</div>';
+      '<div style="font-size:12.5px;color:#555;">Each step: one forward solve $\\mathbf{K}\\mathbf{u}=\\mathbf{f}$, one adjoint solve $\\mathbf{K}\\boldsymbol{\\lambda}=-\\mathbf{S}^{\\mathsf{T}}(\\mathbf{S}\\mathbf{u}-\\mathbf{d})$, then the per-element product formula. With noise on and $\\alpha \\to 0$ the recovered profile oscillates; raising $\\alpha$ smooths it toward the mean — Module 3\'s bias&ndash;variance trade-off in eight parameters. Raise $\\eta$ with it and plain gradient descent goes unstable: the prior contributes $\\alpha\\mathbf{D}^{\\mathsf{T}}\\mathbf{D}$ to the curvature, and an explicit step needs $\\eta\\,\\alpha\\,\\lambda_{\\max}(\\mathbf{D}^{\\mathsf{T}}\\mathbf{D}) &lt; 2$ with $\\lambda_{\\max} = 2+2\\cos(\\pi/8) \\approx 3.85$ here — so the top of the $\\alpha$ slider is only usable at $\\eta$ below one. That is a property of the <em>optimizer</em>, not of the adjoint: a line search or L-BFGS would pick the step for you.</div>';
     if (typeof renderMath === 'function') renderMath(ro);
   }
 
@@ -841,7 +856,11 @@
   el('bi-pattern').addEventListener('change', function() { pattern = this.value; makeData(); refresh(); });
   el('bi-noise').addEventListener('input', function() { noisePct = parseFloat(this.value); el('bi-noise-val').textContent = noisePct.toFixed(1); makeData(); refresh(); });
   el('bi-alpha').addEventListener('input', function() { logAlpha = parseFloat(this.value); el('bi-alpha-val').innerHTML = (logAlpha < 0 ? '&minus;' : '') + Math.abs(logAlpha).toFixed(2); renderReadout(); refresh(); });
-  el('bi-eta').addEventListener('input', function() { eta = parseInt(this.value); el('bi-eta-val').textContent = eta; renderReadout(); refresh(); });
+  // parseFloat, not parseInt: the slider steps in quarters so that the top of the alpha range
+  // stays reachable. With the prior 1/2||D theta||^2 the explicit step is stable only while
+  // eta * alpha * lambda_max(D^T D) < 2, and lambda_max = 2 + 2 cos(pi/8) = 3.8478 for the
+  // 8-element path graph — so alpha = 1 needs eta < 0.52, which an integer slider cannot reach.
+  el('bi-eta').addEventListener('input', function() { eta = parseFloat(this.value); el('bi-eta-val').textContent = eta; renderReadout(); refresh(); });
 
   newTruth(); makeData();
   function boot() { refresh(); renderReadout(); }
@@ -1136,7 +1155,7 @@
     else if (route === 'direct') { var dr = gradDirect(Eest); routeRes = dr.g; solverRes = resNorm(dr.fw.K, dr.fw.u, dr.fw.rhs); costHtml = '1 forward + 8 tangent solves (factorization reused)'; }
     else if (route === 'adjoint' || route === 'implicit') {
       var ad = gradAdjointPolicy(Eest); routeRes = ad.g; solverRes = resNorm(ad.fw.K, ad.fw.u, ad.fw.rhs);
-      costHtml = '1 forward + 1 adjoint solve' + (route === 'implicit' ? ' (registered as the solver’s custom VJP)' : '');
+      costHtml = '1 forward + 1 adjoint solve' + (route === 'implicit' ? ' &mdash; this is the computation a framework would register as the solver’s custom VJP; here it is literally the Adjoint route’s code, not a second implementation' : '');
     }
     else {
       var ur = gradUnrolled(Eest, kUnroll); routeRes = ur.g; solverRes = resNorm(ur.K, ur.u, ur.rhs); tapeFloats = ur.tapeFloats;
@@ -1514,7 +1533,7 @@ initFlashcards('mod10-flashcards', [
   },
   {
     q: 'Your central-difference gradient check bottoms out at $10^{-3}$ instead of $10^{-7}$. First suspect?',
-    a: 'Solver tolerance, not the adjoint code. Implicit differentiation assumes $\\mathbf{R}(\\mathbf{u}^*,\\mathbf{p})=\\mathbf{0}$ exactly; a loose forward solve caps the achievable FD agreement at a floor set by its inexactness &mdash; the residual filtered through the inverse tangent and the objective&#8217;s derivatives, so unequal to the tolerance number and not a fixed multiple of it either &mdash; and the V-curve goes flat there. Tighten the forward solve before debugging the math ($h^\\star \\sim \\sqrt[3]{\\varepsilon_{\\text{mach}}}\\,|p_i|$ for central differences).'
+    a: 'Solver tolerance &mdash; but the plateau alone does not prove it. Implicit differentiation assumes $\\mathbf{R}(\\mathbf{u}^*,\\mathbf{p})=\\mathbf{0}$ exactly; a loose forward solve caps the achievable FD agreement at a floor set by its inexactness &mdash; the residual filtered through the inverse tangent and the objective&#8217;s derivatives, so unequal to the tolerance number and not a fixed multiple of it either &mdash; and the V-curve goes flat there. A flat floor is only evidence that the error is $h$-INDEPENDENT, which a wrong $\\partial\\mathbf{R}/\\partial\\mathbf{p}$ term, a dropped sign or transpose, or an OTD inconsistency produce equally well. So tighten the solve and re-sweep: floor drops &#8594; solver; floor unmoved &#8594; gradient code. (Central-difference step heuristic: $h^\\star \\sim \\sqrt[3]{\\varepsilon_{\\text{mach}}}\\,\\max(|p_i|,\\,s_i)$ with a nonzero scale $s_i$, since a centred or log parameter can sit at $p_i=0$.)'
   }
 ]);
 </script>

@@ -192,7 +192,7 @@
 
     <div class="insight-box">
       <div class="box-label">Warning — two different "inverse FEMs"</div>
-      <div>This guide contains two unrelated methods that both go by "iFEM". (1) <strong>Shape-sensing iFEM</strong> (Tessler&ndash;Spangler, Modules 4&ndash;6): measured <em>strains</em> $\to$ displacement field, via a variational least-squares functional; loads never appear. (2) <strong>Load-reconstruction inverse FEM</strong> (this module; Maincon et al. 2008, Ma et al. 2019): measured <em>displacements</em> $\to$ applied forces, via a stiffness or transfer-matrix model. Same acronym, different unknowns, different mathematics. Li et al. (2025) are the paper most often miscounted as a chain of both, so read their pipeline carefully: shape-sensing iFEM reconstructs a displacement field from measured strains, radial basis functions fit that discrete field into a continuous one, and the distributed load then falls out of the thin-plate <em>equation of motion</em>. There is no second, load-reconstruction iFEM in it — no transfer matrix is ever formed, which is exactly how the authors sidestep the ill-posedness this module is about. Always say which iFEM you mean.</div>
+      <div>This guide contains two unrelated methods that both go by "iFEM". (1) <strong>Shape-sensing iFEM</strong> (Tessler&ndash;Spangler, Modules 4&ndash;6): measured <em>strains</em> $\to$ displacement field, via a variational least-squares functional; loads never appear. (2) <strong>Load-reconstruction inverse FEM</strong> (this module; Maincon et al. 2008, Ma et al. 2019): measured <em>displacements</em> $\to$ applied forces, via a stiffness or transfer-matrix model. Same acronym, different unknowns, different mathematics. Li et al. (2025) are the paper most often miscounted as a chain of both, so read their pipeline carefully: shape-sensing iFEM reconstructs a displacement field from measured strains, radial basis functions fit that discrete field into a continuous one, and the distributed load then falls out of the thin-plate <em>equation of motion</em>. There is no second, load-reconstruction iFEM in it — no transfer matrix is ever formed and inverted, which is what the authors mean when they say the method prevents ill-posedness. Do not read that as instability removed: the plate equation reaches the load through fourth spatial derivatives of the displacement field, and it is the least-squares iFEM step and the RBF fit that smooth the field first. The regularization is implicit and upstream, not absent. Always say which iFEM you mean.</div>
     </div>
 
     <p>The route through the module: build the linear observation model (Section 2), see exactly why naive inversion explodes (Section 3), repair it with Tikhonov regularization (Section 4) and choose the parameter honestly (Section 5), add dynamics (Section 6), then cross from structures to skin (Sections 7&ndash;9) and close with a field-tested recipe (Section 10).</p>
@@ -214,7 +214,7 @@
 
     <div class="math-block">$$\mathbf{y} = \underbrace{\mathbf{S}\,\mathbf{K}^{-1}\mathbf{B}}_{\;\mathbf{H}\,\in\,\mathbb{R}^{m\times n}}\,\mathbf{g}$$</div>
 
-    <p>$\mathbf{H}$ is the <strong>transfer matrix</strong> (influence-coefficient matrix), whose units follow the bases you chose: sensor output per unit force when the columns are nodal forces (m/N for displacement sensors, strain-per-newton for strain sensors), or sensor output per unit pressure when the columns are pressure-basis amplitudes. Entry $H_{ij}$ is the response of sensor $i$ to a unit force at candidate DOF $j$ — one column of $\mathbf{H}$ per candidate load, one row per sensor.</p>
+    <p>$\mathbf{H}$ is the <strong>transfer matrix</strong> (influence-coefficient matrix), whose units follow the bases you chose: sensor output per unit force when the columns are nodal forces (m/N for displacement sensors, strain-per-newton for strain sensors), or sensor output per unit pressure when the columns are pressure-basis amplitudes. Entry $H_{ij}$ is the response of sensor $i$ to a unit value of the load-basis coefficient $g_j$ — a unit nodal force for a nodal-force basis, a unit pressure amplitude for a pressure basis. One column of $\mathbf{H}$ per candidate load, one row per sensor.</p>
 
     <div class="figure-container">
       <svg id="fig-hassembly" viewBox="0 0 760 270" style="width:100%;max-width:760px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;"></svg>
@@ -274,7 +274,7 @@
 
     <p>You never form $\mathbf{K}^{-1}$ (Module 2's rule: solve the system). Factorize $\mathbf{K}$ once, then perform $n$ forward solves with unit loads — one per candidate DOF — sampling each solution at the sensors. All offline. When $m &lt; n$ (few sensors, many candidate loads), <strong>Maxwell&ndash;Betti reciprocity</strong> cuts the work: the displacement at $i$ due to a unit force at $j$ equals the displacement at $j$ due to a unit force at $i$ (for collocated force/displacement pairs), so you can assemble $\mathbf{H}$ row-wise from only $m$ solves with unit loads applied <em>at the sensor DOFs</em>.</p>
 
-    <p>With $m \ge n$ <em>and</em> $\mathbf{H}$ of full column rank &mdash; more sensors than unknowns is necessary, never sufficient; redundant or badly placed sensors leave the rank deficient &mdash; the least-squares estimate is</p>
+    <p>With $m \ge n$ <em>and</em> $\mathbf{H}$ of full column rank &mdash; at least as many measurement channels as unknowns is necessary, never sufficient; redundant or badly placed sensors leave the rank deficient even at $m \gg n$ &mdash; the least-squares estimate is</p>
 
     <div class="math-block">$$\hat{\mathbf{g}}_{\mathrm{LS}} = \left(\mathbf{H}^{\mathsf T}\mathbf{H}\right)^{-1}\mathbf{H}^{\mathsf T}\mathbf{y}$$</div>
 
@@ -288,7 +288,7 @@
 
     <h3 class="subsection-heading">The Fully-Observed Special Case: $\mathbf{f} = \mathbf{K}\mathbf{u}$</h3>
 
-    <p>Tactile sensing enables a degenerate case worth singling out. If <em>all</em> retained DOFs are measured — Ma et al. (2019) mesh the gel as a single layer of elements with a fixed base, so every retained node receives a completed displacement estimate &mdash; tangential motion tracked, normal component supplied by the known indenter geometry — then $\mathbf{S} = \mathbf{I}$, no elimination is needed, and force recovery is a <em>direct product</em>:</p>
+    <p>Tactile sensing enables a degenerate case worth singling out. If <em>all</em> retained DOFs are measured — Ma et al. (2019) mesh the gel as a single layer of elements with a fixed base, so every retained node receives a completed displacement estimate &mdash; the tangential components recovered from the tracked image-plane motion once the projection of the normal motion is subtracted, the normal component itself supplied by the known indenter geometry — then $\mathbf{S} = \mathbf{I}$, no elimination is needed, and force recovery is a <em>direct product</em>:</p>
 
     <div class="math-block">$$\mathbf{f} = \mathbf{K}\,\mathbf{u}_{\mathrm{meas}}$$</div>
 
@@ -307,11 +307,13 @@
 
     <p>Module 3 built the full diagnostic machinery — SVD anatomy, the discrete Picard condition, filter factors (see <a href="mod3.html#svd-ill-conditioning">Module 3, Sections 5&ndash;8</a>). This section does not re-derive any of it; it applies it to the transfer matrix and extracts the two numbers that matter for force sensing: how fast the singular values fall, and what that decay costs you in spatial resolution.</p>
 
-    <p>Write $\mathbf{H} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^{\mathsf T} = \sum_i \sigma_i \mathbf{u}_i \mathbf{v}_i^{\mathsf T}$ with $\sigma_1 \ge \dots \ge \sigma_n$. The least-squares solution expands as</p>
+    <p>Write $\mathbf{H} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^{\mathsf T} = \sum_i \sigma_i \mathbf{u}_i \mathbf{v}_i^{\mathsf T}$ with $\sigma_1 \ge \dots \ge \sigma_r > 0$, where $r = \operatorname{rank}(\mathbf{H}) \le \min(m,n)$. Only those $r$ triplets carry information; the minimum-norm least-squares solution expands as</p>
 
-    <div class="math-block">$$\hat{\mathbf{g}}_{\mathrm{LS}} = \sum_{i=1}^{n}\frac{\mathbf{u}_i^{\mathsf T}\mathbf{y}}{\sigma_i}\,\mathbf{v}_i,\qquad \kappa(\mathbf{H}) = \frac{\sigma_1}{\sigma_n}$$</div>
+    <div class="math-block">$$\hat{\mathbf{g}}_{\mathrm{LS}} = \sum_{i=1}^{r}\frac{\mathbf{u}_i^{\mathsf T}\mathbf{y}}{\sigma_i}\,\mathbf{v}_i,\qquad \kappa(\mathbf{H}) = \frac{\sigma_1}{\sigma_r}$$</div>
 
-    <p>Because elasticity smooths, the high-index right singular vectors $\mathbf{v}_i$ are <em>spatially oscillatory force patterns</em> whose displacement signatures $\mathbf{u}_i$ carry tiny $\sigma_i$: the singular values of discretized first-kind problems decay fast — near-exponentially for smooth or depth-separated kernels, algebraically in the high-frequency limit for the weakly singular same-surface kernel of Sections 7&ndash;9 (Hansen 1998). Additive measurement noise $\mathbf{e}$ contributes $\mathbf{u}_i^{\mathsf T}\mathbf{e}/\sigma_i$ to mode $i$. With $\sigma_n/\sigma_1 = 10^{-6}$ and 1% relative noise, the last modes contribute errors up to $10^4$ times the signal — the reconstruction is a large-amplitude oscillation bearing no resemblance to the true load. Discretized load-identification problems routinely reach $\kappa(\mathbf{H})$ of $10^6$&ndash;$10^{12}$.</p>
+    <p>Sum through $r$, not $n$: the page's own widgets run cases with $m &lt; n$ and with numerical rank loss, where there simply are no $n$ nonzero singular values and the $i > r$ terms would divide by zero. Read $\sigma_1/\sigma_r$ as the conditioning <em>of the observed subspace</em> — it is not the conditioning of load recovery, which when $r &lt; n$ is unbounded. In that case the load is not identifiable: any component in $\operatorname{span}\{\mathbf{v}_{r+1},\dots,\mathbf{v}_n\}$ leaves no trace in $\mathbf{y}$, so the formula above returns the minimum-norm representative of a whole affine family rather than the truth.</p>
+
+    <p>Because elasticity smooths, the high-index right singular vectors $\mathbf{v}_i$ are <em>spatially oscillatory force patterns</em> whose displacement signatures $\mathbf{u}_i$ carry tiny $\sigma_i$: the singular values of discretized first-kind problems decay fast — near-exponentially for smooth or depth-separated kernels, algebraically in the high-frequency limit for the weakly singular same-surface kernel of Sections 7&ndash;9 (Hansen 1998). Additive measurement noise $\mathbf{e}$ contributes $\mathbf{u}_i^{\mathsf T}\mathbf{e}/\sigma_i$ to mode $i$. With $\sigma_r/\sigma_1 = 10^{-6}$ and 1% relative noise, the last modes contribute errors up to $10^4$ times the signal — the reconstruction is a large-amplitude oscillation bearing no resemblance to the true load. Discretized load-identification problems routinely reach $\kappa(\mathbf{H})$ of $10^6$&ndash;$10^{12}$.</p>
 
     <div class="insight-box">
       <div class="box-label">Key insight — $\kappa(\mathbf{K})$ and $\kappa(\mathbf{H})$ are different diseases</div>
@@ -320,11 +322,11 @@
 
     <h3 class="subsection-heading">The Discrete Picard Condition on Real Data</h3>
 
-    <p>The regularized solution is meaningful only while the data coefficients $|\mathbf{u}_i^{\mathsf T}\mathbf{y}|$ decay faster than the $\sigma_i$ (Hansen 1998). On a Picard plot of both series against mode index, noisy data coefficients track the singular values initially, then flatten at the noise floor while $\sigma_i$ keeps falling. The crossing index separates recoverable modes from noise-dominated ones — count it <em>before</em> promising a spatial resolution.</p>
+    <p>The regularized solution is meaningful only while the data coefficients $|\mathbf{u}_i^{\mathsf T}\mathbf{y}|$ decay faster than the $\sigma_i$ (Hansen 1998). On a Picard plot of both series against mode index, noisy data coefficients track the singular values initially, then flatten at the noise floor while $\sigma_i$ keeps falling. The index where they flatten — equivalently, where the flat floor meets the still-falling $\sigma_i$ — separates recoverable modes from noise-dominated ones. Count it <em>before</em> promising a spatial resolution. Read the flattening, not the literal crossing point: the two series carry different units, so their vertical offset depends on how the load is scaled, and only the <em>shape</em> of the coefficient curve is scale-free.</p>
 
     <div class="figure-container">
       <svg id="fig-picard" viewBox="0 0 700 310" style="width:100%;max-width:700px;background:#fff;border:1px solid #eee;border-radius:4px;display:block;margin:0 auto;"></svg>
-      <div class="figure-caption">Anatomy of a Picard plot for a transfer matrix. The singular values $\sigma_i$ (physics) fall steadily; the data coefficients $|\mathbf{u}_i^{\mathsf T}\mathbf{y}|$ (measurements) flatten at the marker-noise floor. Left of the crossing $i^*$: recoverable traction modes ($\varphi_i \approx 1$). Right: noise-dominated modes that any sane filter must suppress.</div>
+      <div class="figure-caption">Anatomy of a Picard plot for a transfer matrix. The singular values $\sigma_i$ (physics) fall steadily; the data coefficients $|\mathbf{u}_i^{\mathsf T}\mathbf{y}|$ (measurements) flatten at the marker-noise floor. Left of $i^*$, where the floor meets the $\sigma_i$ curve: recoverable traction modes, the ones any filter must keep. Right: noise-dominated modes that any sane filter must suppress. No $\lambda$ is chosen here, so no filter factor $\varphi_i$ is defined — $i^*$ is a property of the data, and picking $\lambda$ near $\sigma_{i^*}$ is what turns it into one.</div>
     </div>
     <script>
     (function() {
@@ -374,7 +376,7 @@
       // labels
       s += '<text x="' + xm(9) + '" y="' + (yl(sig[8]) - 12) + '" font-size="11.5" fill="#00695c" font-family="sans-serif">&#963;&#7522; — singular values (physics)</text>';
       s += '<text x="' + xm(24) + '" y="' + (yl(floor) - 14) + '" font-size="11.5" fill="#c62828" font-family="sans-serif">|u&#7522;&#7488;y| — flatten at noise floor</text>';
-      s += '<text x="' + xm(6) + '" y="' + (y1 - 12) + '" font-size="11" fill="#2e7d32" font-family="sans-serif">recoverable (&#966;&#7522; &#8776; 1)</text>';
+      s += '<text x="' + xm(6) + '" y="' + (y1 - 12) + '" font-size="11" fill="#2e7d32" font-family="sans-serif">recoverable (keep)</text>';
       s += '<text x="' + xm(28) + '" y="' + (y1 - 12) + '" font-size="11" fill="#c62828" font-family="sans-serif">noise-dominated (filter out)</text>';
       svg.innerHTML = s;
     })();
@@ -389,13 +391,13 @@
     <div class="collapsible">
       <div class="collapsible-header">Numbers: what an SNR upgrade actually buys</div>
       <div class="collapsible-body">
-        <p>Set $\eta = 1/\mathrm{SNR}$. At SNR $= 100$: $k_{\max} = \sqrt{2\ln 100}/w \approx 3.0/w$. At SNR $= 10{,}000$ — a hundred times better measurement — $k_{\max} \approx 4.3/w$: barely 40% more resolution. The square root of a logarithm is one of the cruelest functions in engineering — for this kernel. Read it as the pessimistic bracket: it is the Gaussian (exponential-decay) case, and the same-surface kernel of Sections 7&ndash;9 decays only algebraically, which turns the SNR dependence into a power law. Meanwhile the kernel width $w$ sits in the denominator either way: halving it doubles $k_{\max}$ outright. Section 9 turns <em>that</em> into a design rule, because for an elastic layer $w$ is set by the pad thickness.</p>
+        <p>Set $\eta = 1/\mathrm{SNR}$. At SNR $= 100$: $k_{\max} = \sqrt{2\ln 100}/w \approx 3.0/w$. At SNR $= 10{,}000$ — a hundred times better measurement — $k_{\max} \approx 4.3/w$: barely 40% more resolution. The square root of a logarithm is one of the cruelest functions in engineering — for this kernel. Read it as the pessimistic bracket, and note how narrow the bracket is: the square root comes from the <em>squared</em> exponent of the Gaussian. In general, for $\sigma(k) \sim \mathrm{e}^{-c(wk)^q}$ the threshold gives $k_{\max} \sim [\ln(\mathrm{SNR})/c]^{1/q}/w$, so $q = 2$ (Gaussian) gives $\sqrt{\ln}$ while ordinary exponential decay $\mathrm{e}^{-cwk}$ ($q = 1$) gives $k_{\max} \sim \ln(\mathrm{SNR})/(cw)$ — better, though still logarithmic. The same-surface kernel of Sections 7&ndash;9 decays only algebraically, which turns the SNR dependence into a power law. Meanwhile the kernel width $w$ sits in the denominator either way: halving it doubles $k_{\max}$ outright. Section 9 turns <em>that</em> into a design rule, because for an elastic layer $w$ is set by the pad thickness.</p>
       </div>
     </div>
 
     <div class="insight-box">
       <div class="box-label">Key insight — for a Gaussian kernel, resolution grows with the square root of the logarithm of SNR</div>
-      <div>Better cameras, better marker tracking, more averaging: against a Gaussian kernel — or any kernel whose singular values decay exponentially — all of it buys spatial resolution only through $\sqrt{\ln(\mathrm{SNR})}$. The exponent is a property of the kernel, not a universal law: when the singular values fall only <em>algebraically</em>, $\sigma(k) \sim k^{-p}$ — the regime of the same-surface elastic kernel of Sections 7&ndash;9 — the survival threshold $\sigma(k) \gtrsim 1/\mathrm{SNR}$ gives $k_{\max} \sim \mathrm{SNR}^{1/p}$ instead, a power law, and measurement upgrades pay off far better than the Gaussian estimate suggests. What does <em>not</em> change is the geometry term: thinner gel buys resolution linearly under either kernel, which is why Section 9 treats skin <em>geometry</em> — not sensing hardware — as the primary design knob for the inverse problem.</div>
+      <div>Better cameras, better marker tracking, more averaging: against a <em>Gaussian</em> kernel, all of it buys spatial resolution only through $\sqrt{\ln(\mathrm{SNR})}$. The square root is specific to the Gaussian's quadratic exponent, not a property of exponential decay in general: for $\sigma(k) \sim \mathrm{e}^{-c(wk)^q}$ the survival threshold gives $k_{\max} \sim [\ln(\mathrm{SNR})/c]^{1/q}/w$, so plain exponential decay ($q = 1$) already buys the full $\ln(\mathrm{SNR})$. And the exponent is a property of the kernel, not a universal law at all: when the singular values fall only <em>algebraically</em>, $\sigma(k) \sim k^{-p}$ — the regime of the same-surface elastic kernel of Sections 7&ndash;9 — the survival threshold $\sigma(k) \gtrsim 1/\mathrm{SNR}$ gives $k_{\max} \sim \mathrm{SNR}^{1/p}$ instead, a power law, and measurement upgrades pay off far better than the Gaussian estimate suggests. What does <em>not</em> change is the geometry term: thinner gel buys resolution linearly under either kernel, which is why Section 9 treats skin <em>geometry</em> — not sensing hardware — as the primary design knob for the inverse problem.</div>
     </div>
 
     <!-- ===== SECTION 4: TIKHONOV ===== -->
@@ -411,9 +413,11 @@
 
     <p><strong>Standard form</strong> $\mathbf{L} = \mathbf{I}$ penalizes force magnitude. The <strong>general form</strong>, with $\mathbf{L}$ a discrete gradient or surface Laplacian, penalizes <em>roughness</em> of the traction field — usually the physically right prior for contact pressure, which is smooth over the patch — and is handled via the GSVD or a standard-form transformation. In the singular basis (for $\mathbf{L} = \mathbf{I}$), Module 3's filter-factor result applies verbatim to $\mathbf{H}$:</p>
 
-    <div class="math-block">$$\hat{\mathbf{g}}_{\lambda} = \sum_{i=1}^{n}\varphi_i\,\frac{\mathbf{u}_i^{\mathsf T}\mathbf{y}}{\sigma_i}\,\mathbf{v}_i,\qquad \varphi_i = \frac{\sigma_i^{2}}{\sigma_i^{2}+\lambda^{2}}\;\;(\mathbf{L}=\mathbf{I})$$</div>
+    <div class="math-block">$$\hat{\mathbf{g}}_{\lambda} = \sum_{i=1}^{r}\varphi_i\,\frac{\mathbf{u}_i^{\mathsf T}\mathbf{y}}{\sigma_i}\,\mathbf{v}_i = \sum_{i=1}^{r}\frac{\sigma_i}{\sigma_i^{2}+\lambda^{2}}\,\left(\mathbf{u}_i^{\mathsf T}\mathbf{y}\right)\mathbf{v}_i,\qquad \varphi_i = \frac{\sigma_i^{2}}{\sigma_i^{2}+\lambda^{2}}\;\;(\mathbf{L}=\mathbf{I})$$</div>
 
-    <p>— a smooth roll-off passing modes with $\sigma_i \gg \lambda$ and damping modes with $\sigma_i \ll \lambda$ by the factor $(\sigma_i/\lambda)^2$. Mind the exponents: the filter factor is $\sigma_i^2/(\sigma_i^2 + \lambda^2)$, not $\sigma_i/(\sigma_i+\lambda)$ and not $\sigma_i/(\sigma_i^2+\lambda^2)$ — the quadratic roll-off is what matches Tikhonov to a TSVD truncation level. <strong>Truncated SVD</strong> is precisely the hard-cutoff cousin: $\varphi_i = 1$ for $i \le k$, else $0$; with $\lambda$ matched to $\sigma_k$ the two give similar reconstructions.</p>
+    <p>The second form is the one to implement: it sums only over the $r$ nonzero triplets and never writes $\varphi_i/\sigma_i$ as the $0/0$ it becomes in a null direction. Read $\sigma_i/(\sigma_i^2+\lambda^2)$ there as the <em>whole coefficient</em> $\varphi_i/\sigma_i$, not as the filter factor — the very confusion the next paragraph warns about. And note what regularization does not do: it never resurrects $\ker(\mathbf{H})$; with $\mathbf{L} = \mathbf{I}$ the penalty simply sets those components to zero.</p>
+
+    <p>— a smooth roll-off passing modes with $\sigma_i \gg \lambda$ and damping modes with $\sigma_i \ll \lambda$ by the factor $(\sigma_i/\lambda)^2$. Mind the exponents: the filter factor is $\sigma_i^2/(\sigma_i^2 + \lambda^2)$, not $\sigma_i/(\sigma_i+\lambda)$ and not $\sigma_i/(\sigma_i^2+\lambda^2)$ — that last combination is the full coefficient $\varphi_i/\sigma_i$ from the display above, and promoting it to $\varphi_i$ changes the roll-off. The quadratic roll-off is what matches Tikhonov to a TSVD truncation level. <strong>Truncated SVD</strong> is precisely the hard-cutoff cousin: $\varphi_i = 1$ for $i \le k$, else $0$; with $\lambda$ matched to $\sigma_k$ the two give similar reconstructions.</p>
 
     <h3 class="subsection-heading">What the Bias Looks Like on a Contact Patch</h3>
 
@@ -421,7 +425,7 @@
 
     <div class="insight-box">
       <div class="box-label">Key insight — regularization declines to invent, it does not recover</div>
-      <div>No choice of $\lambda$ "restores" the information that elasticity smoothed away; regularization only trades variance for bias among the modes the data actually constrains. The resolution limit of Section 3 stands regardless — logarithmic in SNR for the Gaussian model kernel, a power law $\mathrm{SNR}^{1/p}$ when the singular values fall only algebraically, but in both cases fixed by the data and untouched by $\lambda$. Any pipeline that claims regularization "recovered" sub-kernel-width force detail is describing its prior, not its measurement.</div>
+      <div>No choice of $\lambda$ "restores" the information that elasticity smoothed away; regularization only trades variance for bias among the modes the data actually constrains. The resolution limit of Section 3 stands regardless — square-root-logarithmic in SNR for the Gaussian model kernel, a power law $\mathrm{SNR}^{1/p}$ when the singular values fall only algebraically, but in both cases fixed by the data and untouched by $\lambda$. Any pipeline that claims regularization "recovered" sub-kernel-width force detail is describing its prior, not its measurement.</div>
     </div>
 
     <h3 class="subsection-heading">Priors, Statistics, and Physical Constraints</h3>
@@ -545,15 +549,15 @@
 
     <div class="insight-box">
       <div class="box-label">Key insight — disagreement is a diagnostic</div>
-      <div>For $\mathbf{L} = \mathbf{I}$ the SVD is computed once ($n$ up to a few thousand is trivial), and a sweep of 100&ndash;200 log-spaced $\lambda$ values from $\sigma_n$ to $\sigma_1$ evaluates all three criteria through filter factors at negligible cost. For a gradient or Laplacian $\mathbf{L}$ the same trick needs the GSVD of $(\mathbf{H},\mathbf{L})$ or a standard-form transformation first: the filter factors and the meaningful range of $\lambda$ are then set by the <em>generalized</em> singular values, which carry the relative scaling and units of both matrices, not by $\sigma_n \ldots \sigma_1$. Run all three. If the L-curve and GCV agree within an order of magnitude, proceed. If they disagree wildly, that disagreement is <em>information</em>: suspect correlated noise or model error before trusting either number.</div>
+      <div>For $\mathbf{L} = \mathbf{I}$ the SVD is computed once ($n$ up to a few thousand is trivial), and a sweep of 100&ndash;200 log-spaced $\lambda$ values from $\sigma_r$ (the smallest <em>nonzero</em> singular value) to $\sigma_1$ evaluates all three criteria through filter factors at negligible cost. For a gradient or Laplacian $\mathbf{L}$ the same trick needs the GSVD of $(\mathbf{H},\mathbf{L})$ or a standard-form transformation first: the filter factors and the meaningful range of $\lambda$ are then set by the <em>generalized</em> singular values, which carry the relative scaling and units of both matrices, not by $\sigma_r \ldots \sigma_1$. Run all three. If the L-curve and GCV agree within an order of magnitude, proceed. If they disagree wildly, that disagreement is <em>information</em>: suspect correlated noise or model error before trusting either number.</div>
     </div>
 
-    <p><strong>Real-time practice:</strong> $\lambda$ is not chosen per frame. Freeze it offline during calibration, precompute the regularized pseudoinverse $(\mathbf{H}^{\mathsf T}\mathbf{H} + \lambda^2\mathbf{L}^{\mathsf T}\mathbf{L})^{-1}\mathbf{H}^{\mathsf T}$, and per-frame reconstruction becomes a single $n \times m$ matrix&ndash;vector product. That one precomputation is the entire gap between "inverse problem" and "sensor". Two caveats the formula hides. First, it is written that way for the algebra only: build it from the SVD/GSVD of $\mathbf{H}$ or an augmented least-squares QR, never by forming and inverting $\mathbf{H}^{\mathsf T}\mathbf{H}$ — the $\lambda^2$ term <em>bounds</em> the conditioning of the penalized system (for $\mathbf{L}=\mathbf{I}$, $\kappa_2 = (\sigma_1^2+\lambda^2)/(\sigma_n^2+\lambda^2) \le 1 + \sigma_1^2/\lambda^2$, still enormous at small $\lambda$), and it cannot restore digits already lost in squaring $\mathbf{H}$ (Section 2). Second, the matrix&ndash;vector product is the <em>unconstrained</em> solution; impose NNLS or a friction cone and each frame becomes a small warm-started QP or SOCP over the active set instead — still real-time at these sizes, but no longer one product.</p>
+    <p><strong>Real-time practice:</strong> $\lambda$ is not chosen per frame. Freeze it offline during calibration, precompute the regularized pseudoinverse $(\mathbf{H}^{\mathsf T}\mathbf{H} + \lambda^2\mathbf{L}^{\mathsf T}\mathbf{L})^{-1}\mathbf{H}^{\mathsf T}$, and per-frame reconstruction becomes a single $n \times m$ matrix&ndash;vector product. That one precomputation is the entire gap between "inverse problem" and "sensor". Two caveats the formula hides. First, it is written that way for the algebra only: build it from the SVD/GSVD of $\mathbf{H}$ or an augmented least-squares QR, never by forming and inverting $\mathbf{H}^{\mathsf T}\mathbf{H}$ — the $\lambda^2$ term <em>bounds</em> the conditioning of the penalized system (for $\mathbf{L}=\mathbf{I}$, $\kappa_2 = (\sigma_1^2+\lambda^2)/(\sigma_{\min}^2+\lambda^2) \le 1 + \sigma_1^2/\lambda^2$, with $\sigma_{\min} = 0$ in a null direction — still enormous at small $\lambda$), and it cannot restore digits already lost in squaring $\mathbf{H}$ (Section 2). Second, the matrix&ndash;vector product is the <em>unconstrained</em> solution; impose NNLS or a friction cone and each frame becomes a small warm-started QP or SOCP over the active set instead — still real-time at these sizes, but no longer one product.</p>
 
     <!-- ===== INTERACTIVE: L-CURVE & GCV EXPLORER ===== -->
     <div class="interactive-container" id="lcurve-explorer">
       <div class="interactive-label">Interactive Tool &mdash; L-Curve &amp; GCV Explorer</div>
-      <p style="font-size:13px;color:#555;margin-bottom:12px;">The fixed two-bump problem from the lab above ($t = 0.1$, $s = 0.25$, $\eta = 1\%$), fully observed. All curves come from one precomputed SVD swept over 150 log-spaced $\lambda$ values. Drag the $\lambda$ slider or click on the L-curve; compare where the corner, the GCV minimum, and the discrepancy rule land against the oracle (the truth-knowing best $\lambda$ — a luxury of simulation). Then press the failure-mode buttons: redraw the noise (the corner and GCV minimum jitter between draws) and switch to correlated noise (the GCV minimum drifts toward undersmoothing while the discrepancy choice stays sane).</p>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">The fixed two-bump problem from the lab above — same 48-node discretization, $t = 0.1$, $s = 0.25$, $\eta = 1\%$ — fully observed. For that matrix $\sigma_1 \approx 0.81$ and $\sigma_{48} \approx 6.0\times10^{-7}$, so $\kappa \approx 1.4\times10^{6}$. All curves come from one precomputed SVD swept over 150 log-spaced $\lambda$ values from $10^{-6}$ to $1$ — roughly $\sigma_{\min}$ to $\sigma_1$, the range Section 5 recommends. Drag the $\lambda$ slider or click on the L-curve; compare where the corner, the GCV minimum, and the discrepancy rule land against the oracle (the truth-knowing best $\lambda$ — a luxury of simulation). Then press the failure-mode buttons: redraw the noise (the corner and GCV minimum jitter between draws) and switch to correlated noise (the GCV minimum usually drifts toward undersmoothing while the discrepancy choice stays sane).</p>
 
       <div class="slider-group" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
         <div class="slider-control" style="min-width:220px;">
@@ -621,7 +625,7 @@
 
     <h3 class="subsection-heading">The Modern Method Map</h3>
 
-    <p>Following the taxonomy of Liu, Dobriban, Hou &amp; Qian (2022), five families now coexist:</p>
+    <p>Five families now coexist. The grouping below is this guide's own synthesis, drawing on the review of Liu, Dobriban, Hou &amp; Qian (2022) but not reproducing its organization — the review runs along frequency- and time-domain formulations, ill-posedness treatment, uncertain-parameter and statistical methods, and AI-based methods, which cuts across these rows rather than matching them (sparse regularization, for instance, is an ill-posedness remedy there, not a parallel family):</p>
 
     <table>
       <tr><th>Family</th><th>Core move</th><th>Character</th></tr>
@@ -639,7 +643,7 @@
 
     <h3 class="subsection-heading">Unknown Locations and Distributed Loads</h3>
 
-    <p>When the load <em>location</em> is unknown, solve on a grid of candidate positions and select by minimum residual — a discrete search wrapped around the linear solver. When the load is <em>distributed</em> in space and varying in time, the spatial dimension must be compressed into a low-order basis or the problem is hopelessly underdetermined: Li et al. (2025) reconstruct distributed dynamic loads on plates in a chain that never forms a transfer matrix at all: Tessler-style iFEM turns measured strains into a discrete displacement field, Gaussian radial basis functions fit that field into a differentiable continuous one, and the thin-plate <em>equation of motion</em> then returns the distributed load. The RBFs compress and differentiate the displacement, not the load — which is how the pipeline sidesteps the ill-posedness of this module rather than regularizing it (Section 1's warning box).</p>
+    <p>When the load <em>location</em> is unknown, solve on a grid of candidate positions and select by minimum residual — a discrete search wrapped around the linear solver. When the load is <em>distributed</em> in space and varying in time, the unknown count multiplies: with sparse measurements you usually need dimension reduction, spatial&ndash;temporal regularization, or both. Whether the problem is underdetermined is a question about the number and rank of the measurements against the number of coefficients, not a law — dense enough data can support a full spatial grid, and low-order compression is one option among several. Li et al. (2025) take the compression route on a different quantity: they reconstruct distributed dynamic loads on plates in a chain that never forms a transfer matrix at all — Tessler-style iFEM turns measured strains into a discrete displacement field, Gaussian radial basis functions fit that field into a differentiable continuous one, and the thin-plate <em>equation of motion</em> then returns the distributed load. The RBFs compress and differentiate the displacement, not the load. That avoids <em>forming and inverting</em> a transfer matrix, which is the sense in which the authors describe their method as preventing ill-posedness; it does not make the recovery insensitive to noise, since the plate equation reaches the load through fourth spatial derivatives of the displacement field. The iFEM least-squares fit and the RBF fit are what smooth the field before it is differentiated — implicit regularization, not its absence (Section 1's warning box).</p>
 
 <!-- ===== SECTION 7: STRUCTURES TO SKIN ===== -->
     <h2 class="section-heading" id="structures-to-skin">7. From Structures to Skin: the Tactile Inverse Problem</h2>
@@ -748,7 +752,7 @@
 
     <table>
       <tr><th>Family</th><th>Idea</th><th>Strengths</th><th>Weaknesses</th></tr>
-      <tr><td><strong>Analytical</strong> (GelForce-style)</td><td>Two-layer marker sensors invert Boussinesq&ndash;Cerruti half-space Green's functions per marker</td><td>Closed-form, fast, no mesh</td><td>Semi-infinite assumption is invalid for a thin bonded pad — Ma et al. (2019) criticize precisely this, and read the semi-infinite assumption as forcing a per-marker relation &mdash; in their words, &ldquo;a force vector acting on a single marker is linearly dependent only on the displacement vector of that particular marker, which is not valid in general cases.&rdquo; Note that locality does not actually follow from semi-infiniteness: the half-space Green&rsquo;s function is itself nonlocal, since a surface displacement superposes tractions from across the whole surface. Locality is a further approximation, and it fails hardest for a thin bonded pad</td></tr>
+      <tr><td><strong>Analytical</strong> (GelForce-style)</td><td>Two-layer marker sensors build a dense influence matrix from Boussinesq&ndash;Cerruti half-space Green's functions and invert it <em>globally</em>: Kamiyama et al. assemble a constant $3m \times 3n$ block matrix $\mathbf{H}$ with $\mathbf{H}_{i,j} = \mathbf{H}(\mathbf{x}_j - \boldsymbol{\xi}_i)$, precompute the pseudoinverse $\mathbf{Q} = (\mathbf{H}^{\mathsf T}\mathbf{H})^{-1}\mathbf{H}^{\mathsf T}$ offline, and apply it per frame as one matrix&ndash;vector product</td><td>Closed-form, fast, no mesh</td><td>Semi-infinite assumption is invalid for a thin bonded pad — Ma et al. (2019) criticize precisely this, and read the semi-infinite assumption as forcing a per-marker relation &mdash; in their words, &ldquo;a force vector acting on a single marker is linearly dependent only on the displacement vector of that particular marker, which is not valid in general cases.&rdquo; That reading is not what GelForce does: its inversion is global, and locality does not follow from semi-infiniteness in any case, because the half-space Green&rsquo;s function is itself nonlocal — a surface displacement superposes tractions from across the whole surface. The half-space assumption is the real weakness, and it fails hardest for a thin bonded pad</td></tr>
       <tr><td><strong>Model-based FE</strong></td><td>Geometry-true stiffness model; this module's case study</td><td>Physics-consistent; calibration-light (two material constants); interpretable</td><td>Linear-elastic assumption strains at deep indentation; needs a good mesh and BCs</td></tr>
       <tr><td><strong>Learning-based</strong></td><td>Sferrazza et al. (2019) invert the pipeline's role of FEM: offline FE simulations of the gel generate dense ground-truth force-distribution labels (resultants validated against a commercial F/T sensor); a network trained on thousands of image&ndash;label pairs reconstructs the 3-D force distribution in real time. FeelAnyForce (2024) scales the learned route across sensor types with a multi-head transformer trained on 200k+ indentations, but regresses the <em>resultant</em> 3-D contact force rather than a traction field — Section 8's resultant/distribution distinction again</td><td>Handles nonlinearity; simple runtime pipeline</td><td>Needs the label generator (itself an FE model) or massive data; training-distribution limits</td></tr>
     </table>
@@ -785,7 +789,7 @@
       </div>
     </div>
 
-    <p>The formulation move that makes it real-time: single layer of nodes + fixed bottom boundary (gel bonded to the acrylic) means <strong>every retained node has a displacement estimate</strong> &mdash; though "observed" deserves a footnote: the markers give tangential ($x$, $y$) motion directly, while the normal ($z$) component is completed using the known geometry of the indenter. Full observation is therefore conditional on that geometric assumption, not a general property of the sensor. Granting it, this is Section 2's fully-observed special case: force recovery is the direct product $\mathbf{F} = \mathbf{K}\mathbf{U}$ — no ill-conditioned inversion online, $\mathbf{K}$ precomputed offline, estimation at camera frame rate. The pathology relocates rather than vanishes: $\mathbf{K}$ amplifies pixel-scale tracking noise through its largest eigenvalues, which is exactly the door through which iFEM2.0's ridge regularization later entered.</p>
+    <p>The formulation move that makes it real-time: single layer of nodes + fixed bottom boundary (gel bonded to the acrylic) means <strong>every retained node has a displacement estimate</strong> &mdash; though "observed" deserves a footnote. The markers give <em>image-plane</em> motion, which mixes true tangential motion with the apparent shift that normal indentation produces under an oblique, refracting view (Section 7). The known indenter geometry does double duty: it supplies the normal ($z$) component, and its projection $\Delta = d\tan\beta$ is subtracted from the image-plane motion to leave the tangential ($x$, $y$) components. Ma et al. put it plainly &mdash; the observed displacements are "caused by both tangential and normal deformation of the gel pad," so the two "need to decouple." Full observation is therefore conditional on that geometric assumption, not a general property of the sensor. Granting it, this is Section 2's fully-observed special case: force recovery is the direct product $\mathbf{F} = \mathbf{K}\mathbf{U}$ — no ill-conditioned inversion online, $\mathbf{K}$ precomputed offline, estimation at camera frame rate. The pathology relocates rather than vanishes: $\mathbf{K}$ amplifies pixel-scale tracking noise through its largest eigenvalues, which is exactly the door through which iFEM2.0's ridge regularization later entered.</p>
 
     <h3 class="subsection-heading">Displacement Pipeline</h3>
 
@@ -899,6 +903,7 @@
       <li>Golub, Gene H.; Heath, Michael; Wahba, Grace (1979). <em>Generalized Cross-Validation as a Method for Choosing a Good Ridge Parameter</em>. Technometrics 21(2), pp. 215&ndash;223. doi:10.1080/00401706.1979.10489751</li>
       <li>Hansen, Per Christian (1992). <em>Analysis of Discrete Ill-Posed Problems by Means of the L-Curve</em>. SIAM Review 34(4), pp. 561&ndash;580. doi:10.1137/1034115</li>
       <li>Hansen, Per Christian (1998). <em>Rank-Deficient and Discrete Ill-Posed Problems: Numerical Aspects of Linear Inversion</em>. SIAM Monographs on Mathematical Modeling and Computation. doi:10.1137/1.9780898719697</li>
+      <li>Kamiyama, Kazuto; Vlack, Kevin; Mizota, Terukazu; Kajimoto, Hiroyuki; Kawakami, Naoki; Tachi, Susumu (2005). <em>Vision-Based Sensor for Real-Time Measuring of Surface Traction Fields</em>. IEEE Computer Graphics and Applications 25(1), pp. 68&ndash;75. doi:10.1109/mcg.2005.27</li>
       <li>Jacquelin, E.; Bennani, A.; Hamelin, P. (2003). <em>Force reconstruction: analysis and regularization of a deconvolution problem</em>. Journal of Sound and Vibration 265(1), pp. 81&ndash;107. doi:10.1016/s0022-460x(02)01441-4</li>
       <li>Maincon, Philippe; Barnardo, Celeste; Larsen, Carl M. (2008). <em>VIV Force Estimation Using Inverse FEM</em>. ASME 27th International Conference on Offshore Mechanics and Arctic Engineering (OMAE 2008), pp. 673&ndash;681. doi:10.1115/omae2008-57325</li>
       <li>Lourens, E.; Reynders, E.; De Roeck, G.; Degrande, G.; Lombaert, G. (2012). <em>An augmented Kalman filter for force identification in structural dynamics</em>. Mechanical Systems and Signal Processing 27, pp. 446&ndash;460. doi:10.1016/j.ymssp.2011.09.025</li>
@@ -1158,6 +1163,18 @@
     var peakErr = (ghmax - gmax) / gmax * 100;
     var kappa = Math.sqrt(s2[0] / s2[rank - 1]);
     var sigMin = Math.sqrt(s2[rank - 1]), nullity = n - rank;
+    // Two very different things get lumped into "nullity", and only one of them
+    // is physics. STRUCTURAL nullity is n - min(m, n): with fewer markers than
+    // unknowns those directions are genuinely outside the row space, and no
+    // lambda touches them. UNRESOLVED directions are the rest — modes whose
+    // sigma_i fell below the float64 cutoff sigma_1 * n * eps. With every node
+    // observed the finite Cauchy/Lorentzian matrix is symmetric positive
+    // definite and mathematically full rank at every t on the slider (checked in
+    // float64: min eigenvalue 1.5e-16 at t = 0.25), so the nullity the panel
+    // shows there is an artifact of the displayed precision, not a set of load
+    // directions the markers cannot see.
+    var structNull = n - Math.min(m, n);
+    var unresolved = nullity - structNull;
 
     // ---- panel (a): traction ----
     var W = 700, Ht = 190, px0 = 45, px1 = 685, py0 = 18, py1 = 165;
@@ -1238,7 +1255,7 @@
         sC += '<text x="' + (px1 - 4) + '" y="' + (ylam - 5).toFixed(1) + '" font-size="11" fill="#c62828" font-family="sans-serif" text-anchor="end">&#955;</text>';
       }
     }
-    sC += '<text x="' + (px0 + 4) + '" y="' + (sy1 + 16) + '" font-size="10.5" fill="#666" font-family="sans-serif">singular values &#963;&#7522; (log scale, 12 decades) — bar opacity = filter factor &#966;&#7522; = &#963;&#7522;&#178;/(&#963;&#7522;&#178;+&#955;&#178;)</text>';
+    sC += '<text x="' + (px0 + 4) + '" y="' + (sy1 + 16) + '" font-size="10.5" fill="#666" font-family="sans-serif">singular values &#963;&#7522; (log scale, 12 decades) — bar opacity encodes the filter factor &#966;&#7522; = &#963;&#7522;&#178;/(&#963;&#7522;&#178;+&#955;&#178;), mapped onto 0.12&#8211;0.90 so damped modes stay visible</text>';
     el('cl-svg-s').innerHTML = sC;
 
     // ---- persistent panel ----
@@ -1255,7 +1272,9 @@
       '<div style="margin-bottom:7px;"><strong>Measurements:</strong> ' + m + ' marker displacements (every ' + (spacing === 1 ? '' : spacing + (spacing === 2 ? 'nd ' : 'th ')) + 'node' + (occl ? ', hidden under the contact' : '') + '), noise ' + eta.toFixed(2) + '%</div>' +
       '<div style="margin-bottom:7px;"><strong>Unknowns:</strong> ' + n + ' nodal tractions g&#7522; on the candidate surface</div>' +
       '<div style="margin-bottom:7px;"><strong>Assumptions:</strong><ul style="margin:4px 0 0 16px;padding:0;">' + assume + '</ul></div>' +
-      '<div style="margin-bottom:7px;"><strong>Conditioning:</strong> &#963;&#8321;/&#963;<sub>r</sub> = ' + fmtExp(kappa) + ' <span style="color:#888;">(over the ' + rank + ' retained modes; &#963;<sub>r</sub> = ' + fmtExp(sigMin) + ')</span><br><strong>Rank r:</strong> ' + rank + ' / ' + Math.min(m, n) + '&nbsp;&nbsp;<strong>Nullity:</strong> ' + nullity + '&nbsp;&nbsp;<strong>Modes &#966; &gt; 0.5:</strong> ' + nkeep + (nullity > 0 ? '<br><span style="color:#c62828;">' + nullity + ' load directions are invisible to these markers — no &#955; recovers them.</span>' : '') + '</div>' +
+      '<div style="margin-bottom:7px;"><strong>Conditioning:</strong> &#963;&#8321;/&#963;<sub>r</sub> = ' + fmtExp(kappa) + ' <span style="color:#888;">(over the ' + rank + ' retained modes; &#963;<sub>r</sub> = ' + fmtExp(sigMin) + ')</span><br><strong>Rank r:</strong> ' + rank + ' / ' + Math.min(m, n) + '&nbsp;&nbsp;<strong>Nullity:</strong> ' + nullity + ' <span style="color:#888;">(' + structNull + ' structural + ' + unresolved + ' unresolved)</span>&nbsp;&nbsp;<strong>Modes &#966; &gt; 0.5:</strong> ' + nkeep +
+      (structNull > 0 ? '<br><span style="color:#c62828;">' + structNull + ' load directions lie outside the span of these ' + m + ' markers — structurally unobserved, and no &#955; recovers them.</span>' : '') +
+      (unresolved > 0 ? '<br><span style="color:#b36118;">' + unresolved + ' further directions fall below the floating-point cutoff &#963;&#7522; &lt; &#963;&#8321;&#183;n&#183;&#949;. With every node observed this kernel is positive definite and mathematically full rank: these are unresolved at double precision, not invisible to the markers.</span>' : '') + '</div>' +
       '<div style="margin-bottom:7px;"><strong>Validation vs. truth:</strong><br>' +
       'resultant error (% of true resultant): <span style="color:' + colR + ';font-weight:700;">' + resErr.toFixed(1) + '%</span><br>' +
       'pressure-map RMSE (% of true peak): <span style="color:' + colM + ';font-weight:700;">' + rmse.toFixed(1) + '%</span><br>' +
@@ -1288,7 +1307,14 @@
 <script>
 (function() {
   var el = function(id) { return document.getElementById(id); };
-  var n = 64, dx = 1 / n, t = 0.1, sep = 0.25, etaPct = 1.0;
+  // Same discretization as the Contact Inversion Lab above (n = 48). It has to
+  // match: the paragraph calls this "the fixed two-bump problem from the lab",
+  // and n is not a cosmetic knob here — refining the same kernel adds ever-fainter
+  // columns, so n = 64 would silently be a 150x worse-conditioned problem
+  // (measured: kappa 1.36e6 at n = 48, 2.07e8 at n = 64). Keeping n = 48 also
+  // makes the hardcoded sweep 1e-6..1 honest against Section 5's "sigma_r to
+  // sigma_1" advice: sigma_min = 6.0e-7 and sigma_1 = 0.81 for this matrix.
+  var n = 48, dx = 1 / n, t = 0.1, sep = 0.25, etaPct = 1.0;
   var xs = []; for (var i0 = 0; i0 < n; i0++) xs.push((i0 + 0.5) * dx);
 
   function gauss() {
@@ -1591,7 +1617,7 @@
     }
     html += '<tr><td>Current slider</td><td>' + fmtLamHtml(jCur) + '</td><td>' + s2.rmse[jCur].toFixed(1) + '%</td></tr></table>';
     if (corrOn) {
-      html += '<div style="margin-top:8px;color:#b36118;"><strong>Correlated noise active:</strong> the GCV minimum drifts toward undersmoothing (smaller &#955;) because leave-one-out no longer sees independent errors, while the discrepancy rule — which only needs the noise <em>norm</em>, still known here — stays sane. This is exactly what marker-interpolation does to tactile pipelines.</div>';
+      html += '<div style="margin-top:8px;color:#b36118;"><strong>Correlated noise active:</strong> the GCV minimum typically drifts toward undersmoothing (smaller &#955;) because leave-one-out no longer sees independent errors, while the discrepancy rule — which only needs the noise <em>norm</em>, still known here — stays sane. It is a tendency, not a guarantee: over 300 noise draws on this problem the correlated minimum moved to smaller &#955; in about 92% of them and to larger &#955; in about 7%, so redraw a few times before reading any single pair. This is exactly what marker-interpolation does to tactile pipelines.</div>';
     } else {
       html += '<div style="margin-top:8px;color:#666;">Press &ldquo;Redraw noise&rdquo; a few times: the corner and the GCV minimum jitter between draws — parameter-choice rules are estimators with variance, not oracles.</div>';
     }
@@ -1653,7 +1679,7 @@
     {
       tab: '5. Multiply',
       title: 'Step 5: $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$ — No Inversion Online',
-      text: 'One element layer with its bottom plane fixed to the acrylic leaves a single free node plane, and each of those nodes carries a <em>completed</em> displacement estimate — $x, y$ tracked from the markers, $z$ supplied by the known indenter geometry (Step 4) rather than measured. Granting that assumption, forces follow by direct multiplication $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$: $\\mathbf{K}$ precomputed, per-frame cost one matrix product, real-time at camera rate.',
+      text: 'One element layer with its bottom plane fixed to the acrylic leaves a single free node plane, and each of those nodes carries a <em>completed</em> displacement estimate — $x, y$ recovered from the tracked markers only after Step 4 subtracts the image-plane projection of the normal motion, and $z$ itself supplied by the known indenter geometry rather than measured. Granting that assumption, forces follow by direct multiplication $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$: $\\mathbf{K}$ precomputed, per-frame cost one matrix product, real-time at camera rate.',
       visual: '<div class="definition-box"><div class="box-label">The degenerate inverse</div><div>$$\\mathbf{F} = \\mathbf{K}\\,\\mathbf{U}, \\qquad \\mathbf{U} = (\\delta_x^1, \\delta_y^1, \\delta_z^1, \\ldots, \\delta_z^n)^{\\mathsf T}$$</div></div>',
       insight: 'The pathology relocates rather than vanishes: $\\mathbf{K}$ acts like a discrete second derivative, so pixel-scale tracking noise is amplified by the largest stiffness eigenvalues. This amplification is what iFEM2.0’s ridge regularization is aimed at — see &sect;4 on which unknown it penalizes.'
     },
@@ -1672,7 +1698,7 @@
   initFlashcards('mod8-flashcards', [
     {
       q: 'Write the static transfer-matrix observation model for load identification and name each factor.',
-      a: '$\\mathbf{y} = \\mathbf{H}\\mathbf{g}$ with $\\mathbf{H} = \\mathbf{S}\\mathbf{K}^{-1}\\mathbf{B}$: $\\mathbf{K}$ = FE stiffness matrix, $\\mathbf{B}$ maps $n$ candidate force parameters into the global load vector, $\\mathbf{S}$ selects the $m$ measured DOFs (or extracts strains). $H_{ij}$ = response of sensor $i$ to a unit force at candidate DOF $j$; built by $n$ offline unit-load FE solves.'
+      a: '$\\mathbf{y} = \\mathbf{H}\\mathbf{g}$ with $\\mathbf{H} = \\mathbf{S}\\mathbf{K}^{-1}\\mathbf{B}$: $\\mathbf{K}$ = FE stiffness matrix, $\\mathbf{B}$ maps $n$ candidate force parameters into the global load vector, $\\mathbf{S}$ selects the $m$ measured DOFs (or extracts strains). $H_{ij}$ = response of sensor $i$ to a unit value of the load-basis coefficient $g_j$ — a unit nodal force for a nodal-force basis, a unit pressure amplitude for a pressure basis; built by $n$ offline unit-load FE solves.'
     },
     {
       q: 'The FE model is exact and the measurements are dense. Why is load reconstruction still ill-conditioned?',
@@ -1696,7 +1722,7 @@
     },
     {
       q: 'In Ma et al. (ICRA 2019), why does GelSlim’s force reconstruction need no matrix inversion at runtime?',
-      a: 'The gel is meshed as a single layer of Hex-8 elements with the bottom fixed to the acrylic, so every retained node carries a <em>completed</em> displacement estimate — $x, y$ tracked from the markers, $z$ supplied by the known indenter geometry rather than measured. Granting that assumption, forces follow from the direct product $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$; $\\mathbf{K}$ (the paper reports 3698 nodes and 1964 elements) is precomputed offline.'
+      a: 'The gel is meshed as a single layer of Hex-8 elements with the bottom fixed to the acrylic, so every retained node carries a <em>completed</em> displacement estimate — $x, y$ recovered from the tracked image-plane marker motion once the projection of the normal motion is subtracted, $z$ itself supplied by the known indenter geometry rather than measured. Granting that assumption, forces follow from the direct product $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$; $\\mathbf{K}$ (the paper reports 3698 nodes and 1964 elements) is precomputed offline.'
     },
     {
       q: 'Quote the GelSlim 2.0 validation result against the ATI Gamma F/T sensor.',
@@ -1716,7 +1742,7 @@
     },
     {
       q: 'Distinguish the two methods both called “inverse FEM” (iFEM).',
-      a: '(1) Load-reconstruction iFEM: measured displacements $\\to$ applied forces via a stiffness/transfer model (Ma et al. 2019, iFEM2.0 2025 — this module). (2) Tessler-Spangler shape-sensing iFEM: measured strains $\\to$ displacement field via variational least squares, loads not required (used in SHM). Li et al. (2025) are the paper most often miscounted as chaining both. Their pipeline is shape-sensing iFEM $\\to$ Gaussian-RBF fit of the reconstructed <em>displacement</em> field $\\to$ thin-plate equation of motion $\\to$ distributed load: no transfer matrix, and no second load-reconstruction iFEM — which is how they sidestep the ill-posedness instead of regularizing it.'
+      a: '(1) Load-reconstruction iFEM: measured displacements $\\to$ applied forces via a stiffness/transfer model (Ma et al. 2019, iFEM2.0 2025 — this module). (2) Tessler-Spangler shape-sensing iFEM: measured strains $\\to$ displacement field via variational least squares, loads not required (used in SHM). Li et al. (2025) are the paper most often miscounted as chaining both. Their pipeline is shape-sensing iFEM $\\to$ Gaussian-RBF fit of the reconstructed <em>displacement</em> field $\\to$ thin-plate equation of motion $\\to$ distributed load: no transfer matrix, and no second load-reconstruction iFEM. That avoids forming and inverting a transfer matrix, not the instability: the plate equation takes fourth spatial derivatives of the displacement field, so the least-squares iFEM step and the RBF fit are doing implicit regularization upstream.'
     },
     {
       q: 'You use the fully-observed shortcut $\\mathbf{F} = \\mathbf{K}\\mathbf{U}$. What do the entries of $\\mathbf{F}$ at nodes on the fixed (bonded) boundary mean?',
@@ -1732,7 +1758,7 @@
     },
     {
       q: 'State the model-problem resolution law for force reconstruction and its design consequence.',
-      a: 'For a Gaussian kernel of width $w$, modes survive above noise-to-signal ratio $\\eta$ only for $k \\le k_{\\max} = \\sqrt{2\\ln(1/\\eta)}/w$: resolution grows with the SQUARE ROOT OF THE LOGARITHM of SNR but linearly with $1/w$. SNR 100 gives $k_{\\max} = 3.0/w$; SNR 10,000 gives only $4.3/w$. Better cameras buy resolution very slowly; thinner gel buys it linearly. Keep the scope: the $\\sqrt{\\ln}$ law belongs to Gaussian/exponentially-decaying kernels. For algebraic decay $\\sigma(k)\\sim k^{-p}$ — the same-surface elastic kernel — the same threshold gives $k_{\\max}\\sim\\mathrm{SNR}^{1/p}$, a power law, so measurement upgrades pay off much better there.'
+      a: 'For a Gaussian kernel of width $w$, modes survive above noise-to-signal ratio $\\eta$ only for $k \\le k_{\\max} = \\sqrt{2\\ln(1/\\eta)}/w$: resolution grows with the SQUARE ROOT OF THE LOGARITHM of SNR but linearly with $1/w$. SNR 100 gives $k_{\\max} = 3.0/w$; SNR 10,000 gives only $4.3/w$. Better cameras buy resolution very slowly; thinner gel buys it linearly. Keep the scope: the $\\sqrt{\\ln}$ law belongs specifically to the Gaussian&rsquo;s <em>quadratic</em> exponent. For $\\sigma(k)\\sim\\mathrm{e}^{-c(wk)^q}$ the general result is $k_{\\max}\\sim[\\ln(\\mathrm{SNR})/c]^{1/q}/w$, so plain exponential decay ($q=1$) already gives the full $\\ln(\\mathrm{SNR})$. For algebraic decay $\\sigma(k)\\sim k^{-p}$ — the same-surface elastic kernel — the same threshold gives $k_{\\max}\\sim\\mathrm{SNR}^{1/p}$, a power law, so measurement upgrades pay off much better there.'
     }
   ]);
 </script>

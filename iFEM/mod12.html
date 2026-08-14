@@ -106,7 +106,7 @@
           <tr><td>Measured $\mathbf{y}$</td><td>A <em>stream</em> of sparse strain channels (rosettes, FBG lines), tick after tick</td></tr>
           <tr><td>Unknown</td><td>Fast loop: the state $\mathbf{u}_t$, re-estimated every tick. Slow loop: parameters $\mathbf{p}$ (stiffness ageing, damage) &mdash; a <em>different estimator</em> (&sect;9&ndash;10)</td></tr>
           <tr><td>Assumed known</td><td>Geometry $\mathbf{X}_0$, kinematic theory, sensor positions and calibration, weights, pose anchors &mdash; loads $\mathbf{f}$ and elastic constants deliberately <em>not</em> needed for $\mathbf{u}_t$</td></tr>
-          <tr><td>Systematics $\mathbf{b}$</td><td>Sensor drift, thermal strain, clock skew between channels &mdash; the twin-killers of &sect;10</td></tr>
+          <tr><td>Systematics $\mathbf{b}$</td><td>Sensor drift, residual thermal output and thermal cross-sensitivity of the gauges, clock skew between channels &mdash; the twin-killers of &sect;10. Note the boundary: the structure's <em>real</em> thermal strain is not a systematic at all, it is genuine kinematics the reconstruction should recover (&sect;4)</td></tr>
           <tr><td>Unobservable</td><td>Rigid-body pose (strain is blind to it; anchors required); membrane-vs-curvature split under single-sided sensing (&sect;2, &sect;6)</td></tr>
         </table>
       </div>
@@ -159,7 +159,7 @@
         <text x="350" y="330" font-size="10" text-anchor="middle" fill="#999">rung 1 stops at "Full-field state" + rendering &middot; rung 2 adds the decision box &middot; rung 3 adds guards + validation on every arrow</text>
         </g>
       </svg>
-      <div class="figure-caption">The digital-twin loop. Online (solid): strain channels &rarr; conditioning &rarr; iFEM solve &rarr; full-field state &rarr; decisions, feeding back to the asset. The stages up to rendering are the ones Wei et al. (2024) name &mdash; measurement, reconstruction, analysis, expression, storage, rendering, interaction &mdash; while the decision box is what the ladder adds above rung 1: an operator steering the asset through a remote interface, which that platform does support, is not yet a decision law driven by the reconstructed state (&sect;6). Offline (dashed, top): the once-per-commissioning branch that makes the online loop cheap (&sect;3).</div>
+      <div class="figure-caption">The digital-twin loop. Online (solid): strain channels &rarr; conditioning &rarr; iFEM solve &rarr; full-field state &rarr; decisions, feeding back to the asset. The stages up to rendering are the ones Wei et al. (2024) name &mdash; measurement, reconstruction, analysis, expression, storage, rendering, interaction &mdash; while the decision box is what the ladder adds above rung 1: an operator steering the asset through a remote interface, which that platform does support, is not yet documented as a decision taken <em>because of</em> the reconstructed state &mdash; and rung 2 asks for that link, not for automation (&sect;6). Offline (dashed, top): the once-per-commissioning branch that makes the online loop cheap (&sect;3).</div>
     </div>
 
     <p><strong>Module map.</strong> &sect;2 recaps the engine in five equations; &sect;3 proves the real-time property; &sect;4 delivers the stress and damage payoff and hands you the twin simulator; &sect;5&ndash;8 tour the deployments (aerospace, marine, wind, composites) with their evidence classes; &sect;9 crosses into soft and biological bodies; &sect;10 states the open problems that define 2026 research; &sect;11 is the capstone recipe: build your own lab-scale twin.</p>
@@ -173,13 +173,15 @@
 
     <p><strong>Equation 1 &mdash; the functional.</strong> A weighted least-squares mismatch between analytic and measured section strains, summed over elements (Tessler &amp; Spangler 2005):</p>
 
-    <div class="math-block">$$\Phi(\mathbf{u}) = \sum_{e=1}^{N_e}\Big( w_m\,\lVert \mathbf{e}(\mathbf{u}^e) - \mathbf{e}^{\varepsilon} \rVert^2 + w_b\,\lVert \boldsymbol{\kappa}(\mathbf{u}^e) - \boldsymbol{\kappa}^{\varepsilon} \rVert^2 + w_s\,\lVert \boldsymbol{\gamma}(\mathbf{u}^e) - \boldsymbol{\gamma}^{\varepsilon} \rVert^2 \Big)$$</div>
+    <div class="math-block">$$\Phi(\mathbf{u}) = \sum_{e=1}^{N_e}\Big( \lVert \mathbf{e}(\mathbf{u}^e) - \mathbf{e}^{\varepsilon} \rVert^2_{\mathbf{W}^e_m} + \lVert \boldsymbol{\kappa}(\mathbf{u}^e) - \boldsymbol{\kappa}^{\varepsilon} \rVert^2_{\mathbf{W}^e_b} + \lVert \boldsymbol{\gamma}(\mathbf{u}^e) - \boldsymbol{\gamma}^{\varepsilon} \rVert^2_{\mathbf{W}^e_s} \Big)$$</div>
+
+    <p>The weights are <em>matrices</em>, not one scalar per strain group, and that is not pedantry. $\mathbf{W}^e_m, \mathbf{W}^e_b, \mathbf{W}^e_s$ are diagonal, carrying $1$ on the section-strain components a sensor at that station actually constrains and the small $\lambda$ below on the components it does not &mdash; and on a $\lambda$ component the measured target is replaced by zero, because there is no value to match. The iQS4 statement of this functional says so explicitly: the reduced, small-weight forms are applied "on the component-by-component basis" (Kefal et al. 2016, note following Eq. 9). A uniaxial gauge line constrains one membrane component and leaves the other two to the prior; a single scalar $w_m$ for the whole membrane vector cannot express that.</p>
 
     <p><strong>Equations 2&ndash;3 &mdash; the norms.</strong> Area-<em>weighted</em>, station-averaged discrete sums &mdash; the lumped-quadrature stand-in for the element-area integral, with the $1/n$ averaging over the $n$ sensor stations and the $A_e$ weighting larger elements more heavily (not dividing by area); in the canonical iQS4 statement the bending-curvature norm carries an additional $(2h)^2$ factor for dimensional consistency (Kefal et al. 2016, Eq. 8c):</p>
 
-    <div class="math-block">$$\lVert \mathbf{e}(\mathbf{u}^e)-\mathbf{e}^{\varepsilon}\rVert^2 = \frac{A_e}{n}\sum_{i=1}^{n} \big[\mathbf{e}(\mathbf{x}_i)-\mathbf{e}^{\varepsilon}_i\big]^{\mathsf T}\big[\mathbf{e}(\mathbf{x}_i)-\mathbf{e}^{\varepsilon}_i\big]$$</div>
+    <div class="math-block">$$\lVert \mathbf{e}(\mathbf{u}^e)-\mathbf{e}^{\varepsilon}\rVert^2_{\mathbf{W}^e_m} = \frac{A_e}{n}\sum_{i=1}^{n} \big[\mathbf{e}(\mathbf{x}_i)-\mathbf{e}^{\varepsilon}_i\big]^{\mathsf T}\,\mathbf{W}^e_m\,\big[\mathbf{e}(\mathbf{x}_i)-\mathbf{e}^{\varepsilon}_i\big]$$</div>
 
-    <div class="math-block">$$\lVert \boldsymbol{\kappa}(\mathbf{u}^e)-\boldsymbol{\kappa}^{\varepsilon}\rVert^2 = \frac{(2h)^2 A_e}{n}\sum_{i=1}^{n} \big[\boldsymbol{\kappa}(\mathbf{x}_i)-\boldsymbol{\kappa}^{\varepsilon}_i\big]^{\mathsf T}\big[\boldsymbol{\kappa}(\mathbf{x}_i)-\boldsymbol{\kappa}^{\varepsilon}_i\big]$$</div>
+    <div class="math-block">$$\lVert \boldsymbol{\kappa}(\mathbf{u}^e)-\boldsymbol{\kappa}^{\varepsilon}\rVert^2_{\mathbf{W}^e_b} = \frac{(2h)^2 A_e}{n}\sum_{i=1}^{n} \big[\boldsymbol{\kappa}(\mathbf{x}_i)-\boldsymbol{\kappa}^{\varepsilon}_i\big]^{\mathsf T}\,\mathbf{W}^e_b\,\big[\boldsymbol{\kappa}(\mathbf{x}_i)-\boldsymbol{\kappa}^{\varepsilon}_i\big]$$</div>
 
     <p><strong>Equation 4 &mdash; where the data comes from.</strong> Surface gauges on a plate of thickness $2h$: strains $\boldsymbol{\varepsilon}^{+}$ at $z=+h$ and $\boldsymbol{\varepsilon}^{-}$ at $z=-h$ give membrane strain as the mean and curvature as the difference over $2h$:</p>
 
@@ -218,7 +220,13 @@
       <div class="figure-caption">Surface strains to section strains at one station. Left: a top/bottom pair separates membrane strain (mean) from curvature (difference over $2h$). Right: single-sided sensing &mdash; the common case on ship hulls, where the outer surface is under water &mdash; cannot separate the two without a documented assumption (&sect;6). Module 5 owns the general eight-component machinery; this plate-level pair is all &sect;2 needs.</div>
     </div>
 
-    <p><strong>Weights.</strong> Components with sensor data get weight 1; elements or components without data get a small penalty weight $\lambda$ &mdash; typically quoted on the order of $10^{-4}$ to $10^{-5}$ in the iFEM literature ("small, e.g., $10^{-4}$" in Kefal et al. 2016). This is Tikhonov-style regularization: it supplies rank in the directions no sensor constrains, and a soft zero-strain/curvature target there &mdash; it fills those directions with a prior rather than with data. It does <em>not</em> by itself guarantee that the assembled matrix is nonsingular: as Eq. 5 states below, invertibility still requires the anchored weighted operator to have full column rank. It is also <em>not</em> a free tuning knob &mdash; giving <em>full</em> weight to a sensorless component instead forces its section strains toward zero, an overstiff, biased reconstruction (Module 4's functional lab lets you feel this; Module 6 owns the weighted-iFEM machinery). One implementation note that the textbook phrasing hides: in practice the $\lambda$ prior is often applied to <em>every</em> element, instrumented ones included, so that the assembled system stays rank-safe under channel dropout. That is what the simulator below does, and its panel says so.</p>
+    <p><strong>Weights.</strong> Components with sensor data get weight 1; elements or components without data get a small penalty weight $\lambda$ &mdash; typically quoted on the order of $10^{-4}$ to $10^{-5}$ in the iFEM literature ("small, e.g., $10^{-4}$" in Kefal et al. 2016). This is Tikhonov-style regularization: it supplies rank in the directions no sensor constrains, and a soft zero-strain/curvature target there &mdash; it fills those directions with a prior rather than with data. It does <em>not</em> by itself guarantee that the assembled matrix is nonsingular: as Eq. 5 states below, invertibility still requires the anchored weighted operator to have full column rank. It is also <em>not</em> a free tuning knob &mdash; giving <em>full</em> weight to a sensorless component instead forces its section strains toward zero, an overstiff, biased reconstruction (Module 4's functional lab lets you feel this; Module 6 owns the weighted-iFEM machinery).</p>
+
+    <p>One implementation note that the textbook phrasing hides: in practice the $\lambda$ prior is often applied to <em>every</em> element, instrumented ones included, so that the assembled system stays rank-safe under channel dropout. That is what the simulator below does, and its panel says so. Be explicit that this is no longer Eq. 1 but Eq. 1 plus a second, separately weighted term:</p>
+
+    <div class="math-block">$$\Phi_{\text{aug}}(\mathbf{u}) = \Phi(\mathbf{u}) \;+\; \lambda\sum_{e=1}^{N_e}\big\lVert \mathbf{s}(\mathbf{u}^e) \big\rVert^2_{\text{prior}}$$</div>
+
+    <p>where $\mathbf{s}$ collects the section strains being primed (curvature only, in the simulator's beam case) and the prior target is $\mathbf{0}$. Eq. 1 on its own cannot state this: it carries one weight and one target per component, so a given component can hold either a weight-1 measured target or a $\lambda$-weighted zero target &mdash; never both at once. If your code adds prior rows on top of measurement rows, write $\Phi_{\text{aug}}$, not $\Phi$.</p>
 
     <p><strong>Equation 5 &mdash; the solve.</strong> Minimizing $\Phi$ with respect to the nodal DOFs gives a linear, symmetric system, invertible once the boundary conditions anchor the rigid modes <em>and</em> the weighted strain operator has full column rank &mdash; anchoring alone does not guarantee that, and any directions it leaves to the prior should be declared, not hidden:</p>
 
@@ -226,20 +234,20 @@
 
     <h3 class="subsection-heading">The Three Properties That Make It a Twin Engine</h3>
     <ol>
-      <li><strong>No applied loads required.</strong> Wave slamming, gusts, thermal gradients &mdash; the measured strains already contain the structure's response; no $\mathbf{F}(\text{loads})$ appears anywhere. (Thermal loading is load-free only for the <em>displacement</em> reconstruction: the thermal part of the strain moves the structure but carries no stress, so stress recovery has to subtract it &mdash; &sect;4.)</li>
+      <li><strong>No applied loads required.</strong> Wave slamming, gusts, thermal gradients &mdash; the measured strains already contain the structure's response; no $\mathbf{F}(\text{loads})$ appears anywhere. (Thermal loading is load-free only for the <em>displacement</em> reconstruction: the thermal part of the strain moves the structure but carries no stress, so stress recovery has to account for it &mdash; subtracting it if, and only if, your channels still carry it, &sect;4.)</li>
       <li><strong>No elastic constants required for displacement.</strong> The matching is purely kinematic. Material enters only later, at stress recovery (&sect;4) &mdash; which is also exactly where material errors start to matter, and not before.</li>
-      <li><strong>$\mathbf{K}$ depends only on mesh, sensor positions, and weights &mdash; not on the data.</strong> It is fixed for as long as those things are &mdash; which is most of the time, and not always. Re-mesh, move or lose a sensor, reweight a channel after a dropout, change the kinematic model, and $\mathbf{K}$ changes with it, so the factorization has to be redone. The practical answer is to pre-factorize the handful of masks you expect (all channels healthy, each single-channel dropout) and refactorize only on a genuine configuration change. This third property is the entire subject of &sect;3.</li>
+      <li><strong>$\mathbf{K}$ depends on the setup, never on the measured values.</strong> The full list is longer than the slogan: geometry <em>including</em> the thickness $2h$ that Eq. 3 puts inside it, the element kinematics and interpolation, sensor positions with the quadrature/station layout they imply, the weight matrices and the sensorless mask, and the anchors imposed as boundary conditions &mdash; but not one measured strain. It is fixed for as long as all of those are &mdash; which is most of the time, and not always. Re-mesh, move or lose a sensor, reweight a channel after a dropout, re-anchor, change the kinematic model, and $\mathbf{K}$ changes with it, so the factorization has to be redone. The practical answer is to pre-factorize the handful of masks you expect (all channels healthy, each single-channel dropout) and refactorize only on a genuine configuration change. This third property is the entire subject of &sect;3.</li>
     </ol>
 
     <div class="insight-box">
       <div class="box-label">Key insight &mdash; the claim's exact boundary</div>
-      <div>"Load-free and material-free" applies to the <em>displacement reconstruction only</em>. Geometry (including thickness $2h$), the kinematic theory, calibrated strains at known positions, weights, mesh, and pose anchors all remain necessary inputs &mdash; and stress recovery re-imports a constitutive law. Module 4 polices this boundary in detail; every application section below leans on it.</div>
+      <div>"Load-free and material-free" applies to the <em>displacement reconstruction only</em>. Geometry (including thickness $2h$), the kinematic theory, calibrated strains at known positions, weights, mesh, and pose anchors all remain necessary inputs &mdash; and stress recovery re-imports a constitutive law. The <em>material</em>-free half carries one further scope condition: it holds for FSDT-family kinematics like the iQS4 element above. Swap in Refined Zigzag Theory and the analytic strain operators are built from the layers' moduli, so the reconstruction itself stops being material-free (&sect;8). Module 4 polices this boundary in detail; every application section below leans on it.</div>
     </div>
 
     <!-- ===== SECTION 3 ===== -->
     <h2 class="section-heading" id="real-time-by-construction">3. Real-Time by Construction</h2>
 
-    <p>The property that makes iFEM <em>the</em> digital-twin engine rather than merely another inverse method: <strong>the left-hand side changes only when the setup does</strong>. Because $\mathbf{K}$ encodes only mesh + sensor layout + weights, you factorize it once, offline, at commissioning:</p>
+    <p>The property that makes iFEM <em>the</em> digital-twin engine rather than merely another inverse method: <strong>the left-hand side changes only when the setup does</strong>. Because $\mathbf{K}$ encodes only the setup &mdash; geometry and thickness, element kinematics, sensor layout, weights, anchors &mdash; and never a measured value, you factorize it once, offline, at commissioning:</p>
 
     <div class="math-block">$$\mathbf{K} = \mathbf{L}\mathbf{L}^{\mathsf T} \quad \text{(once, offline)}$$</div>
 
@@ -249,7 +257,7 @@
 
     <p>And $\mathbf{F}$ is <em>linear</em> in the measured strains &mdash; each instrumented element contributes $\mathbf{B}^{\mathsf T}\mathbf{W}$ terms times its strain readings, gathered by the element assembly operator $\mathbf{T}_e$:</p>
 
-    <div class="math-block">$$\mathbf{F}_t = \sum_{e\,\in\,\text{instrumented}} \mathbf{T}_e^{\mathsf T}\,\frac{A_e}{n}\sum_{i=1}^{n}\Big( w_m \mathbf{B}_m^{\mathsf T}\mathbf{e}^{\varepsilon}_{i,t} + w_b\,(2h)^2\,\mathbf{B}_b^{\mathsf T}\boldsymbol{\kappa}^{\varepsilon}_{i,t} + w_s \mathbf{B}_s^{\mathsf T}\boldsymbol{\gamma}^{\varepsilon}_{i,t} \Big)_e$$</div>
+    <div class="math-block">$$\mathbf{F}_t = \sum_{e\,\in\,\text{instrumented}} \mathbf{T}_e^{\mathsf T}\,\frac{A_e}{n}\sum_{i=1}^{n}\Big( \mathbf{B}_m^{\mathsf T}\mathbf{W}^e_m\,\mathbf{e}^{\varepsilon}_{i,t} + (2h)^2\,\mathbf{B}_b^{\mathsf T}\mathbf{W}^e_b\,\boldsymbol{\kappa}^{\varepsilon}_{i,t} + \mathbf{B}_s^{\mathsf T}\mathbf{W}^e_s\,\boldsymbol{\gamma}^{\varepsilon}_{i,t} \Big)_e$$</div>
 
     <p>The factors inherited from Eqs. 2&ndash;3 are not decoration. The $A_e/n$ is the same area-weighted station average as in Eqs. 2&ndash;3, and the $(2h)^2$ is what makes the groups addable at all. Read that off the squared norms, not off the $\mathbf{B}$ matrices: under the Mindlin DOFs of &sect;2 the membrane and transverse-shear residuals are dimensionless while a curvature residual carries units $1/L$, so their squared contributions differ by $L^{-2}$ against the common $A_e$ weight. Multiplying the curvature norm by $(2h)^2$ restores one scale for all three groups, and $\mathbf{F}$ inherits the factor (Kefal et al. 2016, Eqs. 8c and 10d). The transverse-shear group is written for completeness: surface gauges do not measure $\boldsymbol{\gamma}^{\varepsilon}$ directly, and for thin shells that same paper omits its contribution &mdash; the standard practice is $\boldsymbol{\gamma}^{\varepsilon} = \mathbf{0}$ at a small weight, which kills the third term and leaves the two you will actually assemble.</p>
 
@@ -306,16 +314,24 @@
 
     <div class="math-block">$$\boldsymbol{\varepsilon}(\mathbf{x},z) = \mathbf{e}(\mathbf{x}) + z\,\boldsymbol{\kappa}(\mathbf{x}), \qquad \boldsymbol{\sigma}(\mathbf{x},z) = \mathbf{C}(z)\big(\boldsymbol{\varepsilon}(\mathbf{x},z) - \boldsymbol{\varepsilon}^{\text{th}} - \boldsymbol{\varepsilon}^{0}\big)$$</div>
 
-    <p>Only the <em>mechanical</em> part of the strain carries stress, which is why the eigenstrain terms are written explicitly. The reconstructed $\boldsymbol{\varepsilon}(\mathbf{x},z)$ is a <em>total</em> strain: it contains whatever the structure actually did, including free thermal expansion $\boldsymbol{\varepsilon}^{\text{th}} = \boldsymbol{\alpha}\,\Delta T$ and any locked-in initial strain $\boldsymbol{\varepsilon}^{0}$ (weld residuals, cure shrinkage). Drop them and a uniformly heated, unrestrained plate &mdash; total strain $\boldsymbol{\alpha}\Delta T$, true stress zero &mdash; comes back with a fictitious stress field. Note also what temperature compensation at the gauge does and does not buy you: it removes the sensor's <em>apparent</em> thermal output, not the structure's real thermal expansion. So $\Delta T$, the CTEs, and any initial-strain state are stress-recovery inputs in their own right, on the constitutive side of &sect;2's boundary &mdash; and unknown or badly modelled, they land in the systematics $\mathbf{b}$ of &sect;1 rather than in the displacement reconstruction.</p>
+    <p>Only the <em>mechanical</em> part of the strain carries stress, which is why the eigenstrain terms are written explicitly. But <strong>which of those terms is still in your reconstructed field is a property of your channels, and has to be declared before you subtract anything.</strong> An uncompensated gauge reports total strain, free thermal expansion $\boldsymbol{\varepsilon}^{\text{th}} = \boldsymbol{\alpha}\,\Delta T$ included: a uniformly heated, unrestrained plate &mdash; total strain $\boldsymbol{\alpha}\Delta T$, true stress zero &mdash; comes back with a fictitious stress field unless $\boldsymbol{\varepsilon}^{\text{th}}$ is removed. A self-temperature-compensated gauge or a matched dummy-gauge bridge is built for the opposite behaviour: its thermal output is engineered to vanish when the measuring body expands freely, so it has already removed the substrate's free thermal expansion along with the sensor's own apparent strain, and subtracting $\boldsymbol{\varepsilon}^{\text{th}}$ again double-counts it. State the convention: <em>total-strain channels &rarr; subtract $\boldsymbol{\varepsilon}^{\text{th}}$ at stress recovery; mechanical-strain channels &rarr; do not.</em> Either way $\Delta T$ and the CTEs are stress-recovery inputs on the constitutive side of &sect;2's boundary; what belongs in the systematics $\mathbf{b}$ of &sect;1 is only the <em>residual</em> sensor thermal output and cross-sensitivity that compensation failed to cancel, never the structure's real thermal strain.</p>
 
-    <p>With $\mathbf{C}(z)$ piecewise per lamina for composites, and for isotropic metallic structures, the plane-stress von Mises stress closes the fatigue-relevant chain:</p>
+    <p>The locked-in initial strain $\boldsymbol{\varepsilon}^{0}$ (weld residuals, cure shrinkage) needs the same care, and gets it less often. A gauge bonded and zeroed <em>after</em> welding or cure cannot observe strain that was already present at that moment, and a recorded zero-<em>load</em> baseline (&sect;11, step 4) is not a zero-<em>stress</em> state. What the twin reconstructs is a <em>change</em> from its commissioning reference, so read the recovery incrementally:</p>
+
+    <div class="math-block">$$\boldsymbol{\sigma}(t) = \boldsymbol{\sigma}_0 + \mathbf{C}(z)\big(\Delta\boldsymbol{\varepsilon}_{\text{rec}} - \Delta\boldsymbol{\varepsilon}^{\text{th}} - \Delta\boldsymbol{\varepsilon}^{0}\big)$$</div>
+
+    <p>with the pre-existing $\boldsymbol{\sigma}_0$ &mdash; or the fabrication eigenstrain that produces it &mdash; supplied independently, by process modelling or by a destructive/semi-destructive residual-stress measurement. It is not in the strain stream, and no amount of reconstruction quality will put it there. Claim absolute stress only when you can say where $\boldsymbol{\sigma}_0$ came from; otherwise report stress <em>ranges</em> and increments, which is all a baseline-zeroed installation actually delivers &mdash; and which is, conveniently, what fatigue accounting needs.</p>
+
+    <p>For <strong>isotropic metallic structures</strong> the plane-stress von Mises stress closes the fatigue-relevant chain:</p>
 
     <div class="math-block">$$\sigma_{vM} = \sqrt{\sigma_x^2 - \sigma_x\sigma_y + \sigma_y^2 + 3\tau_{xy}^2}$$</div>
 
-    <p>This ordering is important pedagogy: <strong>iFEM displacement reconstruction is material-free; stress recovery is exactly as good as your constitutive knowledge.</strong> The founding marine application was framed this way from the start &mdash; Kefal &amp; Oterkus's 2016 Ocean Engineering paper is titled "Displacement and <em>stress</em> monitoring of a Panamax containership using inverse finite element method": both quantities, delivered from strain data alone plus a constitutive law for the second.</p>
+    <p>Do not carry that last step into composites. Von Mises is an isotropic, ductile-yield measure and is not a valid lamina failure or fatigue criterion for an anisotropic laminate. There, $\mathbf{C}(z)$ is evaluated piecewise per lamina, the recovered stresses are rotated into each ply's material axes, and the failure question is answered by a criterion built for anisotropy &mdash; Hashin, Puck or Tsai&ndash;Wu &mdash; chosen and validated for your material system.</p>
+
+    <p>This ordering is important pedagogy: <strong>under the FSDT/iQS4 kinematics of &sect;2, iFEM displacement reconstruction is material-free; stress recovery is exactly as good as your constitutive knowledge</strong> &mdash; with the RZT exception of &sect;8, where the kinematics are themselves built from the layup, as the one place the first half of that sentence stops holding. The Panamax application was framed this way from the start &mdash; Kefal &amp; Oterkus's 2016 Ocean Engineering paper is titled "Displacement and <em>stress</em> monitoring of a Panamax containership using inverse finite element method": both quantities, delivered from strain data alone plus a constitutive law for the second.</p>
 
     <h3 class="subsection-heading">Damage Indices</h3>
-    <p>With a healthy-state baseline field recorded at commissioning, a localized anomaly in the reconstructed von Mises stress field flags and locates damage. The generic relative-anomaly index &mdash; <em>a synthesis pattern distilled from the marine iFEM SHM literature, not a single canonical formula</em> &mdash; is built on the $\sigma_{vM}$ just defined, so that no second, unstated equivalent measure has to be introduced:</p>
+    <p>With a healthy-state baseline field recorded at commissioning, a localized anomaly in the reconstructed von Mises stress field flags and locates damage. The generic relative-anomaly index &mdash; <em>a synthesis pattern distilled from the marine iFEM SHM literature, not a single canonical formula</em> &mdash; is built on the $\sigma_{vM}$ just defined, so that no second, unstated equivalent measure has to be introduced &mdash; and, following the paragraph above, on an isotropic metallic structure. On a laminate, $\sigma_{vM}$ is at best a scalar summary for change detection and carries no failure meaning; index a laminate on material-axis lamina stresses or on a criterion appropriate to it:</p>
 
     <div class="math-block">$$D_i = \frac{\sigma^{vM}_i - \sigma^{vM}_{i,\text{baseline}}}{\left|\sigma^{vM}_{i,\text{baseline}}\right| + \sigma_{\text{ref}}}$$</div>
 
@@ -355,7 +371,7 @@
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:#555;">
         <label style="cursor:pointer;"><input type="checkbox" id="ts-drop" style="vertical-align:-2px;"> dropout: channel 3 dies (hold last value)</label>
         <label style="cursor:pointer;"><input type="checkbox" id="ts-contact" style="vertical-align:-2px;"> contact change: prop appears at x = 0.55</label>
-        <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: the slow parameter loop, accelerated (2%/s stiffness loss, capped at 30% loss &mdash; a 70% stiffness floor)</label>
+        <label style="cursor:pointer;"><input type="checkbox" id="ts-age" style="vertical-align:-2px;"> ageing: unmodelled stiffness loss &mdash; the challenge a slow parameter loop would exist to catch, and which nothing here estimates &mdash; accelerated (2%/s, capped at 30% loss, a 70% stiffness floor)</label>
         <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-decide" style="vertical-align:-2px;"> decision feedback (alarm on a shape-residual index &gt; 30%, computed on the <em>reconstructed</em> curvature field)</label>
         <label style="cursor:pointer;font-weight:600;"><input type="checkbox" id="ts-val" style="vertical-align:-2px;"> independent validation (laser at tip)</label>
       </div>
@@ -442,7 +458,7 @@
       <tr><th>Family</th><th>Idea</th><th>Deployment profile</th></tr>
       <tr><td><strong>Ko's displacement theory</strong></td><td>Integrate measured bending strain twice along beam-like lines</td><td>Minimal sensors; tailored to beam-like bending and specific load classes</td></tr>
       <tr><td><strong>Modal method</strong></td><td>$\mathbf{u} \approx \boldsymbol{\Phi}\mathbf{q}$, modal coordinates from strain-mode least squares</td><td>Compact and fast &mdash; but the mode basis comes from a forward model, so material and mass knowledge sneak back in</td></tr>
-      <tr><td><strong>iFEM</strong></td><td>Least-squares compatibility matching (&sect;2)</td><td>Heavier instrumentation; no load model, no material constants, arbitrary BCs, full-field displacement and strain, with stress available as a post-processing step once a constitutive law is supplied</td></tr>
+      <tr><td><strong>iFEM</strong></td><td>Least-squares compatibility matching (&sect;2)</td><td>Heavier instrumentation; no load model, no material constants (FSDT-family kinematics &mdash; RZT is the exception, &sect;8), arbitrary BCs, full-field displacement and strain, with stress available as a post-processing step once a constitutive law is supplied</td></tr>
     </table>
 
     <div class="math-block">$$\mathbf{u}(\mathbf{x},t) \approx \boldsymbol{\Phi}(\mathbf{x})\,\mathbf{q}(t), \qquad \mathbf{q}(t) = \big(\boldsymbol{\Psi}^{\mathsf T}\boldsymbol{\Psi}\big)^{-1}\boldsymbol{\Psi}^{\mathsf T}\,\boldsymbol{\varepsilon}^{\text{meas}}(t)$$</div>
@@ -474,7 +490,7 @@
     <p>Hull instrumentation is usually single-sided: sensors go on the inner surface, because the outer shell is wetted. Recall &sect;2's extraction formulas &mdash; separating membrane strain $\mathbf{e}$ from curvature $\boldsymbol{\kappa}$ at a station <em>requires</em> both surfaces. With one surface you have one equation and two unknowns per component: an ill-posed split that must be closed by a through-thickness assumption (e.g., a known bending-to-membrane ratio for the load regime) or by additional sensors. Whatever you choose, document it; the assumption silently shapes every reconstructed field downstream.</p>
 
     <h3 class="subsection-heading">The 2024&ndash;2026 Wave</h3>
-    <p>Wei, Li, Jiang &amp; Wang (JMSE 2024) build the operator-facing shadow: real-time iFEM deformation-field reconstruction fused with virtual-reality rendering, data storage, and interaction (&sect;1, &sect;3), exercised on a 400 &times; 416.7 mm stiffened-plate specimen of an actual hull under hydraulic-cylinder and sandbag loading. Place it carefully on the ladder. The platform is explicitly bidirectional &mdash; the paper describes remote data access and control over the physical test, and the twin being used to monitor and control the mechanical tests &mdash; so it is not true that nothing flows back to the asset. What is not documented is a <em>decision law driven by the reconstructed field</em>: a human steering a test rig through a remote interface is not the automatic reconstruction-triggered action this module's rung 2 asks for. Under that stricter criterion it stays at <strong>rung 1</strong>. Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025) push into the regime linear iFEM cannot reach: a <em>nonlinear</em> inverse finite element method for large-deformation reconstruction of hull structures &mdash; the technical content belongs to &sect;10, but its existence marks that marine groups hit the linearity ceiling in practice, not in principle. And Bardiani et al. (Ocean Engineering 2026) layer machine learning on iFEM for real-time damage detection and localization in ship structures (&sect;4's caveats apply).</p>
+    <p>Wei, Li, Jiang &amp; Wang (JMSE 2024) build the operator-facing shadow: real-time iFEM deformation-field reconstruction fused with virtual-reality rendering, data storage, and interaction (&sect;1, &sect;3), exercised on a 400 &times; 416.7 mm stiffened-plate specimen of an actual hull under hydraulic-cylinder and sandbag loading. Place it carefully on the ladder. The platform is explicitly bidirectional &mdash; the paper describes remote data access and control over the physical test, and the twin being used to monitor and control the mechanical tests &mdash; so it is not true that nothing flows back to the asset. What is not documented is the link rung 2 actually asks for: a decision taken <em>because of</em> what the reconstructed field said. The ladder does not require that decision to be automatic &mdash; a human reading the reconstruction and derating the test would qualify &mdash; so the objection is not that a person is in the loop. It is that the reported control path runs from the operator to the rig, and nothing in the paper closes it back through the reconstructed state. Until that state-to-decision link is documented it stays at <strong>rung 1</strong>. Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025) push into the regime linear iFEM cannot reach: a <em>nonlinear</em> inverse finite element method for large-deformation reconstruction of hull structures &mdash; the technical content belongs to &sect;10, but its existence marks that marine groups hit the linearity ceiling in practice, not in principle. And Bardiani et al. (Ocean Engineering 2026) layer machine learning on iFEM for real-time damage detection and localization in ship structures (&sect;4's caveats apply).</p>
 
     <p><em>Synthesis &mdash; why classification societies care:</em> hull-girder bending moment limits, fatigue accumulation in stiffener details, and slamming events are all stress-field quantities a twin can log continuously &mdash; replacing sparse periodic inspection with condition-based maintenance. This is the economic argument for the whole enterprise; treat it as motivation, not as a cited result.</p>
 
@@ -569,7 +585,8 @@
         <text x="44" y="162" font-size="10.5" fill="#333"><tspan font-weight="600">known:</tspan> geometry, sensor positions, weights</text>
         <text x="44" y="180" font-size="10.5" fill="#333"><tspan font-weight="600">material:</tspan> NOT needed until stress recovery</text>
         <text x="44" y="198" font-size="10.5" fill="#333"><tspan font-weight="600">solve:</tspan> K U = F(&epsilon;), once per tick, linear</text>
-        <text x="44" y="226" font-size="10" fill="#7b1fa2" font-style="italic">Tessler &amp; Spangler 2005 &rarr; iQS4 &rarr; digital twins</text>
+        <text x="44" y="212" font-size="9" fill="#7b6a95">(material-free: FSDT kinematics; RZT excepted, &#167;8)</text>
+        <text x="44" y="228" font-size="10" fill="#7b1fa2" font-style="italic">Tessler &amp; Spangler 2005 &rarr; iQS4 &rarr; digital twins</text>
         <text x="44" y="246" font-size="10" fill="#8a7ba5">runs FAST: the twin's every tick</text>
         <!-- right branch -->
         <rect x="360" y="100" width="310" height="164" rx="6" fill="#fff8f0" stroke="#e67e22" stroke-width="1.6"/>
@@ -597,9 +614,9 @@
     <h3 class="subsection-heading">Front 1 &mdash; Geometric Nonlinearity</h3>
     <p>The operators $\mathbf{B}_m, \mathbf{B}_b, \mathbf{B}_s$ are <em>linear</em> strain&ndash;displacement maps: valid for infinitesimal rotations. Hulls in extreme seas, 60-meter blades, and soft bodies all leave that regime, and what fails with it is the <em>fixed global linear map</em> from nodal DOFs to section strains. The through-thickness superposition $\mathbf{e} + z\boldsymbol{\kappa}$ is a separate casualty with a separate trigger &mdash; finite strain, or shell kinematics richer than FSDT (&sect;9) &mdash; and that separation is exactly why co-rotational formulations pay: a body can rotate far while its local strain stays small, so the section split survives in the rotating frame even after the global linear $\mathbf{B}$ map has gone. The remedies mirror forward nonlinear FEM &mdash; incremental linearization about the current configuration, and co-rotational decomposition of rigid rotation from strain-producing deformation &mdash; but now inside a least-squares inverse formulation, where linearization error feeds directly into the reconstructed state. Grounded marker that this front is active: Cui, Li, Wei, Luo &amp; Wang (Ocean Engineering 2025), "Nonlinear inverse finite element method for large deformation reconstruction of hull structures". The generic incremental schema (<em>synthesis &mdash; a schema, not the paper's specific algorithm</em>):</p>
 
-    <div class="math-block">$$\mathbf{K}(\mathbf{U}_k)\,\Delta\mathbf{U}_{k+1} = \mathbf{F}\big(\boldsymbol{\varepsilon}^{\text{meas}}\big) - \mathbf{F}\big(\boldsymbol{\varepsilon}(\mathbf{U}_k)\big)$$</div>
+    <div class="math-block">$$\mathbf{J}_k^{\mathsf T}\mathbf{W}\mathbf{J}_k\,\Delta\mathbf{U}_k = \mathbf{J}_k^{\mathsf T}\mathbf{W}\big(\boldsymbol{\varepsilon}^{\text{meas}} - \boldsymbol{\varepsilon}(\mathbf{U}_k)\big), \qquad \mathbf{U}_{k+1} = \mathbf{U}_k + \Delta\mathbf{U}_k$$</div>
 
-    <p>Note what iteration costs the twin: the fixed-$\mathbf{K}$ real-time argument of &sect;3 weakens once $\mathbf{K}$ depends on the current state.</p>
+    <p>with $\mathbf{J}_k = \partial\boldsymbol{\varepsilon}/\partial\mathbf{U}$ evaluated at the current iterate and $\mathbf{W}$ the weight matrices of &sect;2 &mdash; Gauss&ndash;Newton on the same least-squares mismatch. Resist the tempting shorthand $\mathbf{K}(\mathbf{U}_k)\,\Delta\mathbf{U} = \mathbf{F}(\boldsymbol{\varepsilon}^{\text{meas}}) - \mathbf{F}(\boldsymbol{\varepsilon}(\mathbf{U}_k))$: &sect;3's $\mathbf{F}$ <em>is</em> the fixed operator $\mathbf{B}^{\mathsf T}\mathbf{W}$ applied to strains, i.e. exactly the constant-$\mathbf{J}$ special case, so once the strain Jacobian depends on $\mathbf{U}_k$ it is the wrong map to use on either side of the equation. Note what the iteration costs the twin: $\mathbf{J}_k^{\mathsf T}\mathbf{W}\mathbf{J}_k$ takes over the role of &sect;2's $\mathbf{K}$, but it is rebuilt and refactorized at every iteration of every tick, so the fixed-$\mathbf{K}$ real-time argument of &sect;3 does not survive the move.</p>
 
     <div class="figure-container">
       <svg viewBox="0 0 700 300" style="max-width:100%;background:#fff;border:1px solid #eee;border-radius:4px;">
@@ -666,12 +683,12 @@
       <li><strong>Forward model.</strong> Build a conventional FE model of the asset. You will use it for sensor-placement studies and to generate synthetic validation strains &mdash; <em>never</em> as the twin itself.</li>
       <li><strong>Inverse mesh.</strong> Choose an inverse discretization far coarser than the forward mesh: iQS4-type shells for skin, inverse beams for stiffeners, hybrid where both (Esposito et al. 2023). Accuracy is bounded by sensor information <em>and</em> by discretization &mdash; refining the inverse mesh without adding sensors adds unknowns, not knowledge, and the extra directions get decided by the $\lambda$-weighted prior rather than by data. The simulator above runs the good end of that trade: 5 curvature stations on a 3-element inverse mesh (6 free DOF) reconstruct the <em>noise-free</em> tip deflection to about $0.016\%$, with 5 of the 6 directions fixed by measurement &mdash; be careful reading that number off the widget, which always injects its $0.01$ measurement noise and therefore shows around $1\%$ median tip error. Rebuild the same model with 8 elements (16 free DOF) and, on identical sensor data, the tip error grows to $55\%$ (noise or no noise) &mdash; 11 of the 16 directions are then decided by the prior rather than by a sensor. So check mesh convergence like you would in forward FEM, then stop refining at the point where added modes stop being observable &mdash; and read the rank panel, which tells you how many directions the data actually fixed.</li>
       <li><strong>Sensor layout.</strong> Decide which elements are instrumented. Where bending matters, plan top/bottom pairs &mdash; or accept single-sided assumptions and <em>document them</em> (&sect;2, &sect;6). Rosettes give the three in-plane components a shell element wants; fiber lines give dense uniaxial data along their path (Module 6 owns placement optimization).</li>
-      <li><strong>Calibration.</strong> Gauge factors, temperature-compensation channels, time synchronization across interrogators, and a recorded zero-load baseline. Every &sect;10-front-4 pathology is fought here, before the first tick.</li>
+      <li><strong>Calibration.</strong> Gauge factors, temperature-compensation channels (and a written statement of whether they leave total or mechanical strain on the wire &mdash; &sect;4), time synchronization across interrogators, and a recorded zero-load baseline. Note what that baseline is and is not: zero <em>load</em> is not zero <em>stress</em>, so everything downstream is an increment from commissioning, not an absolute state. Every &sect;10-front-4 pathology is fought here, before the first tick.</li>
       <li><strong>Offline assembly.</strong> Build $\mathbf{K}$ with measured-component weights 1 and sensorless penalty $\lambda \sim 10^{-4}$ (the typical literature value &mdash; hedged, &sect;2). Apply boundary conditions, sparse-Cholesky factorize, store $\mathbf{L}$.</li>
       <li><strong>Online loop.</strong> Read strains &rarr; temperature-compensate &rarr; element section strains (mean/difference formulas) &rarr; assemble $\mathbf{F}$ &rarr; two triangular solves &rarr; stress recovery via $\mathbf{C}(z)$ &rarr; render and log. The <em>stage names</em> &mdash; measurement, reconstruction, analysis, expression, storage, rendering, interaction &mdash; are Wei et al. (2024)'s; what happens numerically inside each stage is this guide's recipe (&sect;3).</li>
-      <li><strong>Validate honestly.</strong> Report percent-difference norms on displacement <em>and</em> stress,
+      <li><strong>Validate honestly &mdash; and match the instrument to the quantity.</strong> Report percent-difference norms,
       <div class="math-block">$$\text{PD}_u = 100 \times \frac{\lVert \mathbf{u}^{\text{iFEM}} - \mathbf{u}^{\text{ref}} \rVert}{\lVert \mathbf{u}^{\text{ref}} \rVert}$$</div>
-      against (a) the forward FEM under matched loads and (b) an <em>independent</em> measurement: DIC, laser triangulation, dial gauges.</li>
+      but keep three channels apart, because they do not have equal evidentiary standing. <strong>Displacement:</strong> against an <em>independent</em> measurement &mdash; DIC, laser triangulation, dial gauges &mdash; and against the forward FEM under matched loads. <strong>Strain:</strong> against held-out gauges the reconstruction never consumed, or against DIC's surface strain field. <strong>Stress:</strong> against the forward FEM under matched loads, or a validated proxy, and say so &mdash; none of those instruments measures stress (&sect;1), so a quoted stress error is always a comparison against a reference solution, never against a measurement.</li>
     </ol>
 
     <div class="insight-box">
@@ -684,7 +701,7 @@
       <div class="collapsible-body">
         <ul>
           <li>&#9744; Are you citing the right "inverse FEM"? State reconstruction (Tessler) vs parameter identification (biomech) &mdash; &sect;9.</li>
-          <li>&#9744; Does any claim say iFEM needs loads or material data for <em>displacement</em>? It needs neither; constitutive data enters at stress recovery only &mdash; &sect;2, &sect;4.</li>
+          <li>&#9744; Does any claim say iFEM needs loads or material data for <em>displacement</em>? Under FSDT-family kinematics it needs neither, and constitutive data enters at stress recovery only &mdash; but under RZT the layup enters the reconstruction too, so scope the claim &mdash; &sect;2, &sect;4, &sect;8.</li>
           <li>&#9744; Single-sided sensing anywhere? Write down the membrane/curvature assumption &mdash; &sect;2, &sect;6.</li>
           <li>&#9744; Thin skins: remember $\kappa = (\varepsilon^+ - \varepsilon^-)/(2h)$ divides a noisy difference by a small thickness &mdash; &sect;2.</li>
           <li>&#9744; Sensorless components at weight 1? That's a zero-strain prior at full confidence &mdash; use $\lambda$ &mdash; &sect;2.</li>
@@ -785,12 +802,23 @@
     ];
     if (naive) stages.unshift({ name: 're-factorize K (!)', ms: tFact, col: '#c62828' });
     var worst = stages.slice().sort(function(a, b) { return b.ms - a.ms; })[0].name;
+    // `worst` is the longest bar of the tick as drawn. The capNoFact sentence in the
+    // readout talks about a DIFFERENT tick -- the counterfactual with the
+    // re-factorization removed -- so it must name the longest of the four remaining
+    // online stages. Reusing `worst` there let the no-refactorization counterfactual
+    // announce "dominated by re-factorize K (!)", a bar that counterfactual does not have.
+    var onlineStages = stages.filter(function(st) { return st.name !== 're-factorize K (!)'; });
+    var worstNoFact = onlineStages.slice().sort(function(a, b) { return b.ms - a.ms; })[0].name;
 
     // Verdict. Blame the re-factorization only when it is what breaks the deadline:
-    // the counterfactual tick with tFact removed has to MEET f_s. Otherwise the
-    // pipeline was already too slow (usually the render budget) and re-factorizing
-    // merely made it slower -- reported separately in the readout, never as the cause.
-    var verdict, vcol, refactIsCause = naive && capNoFact >= fs;
+    // the tick as it stands has to MISS f_s AND the counterfactual tick with tFact
+    // removed has to meet it. Testing only the counterfactual (an earlier version)
+    // called re-factorization "decisive" at n = 10,000 and f_s = 1 Hz, where both
+    // pipelines clear the deadline 45x over. Otherwise the pipeline was already too
+    // slow (usually the render budget) and re-factorizing merely made it slower --
+    // reported separately in the readout, never as the cause.
+    var deadlineMissed = capacity < fs;
+    var verdict, vcol, refactIsCause = naive && deadlineMissed && capNoFact >= fs;
     if (capacity >= fs) { verdict = 'SENSOR-LIMITED &mdash; the interrogator is the bottleneck; the pipeline could run at ' + fmt(capacity) + ' Hz'; vcol = '#2e7d32'; }
     else if (refactIsCause) { verdict = 'NOT REAL-TIME &mdash; re-factorizing a fixed matrix every tick'; vcol = '#c62828'; }
     else { verdict = 'PIPELINE-LIMITED &mdash; dominated by ' + worst; vcol = '#b36118'; }
@@ -848,7 +876,11 @@
       '<div style="display:inline-block;padding:4px 12px;border-radius:12px;background:' + vcol + ';color:#fff;font-size:12px;font-weight:700;margin-bottom:8px;">' + verdict + '</div>' +
       '<div>Pipeline capacity $\\approx$ <strong>' + fmt(capacity) + ' Hz</strong>; achieved twin rate $\\min(f_s,\\,\\text{capacity}) =$ <strong>' + fmt(rate) + ' Hz</strong> against interrogator $f_s = ' + fmt(fs) + '$ Hz. ' +
       (naive ? 'The factorization $\\mathbf{K} = \\mathbf{L}\\mathbf{L}^{\\mathsf T}$ costs $\\sim n^{1.5}$ and is being repaid <em>every tick</em> for a matrix that has not changed &mdash; the defining mistake this module exists to prevent. Priced honestly: it adds ' + fmtMs(tFact) + ' per tick and drops capacity from ' + fmt(capNoFact) + ' Hz to ' + fmt(capacity) + ' Hz. ' +
-        (refactIsCause ? 'Here that is decisive &mdash; without it the pipeline would meet $f_s$.' : 'Here it is <em>not</em> what breaks the deadline: even at ' + fmt(capNoFact) + ' Hz the pipeline misses $f_s$, dominated by ' + worst + '. Fix the bottleneck and the factorization too.') :
+        (refactIsCause
+          ? 'Here that is decisive &mdash; without it the pipeline would meet $f_s$, and with it the pipeline misses.'
+          : !deadlineMissed
+            ? 'Here it breaks nothing: both ticks clear $f_s$ (' + fmt(capacity) + ' Hz with the re-factorization, ' + fmt(capNoFact) + ' Hz without), so what you are throwing away is headroom, not this deadline. Raise $f_s$ or grow the model and it becomes one.'
+            : 'Here it is <em>not</em> what breaks the deadline: even at ' + fmt(capNoFact) + ' Hz &mdash; where the longest remaining stage is ' + worstNoFact + ' &mdash; the pipeline still misses $f_s$. Fix that bottleneck and the factorization too.') :
         'Offline: $\\mathbf{K} = \\mathbf{L}\\mathbf{L}^{\\mathsf T}$ once. Online: $\\mathbf{U}_t = \\mathbf{L}^{-\\mathsf T}(\\mathbf{L}^{-1}\\mathbf{F}_t)$, dominated here by $' + dom + '$.') + '</div>';
     renderMath(ro);
   }
@@ -1075,11 +1107,17 @@
     var decide = el('ts-decide').checked, valOn = el('ts-val').checked;
     // Rung 3 requires that nothing is silently broken: an unguarded pathology
     // disqualifies the twin even while the validation channel happens to agree.
+    // Ageing status is derived from the ACTUAL loss, not from the checkbox. Ticking
+    // the box sets ageT0 = t, so ageEI(t) = 1 exactly at that instant: keying the
+    // status to the boolean made the panel announce "STALE -- stiffness has decayed
+    // 0%" and demote the twin for a divergence that had not happened yet.
+    var ageLoss = 1 - ageEI(t);
+    var ageStale = ageLoss > 0.005;   // 0.5% tolerance -- ~0.25 s at 2 %/s
     var unhandled = [];
     if (Math.abs(skew) > 0) unhandled.push('channels are not time-aligned (' + skew + ' ms skew)');
     if (Math.abs(drift) > 0) unhandled.push('channel 1 is drifting uncorrected');
     if (drop) unhandled.push('a stale channel is still being trusted');
-    if (age) unhandled.push('stiffness has aged away from the commissioning model');
+    if (ageStale) unhandled.push('stiffness has aged ' + (ageLoss * 100).toFixed(0) + '% away from the commissioning model');
     if (contact) unhandled.push('a new contact has changed the structure the model assumes');
     // Threshold chosen against this widget's own noise model, measured over the
     // streamed load cycle (dt = 0.12 s) rather than at one load: P(t) dips to
@@ -1092,7 +1130,27 @@
     // 30 s, ~71% over 300 s) -- a real property of a shape residual, not a tuning
     // failure. (Rates measured on the reconstruction over XE, 5 seeds x 300 s.)
     var kEval = XE.map(function(x) { return kRec(q, x); });
-    var an = shapeResidual(XE, kEval), alarm = decide && an.max > 0.30;
+    var an = shapeResidual(XE, kEval);
+    // THREE different facts, deliberately kept apart. Collapsing them is why an
+    // earlier version reported "Drift is active and nothing is alarming" with the
+    // residual sitting at 63% (decision feedback was simply switched off), and
+    // labelled a pure-noise alarm "FALSE POSITIVE -- drift, not damage" at the very
+    // instant the drift slider was moved, when driftT0 = t makes the bias exactly 0.
+    var thresholdExceeded = an.max > 0.30;   // what the index says
+    var alarm = decide && thresholdExceeded; // whether anyone is listening
+    // Causal attribution needs a counterfactual: same tick, same frozen noise, the
+    // channel-1 bias removed. Drift is only "the cause" if taking it away clears it.
+    var driftBias = drift > 0 ? (drift / 100) * (since(driftT0, t) / 60) * 1.0 : 0;
+    var driftCausal = false;
+    if (driftBias !== 0 && thresholdExceeded) {
+      var measND = meas.slice();
+      measND[0] -= driftBias;
+      var solND = solve(measND);
+      if (solND) {
+        var anND = shapeResidual(XE, XE.map(function(x) { return kRec(solND.q, x); }));
+        driftCausal = !(anND.max > 0.30);
+      }
+    }
 
     // validation channel
     // A true relative error. The guard is a divide-by-zero floor only: |w_tip|
@@ -1105,7 +1163,7 @@
 
     // ---- ladder verdict ----
     var rung, rcol, rtext;
-    if (!playing) { rung = 'RUNG 0 — NOT STREAMING'; rcol = '#888'; rtext = 'Nothing is synchronized in time: what is drawn is one frozen snapshot &mdash; the same held sensor sample, re-solved whenever you touch a control. A model plus a single solve is not a twin. Press Stream.'; }
+    if (!playing) { rung = 'RUNG 0 — NOT STREAMING'; rcol = '#888'; rtext = 'Nothing is synchronized in time. What is frozen is the clock and the noise draw &mdash; not the measurement: every control you touch re-synthesizes what the five channels <em>would</em> have read at that one instant, and re-solves. A single solve on a hypothetical sample is not a twin. Press Stream.'; }
     else if (!decide) { rung = 'RUNG 1 — DIGITAL SHADOW'; rcol = '#1565c0'; rtext = 'The mirror follows the asset, but nothing acts on it. Enable decision feedback to climb.'; }
     else if (!valOn) { rung = 'RUNG 2 — DATA-DRIVEN TWIN (UNVALIDATED)'; rcol = '#b36118'; rtext = 'Decisions are being taken on the reconstruction with no independent check. Enable validation to climb.'; }
     else if (valErr < 6 && !unhandled.length) { rung = 'RUNG 3 CANDIDATE — UQ NOT CHECKED'; rcol = '#2e7d32'; rtext = 'Stream + decisions + independent validation agreeing, and no unhandled channel pathology. Note what this toy does <em>not</em> check: quantified uncertainty on the reconstruction, the fourth requirement in the definition above. Treat this as the highest rung the simulator can certify, not a full rung-3 audit.'; }
@@ -1118,7 +1176,7 @@
     var s = '<g font-family="sans-serif">';
     s += '<text x="14" y="20" font-size="11" fill="#666">t = ' + t.toFixed(1) + ' s &nbsp;&middot;&nbsp; load P(t) = ' + loadP(t).toFixed(2) + (age ? ' &nbsp;&middot;&nbsp; EI decayed to ' + (ageEI(t) * 100).toFixed(0) + '%' : '') + '</text>';
     if (alarm) {
-      var atag = contact ? 'shape change detected — prop or damage? the index cannot tell' : (drift > 0 ? 'FALSE POSITIVE — drift, not damage' : 'anomaly');
+      var atag = contact ? 'shape change detected — prop or damage? the index cannot tell' : (driftCausal ? 'FALSE POSITIVE — drift, not damage' : 'anomaly');
       s += '<rect x="330" y="8" width="222" height="30" rx="4" fill="#fdecea" stroke="#c62828"/><text x="441" y="21" font-size="10.5" font-weight="700" text-anchor="middle" fill="#c62828">ALARM max shape residual = ' + (an.max * 100).toFixed(0) + '% at x = ' + XE[an.at].toFixed(2) + '</text><text x="441" y="33" font-size="9" text-anchor="middle" fill="#c62828">' + atag + '</text>';
     } else if (decide) {
       s += '<text x="552" y="20" font-size="10" text-anchor="end" fill="#2e7d32">no alarm (max shape residual = ' + (an.max * 100).toFixed(0) + '%)</text>';
@@ -1165,7 +1223,7 @@
     // ---- persistent panel ----
     var chans = [];
     for (k = 0; k < 5; k++) {
-      var st = playing ? 'live' : 'idle (frozen snapshot)';
+      var st = playing ? 'live' : 'idle (clock frozen)';
       if (k === 0 && drift > 0) st = '<span style="color:#b36118;font-weight:600;">drifting</span>';
       if (k === 2 && drop) st = '<span style="color:#c62828;font-weight:600;">stale (holding last value)</span>';
       chans.push('ch' + (k + 1) + ': ' + st);
@@ -1173,7 +1231,7 @@
     var assume = '<li>linear beam kinematics, small strain</li><li>geometry known (thickness, length)</li>';
     assume += '<li>synchronous sampling: ' + (skew > 0 ? '<span style="color:#b36118;font-weight:600;">VIOLATED — channels staggered by ' + skew + ' ms each</span>' : 'holds') + '</li>';
     assume += '<li>baseline BCs unchanged: ' + (contact ? '<span style="color:#c62828;font-weight:600;">VIOLATED — truth has a prop the twin\'s model lacks</span>' : 'holds') + '</li>';
-    assume += '<li>commissioning-era C for stress: ' + (age ? '<span style="color:#b36118;font-weight:600;">STALE — stiffness has decayed ' + ((1 - ageEI(t)) * 100).toFixed(0) + '%</span>' : 'holds') + '</li>';
+    assume += '<li>commissioning-era C for stress: ' + (ageStale ? '<span style="color:#b36118;font-weight:600;">STALE — stiffness has decayed ' + (ageLoss * 100).toFixed(0) + '%</span>' : (age ? '<span style="color:#8a6d3b;">ageing armed; ' + (ageLoss * 100).toFixed(1) + '% loss so far (stale above 0.5%)</span>' : 'holds')) + '</li>';
     assume += '<li>zero-curvature prior at &lambda; = 10<sup>&minus;4</sup> on every element (soft, non-physical: it is what fills directions the 5 sensors cannot see)</li>';
     var valLine = valOn
       ? ((valErr < 6 ? '<span style="color:#2e7d32;font-weight:700;">' : '<span style="color:#c62828;font-weight:700;">') + valErr.toFixed(1) + '%</span> <span style="font-size:11px;color:#888;">tip laser vs reconstruction, relative to |w<sub>tip</sub>| &mdash; passes below 6%</span>')
@@ -1189,10 +1247,12 @@
 
     // ---- readout ----
     var notes = [];
-    if (drift > 0 && !alarm) notes.push('<strong>Drift is active and nothing is alarming:</strong> the bias bends the whole reconstruction smoothly &mdash; indistinguishable from a load change (&sect;10, front 4).');
-    if (drift > 0 && alarm && !contact) notes.push('<strong>That alarm is the drifted channel,</strong> not damage &mdash; the shape-residual index cannot know the difference.');
+    if (drift > 0 && !thresholdExceeded) notes.push('<strong>Drift is active and the shape residual is still under threshold:</strong> the bias bends the whole reconstruction smoothly &mdash; indistinguishable from a load change (&sect;10, front 4).');
+    if (drift > 0 && thresholdExceeded && !decide) notes.push('<strong>The index is over threshold and no alarm is being raised</strong> &mdash; decision feedback is switched off. That is a fact about this configuration, not about the drift.');
+    if (driftCausal && !contact) notes.push('<strong>That alarm is the drifted channel,</strong> not damage &mdash; re-solving this same tick with the channel-1 bias removed puts the index back under threshold, and the shape-residual index cannot know the difference.');
+    if (drift > 0 && thresholdExceeded && !contact && !driftCausal) notes.push('<strong>The index is over threshold, but the drift is not what did it:</strong> the same tick with the channel-1 bias removed still fires. At this instant the crossing is noise at low load, not the bias &mdash; which is exactly why "drift is active" is not evidence about any particular alarm.');
     if (skew > 0) notes.push('<strong>Skew:</strong> during load swings the five channels describe five different instants; the least-squares solve fuses them into a state that never existed (&sect;10, front 2).');
-    if (age) notes.push('<strong>Ageing:</strong> a uniform stiffness decay preserves the strain <em>shape</em>, so the shape-residual index is blind to it &mdash; and the recovered moment strip above overestimates the actual moment by ' + ((1 / ageEI(t) - 1) * 100).toFixed(0) + '% because it uses commissioning-era stiffness. The fast state loop cannot see what only the slow parameter loop can fix (&sect;1, &sect;9).');
+    if (ageStale) notes.push('<strong>Ageing:</strong> a uniform stiffness decay preserves the strain <em>shape</em>, so the shape-residual index is blind to it. And commissioning-era stiffness alone would put a ' + ((1 / ageEI(t) - 1) * 100).toFixed(0) + '% high bias on the recovered moment strip above <em>if the curvature were reconstructed exactly</em> &mdash; that number is $EI_0/EI - 1$, a stiffness counterfactual, not the strip\'s measured error. Contact, dropout, skew, drift, noise and the prior all add their own, pointwise and unequally. The fast state loop cannot see what only a slow parameter loop could fix (&sect;1, &sect;9).');
     if (drop) notes.push('<strong>Stale channel:</strong> ch3 keeps reporting an old strain as if fresh &mdash; a dropout guard should reweight it to &lambda;, not trust it.');
     var ro = el('ts-readout');
     ro.innerHTML = '<div class="math-block" style="margin:6px 0;">$$\\mathbf{K}\\,\\mathbf{U}_t = \\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}}_t) \\quad \\text{— } \\mathbf{K} \\text{ fixed, } \\mathbf{F} \\text{ rebuilt every tick}$$</div>' +
@@ -1259,14 +1319,14 @@ initWalkthrough('twin-walkthrough', [
   {
     tab: '4. Calibration',
     title: 'Fight the front-4 pathologies before the first tick',
-    text: 'Gauge factors, temperature-compensation channels, time synchronization across interrogators, and a recorded zero-load baseline. Every one of these is cheap now and unrecoverable later: drift, thermal cross-sensitivity and clock skew all enter the strain stream in exactly the units of real deformation, and no estimator downstream can separate them from it using the strain stream alone.',
+    text: 'Gauge factors, temperature-compensation channels, time synchronization across interrogators, and a recorded zero-load baseline. Write down what the compensation leaves on the wire &mdash; total strain or mechanical strain &mdash; because stress recovery subtracts $\\boldsymbol{\\varepsilon}^{\\text{th}}$ in the first case and must not in the second; and remember that zero <em>load</em> is not zero <em>stress</em>, so the twin reports increments from commissioning unless a residual-stress state is supplied from elsewhere. Every one of these is cheap now and unrecoverable later: drift, thermal cross-sensitivity and clock skew all enter the strain stream in exactly the units of real deformation, and no estimator downstream can separate them from it using the strain stream alone.',
     insight: 'The simulator makes the point the hard way. Drift bends the whole reconstruction smoothly &mdash; indistinguishable from a load change until it is large enough to fire the anomaly index, at which point it reads as damage. Skew during load swings fuses five different instants into a state that never existed.'
   },
   {
     tab: '5. Offline assembly',
     title: 'Pay the expensive algebra once',
     text: 'Assemble $\\mathbf{K}$ with weight 1 on measured components and the small penalty $\\lambda \\sim 10^{-4}$ wherever no sensor reports (the typical literature value, hedged in &sect;2), apply the boundary conditions that anchor the rigid modes, sparse-Cholesky factorize, and store $\\mathbf{L}$. Pre-factorize the handful of masks you expect &mdash; all channels healthy, plus each single-channel dropout &mdash; so losing a sensor means loading a stored factorization instead of stalling the twin.',
-    insight: '$\\mathbf{K}$ depends on mesh, sensor layout and weights, never on the data. That single property is what buys the two-triangular-solve online loop &mdash; and it is why the budget explorer punishes re-factorizing a matrix that has not changed.'
+    insight: '$\\mathbf{K}$ depends on the setup &mdash; geometry including thickness, element kinematics, sensor layout and quadrature, weights and mask, imposed anchors &mdash; and never on a measured value. That single property is what buys the two-triangular-solve online loop &mdash; and it is why the budget explorer punishes re-factorizing a matrix that has not changed.'
   },
   {
     tab: '6. Online loop',
@@ -1277,7 +1337,7 @@ initWalkthrough('twin-walkthrough', [
   {
     tab: '7. Validate',
     title: 'Validate honestly, then name your rung',
-    text: 'Report percent-difference norms on displacement <em>and</em> stress against (a) the forward FEM under matched loads and (b) an <em>independent</em> measurement: DIC, laser triangulation, dial gauges. Then place the result on the ladder. Live stream, reconstruction and a rendering is rung 1. A decision taken on the reconstructed state makes it rung 2. Rung 3 additionally needs synchronized acquisition, data-quality guards for drift and dropout, an independent validation channel, and a stated uncertainty &mdash; and very few published systems sit there.',
+    text: 'Report percent-difference norms, but keep the channels apart: <em>displacement</em> against an <em>independent</em> measurement (DIC, laser triangulation, dial gauges) as well as against the forward FEM under matched loads; <em>strain</em> against held-out gauges the reconstruction never consumed, or DIC&rsquo;s strain field; <em>stress</em> against the forward FEM or a validated proxy only &mdash; none of those instruments measures stress, so a quoted stress error is a comparison with a reference solution, not with a measurement. Then place the result on the ladder. Live stream, reconstruction and a rendering is rung 1. A decision taken on the reconstructed state makes it rung 2. Rung 3 additionally needs synchronized acquisition, data-quality guards for drift and dropout, an independent validation channel, and a stated uncertainty &mdash; and very few published systems sit there.',
     insight: 'The experimental standard to aim for is a campaign like the rosette and fiber-optic bending/torsion validation of Esposito et al. (2023). Stating your rung costs nothing; overclaiming one costs the reader their ability to trust the rest of the paper.'
   }
 ]);
@@ -1287,11 +1347,11 @@ initWalkthrough('twin-walkthrough', [
   initFlashcards('mod12-flashcards', [
     {
       q: "Why is iFEM 'real-time by construction' as a digital-twin engine?",
-      a: "The system matrix $\\mathbf{K}$ depends only on mesh, sensor layout, and weights \u2014 never on the data. Factorize $\\mathbf{K}=\\mathbf{L}\\mathbf{L}^{\\mathsf T}$ once offline; each twin update is only assembling $\\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}})$ (linear in the strains) plus two triangular solves, cost $O(\\mathrm{nnz}(\\mathbf{L}))$."
+      a: "The system matrix $\\mathbf{K}$ depends only on the setup \u2014 geometry (thickness $2h$ included, via the curvature norm), element kinematics, sensor layout and quadrature, the weight matrices and mask, and the imposed anchors \u2014 never on a measured value. Factorize $\\mathbf{K}=\\mathbf{L}\\mathbf{L}^{\\mathsf T}$ once offline; each twin update is only assembling $\\mathbf{F}(\\boldsymbol{\\varepsilon}^{\\text{meas}})$ (linear in the strains) plus two triangular solves, cost $O(\\mathrm{nnz}(\\mathbf{L}))$."
     },
     {
       q: "Which two inputs of forward FEM does iFEM NOT need for displacement reconstruction?",
-      a: "Applied loads and elastic material constants. The least-squares matching of section strains is purely kinematic. Material properties enter only afterwards, at stress recovery via $\\boldsymbol{\\sigma}=\\mathbf{C}(z)(\\boldsymbol{\\varepsilon}-\\boldsymbol{\\varepsilon}^{\\text{th}}-\\boldsymbol{\\varepsilon}^{0})$ — note that only the <em>mechanical</em> strain carries stress, so the reconstructed total strain must have its thermal and initial eigenstrains removed first (a freely heated plate has strain $\\boldsymbol{\\alpha}\\Delta T$ and zero stress)."
+      a: "Applied loads and elastic material constants &mdash; under the FSDT-family kinematics of §2 (RZT is the exception: its zigzag functions are built from the layers' transverse-shear moduli, so there the layup enters the reconstruction as well, §8). The least-squares matching of section strains is purely kinematic. Material properties enter only afterwards, at stress recovery via $\\boldsymbol{\\sigma}=\\mathbf{C}(z)(\\boldsymbol{\\varepsilon}-\\boldsymbol{\\varepsilon}^{\\text{th}}-\\boldsymbol{\\varepsilon}^{0})$ — note that only the <em>mechanical</em> strain carries stress (a freely heated plate has strain $\\boldsymbol{\\alpha}\\Delta T$ and zero stress). Which eigenstrains are still in the reconstructed field depends on the channels and has to be declared: uncompensated gauges deliver total strain, so subtract $\\boldsymbol{\\varepsilon}^{\\text{th}}$; self-temperature-compensated or dummy-gauge arrangements already cancel the substrate's free expansion, so subtracting it again double-counts. And a gauge zeroed at commissioning never saw the pre-existing $\\boldsymbol{\\varepsilon}^{0}$ at all — that part of the stress state has to be supplied from outside the strain stream (§4)."
     },
     {
       q: "Give the formulas converting a top/bottom surface-gauge pair (plate thickness $2h$) into experimental membrane strain and curvature.",
@@ -1299,11 +1359,11 @@ initWalkthrough('twin-walkthrough', [
     },
     {
       q: "What role does the small weight $\\lambda$ (typically quoted around $10^{-4}$) play where sensors are missing?",
-      a: "It supplies a <em>soft zero-strain prior</em>: a finite-weight pseudo-observation with target $\\mathbf{0}$. It buys rank \u2014 keeping $\\mathbf{K}$ nonsingular in directions no sensor constrains \u2014 and pays bias, pulling those directions toward zero section strain. Raising it to full weight would force the reconstruction flat there; removing it entirely leaves the system singular. It is a trade, not a free fix, and the honest readout names how many directions it (not the data) decided."
+      a: "It supplies a <em>soft zero-strain prior</em>: a finite-weight pseudo-observation with target $\\mathbf{0}$. It buys rank in the directions its own operator observes \u2014 typically the ones no sensor constrains \u2014 and pays bias, pulling those directions toward zero section strain. Two qualifications the slogan drops. It cannot supply rank in a direction <em>no</em> operator sees: a rigid-body mode still needs an anchor, not a $\\lambda$. And removing it leaves the system singular only if the anchored measurement operator was not already of full column rank; where the sensors fix every free direction, $\\lambda = 0$ is perfectly well posed. Raising it to full weight, at the other end, would force the reconstruction flat there. It is a trade, not a free fix, and the honest readout names how many directions it (not the data) decided."
     },
     {
       q: "Gherlone et al. (2018) compared three shape-sensing families on a wing-shaped plate. Name them and iFEM's distinctive advantage.",
-      a: "Ko's displacement theory (curvature integration along beam-like lines), the Modal Method ($\\mathbf{u}\\approx\\boldsymbol{\\Phi}\\mathbf{q}$ with $\\mathbf{q}$ from strain-mode least squares), and iFEM. iFEM alone needs no load model and no material/mode basis, handles arbitrary BCs, and returns the full displacement and strain field \u2014 stress follows only after a constitutive law is applied \u2014 at the price of more instrumentation."
+      a: "Ko's displacement theory (curvature integration along beam-like lines), the Modal Method ($\\mathbf{u}\\approx\\boldsymbol{\\Phi}\\mathbf{q}$ with $\\mathbf{q}$ from strain-mode least squares), and iFEM. iFEM alone needs no load model and no material/mode basis (FSDT-family kinematics; RZT reintroduces the layup, §8), handles arbitrary BCs, and returns the full displacement and strain field \u2014 stress follows only after a constitutive law is applied \u2014 at the price of more instrumentation."
     },
     {
       q: "What did Kefal & Oterkus (2016, Ocean Engineering) demonstrate, and why is it the marine iFEM template?",
@@ -1319,11 +1379,11 @@ initWalkthrough('twin-walkthrough', [
     },
     {
       q: "The phrase 'inverse finite element method' names two different problems. Distinguish them.",
-      a: "State reconstruction (Tessler line): unknown is the displacement field, solved per tick from measured strains, material-free. Parameter identification (biomech line, e.g. Seshaiyer & Humphrey 2003): unknowns are constitutive parameters, found by iterative optimization over forward solves given measured deformations. Same name, different unknowns."
+      a: "State reconstruction (Tessler line): unknown is the displacement field, solved per tick from measured strains, and material-free under FSDT-family kinematics (RZT excepted, §8). Parameter identification (biomech line, e.g. Seshaiyer & Humphrey 2003): unknowns are constitutive parameters, found by iterative optimization over forward solves given measured deformations. Same name, different unknowns."
     },
     {
       q: "How does iFEM-based damage detection work, and what is its most insidious false positive?",
-      a: "Compare the reconstructed von Mises stress field to a healthy baseline, e.g. $D_i=(\\sigma^{vM}_i-\\sigma^{vM}_{i,\\text{base}})/(|\\sigma^{vM}_{i,\\text{base}}|+\\sigma_{\\text{ref}})$ — written on $\\sigma_{vM}$, which the module defines, rather than on an equivalent strain, which would need its own shear and dimensionality convention stated; a localized anomaly flags damage. Sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
+      a: "Compare the reconstructed von Mises stress field to a healthy baseline, e.g. $D_i=(\\sigma^{vM}_i-\\sigma^{vM}_{i,\\text{base}})/(|\\sigma^{vM}_{i,\\text{base}}|+\\sigma_{\\text{ref}})$ — written on $\\sigma_{vM}$, which the module defines, rather than on an equivalent strain, which would need its own shear and dimensionality convention stated; a localized anomaly flags damage. Scope it: $\\sigma_{vM}$ is an isotropic measure, so on a laminate it is at best a scalar change detector and never a failure criterion \u2014 index those on material-axis lamina stresses instead. And sensor drift or uncompensated temperature shifts the field identically to damage \u2014 baseline integrity is the weak point."
     },
     {
       q: "Per-snapshot iFEM has no inertial term. Is reconstructing a vibrating structure therefore invalid?",
