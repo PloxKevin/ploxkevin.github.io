@@ -81,6 +81,7 @@ async function initializePlanner() {
       fetchJson("./data/kord-map-intel.json").catch(() => ({ tasks: {} })),
     ]);
 
+    regular.tasks = (regular.tasks || []).filter((task) => !task.hiddenFromTracker);
     plannerState.regular = regular;
     plannerState.storyline = storyline;
     plannerState.mapConfig = mapConfig;

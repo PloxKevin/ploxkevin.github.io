@@ -61,10 +61,12 @@
       if (!task) continue;
 
       for (const requirement of task.taskRequirements || []) {
-        const statuses = Array.isArray(requirement.status) ? requirement.status : [requirement.status];
+        const statuses = (Array.isArray(requirement.status) ? requirement.status : [requirement.status])
+          .filter(Boolean)
+          .map(normalizeStatus);
         const requiresCompletion =
           statuses.length === 0 ||
-          (statuses.includes("complete") && !statuses.includes("active"));
+          (statuses.length === 1 && statuses[0] === "complete");
         if (!requiresCompletion || completed.has(requirement.taskId) || !taskById.has(requirement.taskId)) {
           continue;
         }

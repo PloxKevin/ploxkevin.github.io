@@ -14,9 +14,12 @@ const STORYLINE_STORAGE = {
 
 const regularState = {
   data: null,
+  wikiAudit: null,
   completed: new Set(readArray(REGULAR_STORAGE.completed)),
-  playerLevel: Number(readValue(REGULAR_STORAGE.level, 1)) || 1,
-  faction: readValue(REGULAR_STORAGE.faction, "Any"),
+  playerLevel: clamp(Number(readValue(REGULAR_STORAGE.level, 1)) || 1, 1, 100),
+  faction: ["USEC", "BEAR"].includes(readValue(REGULAR_STORAGE.faction, "Any"))
+    ? readValue(REGULAR_STORAGE.faction, "Any")
+    : "Any",
   reputation: readObject(REGULAR_STORAGE.reputation),
   completionSource: readObject(REGULAR_STORAGE.source),
   filters: { search: "", trader: "", map: "", status: "" },
@@ -35,9 +38,16 @@ async function initializeRegularPlanner() {
   setExplorerControlsDisabled(true);
 
   try {
-    const response = await fetch("./data/regular_quest_progression.json");
+    const [response, wikiAudit] = await Promise.all([
+      fetch("./data/regular_quest_progression.json"),
+      fetch("./data/wiki-chain-audit.json")
+        .then((auditResponse) => auditResponse.ok ? auditResponse.json() : null)
+        .catch(() => null),
+    ]);
     if (!response.ok) throw new Error(`Progression data returned ${response.status}`);
     regularState.data = await response.json();
+    regularState.data.tasks = regularState.data.tasks.filter((task) => !task.hiddenFromTracker);
+    regularState.wikiAudit = wikiAudit;
     hydrateRegularControls();
     setExplorerControlsDisabled(false);
     renderRegularPlanner();
@@ -146,11 +156,23 @@ function bindRegularEvents() {
     const checkbox = event.target.closest("[data-regular-complete]");
     if (!checkbox) return;
 
-    if (checkbox.checked) regularState.completed.add(checkbox.dataset.regularComplete);
-    else regularState.completed.delete(checkbox.dataset.regularComplete);
+    let clearedAlternatives = 0;
+    let inferredPrerequisites = 0;
+    if (checkbox.checked) {
+      const result = markTaskAndRequiredPredecessors(checkbox.dataset.regularComplete);
+      clearedAlternatives = result.clearedAlternatives;
+      inferredPrerequisites = result.addedPrerequisites;
+    } else {
+      regularState.completed.delete(checkbox.dataset.regularComplete);
+    }
 
     writeArray(REGULAR_STORAGE.completed, [...regularState.completed]);
     renderRegularPlanner({ preserveVisibleOrder: true });
+    if (clearedAlternatives) {
+      showRegularToast("Alternative quest route selected; sibling route cleared");
+    } else if (inferredPrerequisites) {
+      showRegularToast(`Marked complete with ${inferredPrerequisites} required predecessor${inferredPrerequisites === 1 ? "" : "s"}`);
+    }
   });
 
   regularDom.loadMore.addEventListener("click", () => {
@@ -166,9 +188,14 @@ function bindRegularEvents() {
 }
 
 function hydrateRegularControls() {
+  regularState.playerLevel = clamp(Number(regularState.playerLevel) || 1, 1, 100);
+  regularState.faction = ["USEC", "BEAR"].includes(regularState.faction)
+    ? regularState.faction
+    : "Any";
+  regularState.reputation = sanitizeReputation(regularState.reputation);
   regularDom.playerLevel.value = regularState.playerLevel;
   regularDom.playerFaction.value = regularState.faction;
-  regularDom.taskTotal.textContent = regularState.data.meta.taskCount;
+  regularDom.taskTotal.textContent = regularState.data.tasks.length;
   regularDom.groupGateTotal.textContent = regularState.data.stats.tasksWithGlobalGroupGates;
   regularDom.snapshotDate.textContent = new Intl.DateTimeFormat(undefined, {
     day: "2-digit",
@@ -185,7 +212,7 @@ function hydrateRegularControls() {
   };
   const traders = [...new Set(regularState.data.tasks.map((task) => task.traderName))]
     .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-  const maps = [...new Set(regularState.data.tasks.map((task) => task.map?.name).filter(Boolean))].sort();
+  const maps = [...new Set(regularState.data.tasks.flatMap(taskMapNames))].sort();
 
   regularDom.trader.innerHTML = ["", ...traders]
     .map((trader) => `
@@ -227,14 +254,28 @@ function renderRegularPlanner(options = {}) {
 function buildAvailabilityContext() {
   const traders = new Map(regularState.data.traders.map((trader) => [trader.id, trader]));
   const taskById = new Map(regularState.data.tasks.map((task) => [task.id, task]));
+  const tasksByName = new Map();
+  const successorsByTaskId = new Map(regularState.data.tasks.map((task) => [task.id, []]));
+  const wikiAdvisoryByLink = new Map(
+    (regularState.wikiAudit?.advisories || []).map((advisory) => [advisory.wikiLink, advisory]),
+  );
   const groupProgress = new Map();
+
+  for (const task of regularState.data.tasks) {
+    const sameName = tasksByName.get(task.name) || [];
+    sameName.push(task);
+    tasksByName.set(task.name, sameName);
+    for (const requirement of task.taskRequirements || []) {
+      successorsByTaskId.get(requirement.taskId)?.push({ task, requirement });
+    }
+  }
 
   for (const taskId of regularState.completed) {
     const groupId = taskById.get(taskId)?.progressionGroupId;
     if (groupId) groupProgress.set(groupId, (groupProgress.get(groupId) || 0) + 1);
   }
 
-  return { traders, taskById, groupProgress };
+  return { traders, taskById, tasksByName, successorsByTaskId, wikiAdvisoryByLink, groupProgress };
 }
 
 function getTraderLoyalty(trader, reputation = getReputation(trader?.id)) {
@@ -253,8 +294,9 @@ function getAvailability(task, context) {
     reasons.push({ type: "level", label: `PMC level ${task.minPlayerLevel}` });
   }
 
-  if (
-    regularState.faction !== "Any" &&
+  if (regularState.faction === "Any" && task.factionName !== "Any") {
+    reasons.push({ type: "manual", label: `Set PMC faction (${task.factionName} task)` });
+  } else if (
     task.factionName !== "Any" &&
     task.factionName !== regularState.faction
   ) {
@@ -267,6 +309,13 @@ function getAvailability(task, context) {
 
   for (const requirement of task.traderRequirements) {
     const trader = context.traders.get(requirement.traderId);
+    if (!trader) {
+      reasons.push({
+        type: "manual",
+        label: `Check ${requirement.traderName} rep ${formatComparison(requirement.compareMethod, requirement.value)} in-game`,
+      });
+      continue;
+    }
     const actual = requirement.requirementType === "level"
       ? getTraderLoyalty(trader)
       : getReputation(requirement.traderId);
@@ -274,37 +323,36 @@ function getAvailability(task, context) {
       reasons.push({
         type: "rep",
         label: requirement.requirementType === "level"
-          ? `${requirement.traderName} LL${requirement.value}`
-          : `${requirement.traderName} rep ${formatRep(requirement.value)}`,
+          ? `${requirement.traderName} LL ${formatComparison(requirement.compareMethod, requirement.value)}`
+          : `${requirement.traderName} rep ${formatComparison(requirement.compareMethod, requirement.value)}`,
       });
     }
   }
 
   for (const requirement of task.taskRequirements) {
-    const statuses = Array.isArray(requirement.status) ? requirement.status : [requirement.status];
+    const statuses = requirementStatuses(requirement);
     const prerequisiteComplete = regularState.completed.has(requirement.taskId);
-    const acceptsComplete = statuses.includes("complete") || statuses.length === 0;
-    const acceptsActive = statuses.includes("active");
-    const acceptsFailure = statuses.includes("failed");
-    if (acceptsComplete && !prerequisiteComplete) {
+    const pureCompletion = statuses.length === 1 && statuses[0] === "complete";
+    if (pureCompletion && !prerequisiteComplete) {
       reasons.push({
         type: "prerequisite",
         label: `Complete ${requirement.taskName}`,
         taskId: requirement.taskId,
       });
-    } else if (!acceptsComplete && acceptsActive && !prerequisiteComplete) {
-      reasons.push({
-        type: "prerequisite",
-        label: `Accept ${requirement.taskName}`,
-        taskId: requirement.taskId,
-      });
-    } else if (!acceptsComplete && !acceptsActive && acceptsFailure) {
+    } else if (!pureCompletion && !(statuses.includes("complete") && prerequisiteComplete)) {
       reasons.push({
         type: "manual",
-        label: `${requirement.taskName} branch outcome`,
+        label: `${requirementAction(statuses)} ${requirement.taskName} in-game`,
         taskId: requirement.taskId,
       });
     }
+  }
+
+  if (task.availableDelaySecondsMax > 0) {
+    reasons.push({
+      type: "timed",
+      label: `Timed unlock: ${formatDurationRange(task.availableDelaySecondsMin, task.availableDelaySecondsMax)} after its prerequisites (verify in-game)`,
+    });
   }
 
   for (const requirement of task.globalRequirements) {
@@ -334,7 +382,7 @@ function getAvailability(task, context) {
     reasons.push({ type: "manual", label: "Special in-game condition" });
   }
 
-  const priority = ["rep", "level", "prerequisite", "group", "manual"];
+  const priority = ["rep", "level", "prerequisite", "group", "timed", "manual"];
   const status = priority.find((type) => reasons.some((reason) => reason.type === type)) || "available";
   return { status, reasons };
 }
@@ -411,7 +459,7 @@ function renderRepOpportunities(context) {
     ? opportunities.map((item, index) => `
         <a class="rep-opportunity" href="#${taskAnchor(item.task.id)}" data-task-link="${escapeRegular(item.task.id)}">
           <span class="rank">${String(index + 1).padStart(2, "0")}</span>
-          <span><strong>${escapeRegular(item.task.name)}</strong><small>${escapeRegular(item.task.traderName)}${item.task.map ? ` · ${escapeRegular(item.task.map.name)}` : ""}</small></span>
+          <span><strong>${escapeRegular(item.task.name)}</strong><small>${escapeRegular(item.task.traderName)}${taskMapNames(item.task)[0] ? ` · ${escapeRegular(taskMapNames(item.task)[0])}` : ""}</small></span>
           <span class="rep-gain">${item.gains.map((reward) => `${formatSignedRep(reward.standing)} ${escapeRegular(reward.traderName)}`).join(" / ")}</span>
           <span class="opportunity-arrow" aria-hidden="true">→</span>
         </a>
@@ -428,7 +476,7 @@ function renderRegularTasks(context = buildAvailabilityContext(), options = {}) 
     availability: getAvailability(task, context),
     depth: prerequisiteDepth(task, context, depthMemo),
   }));
-  const matching = rows.filter(matchesRegularFilters).sort(compareProgression);
+  const matching = rows.filter((row) => matchesRegularFilters(row, context)).sort(compareProgression);
 
   if (options.preserveVisibleOrder && taskUi.visibleOrder.length) {
     const previousRank = new Map(taskUi.visibleOrder.map((taskId, index) => [taskId, index]));
@@ -526,8 +574,8 @@ function prerequisiteDepth(task, context, memo) {
   memo.set(task.id, 0);
   let depth = 0;
   for (const requirement of task.taskRequirements) {
-    const statuses = Array.isArray(requirement.status) ? requirement.status : [requirement.status];
-    if (statuses.length && !statuses.includes("complete")) continue;
+    const statuses = requirementStatuses(requirement);
+    if (statuses.length !== 1 || statuses[0] !== "complete") continue;
     const prerequisite = context.taskById.get(requirement.taskId);
     if (prerequisite && !regularState.completed.has(prerequisite.id)) {
       depth = Math.max(depth, 1 + prerequisiteDepth(prerequisite, context, memo));
@@ -576,20 +624,34 @@ function handleTraderTabKeydown(event) {
   target.focus();
 }
 
-function matchesRegularFilters({ task, availability }) {
+function matchesRegularFilters({ task, availability }, context) {
+  const mapNames = taskMapNames(task);
+  const successors = context.successorsByTaskId.get(task.id) || [];
   const searchBlob = [
     task.name,
     task.traderName,
-    task.map?.name,
+    ...mapNames,
     task.factionName,
+    ...(task.objectives || []).flatMap((objective) => [
+      objective.description,
+      objective.type,
+      ...(objective.maps || []).map((map) => map.name),
+      ...(objective.locations || []).map((location) => location.mapName),
+      objective.optional ? "optional" : "",
+    ]),
+    ...(task.taskRequirements || []).map((requirement) => requirement.taskName),
+    ...successors.map(({ task: successor }) => successor.name),
     ...availability.reasons.map((reason) => reason.label),
     ...task.finishStanding.map((reward) => `${reward.traderName} ${reward.standing}`),
+    task.kappaRequired ? "kappa required" : "",
+    task.lightkeeperRequired ? "lightkeeper required" : "",
+    task.availableDelaySecondsMax ? `timed delayed ${formatDurationRange(task.availableDelaySecondsMin, task.availableDelaySecondsMax)}` : "",
   ].join(" ").toLowerCase();
 
   return (
     (!regularState.filters.search || searchBlob.includes(regularState.filters.search)) &&
     (!regularState.filters.trader || task.traderName === regularState.filters.trader) &&
-    (!regularState.filters.map || task.map?.name === regularState.filters.map) &&
+    (!regularState.filters.map || mapNames.includes(regularState.filters.map)) &&
     (!regularState.filters.status || availability.status === regularState.filters.status)
   );
 }
@@ -598,16 +660,39 @@ function regularTaskMarkup(task, availability, context, expanded) {
   const complete = availability.status === "done";
   const statusLabel = getStatusLabel(availability.status);
   const gateDescriptions = getGateDescriptions(task, context);
+  const mapNames = taskMapNames(task);
+  const mapSummary = mapNames.length > 1 ? `${mapNames[0]} +${mapNames.length - 1}` : mapNames[0];
+  const variant = taskVariantLabel(task, context);
+  const wikiHref = safeWikiUrl(task.wikiLink);
+  const objectives = task.objectives || [];
+  const objectivePreview = objectives.slice(0, 4);
+  const remainingObjectives = objectives.length - objectivePreview.length;
+  const successors = context.successorsByTaskId.get(task.id) || [];
+  const alternativeVariants = context.tasksByName.get(task.name) || [];
+  const wikiAdvisory = context.wikiAdvisoryByLink.get(task.wikiLink);
+  const completionWarnings = complete ? getCompletionWarnings(task) : [];
+  const factChips = [
+    `${objectives.length} objective${objectives.length === 1 ? "" : "s"}`,
+    ...mapNames.slice(0, 4),
+    mapNames.length > 4 ? `+${mapNames.length - 4} maps` : "",
+    task.availableDelaySecondsMax
+      ? `Unlock delay ${formatDurationRange(task.availableDelaySecondsMin, task.availableDelaySecondsMax)}`
+      : "",
+    task.kappaRequired ? "Required for Kappa" : "",
+    task.lightkeeperRequired ? "Lightkeeper task" : "",
+    alternativeVariants.length > 1 ? "Alternative route" : "",
+    wikiAdvisory ? "Wiki cross-check differs" : "",
+  ].filter(Boolean);
   const rewardChips = [
     ...task.finishStanding.map((reward) => `
       <span class="reward-chip ${reward.standing >= 0 ? "positive" : "negative"}">${formatSignedRep(reward.standing)} ${escapeRegular(reward.traderName)}</span>
     `),
+    ...task.failureStanding.map((reward) => `
+      <span class="reward-chip negative">On failure ${formatSignedRep(reward.standing)} ${escapeRegular(reward.traderName)}</span>
+    `),
     task.experience ? `<span class="reward-chip">${formatNumber(task.experience)} XP</span>` : "",
   ].filter(Boolean).join("");
-  const plannerLocation = task.map?.name || task.objectives?.flatMap((objective) => [
-    ...(objective.maps || []).map((map) => map.name),
-    ...(objective.locations || []).map((location) => location.mapName),
-  ]).find(Boolean);
+  const plannerLocation = mapNames[0];
   const plannerParams = new URLSearchParams({ source: "regular", task: task.id });
   if (plannerLocation) plannerParams.set("map", plannerLocation);
   const plannerHref = `./planner.html?${plannerParams.toString()}`;
@@ -621,34 +706,61 @@ function regularTaskMarkup(task, availability, context, expanded) {
         <summary>
           <span>
             <span class="regular-task-title">${escapeRegular(task.name)}</span>
-            <span class="regular-task-meta"><span>${escapeRegular(task.traderName)}</span>${task.map ? `<span>${escapeRegular(task.map.name)}</span>` : ""}${task.progressionTier ? `<span>LL${task.progressionTier} band</span>` : ""}${task.factionName !== "Any" ? `<span>${task.factionName}</span>` : ""}</span>
+            <span class="regular-task-meta"><span>${escapeRegular(task.traderName)}</span>${mapSummary ? `<span>${escapeRegular(mapSummary)}</span>` : ""}${task.progressionTier ? `<span>LL${task.progressionTier} band</span>` : ""}${task.factionName !== "Any" ? `<span>${task.factionName}</span>` : ""}${variant ? `<span>${escapeRegular(variant)}</span>` : ""}</span>
           </span>
           <span class="status-badge ${complete ? "done" : availability.status === "available" ? "available" : "blocked"}">${statusLabel}</span>
           <span class="disclosure-chevron" aria-hidden="true"></span>
         </summary>
         <div class="regular-task-body">
-          <div class="task-detail-block">
-            <h3>Current blockers</h3>
-            ${availability.reasons.length ? `<ul>${availability.reasons.map((reason) => `<li>${taskReferenceMarkup(reason)}</li>`).join("")}</ul>` : "<p>All modeled requirements are met. Confirm the task with the trader in-game.</p>"}
-          </div>
-          <div class="task-detail-block">
-            <h3>Full gate definition</h3>
+          <section class="task-detail-block task-mission">
+            <h3>What you need to do</h3>
+            <ol class="task-objective-list">
+              ${objectivePreview.map((objective) => `<li><span>${escapeRegular(objective.description)}</span>${objective.optional ? '<span class="objective-optional">Optional</span>' : ""}</li>`).join("")}
+            </ol>
+            ${remainingObjectives > 0 ? `<p class="task-more-objectives">+${remainingObjectives} more objective${remainingObjectives === 1 ? "" : "s"}. ${wikiHref ? `<a class="task-source" href="${escapeRegular(wikiHref)}" target="_blank" rel="noreferrer">See the full Wiki guide ↗</a>` : ""}</p>` : ""}
+            <div class="task-facts" aria-label="Quest facts">${factChips.map((fact) => `<span>${escapeRegular(fact)}</span>`).join("")}</div>
+          </section>
+          <section class="task-detail-block task-chain">
+            <h3>Fixed chain &amp; routes</h3>
+            <div class="task-chain-grid">
+              <div>
+                <h4>Comes after</h4>
+                ${task.taskRequirements.length
+                  ? `<ul class="task-chain-list">${task.taskRequirements.map((requirement) => incomingChainMarkup(requirement, context)).join("")}</ul>`
+                  : '<p class="chain-empty">No fixed quest predecessor. Loyalty or task-group gates may still apply.</p>'}
+              </div>
+              <div>
+                <h4>Next tasks &amp; branches</h4>
+                ${successors.length
+                  ? `<ul class="task-chain-list">${successors.map((edge) => outgoingChainMarkup(edge, context)).join("")}</ul>`
+                  : '<p class="chain-empty">No fixed follow-up in the current seasonal data.</p>'}
+              </div>
+            </div>
+            ${alternativeVariants.length > 1 ? '<aside class="route-chain-advisory"><strong>Alternative route</strong><p>Only the version offered to this PMC should be completed. Marking this route complete clears another route with the same quest name.</p></aside>' : ""}
+            ${wikiAdvisory ? `<aside class="wiki-chain-advisory"><strong>Wiki cross-check</strong><p>${escapeRegular(wikiAdvisory.wikiSummary)}</p><small>The newer seasonal game-data route above drives availability. ${wikiHref ? `<a class="task-source" href="${escapeRegular(wikiHref)}" target="_blank" rel="noreferrer">Review this Wiki page ↗</a>` : "Confirm the route in-game."}</small></aside>` : ""}
+          </section>
+          <section class="task-detail-block">
+            <h3>${complete ? "Completion check" : "Current readiness"}</h3>
+            ${complete
+              ? `<p>Marked complete on this device.</p>${completionWarnings.length ? `<ul class="task-warning-list">${completionWarnings.map((warning) => `<li>${taskReferenceMarkup(warning)}</li>`).join("")}</ul>` : '<p class="task-state-ok">Direct completion requirements are consistent.</p>'}`
+              : availability.reasons.length
+                ? `<ul>${availability.reasons.map((reason) => `<li>${taskReferenceMarkup(reason)}</li>`).join("")}</ul>`
+                : "<p>All modeled requirements are met. Confirm the task with the trader in-game.</p>"}
+          </section>
+          <section class="task-detail-block">
+            <h3>Requirements</h3>
             <div class="chip-row">${gateDescriptions.length ? gateDescriptions.map((gate) => gate.taskId
               ? `<a class="gate-chip task-jump" href="#${taskAnchor(gate.taskId)}" data-task-link="${escapeRegular(gate.taskId)}">${escapeRegular(gate.label)}</a>`
               : `<span class="gate-chip">${escapeRegular(gate.label)}</span>`).join("") : '<span class="gate-chip">No explicit gate</span>'}</div>
-          </div>
-          <div class="task-detail-block">
+          </section>
+          <section class="task-detail-block">
             <h3>Standing and experience</h3>
-            <div class="chip-row">${rewardChips || '<span class="reward-chip">No standing reward</span>'}</div>
-          </div>
-          <div class="task-detail-block">
-            <h3>Quest reference</h3>
-            <p>${task.wikiLink ? `<a class="task-source" href="${escapeRegular(task.wikiLink)}" target="_blank" rel="noreferrer">Open current quest reference ↗</a>` : "No quest page linked in the data feed."}</p>
-          </div>
-          <div class="task-detail-block">
-            <h3>Raid planning</h3>
-            <p><a class="task-source" href="${escapeRegular(plannerHref)}" aria-label="Plan ${escapeRegular(task.name)} on the tactical map">Plan raid on tactical map →</a></p>
-          </div>
+            <div class="chip-row">${rewardChips || '<span class="reward-chip">No standing or XP reward listed</span>'}</div>
+          </section>
+          <nav class="task-detail-block task-actions" aria-label="${escapeRegular(task.name)} actions">
+            <a class="task-action-link primary" href="${escapeRegular(plannerHref)}" aria-label="Plan ${escapeRegular(task.name)} on the tactical map">Plan on tactical map →</a>
+            ${wikiHref ? `<a class="task-action-link" href="${escapeRegular(wikiHref)}" target="_blank" rel="noreferrer">Open Wiki guide ↗</a>` : '<span class="task-source-missing">No Wiki page linked in the data feed.</span>'}
+          </nav>
         </div>
       </details>
     </article>
@@ -663,6 +775,7 @@ function getStatusLabel(status) {
     level: "PMC level gate",
     prerequisite: "Prerequisite",
     group: "Task-group gate",
+    timed: "Timed unlock",
     manual: "Manual gate",
   };
   return labels[status] || "Blocked";
@@ -674,20 +787,207 @@ function taskReferenceMarkup(reference) {
     : escapeRegular(reference.label);
 }
 
+function taskMapNames(task) {
+  return [...new Set([
+    task.map?.name,
+    ...(task.objectives || []).flatMap((objective) => [
+      ...(objective.maps || []).map((map) => map.name),
+      ...(objective.locations || []).map((location) => location.mapName),
+    ]),
+  ].filter(Boolean).map(canonicalMapName))];
+}
+
+function canonicalMapName(name) {
+  const aliases = {
+    "Ground Zero 21+": "Ground Zero",
+    "Ground Zero Tutorial": "Ground Zero",
+    "Night Factory": "Factory",
+    "The Lab (Dark)": "The Lab",
+  };
+  return aliases[name] || name;
+}
+
+function requirementStatuses(requirement) {
+  const rawStatuses = Array.isArray(requirement?.status)
+    ? requirement.status
+    : [requirement?.status];
+  const statuses = [...new Set(rawStatuses
+    .filter(Boolean)
+    .map((status) => String(status).trim().toLowerCase()))];
+  return statuses.length ? statuses : ["complete"];
+}
+
+function markTaskAndRequiredPredecessors(taskId) {
+  const taskById = new Map(regularState.data.tasks.map((task) => [task.id, task]));
+  const selectedId = taskId;
+  const visited = new Set();
+  let clearedAlternatives = 0;
+  let addedPrerequisites = 0;
+
+  const mark = (currentId) => {
+    if (visited.has(currentId)) return;
+    visited.add(currentId);
+    const task = taskById.get(currentId);
+    if (!task) return;
+
+    for (const requirement of task.taskRequirements || []) {
+      const statuses = requirementStatuses(requirement);
+      if (statuses.length === 1 && statuses[0] === "complete") mark(requirement.taskId);
+    }
+
+    for (const alternative of regularState.data.tasks) {
+      if (
+        alternative.id !== task.id &&
+        alternative.name === task.name &&
+        regularState.completed.delete(alternative.id)
+      ) {
+        clearedAlternatives += 1;
+      }
+    }
+    if (!regularState.completed.has(task.id) && task.id !== selectedId) addedPrerequisites += 1;
+    regularState.completed.add(task.id);
+  };
+
+  mark(taskId);
+  return { clearedAlternatives, addedPrerequisites };
+}
+
+function requirementAction(statuses) {
+  const active = statuses.includes("active");
+  const complete = statuses.includes("complete");
+  const failed = statuses.includes("failed");
+  if (active && complete && failed) return "Accept, complete or fail";
+  if (active && complete) return "Accept or complete";
+  if (complete && failed) return "Complete or fail";
+  if (active && failed) return "Accept or fail";
+  if (active) return "Accept";
+  if (failed) return "Fail";
+  if (complete) return "Complete";
+  return "Resolve";
+}
+
+function outgoingCondition(statuses) {
+  const active = statuses.includes("active");
+  const complete = statuses.includes("complete");
+  const failed = statuses.includes("failed");
+  if (active && complete && failed) return "Any resolved state";
+  if (active && complete) return "Active or complete";
+  if (complete && failed) return "Complete or failure";
+  if (active && failed) return "Active or failure";
+  if (active) return "While active";
+  if (failed) return "Failure branch";
+  return "On completion";
+}
+
+function taskVariantLabel(task, context) {
+  const variants = context.tasksByName.get(task.name) || [];
+  if (variants.length < 2) return "";
+  if (task.factionName !== "Any") return "";
+
+  const firstRequirement = task.taskRequirements?.[0];
+  const predecessorIds = new Set(
+    variants.map((variant) => variant.taskRequirements?.[0]?.taskId).filter(Boolean),
+  );
+  if (firstRequirement && predecessorIds.size > 1) {
+    const predecessor = context.taskById.get(firstRequirement.taskId);
+    const predecessorVariant = predecessor ? taskVariantLabel(predecessor, context) : "";
+    return `Route via ${firstRequirement.taskName}${predecessorVariant ? ` (${predecessorVariant})` : ""}`;
+  }
+  const predecessorNames = new Set(
+    variants.map((variant) => variant.taskRequirements?.[0]?.taskName).filter(Boolean),
+  );
+  if (firstRequirement && predecessorNames.size > 1) {
+    return `Route after ${firstRequirement.taskName}`;
+  }
+
+  const mapNames = taskMapNames(task);
+  const variantMaps = new Set(variants.map((variant) => taskMapNames(variant).join(" / ")));
+  if (mapNames.length && variantMaps.size > 1) return mapNames.join(" / ");
+  return `Game variant ${variants.indexOf(task) + 1}/${variants.length}`;
+}
+
+function taskDisplayLabel(task, context) {
+  const variants = context.tasksByName.get(task.name) || [];
+  if (variants.length > 1 && task.factionName !== "Any") {
+    return `${task.name} · ${task.factionName}`;
+  }
+  const variant = taskVariantLabel(task, context);
+  return variant ? `${task.name} · ${variant}` : task.name;
+}
+
+function chainTaskLink(task, context) {
+  return `<a class="task-jump" href="#${taskAnchor(task.id)}" data-task-link="${escapeRegular(task.id)}">${escapeRegular(taskDisplayLabel(task, context))}</a>`;
+}
+
+function incomingChainMarkup(requirement, context) {
+  const prerequisite = context.taskById.get(requirement.taskId);
+  const statuses = requirementStatuses(requirement);
+  const label = prerequisite
+    ? chainTaskLink(prerequisite, context)
+    : `<span>${escapeRegular(requirement.taskName)}</span>`;
+  return `<li><span class="chain-condition">${escapeRegular(requirementAction(statuses))}</span><span class="chain-target">${label}</span></li>`;
+}
+
+function outgoingChainMarkup({ task, requirement }, context) {
+  const statuses = requirementStatuses(requirement);
+  const notes = [];
+  const otherRequirements = Math.max(0, (task.taskRequirements || []).length - 1);
+  if (otherRequirements) {
+    notes.push(`also needs ${otherRequirements} other quest${otherRequirements === 1 ? "" : "s"}`);
+  }
+  if (task.availableDelaySecondsMax) {
+    notes.push(`wait ${formatDurationRange(task.availableDelaySecondsMin, task.availableDelaySecondsMax)}`);
+  }
+  return `<li><span class="chain-condition">${escapeRegular(outgoingCondition(statuses))}</span><span class="chain-target">${chainTaskLink(task, context)}${notes.length ? `<small>${escapeRegular(notes.join(" · "))}</small>` : ""}</span></li>`;
+}
+
+function getCompletionWarnings(task) {
+  const warnings = [];
+  for (const requirement of task.taskRequirements || []) {
+    const statuses = requirementStatuses(requirement);
+    const prerequisiteComplete = regularState.completed.has(requirement.taskId);
+    if (statuses.length === 1 && statuses[0] === "complete" && !prerequisiteComplete) {
+      warnings.push({
+        label: `${requirement.taskName} is not marked complete`,
+        taskId: requirement.taskId,
+      });
+    } else if (!(statuses.includes("complete") && prerequisiteComplete) &&
+      (statuses.includes("active") || statuses.includes("failed"))) {
+      warnings.push({
+        label: `${requirement.taskName} used an in-game branch state that this checkbox tracker cannot verify`,
+        taskId: requirement.taskId,
+      });
+    }
+  }
+  return warnings;
+}
+
+function safeWikiUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    const allowedHosts = new Set([
+      "escapefromtarkov.fandom.com",
+      "wiki.escapefromtarkov.com",
+    ]);
+    return url.protocol === "https:" && allowedHosts.has(url.hostname) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function getGateDescriptions(task, context) {
   const gates = [];
   if (task.minPlayerLevel > 0) gates.push({ label: `PMC level ${task.minPlayerLevel}` });
   for (const requirement of task.traderRequirements) {
     gates.push({
       label: requirement.requirementType === "level"
-        ? `${requirement.traderName} LL${requirement.value}`
-        : `${requirement.traderName} rep ${formatRep(requirement.value)}`,
+        ? `${requirement.traderName} LL ${formatComparison(requirement.compareMethod, requirement.value)}`
+        : `${requirement.traderName} rep ${formatComparison(requirement.compareMethod, requirement.value)}`,
     });
   }
   for (const requirement of task.taskRequirements) {
-    const statuses = Array.isArray(requirement.status) ? requirement.status : [requirement.status];
     gates.push({
-      label: `${requirement.taskName}: ${statuses.filter(Boolean).join("/") || "complete"}`,
+      label: `${requirementAction(requirementStatuses(requirement))} ${requirement.taskName}`,
       taskId: requirement.taskId,
     });
   }
@@ -697,6 +997,9 @@ function getGateDescriptions(task, context) {
   }
   if (task.dialogueRequirements.length) gates.push({ label: "Trader dialogue" });
   if (task.requiredPrestige) gates.push({ label: `Prestige ${task.requiredPrestige}` });
+  if (task.availableDelaySecondsMax) {
+    gates.push({ label: `Wait ${formatDurationRange(task.availableDelaySecondsMin, task.availableDelaySecondsMax)}` });
+  }
   if (task.hasUnresolvedRequirement) gates.push({ label: "Special condition" });
   return gates;
 }
@@ -767,7 +1070,7 @@ function taskIdFromHash() {
 }
 
 function taskAnchor(taskId) {
-  return `task-${taskId}`;
+  return `task-${String(taskId).replace(/[^A-Za-z0-9_-]/g, "-")}`;
 }
 
 function exportRegularProgress() {
@@ -1053,6 +1356,36 @@ function toCamel(value) {
 
 function formatRep(value) {
   return Number(value).toFixed(2);
+}
+
+function formatComparison(method, value) {
+  const symbols = {
+    ">": ">",
+    ">=": "≥",
+    "<": "<",
+    "<=": "≤",
+    "=": "=",
+    "==": "=",
+    "===": "=",
+    "!=": "≠",
+  };
+  const number = Number(value);
+  const formatted = Number.isInteger(number) ? String(number) : number.toFixed(2);
+  return `${symbols[method] || "≥"} ${formatted}`;
+}
+
+function formatDuration(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  if (value < 60) return `${Math.round(value)}s`;
+  if (value < 3600) return `${Math.round(value / 60)}m`;
+  if (value % 3600 === 0) return `${Math.round(value / 3600)}h`;
+  return `${Math.round(value / 60)}m`;
+}
+
+function formatDurationRange(minimum, maximum) {
+  const start = formatDuration(minimum || maximum);
+  const end = formatDuration(maximum || minimum);
+  return start === end ? start : `${start}–${end}`;
 }
 
 function formatSignedRep(value) {
