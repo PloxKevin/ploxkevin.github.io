@@ -53,6 +53,7 @@ const plannerState = {
   mapAspect: 1.5,
   renderedMap: null,
   artworkToken: 0,
+  mapLayerBySlug: new Map(),
 };
 
 const plannerDom = {};
@@ -116,7 +117,10 @@ function cachePlannerDom() {
     "map-fallback-label",
     "map-heading",
     "map-kicker",
+    "map-layer",
+    "map-layer-control",
     "map-reset",
+    "map-source-link",
     "map-stage",
     "map-subtitle",
     "map-viewport",
@@ -220,6 +224,11 @@ function bindPlannerEvents() {
   plannerDom.mapZoomIn.addEventListener("click", () => setMapZoom(plannerState.zoom + 0.25));
   plannerDom.mapZoomOut.addEventListener("click", () => setMapZoom(plannerState.zoom - 0.25));
   plannerDom.mapReset.addEventListener("click", resetMapView);
+  plannerDom.mapLayer.addEventListener("change", () => {
+    plannerState.mapLayerBySlug.set(plannerState.selectedMap, plannerDom.mapLayer.value);
+    plannerState.renderedMap = null;
+    renderPlanner({ mapChanged: true });
+  });
   plannerDom.mapViewport.addEventListener("keydown", handleMapKeyboard);
   plannerDom.mapViewport.addEventListener("pointerdown", beginMapDrag);
   plannerDom.mapViewport.addEventListener("pointermove", continueMapDrag);
@@ -271,6 +280,7 @@ function setPlannerControlsDisabled(disabled) {
     plannerDom.plannerReadiness,
     plannerDom.plannerSource,
     plannerDom.plannerPinMode,
+    plannerDom.mapLayer,
     plannerDom.clearPlannerFilters,
   ]) {
     control.disabled = disabled;
@@ -478,6 +488,7 @@ function buildRegularRows(selectedMap) {
           top: finiteOrNull(location.top),
           bottom: finiteOrNull(location.bottom),
         }));
+      markers.push(...curatedApproximateMarkers(selectedMap, task, objective, index));
 
       objectives.push({
         id: objective.id,
@@ -486,7 +497,11 @@ function buildRegularRows(selectedMap) {
         description: objective.description || "Unnamed objective",
         optional: Boolean(objective.optional),
         markers,
-        quality: markers.length ? "exact" : "map-level",
+        quality: markers.some((marker) => marker.confidence === "exact")
+          ? "exact"
+          : markers.some((marker) => marker.confidence === "approximate")
+            ? "approximate"
+            : "map-level",
       });
     }
 
@@ -509,6 +524,31 @@ function buildRegularRows(selectedMap) {
   }
 
   return rows;
+}
+
+function curatedApproximateMarkers(mapSlugValue, task, objective, objectiveIndex) {
+  const pins = plannerState.configBySlug.get(mapSlugValue)?.approximatePins || [];
+  const description = String(objective.description || "").toLowerCase();
+  return pins
+    .filter((pin) => pin.taskName === task.name && description.includes(String(pin.objectiveIncludes || "").toLowerCase()))
+    .map((pin, pinIndex) => ({
+      id: `regular:${task.id}:${objective.id}:approximate:${pinIndex}`,
+      rowKey: `regular:${task.id}`,
+      objectiveIndex,
+      taskName: task.name,
+      trader: task.traderName,
+      source: "regular",
+      wikiLink: task.wikiLink,
+      description: objective.description,
+      label: pin.label,
+      detail: pin.detail,
+      confidence: "approximate",
+      kind: "curated-approximation",
+      position: { left: Number(pin.left), top: Number(pin.top), y: null },
+      floorLabel: pin.floorLabel || null,
+      top: null,
+      bottom: null,
+    }));
 }
 
 function uniqueExactLocations(locations) {
@@ -862,12 +902,15 @@ function taskPoolMarkup(row) {
   const planned = isRowPlanned(row);
   const exactCount = row.markers.filter((marker) => marker.confidence === "exact").length;
   const poiCount = row.markers.filter((marker) => marker.confidence === "poi").length;
-  const qualityClass = exactCount ? "exact" : poiCount ? "poi" : "map-level";
+  const approximateCount = row.markers.filter((marker) => marker.confidence === "approximate").length;
+  const qualityClass = exactCount ? "exact" : poiCount ? "poi" : approximateCount ? "approximate" : "map-level";
   const qualityLabel = exactCount
     ? `${exactCount} exact`
     : poiCount
       ? `${poiCount} named POI`
-      : "Map level";
+      : approximateCount
+        ? `${approximateCount} approximate`
+        : "Map level";
   const open = row.key === plannerState.focusedTaskKey || plannerState.expandedTaskKeys.has(row.key);
 
   return `
@@ -912,9 +955,11 @@ function objectivePoolMarkup(objective) {
     ? `${markerCount} exact game-data position${markerCount === 1 ? "" : "s"}`
     : objective.quality === "poi"
       ? `Named POI: ${[...new Set(objective.markers.map((marker) => marker.label))].join(", ")} · exact interaction point unavailable`
-      : "Map-level intelligence · no reliable coordinate";
+      : objective.quality === "approximate"
+        ? `${markerCount} Wiki-guided approximate position${markerCount === 1 ? "" : "s"} · verify the field image`
+        : "Map-level intelligence · no reliable coordinate";
   return `
-    <li class="${objective.quality === "exact" ? "has-exact" : objective.quality === "poi" ? "has-poi" : ""}">
+    <li class="${objective.quality === "exact" ? "has-exact" : objective.quality === "poi" ? "has-poi" : objective.quality === "approximate" ? "has-approximate" : ""}">
       <strong>${objective.optional ? "Optional · " : ""}${escapePlanner(objective.description)}</strong>
       <small>${escapePlanner(detail)}</small>
     </li>
@@ -942,14 +987,17 @@ function handleTaskPoolToggle(event) {
 function renderMap(options = {}) {
   const config = plannerState.configBySlug.get(plannerState.selectedMap);
   const mapChanged = options.mapChanged || plannerState.renderedMap !== plannerState.selectedMap;
+  const layer = selectedMapLayer(config);
   plannerDom.mapHeading.textContent = config?.name || "Unknown location";
   plannerDom.mapKicker.textContent = config?.basemapSupported
-    ? "Tactical basemap"
+    ? config.calibrationConfidence === "approximate" ? "Approximate tactical basemap" : "Tactical basemap"
     : canProjectMap(config)
       ? "Coordinate intelligence"
       : "Location intelligence";
   plannerDom.mapSubtitle.textContent = config?.basemapSupported
-    ? "Ground-level community SVG · exact and named-POI confidence stay separate."
+    ? config.calibrationConfidence === "approximate"
+      ? `${layer?.name ? `${layer.name} · ` : ""}Community artwork alignment is approximate; marker confidence stays separate.`
+      : "Ground-level community SVG · exact and named-POI confidence stay separate."
     : canProjectMap(config)
       ? "World-coordinate grid · a calibrated local basemap is not available."
       : config?.unsupportedReason || "No fixed coordinates are exposed for this objective group.";
@@ -967,21 +1015,27 @@ function renderMap(options = {}) {
 function configureMapBase(config) {
   plannerState.artworkToken += 1;
   const token = plannerState.artworkToken;
+  hydrateMapLayerControl(config);
+  hydrateMapSourceLink(config);
   plannerDom.mapArtwork.hidden = true;
   plannerDom.mapArtwork.replaceChildren();
   plannerDom.mapFallbackLabel.hidden = false;
-  plannerDom.mapFallbackLabel.textContent = canProjectMap(config)
-    ? "Coordinate grid · basemap unavailable"
+  const hasArtwork = Boolean(config?.image || config?.rasterImage);
+  plannerDom.mapFallbackLabel.textContent = hasArtwork
+    ? "Loading community basemap"
+    : canProjectMap(config)
+      ? "Coordinate grid · basemap unavailable"
     : "No fixed map coordinate";
 
-  plannerState.mapAspect = canProjectMap(config) ? projectionBox(config)?.aspect || 1.5 : 1.5;
+  plannerState.mapAspect = Number(config?.artworkAspect) ||
+    (canProjectMap(config) ? projectionBox(config)?.aspect || 1.5 : 1.5);
   const hasProjection = canProjectMap(config);
   plannerDom.mapZoomIn.disabled = !hasProjection;
   plannerDom.mapZoomOut.disabled = !hasProjection;
   plannerDom.mapReset.disabled = !hasProjection;
   applyMapGeometry();
 
-  if (config?.image) {
+  if (hasArtwork) {
     loadMapArtwork(config, token);
   }
 
@@ -989,6 +1043,11 @@ function configureMapBase(config) {
 }
 
 async function loadMapArtwork(config, token) {
+  const layer = selectedMapLayer(config);
+  if (config.rasterImage) {
+    loadRasterArtwork(config, token);
+    return;
+  }
   try {
     const response = await fetch(config.image);
     if (!response.ok) throw new Error(`${config.image} returned ${response.status}`);
@@ -1006,12 +1065,14 @@ async function loadMapArtwork(config, token) {
         if (/^on/i.test(attribute.name)) element.removeAttribute(attribute.name);
       }
     }
+    const svgLayer = layer?.svgLayer || config.svgLayer;
     for (const group of [...svg.children].filter((child) => child.nodeName.toLowerCase() === "g")) {
       const keep = !group.id ||
-        group.id === config.svgLayer ||
-        group.getAttribute("data-keep-with-group") === config.svgLayer;
+        group.id === svgLayer ||
+        group.getAttribute("data-keep-with-group") === svgLayer;
       if (!keep) group.setAttribute("display", "none");
     }
+    if (config.stretchArtwork) svg.setAttribute("preserveAspectRatio", "none");
     svg.removeAttribute("width");
     svg.removeAttribute("height");
     plannerDom.mapArtwork.replaceChildren(document.importNode(svg, true));
@@ -1026,12 +1087,74 @@ async function loadMapArtwork(config, token) {
   }
 }
 
+function loadRasterArtwork(config, token) {
+  const image = document.createElement("img");
+  image.className = "map-raster";
+  image.alt = "";
+  image.decoding = "async";
+  image.referrerPolicy = "no-referrer";
+  image.addEventListener("load", () => {
+    if (token !== plannerState.artworkToken) return;
+    plannerDom.mapArtwork.replaceChildren(image);
+    plannerDom.mapArtwork.hidden = false;
+    plannerDom.mapFallbackLabel.hidden = true;
+  });
+  image.addEventListener("error", () => {
+    if (token !== plannerState.artworkToken) return;
+    plannerDom.mapArtwork.hidden = true;
+    plannerDom.mapFallbackLabel.hidden = false;
+    plannerDom.mapFallbackLabel.textContent = "Online basemap unavailable · coordinate grid active";
+  });
+  image.src = config.rasterImage;
+}
+
+function mapLayers(config) {
+  if (config?.rasterImage) return [];
+  return Array.isArray(config?.layers) ? config.layers : [];
+}
+
+function selectedMapLayer(config) {
+  const layers = mapLayers(config);
+  if (!layers.length) return null;
+  const selectedId = plannerState.mapLayerBySlug.get(config.slug) || config.defaultLayer || layers[0].id;
+  const selected = layers.find((layer) => layer.id === selectedId) || layers[0];
+  plannerState.mapLayerBySlug.set(config.slug, selected.id);
+  return selected;
+}
+
+function hydrateMapLayerControl(config) {
+  const layers = mapLayers(config);
+  plannerDom.mapLayerControl.hidden = layers.length < 2;
+  plannerDom.mapLayer.disabled = layers.length < 2;
+  if (layers.length < 2) {
+    plannerDom.mapLayer.replaceChildren();
+    return;
+  }
+  const selected = selectedMapLayer(config);
+  plannerDom.mapLayer.innerHTML = layers
+    .map((layer) => `<option value="${escapePlanner(layer.id)}">${escapePlanner(layer.name)}</option>`)
+    .join("");
+  plannerDom.mapLayer.value = selected.id;
+}
+
+function hydrateMapSourceLink(config) {
+  const visible = Boolean(config?.sourceUrl);
+  plannerDom.mapSourceLink.hidden = !visible;
+  if (!visible) return;
+  plannerDom.mapSourceLink.href = config.sourceUrl;
+  plannerDom.mapSourceLink.textContent = `${config.sourceLabel || "Open map source"} ↗`;
+}
+
 function renderMarkers() {
   const config = plannerState.configBySlug.get(plannerState.selectedMap);
   const markerRows = markerRowsForCurrentFilter();
   const markers = markerRows.flatMap((row) => row.markers);
   const projected = canProjectMap(config)
-    ? markers.map((marker) => ({ marker, point: projectPosition(config, marker.position) }))
+    ? markers.map((marker) => ({
+        marker,
+        point: projectPosition(config, marker.position),
+        offLevel: markerIsOffSelectedLayer(config, marker),
+      }))
         .filter((entry) => entry.point && entry.point.left >= -0.02 && entry.point.left <= 1.02 && entry.point.top >= -0.02 && entry.point.top <= 1.02)
     : [];
 
@@ -1047,20 +1170,26 @@ function renderMarkers() {
   }
   plannerDom.markerLayer.innerHTML = plannerState.clusters.map((cluster, index) => {
     const taskNames = [...new Set(cluster.entries.map((entry) => entry.marker.taskName))];
-    const isPoi = cluster.entries.every((entry) => entry.marker.confidence === "poi");
+    const confidences = new Set(cluster.entries.map((entry) => entry.marker.confidence));
+    const confidence = confidences.size === 1 ? [...confidences][0] : "exact";
+    const offLevel = cluster.entries.every((entry) => entry.offLevel);
     const count = cluster.entries.length;
-    const confidenceLabel = isPoi ? "named POI" : "exact game-data";
+    const confidenceLabel = confidence === "poi"
+      ? "named POI"
+      : confidence === "approximate"
+        ? "Wiki-guided approximation"
+        : confidences.size > 1 ? "mixed confidence" : "exact game-data";
     const label = count > 1
       ? `${count} quest objective markers, ${confidenceLabel}: ${taskNames.join(", ")}`
       : `${confidenceLabel} marker, ${taskNames[0]}: ${cluster.entries[0].marker.description}`;
     const selected = plannerState.selectedCluster === index;
     return `
       <button
-        class="map-marker ${isPoi ? "poi" : "exact"} ${count > 1 ? "is-cluster" : ""} ${selected ? "is-selected" : ""}"
+        class="map-marker ${confidence} ${offLevel ? "is-off-level" : ""} ${count > 1 ? "is-cluster" : ""} ${selected ? "is-selected" : ""}"
         type="button"
         style="left:${(cluster.left * 100).toFixed(3)}%;top:${(cluster.top * 100).toFixed(3)}%"
         data-cluster-index="${index}"
-        aria-label="${escapePlanner(label)}"
+        aria-label="${escapePlanner(`${label}${offLevel ? "; shown over another map level" : ""}`)}"
         aria-controls="wiki-hover-preview"
         aria-expanded="false"
         aria-pressed="${String(selected)}"
@@ -1081,6 +1210,24 @@ function markerRowsForCurrentFilter() {
 
 function canProjectMap(config) {
   return Boolean(config?.bounds && config.calibrationSupported !== false);
+}
+
+function layerForMarker(config, marker) {
+  if (marker.floorLabel) return null;
+  if (!Number.isFinite(marker.position?.y)) return null;
+  const y = Number(marker.position.y);
+  return mapLayers(config).find((layer) => {
+    if (!Array.isArray(layer.heightRange)) return false;
+    const minimum = Number(layer.heightRange[0]);
+    const maximum = Number(layer.heightRange[1]);
+    return y >= minimum && y < maximum;
+  }) || null;
+}
+
+function markerIsOffSelectedLayer(config, marker) {
+  const markerLayer = layerForMarker(config, marker);
+  const selectedLayer = selectedMapLayer(config);
+  return Boolean(markerLayer && selectedLayer && markerLayer.id !== selectedLayer.id);
 }
 
 function clusterMarkers(projected) {
@@ -1141,7 +1288,7 @@ function renderMarkerDetail(cluster) {
           <article class="marker-entry">
             <h3>${escapePlanner(marker.taskName)}</h3>
             <div class="marker-entry-meta">
-              <span class="location-quality ${marker.confidence}">${marker.confidence === "exact" ? "Exact" : "Named POI"}</span>
+              <span class="location-quality ${marker.confidence}">${marker.confidence === "exact" ? "Exact" : marker.confidence === "approximate" ? "Approximate" : "Named POI"}</span>
               ${floorMarkup(marker)}
             </div>
             <p><strong>${escapePlanner(marker.label)}</strong> · ${escapePlanner(marker.description)}</p>
@@ -1158,9 +1305,11 @@ function renderMarkerDetail(cluster) {
 }
 
 function floorMarkup(marker) {
-  if (!Number.isFinite(marker.position.y)) return "";
+  if (marker.floorLabel) return `<span class="floor-chip">${escapePlanner(marker.floorLabel)}</span>`;
+  if (!Number.isFinite(marker.position?.y)) return "";
+  const layer = layerForMarker(plannerState.configBySlug.get(plannerState.selectedMap), marker);
   const elevation = marker.position.y.toFixed(1);
-  return `<span class="floor-chip">Elevation ${escapePlanner(elevation)}</span>`;
+  return `<span class="floor-chip">${layer ? `${escapePlanner(layer.name)} · ` : ""}Elevation ${escapePlanner(elevation)}</span>`;
 }
 
 function handleMarkerDetailClick(event) {
@@ -1342,6 +1491,7 @@ function updatePlannerSummary() {
   const visibleMarkers = markerRows.flatMap((row) => row.markers);
   const exactCount = distinctMarkerLocationCount(visibleMarkers, "exact");
   const poiCount = distinctMarkerLocationCount(visibleMarkers, "poi");
+  const approximateCount = distinctMarkerLocationCount(visibleMarkers, "approximate");
   const mapLevel = markerRows.reduce(
     (total, row) => total + row.objectives.filter((objective) => !objective.markers.length).length,
     0,
@@ -1353,17 +1503,30 @@ function updatePlannerSummary() {
     ? `${markerRows.length} planned quest${markerRows.length === 1 ? "" : "s"} mapped · ${plannerState.visibleRows.length} in the pool`
     : `${plannerState.visibleRows.length} quest${plannerState.visibleRows.length === 1 ? "" : "s"}`;
   plannerDom.plannerStatus.textContent =
-    `${questSummary} · ${exactCount} distinct exact location${exactCount === 1 ? "" : "s"} · ${poiCount} named POI${poiCount === 1 ? "" : "s"} · ${mapLevel} map-level objective${mapLevel === 1 ? "" : "s"}.`;
+    `${questSummary} · ${exactCount} distinct exact location${exactCount === 1 ? "" : "s"} · ${poiCount} named POI${poiCount === 1 ? "" : "s"} · ${approximateCount} approximate pin${approximateCount === 1 ? "" : "s"} · ${mapLevel} map-level objective${mapLevel === 1 ? "" : "s"}.`;
 }
 
 function distinctMarkerLocationCount(markers, confidence) {
   return new Set(markers
     .filter((marker) => marker.confidence === confidence)
-    .map((marker) => [marker.position.x, marker.position.y ?? "", marker.position.z].join(":")))
+    .map((marker) => marker.position.left !== undefined
+      ? [marker.position.left, marker.position.top].join(":")
+      : [marker.position.x, marker.position.y ?? "", marker.position.z].join(":")))
     .size;
 }
 
 function showTaskOnMap(rowKey) {
+  const config = plannerState.configBySlug.get(plannerState.selectedMap);
+  const row = plannerState.visibleRows.find((item) => item.key === rowKey);
+  const markerLayer = row?.markers.map((marker) => layerForMarker(config, marker)).find(Boolean);
+  const selectedLayer = selectedMapLayer(config);
+  if (markerLayer && selectedLayer && markerLayer.id !== selectedLayer.id) {
+    plannerState.mapLayerBySlug.set(config.slug, markerLayer.id);
+    plannerState.renderedMap = null;
+    renderPlanner({ mapChanged: true });
+    window.requestAnimationFrame(() => showTaskOnMap(rowKey));
+    return;
+  }
   const clusterIndex = plannerState.clusters.findIndex(
     (cluster) => cluster.entries.some((entry) => entry.marker.rowKey === rowKey),
   );
@@ -1405,13 +1568,25 @@ function transformWorld(config, x, z) {
 }
 
 function projectPosition(config, position) {
+  if (position && position.left !== null && position.left !== undefined &&
+    position.top !== null && position.top !== undefined &&
+    Number.isFinite(Number(position.left)) && Number.isFinite(Number(position.top))) {
+    return { left: Number(position.left), top: Number(position.top) };
+  }
   if (!hasFinitePosition(position)) return null;
   const box = projectionBox(config);
   if (!box) return null;
   const point = transformWorld(config, Number(position.x), Number(position.z));
+  const left = (point.x - box.left) / box.width;
+  const top = (point.y - box.top) / box.height;
+  const insets = config.projectionInsets || {};
+  const insetLeft = Number(insets.left || 0);
+  const insetRight = Number(insets.right || 0);
+  const insetTop = Number(insets.top || 0);
+  const insetBottom = Number(insets.bottom || 0);
   return {
-    left: (point.x - box.left) / box.width,
-    top: (point.y - box.top) / box.height,
+    left: insetLeft + left * (1 - insetLeft - insetRight),
+    top: insetTop + top * (1 - insetTop - insetBottom),
   };
 }
 
@@ -1422,6 +1597,9 @@ function applyMapGeometry(options = {}) {
   const oldCenterY = viewport.scrollHeight ? (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight : 0.5;
   const minimum = window.innerWidth <= 580 ? 650 : 720;
   const baseWidth = Math.max(viewport.clientWidth, minimum);
+  const baseHeight = Math.round(baseWidth / Math.max(plannerState.mapAspect, 0.2));
+  const minimumViewportHeight = window.innerWidth <= 580 ? 500 : 470;
+  viewport.style.height = `${Math.min(780, Math.max(minimumViewportHeight, baseHeight))}px`;
   const width = Math.round(baseWidth * plannerState.zoom);
   const height = Math.max(260, Math.round(width / Math.max(plannerState.mapAspect, 0.2)));
   plannerDom.mapStage.style.width = `${width}px`;
