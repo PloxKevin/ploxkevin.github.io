@@ -106,8 +106,10 @@ function bindRegularEvents() {
     resetRegularLimit();
   });
 
-  regularDom.trader.addEventListener("change", (event) => {
-    regularState.filters.trader = event.target.value;
+  regularDom.trader.addEventListener("click", (event) => {
+    const tab = event.target.closest("[data-trader-tab]");
+    if (!tab) return;
+    regularState.filters.trader = tab.dataset.traderTab;
     resetRegularLimit();
   });
 
@@ -157,13 +159,14 @@ function hydrateRegularControls() {
     year: "numeric",
   }).format(new Date(regularState.data.meta.researchedAt));
 
-  const traders = [...new Set(regularState.data.tasks.map((task) => task.traderName))].sort();
+  const rank = (name) => { const i = TRADER_TAB_ORDER.indexOf(name); return i < 0 ? TRADER_TAB_ORDER.length : i; };
+  const traders = [...new Set(regularState.data.tasks.map((task) => task.traderName))]
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   const maps = [...new Set(regularState.data.tasks.map((task) => task.map?.name).filter(Boolean))].sort();
 
-  regularDom.trader.insertAdjacentHTML(
-    "beforeend",
-    traders.map((trader) => `<option value="${escapeRegular(trader)}">${escapeRegular(trader)}</option>`).join(""),
-  );
+  regularDom.trader.innerHTML = ["", ...traders]
+    .map((trader) => `<button type="button" role="tab" data-trader-tab="${escapeRegular(trader)}">${escapeRegular(trader || "All")} <span class="tab-count" data-tab-count="${escapeRegular(trader)}"></span></button>`)
+    .join("");
   regularDom.map.insertAdjacentHTML(
     "beforeend",
     maps.map((map) => `<option value="${escapeRegular(map)}">${escapeRegular(map)}</option>`).join(""),
@@ -355,10 +358,10 @@ function renderRepOpportunities(context) {
 
 function renderRegularTasks(context = buildAvailabilityContext()) {
   const depthMemo = new Map();
-  const matching = regularState.data.tasks
-    .map((task) => ({ task, availability: getAvailability(task, context), depth: prerequisiteDepth(task, context, depthMemo) }))
-    .filter(matchesRegularFilters)
-    .sort(compareProgression);
+  const rows = regularState.data.tasks
+    .map((task) => ({ task, availability: getAvailability(task, context), depth: prerequisiteDepth(task, context, depthMemo) }));
+  const matching = rows.filter(matchesRegularFilters).sort(compareProgression);
+  renderTraderTabs(rows);
   const shown = matching.slice(0, regularState.limit);
 
   regularDom.taskList.innerHTML = shown
@@ -398,6 +401,22 @@ function prerequisiteDepth(task, context, memo) {
   }
   memo.set(task.id, depth);
   return depth;
+}
+
+// In-game trader tab order; anything else (event/BTR traders) goes after.
+const TRADER_TAB_ORDER = ["Prapor", "Therapist", "Fence", "Skier", "Peacekeeper", "Mechanic", "Ragman", "Jaeger", "Ref"];
+function renderTraderTabs(rows) {
+  const available = new Map();
+  for (const { task, availability } of rows) {
+    if (availability.status === "available") available.set(task.traderName, (available.get(task.traderName) || 0) + 1);
+  }
+  for (const tab of regularDom.trader.querySelectorAll("[data-trader-tab]")) {
+    const name = tab.dataset.traderTab;
+    const count = name ? available.get(name) || 0 : rows.filter((row) => row.availability.status === "available").length;
+    tab.classList.toggle("is-active", name === regularState.filters.trader);
+    tab.setAttribute("aria-selected", String(name === regularState.filters.trader));
+    tab.querySelector(".tab-count").textContent = count ? String(count) : "";
+  }
 }
 
 function matchesRegularFilters({ task, availability }) {
