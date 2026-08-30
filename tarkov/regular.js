@@ -12,6 +12,8 @@ const STORYLINE_STORAGE = {
   route: "kord-breach:route",
 };
 
+const progressionRules = window.KordProgressionRules;
+
 const regularState = {
   data: null,
   wikiAudit: null,
@@ -22,7 +24,7 @@ const regularState = {
     : "Any",
   reputation: readObject(REGULAR_STORAGE.reputation),
   completionSource: readObject(REGULAR_STORAGE.source),
-  filters: { search: "", trader: "", map: "", status: "" },
+  filters: { search: "", trader: "", map: "", loyaltyScope: "current", status: "" },
   limit: 100,
 };
 
@@ -75,6 +77,7 @@ function cacheRegularDom() {
     "player-level",
     "regular-empty",
     "regular-map",
+    "regular-loyalty",
     "regular-result-count",
     "regular-search",
     "regular-status",
@@ -94,6 +97,7 @@ function cacheRegularDom() {
   Object.assign(regularDom, {
     empty: regularDom.regularEmpty,
     map: regularDom.regularMap,
+    loyalty: regularDom.regularLoyalty,
     resultCount: regularDom.regularResultCount,
     search: regularDom.regularSearch,
     status: regularDom.regularStatus,
@@ -142,6 +146,11 @@ function bindRegularEvents() {
 
   regularDom.map.addEventListener("change", (event) => {
     regularState.filters.map = event.target.value;
+    resetRegularLimit();
+  });
+
+  regularDom.loyalty.addEventListener("change", (event) => {
+    regularState.filters.loyaltyScope = event.target.value;
     resetRegularLimit();
   });
 
@@ -195,6 +204,7 @@ function hydrateRegularControls() {
   regularState.reputation = sanitizeReputation(regularState.reputation);
   regularDom.playerLevel.value = regularState.playerLevel;
   regularDom.playerFaction.value = regularState.faction;
+  regularDom.loyalty.value = regularState.filters.loyaltyScope;
   regularDom.taskTotal.textContent = regularState.data.tasks.length;
   regularDom.groupGateTotal.textContent = regularState.data.stats.tasksWithGlobalGroupGates;
   regularDom.snapshotDate.textContent = new Intl.DateTimeFormat(undefined, {
@@ -227,7 +237,7 @@ function hydrateRegularControls() {
 }
 
 function setExplorerControlsDisabled(disabled) {
-  for (const control of [regularDom.search, regularDom.map, regularDom.status]) {
+  for (const control of [regularDom.search, regularDom.map, regularDom.loyalty, regularDom.status]) {
     control.disabled = disabled;
   }
   for (const tab of regularDom.trader.querySelectorAll("[data-trader-tab]")) tab.disabled = disabled;
@@ -260,6 +270,7 @@ function buildAvailabilityContext() {
     (regularState.wikiAudit?.advisories || []).map((advisory) => [advisory.wikiLink, advisory]),
   );
   const groupProgress = new Map();
+  const loyaltyScopeRequirements = new Map();
 
   for (const task of regularState.data.tasks) {
     const sameName = tasksByName.get(task.name) || [];
@@ -275,7 +286,15 @@ function buildAvailabilityContext() {
     if (groupId) groupProgress.set(groupId, (groupProgress.get(groupId) || 0) + 1);
   }
 
-  return { traders, taskById, tasksByName, successorsByTaskId, wikiAdvisoryByLink, groupProgress };
+  return {
+    traders,
+    taskById,
+    tasksByName,
+    successorsByTaskId,
+    wikiAdvisoryByLink,
+    groupProgress,
+    loyaltyScopeRequirements,
+  };
 }
 
 function getTraderLoyalty(trader, reputation = getReputation(trader?.id)) {
@@ -365,10 +384,14 @@ function getAvailability(task, context) {
     }
   }
 
-  if (task.globalRequirements.length && task.progressionTier) {
+  const modeledLoyaltyGate = progressionRules.getModeledLoyaltyGate(task);
+  if (modeledLoyaltyGate) {
     const trader = context.traders.get(task.traderId);
-    if (trader && getTraderLoyalty(trader) < task.progressionTier) {
-      reasons.push({ type: "rep", label: `${task.traderName} LL${task.progressionTier}` });
+    if (trader && getTraderLoyalty(trader) < modeledLoyaltyGate.tier) {
+      reasons.push({
+        type: "rep",
+        label: `Estimated ${task.traderName} LL${modeledLoyaltyGate.tier} ${modeledLoyaltyGate.kind}`,
+      });
     }
   }
 
@@ -475,6 +498,7 @@ function renderRegularTasks(context = buildAvailabilityContext(), options = {}) 
     task,
     availability: getAvailability(task, context),
     depth: prerequisiteDepth(task, context, depthMemo),
+    loyaltyDistance: getLoyaltyDistance(task, context),
   }));
   const matching = rows.filter((row) => matchesRegularFilters(row, context)).sort(compareProgression);
 
@@ -501,9 +525,15 @@ function renderRegularTasks(context = buildAvailabilityContext(), options = {}) 
     ))
     .join("");
 
-  regularDom.resultCount.textContent = shown.length === matching.length
+  const scopeLabels = {
+    current: "reachable current-LL routes",
+    next: "through next LL",
+    all: "all LL bands",
+  };
+  const resultSummary = shown.length === matching.length
     ? `${matching.length} matching · ${regularState.data.tasks.length} total`
     : `${shown.length} shown · ${matching.length} matching · ${regularState.data.tasks.length} total`;
+  regularDom.resultCount.textContent = `${resultSummary} · ${scopeLabels[regularState.filters.loyaltyScope]}`;
   regularDom.empty.hidden = matching.length > 0;
   regularDom.loadMore.hidden = shown.length >= matching.length;
   regularDom.loadMore.disabled = shown.length >= matching.length;
@@ -561,11 +591,72 @@ const STATUS_RANK = { available: 0, done: 2 };
 function compareProgression(a, b) {
   return (
     (STATUS_RANK[a.availability.status] ?? 1) - (STATUS_RANK[b.availability.status] ?? 1) ||
+    a.loyaltyDistance - b.loyaltyDistance ||
     a.depth - b.depth ||
     a.task.minPlayerLevel - b.task.minPlayerLevel ||
     a.task.traderName.localeCompare(b.task.traderName) ||
     a.task.name.localeCompare(b.task.name)
   );
+}
+
+function getLoyaltyDistance(task, context) {
+  return getLoyaltyScopeRequirements(task, context).reduce((maximum, requirement) => {
+    const trader = context.traders.get(requirement.traderId);
+    if (!trader) return maximum;
+    return Math.max(maximum, requirement.tier - getTraderLoyalty(trader));
+  }, 0);
+}
+
+function matchesLoyaltyScope(task, context) {
+  if (regularState.completed.has(task.id) || regularState.filters.loyaltyScope === "all") return true;
+  const allowance = regularState.filters.loyaltyScope === "next" ? 1 : 0;
+  return getLoyaltyScopeRequirements(task, context).every((requirement) => {
+    const trader = context.traders.get(requirement.traderId);
+    return !trader || requirement.tier <= getTraderLoyalty(trader) + allowance;
+  });
+}
+
+function getLoyaltyScopeRequirements(task, context, visiting = new Set()) {
+  const cached = context.loyaltyScopeRequirements.get(task.id);
+  if (cached) return cached;
+  if (visiting.has(task.id)) return [];
+
+  const nextVisiting = new Set(visiting).add(task.id);
+  const byTrader = new Map();
+  const addRequirement = (traderId, traderName, tier) => {
+    const normalizedTier = Number(tier);
+    if (!traderId || !Number.isFinite(normalizedTier)) return;
+    const existing = byTrader.get(traderId);
+    if (!existing || normalizedTier > existing.tier) {
+      byTrader.set(traderId, { traderId, traderName, tier: normalizedTier });
+    }
+  };
+
+  const pool = progressionRules.getSeasonPool(task);
+  if (pool) addRequirement(task.traderId, task.traderName, pool.tier);
+
+  for (const requirement of task.traderRequirements || []) {
+    if (requirement.requirementType !== "level") continue;
+    const tier = requirement.compareMethod === ">"
+      ? Number(requirement.value) + 1
+      : Number(requirement.value);
+    if ([">", ">=", "=", "==", "==="].includes(requirement.compareMethod)) {
+      addRequirement(requirement.traderId, requirement.traderName, tier);
+    }
+  }
+
+  for (const requirement of task.taskRequirements || []) {
+    if (regularState.completed.has(requirement.taskId)) continue;
+    const predecessor = context.taskById.get(requirement.taskId);
+    if (!predecessor) continue;
+    for (const inherited of getLoyaltyScopeRequirements(predecessor, context, nextVisiting)) {
+      addRequirement(inherited.traderId, inherited.traderName, inherited.tier);
+    }
+  }
+
+  const result = [...byTrader.values()];
+  context.loyaltyScopeRequirements.set(task.id, result);
+  return result;
 }
 
 function prerequisiteDepth(task, context, memo) {
@@ -604,7 +695,7 @@ function renderTraderTabs(rows) {
     tab.classList.toggle("is-active", active);
     tab.setAttribute("aria-selected", String(active));
     tab.tabIndex = active ? 0 : -1;
-    tab.querySelector(".tab-count").textContent = String(trader ? count : totalAvailable);
+    tab.querySelector(".tab-count").textContent = `${trader ? count : totalAvailable} open`;
   }
 }
 
@@ -642,6 +733,7 @@ function matchesRegularFilters({ task, availability }, context) {
     ...(task.taskRequirements || []).map((requirement) => requirement.taskName),
     ...successors.map(({ task: successor }) => successor.name),
     ...availability.reasons.map((reason) => reason.label),
+    progressionRules.getCompactPoolLabel(task),
     ...task.finishStanding.map((reward) => `${reward.traderName} ${reward.standing}`),
     task.kappaRequired ? "kappa required" : "",
     task.lightkeeperRequired ? "lightkeeper required" : "",
@@ -652,6 +744,7 @@ function matchesRegularFilters({ task, availability }, context) {
     (!regularState.filters.search || searchBlob.includes(regularState.filters.search)) &&
     (!regularState.filters.trader || task.traderName === regularState.filters.trader) &&
     (!regularState.filters.map || mapNames.includes(regularState.filters.map)) &&
+    matchesLoyaltyScope(task, context) &&
     (!regularState.filters.status || availability.status === regularState.filters.status)
   );
 }
@@ -671,6 +764,7 @@ function regularTaskMarkup(task, availability, context, expanded) {
   const alternativeVariants = context.tasksByName.get(task.name) || [];
   const wikiAdvisory = context.wikiAdvisoryByLink.get(task.wikiLink);
   const completionWarnings = complete ? getCompletionWarnings(task) : [];
+  const poolLabel = progressionRules.getCompactPoolLabel(task);
   const factChips = [
     `${objectives.length} objective${objectives.length === 1 ? "" : "s"}`,
     ...mapNames.slice(0, 4),
@@ -706,7 +800,7 @@ function regularTaskMarkup(task, availability, context, expanded) {
         <summary>
           <span>
             <span class="regular-task-title">${escapeRegular(task.name)}</span>
-            <span class="regular-task-meta"><span>${escapeRegular(task.traderName)}</span>${mapSummary ? `<span>${escapeRegular(mapSummary)}</span>` : ""}${task.progressionTier ? `<span>LL${task.progressionTier} band</span>` : ""}${task.factionName !== "Any" ? `<span>${task.factionName}</span>` : ""}${variant ? `<span>${escapeRegular(variant)}</span>` : ""}</span>
+            <span class="regular-task-meta"><span>${escapeRegular(task.traderName)}</span>${mapSummary ? `<span>${escapeRegular(mapSummary)}</span>` : ""}${poolLabel ? `<span>${escapeRegular(poolLabel)}</span>` : ""}${task.factionName !== "Any" ? `<span>${task.factionName}</span>` : ""}${variant ? `<span>${escapeRegular(variant)}</span>` : ""}</span>
           </span>
           <span class="status-badge ${complete ? "done" : availability.status === "available" ? "available" : "blocked"}">${statusLabel}</span>
           <span class="disclosure-chevron" aria-hidden="true"></span>
@@ -995,6 +1089,12 @@ function getGateDescriptions(task, context) {
     const progress = context.groupProgress.get(requirement.groupId) || 0;
     gates.push({ label: `LL${requirement.loyaltyTier || "?"} group ≥${requirement.value} (${progress} tracked)` });
   }
+  const modeledLoyaltyGate = progressionRules.getModeledLoyaltyGate(task);
+  if (modeledLoyaltyGate?.source === "inferred-opening") {
+    gates.push({
+      label: `Estimated ${task.traderName} LL${modeledLoyaltyGate.tier} opening pool`,
+    });
+  }
   if (task.dialogueRequirements.length) gates.push({ label: "Trader dialogue" });
   if (task.requiredPrestige) gates.push({ label: `Prestige ${task.requiredPrestige}` });
   if (task.availableDelaySecondsMax) {
@@ -1005,17 +1105,24 @@ function getGateDescriptions(task, context) {
 }
 
 function updateFilterUi() {
-  const activeCount = Object.values(regularState.filters).filter(Boolean).length;
+  const activeCount = [
+    regularState.filters.search,
+    regularState.filters.trader,
+    regularState.filters.map,
+    regularState.filters.status,
+    regularState.filters.loyaltyScope !== "current" ? regularState.filters.loyaltyScope : "",
+  ].filter(Boolean).length;
   regularDom.activeFilterCount.textContent = `${activeCount} active`;
   regularDom.clearRegularFilters.disabled = !regularState.data || activeCount === 0;
 }
 
 function clearRegularFilters({ render = true } = {}) {
   clearTimeout(regularSearchTimer);
-  regularState.filters = { search: "", trader: "", map: "", status: "" };
+  regularState.filters = { search: "", trader: "", map: "", loyaltyScope: "current", status: "" };
   regularState.limit = 100;
   regularDom.search.value = "";
   regularDom.map.value = "";
+  regularDom.loyalty.value = "current";
   regularDom.status.value = "";
   updateFilterUi();
   if (render && regularState.data) renderRegularTasks();
@@ -1040,8 +1147,13 @@ function handleTaskHash({ focus = false } = {}) {
 }
 
 function navigateToTask(taskId, { historyMode = "push", focus = true } = {}) {
-  if (!regularState.data?.tasks.some((task) => task.id === taskId)) return;
+  const targetTask = regularState.data?.tasks.find((task) => task.id === taskId);
+  if (!targetTask) return;
   clearRegularFilters({ render: false });
+  if (!matchesLoyaltyScope(targetTask, buildAvailabilityContext())) {
+    regularState.filters.loyaltyScope = "all";
+    regularDom.loyalty.value = "all";
+  }
   regularState.limit = regularState.data.tasks.length;
   renderRegularTasks();
 

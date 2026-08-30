@@ -9,6 +9,8 @@ const PLANNER_STORAGE = {
   route: "kord-breach:route",
 };
 
+const progressionRules = window.KordProgressionRules;
+
 const MAP_ORDER = [
   "ground-zero",
   "streets-of-tarkov",
@@ -712,7 +714,9 @@ function getRegularAvailability(task, context) {
   if (context.playerLevel < Number(task.minPlayerLevel || 0)) {
     reasons.push(`PMC level ${task.minPlayerLevel}`);
   }
-  if (context.faction !== "Any" && task.factionName !== "Any" && task.factionName !== context.faction) {
+  if (context.faction === "Any" && task.factionName !== "Any") {
+    reasons.push(`Set PMC faction (${task.factionName} task)`);
+  } else if (task.factionName !== "Any" && task.factionName !== context.faction) {
     reasons.push(`${task.factionName} only`);
   }
   if (Number(task.requiredPrestige || 0) > 0) reasons.push(`Prestige ${task.requiredPrestige}`);
@@ -755,10 +759,11 @@ function getRegularAvailability(task, context) {
     }
   }
 
-  if ((task.globalRequirements || []).length && task.progressionTier) {
+  const modeledLoyaltyGate = progressionRules.getModeledLoyaltyGate(task);
+  if (modeledLoyaltyGate) {
     const trader = context.traders.get(task.traderId);
-    if (trader && getPlannerLoyalty(trader, context) < task.progressionTier) {
-      reasons.push(`${task.traderName} LL${task.progressionTier}`);
+    if (trader && getPlannerLoyalty(trader, context) < modeledLoyaltyGate.tier) {
+      reasons.push(`Estimated ${task.traderName} LL${modeledLoyaltyGate.tier} ${modeledLoyaltyGate.kind}`);
     }
   }
   if ((task.dialogueRequirements || []).length) reasons.push("Trader dialogue");

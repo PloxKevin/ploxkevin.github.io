@@ -45,7 +45,9 @@ The season data clusters ordinary reputation tasks into four clear reward bands:
 
 The feed exposes 164 tasks with hidden global-variable gates. Those gates use thresholds such as 1, 3 and 5 completed tasks within a tier. The exact thresholds vary by trader and LL.
 
-Important limitation: the public data exposes each counter's ID and required value, but not the server-side rule that increments it. The frontend maps counters to LL bands using the standing rewards above and estimates progress from the tasks marked complete. Check the counter shown in-game if the estimate differs.
+Important limitation: the public data exposes each counter's ID and required value, but not the server-side rule that increments it. It also omits an explicit LL requirement on the unchained opening tasks in a trader's pool. The frontend maps counters and unchained opening pools to LL bands using the standing rewards above, then estimates progress from the tasks marked complete. These cards are labeled **Est. LL** rather than presenting the inference as a verified requirement. Direct task-chain exceptions are kept out of this inferred opening-pool rule. Check the in-game task list and counter if the estimate differs.
+
+This distinction fixes an earlier modeling error: nine unchained +0.25 tasks were labeled LL2 but treated as available at LL1. They are now consistently modeled as estimated LL2 opening-pool tasks in both the All Quests board and raid planner. **Loyalty Buyout** is not included because its failed-branch prerequisite makes it a direct chain exception, consistent with both the seasonal data and its Wiki route.
 
 ## Dataset audit
 
@@ -54,6 +56,7 @@ Important limitation: the public data exposes each counter's ID and required val
 - 198 tasks with direct quest prerequisites
 - 164 tasks with hidden per-tier group gates
 - 109 tasks with explicit trader requirements
+- 9 unchained LL2 opening-pool gates inferred from the +0.25 seasonal reward band
 - 336 tasks with at least one positive standing reward
 - 1 task with a negative completion reward: **Choose Your Friends Wisely** gives **BTR Driver -0.30**
 
