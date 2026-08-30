@@ -354,9 +354,11 @@ function renderRepOpportunities(context) {
 }
 
 function renderRegularTasks(context = buildAvailabilityContext()) {
+  const depthMemo = new Map();
   const matching = regularState.data.tasks
-    .map((task) => ({ task, availability: getAvailability(task, context) }))
-    .filter(matchesRegularFilters);
+    .map((task) => ({ task, availability: getAvailability(task, context), depth: prerequisiteDepth(task, context, depthMemo) }))
+    .filter(matchesRegularFilters)
+    .sort(compareProgression);
   const shown = matching.slice(0, regularState.limit);
 
   regularDom.taskList.innerHTML = shown
@@ -366,6 +368,36 @@ function renderRegularTasks(context = buildAvailabilityContext()) {
   regularDom.empty.hidden = matching.length > 0;
   regularDom.loadMore.hidden = shown.length >= matching.length;
   regularDom.loadMore.textContent = `Load 100 more (${matching.length - shown.length} remaining)`;
+}
+
+// In-game order: what you can do now, then what unlocks next, completed at the bottom.
+const STATUS_RANK = { available: 0, done: 2 };
+function compareProgression(a, b) {
+  return (
+    (STATUS_RANK[a.availability.status] ?? 1) - (STATUS_RANK[b.availability.status] ?? 1) ||
+    a.depth - b.depth ||
+    a.task.minPlayerLevel - b.task.minPlayerLevel ||
+    a.task.traderName.localeCompare(b.task.traderName) ||
+    a.task.name.localeCompare(b.task.name)
+  );
+}
+
+// Number of uncompleted prerequisite tasks still between the player and this task (longest chain).
+function prerequisiteDepth(task, context, memo) {
+  if (regularState.completed.has(task.id)) return 0;
+  if (memo.has(task.id)) return memo.get(task.id);
+  memo.set(task.id, 0); // ponytail: cycle guard; data has none, but a bad feed must not hang the page
+  let depth = 0;
+  for (const requirement of task.taskRequirements) {
+    const statuses = Array.isArray(requirement.status) ? requirement.status : [requirement.status];
+    if (statuses.length && !statuses.includes("complete")) continue;
+    const prerequisite = context.taskById.get(requirement.taskId);
+    if (prerequisite && !regularState.completed.has(prerequisite.id)) {
+      depth = Math.max(depth, 1 + prerequisiteDepth(prerequisite, context, memo));
+    }
+  }
+  memo.set(task.id, depth);
+  return depth;
 }
 
 function matchesRegularFilters({ task, availability }) {
