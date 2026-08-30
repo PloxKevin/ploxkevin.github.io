@@ -4,11 +4,22 @@ const STORAGE_KEYS = {
   route: "kord-breach:route",
 };
 
+const REGULAR_STORAGE_KEYS = {
+  completed: "kord-breach:regular-completed",
+  playerLevel: "kord-breach:player-level",
+  faction: "kord-breach:player-faction",
+  reputation: "kord-breach:trader-reputation",
+  completionSource: "kord-breach:completion-source",
+};
+
+const PROFILE_BACKUP_TYPE = "kord-breach-profile-backup";
+
 const state = {
   data: null,
   completed: new Set(readStoredArray(STORAGE_KEYS.completed)),
   secured: new Set(readStoredArray(STORAGE_KEYS.secured)),
-  route: readStoredValue(STORAGE_KEYS.route, "fence"),
+  route: readStoredValue(STORAGE_KEYS.route, "fence") === "mechanic" ? "mechanic" : "fence",
+  expanded: new Set(),
   filters: {
     search: "",
     trader: "",
@@ -35,6 +46,7 @@ async function init() {
     state.data = await response.json();
     hydrateFilterOptions();
     renderAll();
+    handleQuestHash();
   } catch (error) {
     dom.questList.innerHTML =
       '<div class="empty-state"><strong>Mission data unavailable</strong><p>Build the site from the repository root so the quest dataset is included.</p></div>';
@@ -47,6 +59,7 @@ function cacheDom() {
   [
     "clear-filters",
     "completed-count",
+    "continue-quest",
     "empty-state",
     "export-progress",
     "import-progress",
@@ -88,9 +101,7 @@ function bindStaticEvents() {
   document.querySelectorAll("[data-status]").forEach((button) => {
     button.addEventListener("click", () => {
       state.filters.status = button.dataset.status;
-      document.querySelectorAll("[data-status]").forEach((item) => {
-        item.classList.toggle("is-active", item === button);
-      });
+      updatePressedControls("[data-status]", "status", state.filters.status);
       renderQuests();
     });
   });
@@ -99,14 +110,14 @@ function bindStaticEvents() {
     button.addEventListener("click", () => {
       state.route = button.dataset.route;
       writeStoredValue(STORAGE_KEYS.route, state.route);
-      document.querySelectorAll("[data-route]").forEach((item) => {
-        item.classList.toggle("is-active", item === button);
-      });
+      updatePressedControls("[data-route]", "route", state.route);
       renderAll();
       showToast(`${capitalize(state.route)} route selected`);
     });
   });
 
+  document.addEventListener("click", handleQuestNavigationClick);
+  window.addEventListener("hashchange", handleQuestHash);
   dom.clearFilters.addEventListener("click", clearFilters);
   dom.questList.addEventListener("click", handleQuestListClick);
   dom.questList.addEventListener("change", handleQuestCompletion);
@@ -134,9 +145,8 @@ function hydrateFilterOptions() {
     maps.map((map) => `<option value="${escapeHtml(map)}">${escapeHtml(map)}</option>`).join(""),
   );
 
-  document.querySelectorAll("[data-route]").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.route === state.route);
-  });
+  updatePressedControls("[data-route]", "route", state.route);
+  updatePressedControls("[data-status]", "status", state.filters.status);
 }
 
 function renderAll() {
@@ -170,12 +180,21 @@ function renderProgress() {
   dom.routeCount.textContent = routeQuests.length;
   dom.progressPercent.textContent = `${percent}%`;
   dom.progressRing.style.setProperty("--progress", `${percent * 3.6}deg`);
-  dom.nextQuest.textContent = nextQuest
-    ? `Next: ${nextQuest.name}`
-    : "Route complete. Good hunting.";
+  if (nextQuest) {
+    dom.nextQuest.innerHTML = `Next operation: <a class="quest-jump" href="#quest-${escapeHtml(nextQuest.id)}" data-quest-jump="${escapeHtml(nextQuest.id)}">${escapeHtml(nextQuest.name)}</a>`;
+    dom.continueQuest.dataset.questJump = nextQuest.id;
+    dom.continueQuest.disabled = false;
+    dom.continueQuest.textContent = "Continue operation";
+  } else {
+    dom.nextQuest.textContent = "Route complete. Gear up and get back into raid.";
+    delete dom.continueQuest.dataset.questJump;
+    dom.continueQuest.disabled = true;
+    dom.continueQuest.textContent = "Route complete";
+  }
 }
 
 function renderLoot() {
+  const focus = captureLootFocus();
   const loot = getPriorityLoot();
   const securedCount = loot.filter((item) => state.secured.has(item.name)).length;
   dom.lootCount.textContent = `${securedCount} / ${loot.length} secured`;
@@ -183,19 +202,27 @@ function renderLoot() {
   dom.lootList.innerHTML = loot
     .map(
       (item) => `
-        <label class="loot-item">
-          <input
-            type="checkbox"
-            data-loot-name="${escapeHtml(item.name)}"
-            ${state.secured.has(item.name) ? "checked" : ""}
-          >
-          <span class="check-box" aria-hidden="true"></span>
-          <span class="loot-name">${escapeHtml(item.name)}</span>
+        <div class="loot-item">
+          <label class="loot-check">
+            <input
+              type="checkbox"
+              data-loot-name="${escapeHtml(item.name)}"
+              ${state.secured.has(item.name) ? "checked" : ""}
+            >
+            <span class="check-box" aria-hidden="true"></span>
+            <span class="loot-name">${escapeHtml(item.name)}</span>
+          </label>
           <span class="loot-qty">×${item.quantity}</span>
-        </label>
+          <span class="loot-source">Needed for ${item.quests
+            .map(
+              (quest) => `<a href="#quest-${escapeHtml(quest.id)}" data-quest-jump="${escapeHtml(quest.id)}">${escapeHtml(quest.name)}</a>`,
+            )
+            .join(", ")}</span>
+        </div>
       `,
     )
     .join("");
+  restoreLootFocus(focus);
 }
 
 function getPriorityLoot() {
@@ -209,13 +236,16 @@ function getPriorityLoot() {
 
   state.data.quests
     .filter((quest) => priorityQuestIds.has(quest.id))
-    .flatMap((quest) => quest.items || [])
-    .filter((item) => item.found_in_raid)
-    .forEach((item) => {
+    .flatMap((quest) =>
+      (quest.items || []).map((item) => ({ item, quest })),
+    )
+    .filter(({ item }) => item.found_in_raid)
+    .forEach(({ item, quest }) => {
       const previous = loot.get(item.name);
       loot.set(item.name, {
         name: item.name,
         quantity: Math.max(item.quantity || 1, previous?.quantity || 0),
+        quests: mergeQuestSources(previous?.quests || [], quest),
       });
     });
 
@@ -228,12 +258,14 @@ function getPriorityLoot() {
 }
 
 function renderQuests() {
+  const focus = captureQuestFocus();
   const routeQuests = getRouteQuests();
   const visible = routeQuests.filter(matchesFilters);
 
   dom.questList.innerHTML = visible.map(renderQuestCard).join("");
   dom.resultCount.textContent = `${visible.length} of ${routeQuests.length} tasks`;
   dom.emptyState.hidden = visible.length > 0;
+  restoreQuestFocus(focus);
 }
 
 function matchesFilters(quest) {
@@ -260,6 +292,7 @@ function matchesFilters(quest) {
 
 function renderQuestCard(quest) {
   const complete = state.completed.has(quest.id);
+  const expanded = state.expanded.has(quest.id);
   const categoryLabel =
     quest.category === "parallel"
       ? "Parallel"
@@ -268,9 +301,15 @@ function renderQuestCard(quest) {
         : "Main route";
   const prerequisites = renderPrerequisites(quest);
   const rewardLines = renderRewardLines(quest);
+  const plannerHref = `./planner.html?source=storyline&task=${encodeURIComponent(quest.id)}`;
 
   return `
-    <article class="quest-card ${complete ? "is-complete" : ""}" data-card-id="${escapeHtml(quest.id)}">
+    <article
+      class="quest-card ${complete ? "is-complete" : ""} ${expanded ? "is-expanded" : ""}"
+      id="quest-${escapeHtml(quest.id)}"
+      data-card-id="${escapeHtml(quest.id)}"
+      tabindex="-1"
+    >
       <div class="quest-main">
         <div class="quest-number">${String(quest.order).padStart(2, "0")}</div>
         <div>
@@ -287,17 +326,19 @@ function renderQuestCard(quest) {
             <span class="check-box" aria-hidden="true"></span>
             <span>Complete</span>
           </label>
+          <a class="details-toggle plan-link" href="${escapeHtml(plannerHref)}" aria-label="Plan ${escapeHtml(quest.name)} on the tactical map">Plan raid</a>
           <button
             class="details-toggle"
             type="button"
             data-expand="${escapeHtml(quest.id)}"
-            aria-expanded="false"
-            aria-label="Show details for ${escapeHtml(quest.name)}"
-          >Details</button>
+            aria-expanded="${String(expanded)}"
+            aria-controls="quest-details-${escapeHtml(quest.id)}"
+            aria-label="${expanded ? "Hide" : "Show"} details for ${escapeHtml(quest.name)}"
+          >${expanded ? "Hide" : "Details"}</button>
         </div>
       </div>
 
-      <div class="quest-details">
+      <div class="quest-details" id="quest-details-${escapeHtml(quest.id)}">
         <section class="detail-block">
           <h3>Requirements</h3>
           <ul>
@@ -415,7 +456,16 @@ function handleQuestListClick(event) {
 
   const card = button.closest(".quest-card");
   const expanded = card.classList.toggle("is-expanded");
+  if (expanded) {
+    state.expanded.add(button.dataset.expand);
+  } else {
+    state.expanded.delete(button.dataset.expand);
+  }
   button.setAttribute("aria-expanded", String(expanded));
+  button.setAttribute(
+    "aria-label",
+    `${expanded ? "Hide" : "Show"} details for ${card.querySelector(".quest-title")?.textContent || "task"}`,
+  );
   button.textContent = expanded ? "Hide" : "Details";
 }
 
@@ -466,23 +516,214 @@ function handleLootChange(event) {
 }
 
 function clearFilters() {
+  resetFilterControls();
+  renderQuests();
+}
+
+function resetFilterControls() {
   state.filters = { search: "", trader: "", map: "", status: "all" };
   dom.searchInput.value = "";
   dom.traderFilter.value = "";
   dom.mapFilter.value = "";
-  document.querySelectorAll("[data-status]").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.status === "all");
-  });
+  updatePressedControls("[data-status]", "status", state.filters.status);
+}
+
+function handleQuestNavigationClick(event) {
+  const control = event.target.closest("[data-quest-jump]");
+  if (!control || control.disabled) {
+    return;
+  }
+
+  event.preventDefault();
+  navigateToQuest(control.dataset.questJump, { updateHistory: true });
+}
+
+function handleQuestHash() {
+  if (!state.data) {
+    return;
+  }
+
+  const prefix = "#quest-";
+  if (!window.location.hash.startsWith(prefix)) {
+    return;
+  }
+
+  let questId;
+  try {
+    questId = decodeURIComponent(window.location.hash.slice(prefix.length));
+  } catch {
+    return;
+  }
+  navigateToQuest(questId, { updateHistory: false });
+}
+
+function navigateToQuest(questId, { updateHistory = false } = {}) {
+  const quest = state.data?.quests.find((item) => item.id === questId);
+  if (!quest) {
+    return;
+  }
+
+  const requiredRoute = getQuestRoute(quest);
+  const routeChanged = Boolean(requiredRoute && state.route !== requiredRoute);
+  if (routeChanged) {
+    state.route = requiredRoute;
+    writeStoredValue(STORAGE_KEYS.route, state.route);
+    updatePressedControls("[data-route]", "route", state.route);
+  }
+
+  const routeContainsQuest = getRouteQuests().some((item) => item.id === quest.id);
+  if (!routeContainsQuest || !matchesFilters(quest)) {
+    resetFilterControls();
+  }
+
+  state.expanded.add(quest.id);
+  if (routeChanged) {
+    renderProgress();
+  }
   renderQuests();
+
+  const anchor = `#quest-${quest.id}`;
+  if (updateHistory && window.location.hash !== anchor) {
+    window.history.pushState(null, "", anchor);
+  }
+
+  const card = document.getElementById(`quest-${quest.id}`);
+  if (!card) {
+    return;
+  }
+  card.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
+  focusElement(card);
+}
+
+function getQuestRoute(quest) {
+  if (quest.id === "final-stretch") {
+    return "fence";
+  }
+  if (quest.id === "consequences-of-our-decisions") {
+    return "mechanic";
+  }
+  return "";
+}
+
+function updatePressedControls(selector, dataKey, selectedValue) {
+  document.querySelectorAll(selector).forEach((button) => {
+    const selected = button.dataset[dataKey] === selectedValue;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function captureQuestFocus() {
+  const active = document.activeElement;
+  if (!active || !dom.questList.contains(active)) {
+    return null;
+  }
+
+  const checkbox = active.closest("[data-quest-id]");
+  const toggle = active.closest("[data-expand]");
+  const card = active.closest("[data-card-id]");
+  const target = checkbox || toggle || card;
+  if (!target) {
+    return null;
+  }
+
+  const kind = checkbox ? "quest" : toggle ? "expand" : "card";
+  const attribute = kind === "quest" ? "questId" : kind === "expand" ? "expand" : "cardId";
+  const selector = kind === "quest" ? "[data-quest-id]" : kind === "expand" ? "[data-expand]" : "[data-card-id]";
+  const peers = [...dom.questList.querySelectorAll(selector)];
+  return {
+    kind,
+    value: target.dataset[attribute],
+    index: peers.indexOf(target),
+  };
+}
+
+function restoreQuestFocus(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  const selector = snapshot.kind === "quest"
+    ? "[data-quest-id]"
+    : snapshot.kind === "expand"
+      ? "[data-expand]"
+      : "[data-card-id]";
+  const attribute = snapshot.kind === "quest"
+    ? "questId"
+    : snapshot.kind === "expand"
+      ? "expand"
+      : "cardId";
+  const peers = [...dom.questList.querySelectorAll(selector)];
+  const exact = peers.find((item) => item.dataset[attribute] === snapshot.value);
+  const fallback = peers[Math.min(Math.max(snapshot.index, 0), peers.length - 1)];
+  focusElement(exact || fallback);
+}
+
+function captureLootFocus() {
+  const active = document.activeElement;
+  if (!active || !dom.lootList.contains(active)) {
+    return null;
+  }
+  const input = active.closest("[data-loot-name]");
+  if (!input) {
+    return null;
+  }
+  return input.dataset.lootName;
+}
+
+function restoreLootFocus(lootName) {
+  if (!lootName) {
+    return;
+  }
+  const input = [...dom.lootList.querySelectorAll("[data-loot-name]")]
+    .find((item) => item.dataset.lootName === lootName);
+  focusElement(input);
+}
+
+function focusElement(element) {
+  if (!element) {
+    return;
+  }
+  try {
+    element.focus({ preventScroll: true });
+  } catch {
+    element.focus();
+  }
+}
+
+function prefersReducedMotion() {
+  return typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function mergeQuestSources(existing, quest) {
+  if (!quest || existing.some((item) => item.id === quest.id)) {
+    return existing;
+  }
+  return [...existing, { id: quest.id, name: quest.name }];
 }
 
 function exportProgress() {
   const backup = {
-    version: 1,
+    type: PROFILE_BACKUP_TYPE,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    completed: [...state.completed],
-    securedLoot: [...state.secured],
-    route: state.route,
+    storyline: {
+      completed: [...state.completed],
+      securedLoot: [...state.secured],
+      route: state.route,
+    },
+    regular: {
+      completed: readStoredArray(REGULAR_STORAGE_KEYS.completed).filter(isString),
+      playerLevel: normalizePlayerLevel(
+        readStoredValue(REGULAR_STORAGE_KEYS.playerLevel, "1"),
+      ),
+      faction: normalizeFaction(
+        readStoredValue(REGULAR_STORAGE_KEYS.faction, "Any"),
+      ),
+      reputation: readStoredObject(REGULAR_STORAGE_KEYS.reputation),
+      completionSource: readStoredObject(REGULAR_STORAGE_KEYS.completionSource),
+    },
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {
     type: "application/json",
@@ -490,10 +731,10 @@ function exportProgress() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "kord-breach-progress.json";
+  anchor.download = `kord-breach-profile-backup-${new Date().toISOString().slice(0, 10)}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
-  showToast("Progress backup exported");
+  showToast("Storyline and All quests profile exported");
 }
 
 async function importProgress(event) {
@@ -504,32 +745,127 @@ async function importProgress(event) {
   }
 
   try {
-    const backup = JSON.parse(await file.text());
-    if (!Array.isArray(backup.completed) || !Array.isArray(backup.securedLoot)) {
-      throw new Error("Invalid backup structure");
+    if (!state.data) {
+      throw new Error("Mission data is still loading");
     }
+    const backup = JSON.parse(await file.text());
+    const parsed = parseProgressBackup(backup);
 
     const validIds = new Set(state.data.quests.map((quest) => quest.id));
-    state.completed = new Set(backup.completed.filter((id) => validIds.has(id)));
-    state.secured = new Set(backup.securedLoot.filter((name) => typeof name === "string"));
-    state.route = backup.route === "mechanic" ? "mechanic" : "fence";
+    state.completed = new Set(parsed.storyline.completed.filter((id) => validIds.has(id)));
+    state.secured = new Set(parsed.storyline.securedLoot.filter(isString));
+    state.route = parsed.storyline.route === "mechanic" ? "mechanic" : "fence";
 
     writeStoredArray(STORAGE_KEYS.completed, [...state.completed]);
     writeStoredArray(STORAGE_KEYS.secured, [...state.secured]);
     writeStoredValue(STORAGE_KEYS.route, state.route);
-    document.querySelectorAll("[data-route]").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.route === state.route);
-    });
+    if (parsed.regular) {
+      writeRegularBackup(parsed.regular);
+    }
+    updatePressedControls("[data-route]", "route", state.route);
     renderAll();
-    showToast("Progress backup imported");
+    showToast(
+      parsed.regular
+        ? "Storyline and All quests profile restored"
+        : "Legacy storyline backup restored",
+    );
   } catch (error) {
+    console.error(error);
     showToast("That file is not a valid KORD BREACH backup");
   }
 }
 
+function parseProgressBackup(backup) {
+  if (!isRecord(backup)) {
+    throw new Error("Backup must be a JSON object");
+  }
+
+  const looksLikeProfileBackup =
+    backup.type === PROFILE_BACKUP_TYPE ||
+    backup.version === 2 ||
+    "storyline" in backup ||
+    "regular" in backup;
+
+  if (looksLikeProfileBackup) {
+    if (
+      backup.type !== PROFILE_BACKUP_TYPE ||
+      backup.version !== 2 ||
+      typeof backup.exportedAt !== "string" ||
+      !isRecord(backup.storyline) ||
+      !isRecord(backup.regular)
+    ) {
+      throw new Error("Invalid profile backup header");
+    }
+
+    const storyline = backup.storyline;
+    const regular = backup.regular;
+    if (
+      !isStringArray(storyline.completed) ||
+      !isStringArray(storyline.securedLoot) ||
+      !["fence", "mechanic"].includes(storyline.route) ||
+      !isStringArray(regular.completed) ||
+      !Number.isFinite(Number(regular.playerLevel)) ||
+      typeof regular.faction !== "string" ||
+      !isRecord(regular.reputation) ||
+      !isRecord(regular.completionSource)
+    ) {
+      throw new Error("Invalid profile backup data");
+    }
+
+    return {
+      storyline: {
+        completed: [...storyline.completed],
+        securedLoot: [...storyline.securedLoot],
+        route: storyline.route,
+      },
+      regular: {
+        completed: [...new Set(regular.completed)],
+        playerLevel: normalizePlayerLevel(regular.playerLevel),
+        faction: normalizeFaction(regular.faction),
+        reputation: regular.reputation,
+        completionSource: regular.completionSource,
+      },
+    };
+  }
+
+  // Version 1 storyline exports stored these fields at the top level.
+  if (!Array.isArray(backup.completed) || !Array.isArray(backup.securedLoot)) {
+    throw new Error("Invalid legacy storyline backup");
+  }
+
+  return {
+    storyline: {
+      completed: backup.completed.filter(isString),
+      securedLoot: backup.securedLoot.filter(isString),
+      route: backup.route === "mechanic" ? "mechanic" : "fence",
+    },
+    regular: null,
+  };
+}
+
+function writeRegularBackup(regular) {
+  writeStoredArray(REGULAR_STORAGE_KEYS.completed, regular.completed.filter(isString));
+  writeStoredValue(
+    REGULAR_STORAGE_KEYS.playerLevel,
+    String(normalizePlayerLevel(regular.playerLevel)),
+  );
+  writeStoredValue(
+    REGULAR_STORAGE_KEYS.faction,
+    normalizeFaction(regular.faction),
+  );
+  writeStoredValue(
+    REGULAR_STORAGE_KEYS.reputation,
+    JSON.stringify(regular.reputation),
+  );
+  writeStoredValue(
+    REGULAR_STORAGE_KEYS.completionSource,
+    JSON.stringify(regular.completionSource),
+  );
+}
+
 function resetProgress() {
   const confirmed = window.confirm(
-    "Reset all quest progress, loot checks and the selected branch on this device?",
+    "Reset storyline progress, FiR loot checks and the selected route on this device? Your All quests profile will be kept.",
   );
   if (!confirmed) {
     return;
@@ -545,11 +881,9 @@ function resetProgress() {
       // Browser storage can be unavailable in hardened modes.
     }
   });
-  document.querySelectorAll("[data-route]").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.route === "fence");
-  });
+  updatePressedControls("[data-route]", "route", state.route);
   renderAll();
-  showToast("Local progress reset");
+  showToast("Storyline progress reset; All quests profile kept");
 }
 
 function showToast(message) {
@@ -578,6 +912,15 @@ function readStoredValue(key, fallback) {
   }
 }
 
+function readStoredObject(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "{}");
+    return isRecord(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
 function writeStoredArray(key, value) {
   writeStoredValue(key, JSON.stringify(value));
 }
@@ -588,6 +931,31 @@ function writeStoredValue(key, value) {
   } catch {
     showToast("Browser storage is unavailable; progress will not persist");
   }
+}
+
+function normalizePlayerLevel(value) {
+  const level = Number(value);
+  if (!Number.isFinite(level)) {
+    return 1;
+  }
+  return Math.min(100, Math.max(1, Math.trunc(level)));
+}
+
+function normalizeFaction(value) {
+  const faction = String(value || "Any").toUpperCase();
+  return faction === "USEC" || faction === "BEAR" ? faction : "Any";
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isString(value) {
+  return typeof value === "string";
+}
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every(isString);
 }
 
 function formatNumber(value) {

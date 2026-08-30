@@ -25,6 +25,10 @@
     if (!payload || typeof payload !== "object") return { ids: [], format: "unknown" };
 
     const candidates = [
+      [
+        payload.type === "kord-breach-profile-backup" ? payload.regular?.completed : null,
+        "unified-profile-backup",
+      ],
       [payload.completed_ids, "original-raid-optimizer"],
       [payload.progress?.completedQuests, "kappa-tracker-export"],
       [payload.completedQuests, "completed-quests-export"],
@@ -109,14 +113,18 @@
     const explicitIds = uniqueIds.filter((id) => knownIds.has(id));
     const unknownIds = uniqueIds.filter((id) => !knownIds.has(id));
     const { completed, inferred } = inferPrerequisites(explicitIds, taskById);
+    const profile =
+      payload?.type === "kord-breach-profile-backup" && payload.regular
+        ? payload.regular
+        : payload;
     const directPlayerLevel = Number(
-      payload?.playerLevel ?? payload?.progress?.pmcLevel ?? payload?.level ?? payload?.pmcLevel,
+      profile?.playerLevel ?? profile?.progress?.pmcLevel ?? profile?.level ?? profile?.pmcLevel,
     );
     const playerLevel =
       Number.isFinite(directPlayerLevel) && directPlayerLevel > 0
         ? directPlayerLevel
-        : levelFromExperience(payload?.info?.experience, playerLevels);
-    const faction = normalizeFaction(payload?.faction ?? payload?.info?.side ?? payload?.side);
+        : levelFromExperience(profile?.info?.experience, playerLevels);
+    const faction = normalizeFaction(profile?.faction ?? profile?.info?.side ?? profile?.side);
     const updatedValue = payload?.updated ?? payload?.updatedAt ?? payload?.exportedAt;
     const updatedAt = validDate(updatedValue);
 
@@ -129,12 +137,18 @@
       playerLevel,
       faction,
       reputation:
-        payload?.type === "kord-breach-regular-progress" && payload.reputation && typeof payload.reputation === "object"
-          ? payload.reputation
+        ["kord-breach-regular-progress", "kord-breach-profile-backup"].includes(payload?.type) &&
+        profile?.reputation &&
+        typeof profile.reputation === "object"
+          ? profile.reputation
           : null,
       updatedAt,
-      profileOnly: format === "tarkov-dev-profile" && explicitIds.length === 0,
-      replaceExisting: payload?.type === "kord-breach-regular-progress",
+      profileOnly:
+        ["tarkov-dev-profile", "unified-profile-backup"].includes(format) &&
+        explicitIds.length === 0,
+      replaceExisting: ["kord-breach-regular-progress", "kord-breach-profile-backup"].includes(
+        payload?.type,
+      ),
     };
   }
 
