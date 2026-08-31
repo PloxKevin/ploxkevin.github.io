@@ -43,9 +43,9 @@
         </div>
         <div class="hero-stats" aria-label="Task board totals">
           <article><strong id="task-total">—</strong><span>trackable tasks</span></article>
-          <article><strong id="open-total">—</strong><span>available now</span></article>
-          <article><strong id="completed-total">0</strong><span>complete</span></article>
-          <article><strong id="group-gate-total">—</strong><span>group-gated</span></article>
+          <article><strong id="active-total">0</strong><span>observed active</span></article>
+          <article><strong id="completed-total">0</strong><span>observed complete</span></article>
+          <article><strong id="open-total">—</strong><span>modeled available</span></article>
         </div>
       </section>
 
@@ -65,7 +65,7 @@
         <div class="profile-data-grid">
           <div class="completion-sync">
             <div>
-              <p class="eyebrow">Quest completion source</p>
+              <p class="eyebrow">In-game quest state</p>
               <div class="completion-source" id="completion-source">
                 <span class="source-light" aria-hidden="true"></span>
                 <div><strong>Manual tracking</strong><small>No completion file imported yet.</small></div>
@@ -74,8 +74,9 @@
             <div class="profile-actions">
               <label class="secondary-button file-button profile-file-button">
                 <span>Import progress</span>
-                <input id="import-regular" type="file" accept=".json,.txt,application/json,text/plain" disabled>
+                <input id="import-regular" type="file" accept=".json,.txt,.md,application/json,text/plain,text/markdown" disabled>
               </label>
+              <button class="secondary-button snapshot-button" id="use-current-snapshot" type="button" disabled>Replace with Aug 31 snapshot</button>
               <button class="secondary-button" id="export-regular" type="button">Export profile</button>
               <button class="danger-button" id="reset-regular" type="button">Reset task board</button>
             </div>
@@ -83,16 +84,21 @@
 
           <details class="import-guide">
             <summary>
-              <span><strong>Import formats &amp; seasonal warning</strong><small>Optimizer, tracker, Tarkov.dev and KORD backup files</small></span>
+              <span><strong>Paste an in-game quest snapshot</strong><small>Active and Completed headings, or an existing tracker file</small></span>
               <span class="disclosure-chevron" aria-hidden="true"></span>
             </summary>
             <div class="import-guide-body">
-              <p>Choose the original optimizer’s <code>my_progress.json</code> or <code>completed.txt</code>, a tracker export containing <code>completedQuests</code>, a task-status map, or a KORD profile backup. Files are read only in your browser and are never uploaded.</p>
+              <label class="quest-status-paste" for="quest-status-text"><span>Quest list</span><textarea id="quest-status-text" rows="8" placeholder="# Tarkov Quests&#10;&#10;## Active&#10;- Shooting Cans&#10;&#10;## Completed&#10;- Debut" disabled></textarea></label>
+              <button class="secondary-button apply-status-button" id="apply-quest-status" type="button" disabled>Replace with pasted snapshot</button>
+              <p>Paste the game’s <strong>Active</strong> and <strong>Completed</strong> lists. Exact names are matched locally; your observed active list overrides estimates without hiding model disagreements.</p>
+              <p>You can also choose the original optimizer’s <code>my_progress.json</code> or <code>completed.txt</code>, a tracker export containing <code>completedQuests</code>, a task-status map, or a KORD profile backup. Files never leave this browser.</p>
               <p><strong>Tarkov.dev profile limitation:</strong> the public snapshot can update level and faction, but it does not expose completed-quest IDs.</p>
               <p class="mode-warning"><strong>Season warning:</strong> only import progress for this KORD BREACH PMC. Permanent-PvP quest completion does not carry into the seasonal profile.</p>
             </div>
           </details>
         </div>
+
+        <div class="quest-reconciliation" id="quest-reconciliation" hidden></div>
 
         <details class="trader-disclosure" id="trader-standings">
           <summary>
@@ -109,7 +115,7 @@
 
       <section class="regular-explorer" aria-labelledby="regular-heading">
         <div class="section-heading quest-heading">
-          <div><p class="eyebrow">Season task pool</p><h2 id="regular-heading">All-quest task board</h2><p class="section-note">Open any quest for objectives, its route in the chain, unlock timing and Wiki guide. The default scope shows routes reachable from your current trader LLs plus completed tasks; choose all bands to plan farther ahead.</p></div>
+          <div><p class="eyebrow">Season task pool</p><h2 id="regular-heading">All-quest task board</h2><p class="section-note">Open any quest for objectives, its route in the chain, unlock timing and Wiki guide. The default scope shows current trader-LL routes plus every observed Active or Completed task; imported in-game status always overrides the loyalty estimate.</p></div>
           <span id="regular-result-count" class="result-count" role="status" aria-live="polite" aria-atomic="true">Loading task intelligence…</span>
         </div>
 
@@ -118,7 +124,7 @@
           <label class="regular-search-field"><span>Search</span><input id="regular-search" type="search" placeholder="Quest, objective, trader, map or gate…" disabled></label>
           <label><span>Raid location</span><select id="regular-map" disabled><option value="">All maps</option></select></label>
           <label><span>Loyalty scope</span><select id="regular-loyalty" disabled><option value="current">My reachable LL routes</option><option value="next">Through next LL</option><option value="all">All loyalty bands</option></select></label>
-          <label><span>Status within scope</span><select id="regular-status" disabled><option value="">All statuses</option><option value="available">Available now</option><option value="rep">Rep / LL blocked</option><option value="level">PMC level blocked</option><option value="prerequisite">Prerequisite blocked</option><option value="group">Task-group blocked</option><option value="timed">Timed unlock</option><option value="manual">In-game / branch gate</option><option value="done">Completed</option></select></label>
+          <label><span>Status within scope</span><select id="regular-status" disabled><option value="">All statuses</option><option value="active">Active in game</option><option value="available">Modeled available</option><option value="rep">Rep / LL blocked</option><option value="level">PMC level blocked</option><option value="prerequisite">Prerequisite blocked</option><option value="group">Task-group blocked</option><option value="timed">Timed unlock</option><option value="manual">In-game / branch gate</option><option value="done">Completed</option></select></label>
           <div class="filter-actions">
             <span id="active-filter-count" class="active-filter-count">0 active</span>
             <button id="clear-regular-filters" class="clear-filter-button" type="button" disabled>Clear filters</button>
@@ -133,8 +139,8 @@
       <section class="rep-briefing" aria-labelledby="rep-briefing-heading">
         <div>
           <p class="eyebrow">Immediate opportunities</p>
-          <h2 id="rep-briefing-heading">Best open standing rewards</h2>
-          <p class="panel-intro">Available tasks ranked by trader standing, then XP. Select one to jump to its task card.</p>
+          <h2 id="rep-briefing-heading">Best active standing rewards</h2>
+          <p class="panel-intro">Confirmed in-game active tasks come first, followed by modeled-open tasks, ranked by trader standing and XP.</p>
         </div>
         <div id="rep-opportunities" class="rep-opportunities"></div>
       </section>
@@ -143,7 +149,7 @@
         <div><p class="eyebrow">Model confidence</p><h2 id="model-heading">Verified gates, inferred counters</h2></div>
         <p><strong>Verified:</strong> standing rewards, loyalty thresholds, PMC levels and explicit prerequisites come directly from the current <code>pvp-season</code> game-data snapshot.</p>
         <p><strong>Estimated:</strong> the public feed exposes hidden counter IDs and thresholds, but not their increment rule or an LL field for opening-pool quests. The board maps unchained task pools to LL1–LL4 using the season’s +0.10 / +0.25 / +0.75 / +1.50 standing bands. Chain exceptions are kept separate; the in-game task list remains authoritative.</p>
-        <p><strong>Wiki &amp; branch audit:</strong> 192 linked Wiki pages were checked: 122/135 populated chains matched, 57 had no previous quest listed and 12 differed. Differences appear on their quest cards; one legacy duplicate is hidden and alternative routes are mutually exclusive.</p>
+        <p><strong>Wiki &amp; branch audit:</strong> 192 linked Wiki pages were checked: 122/135 populated chains matched, 57 had no previous quest listed and 12 differed. Seven current tasks also receive conservative Wiki-only gates where the public feed omits a prerequisite; observed in-game Active state still wins.</p>
       </section>
     </main>
 

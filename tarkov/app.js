@@ -1,11 +1,14 @@
 const STORAGE_KEYS = {
+  active: "kord-breach:active",
   completed: "kord-breach:completed",
   secured: "kord-breach:secured-loot",
   route: "kord-breach:route",
 };
 
 const REGULAR_STORAGE_KEYS = {
+  active: "kord-breach:regular-active",
   completed: "kord-breach:regular-completed",
+  external: "kord-breach:external-quest-status",
   playerLevel: "kord-breach:player-level",
   faction: "kord-breach:player-faction",
   reputation: "kord-breach:trader-reputation",
@@ -16,6 +19,7 @@ const PROFILE_BACKUP_TYPE = "kord-breach-profile-backup";
 
 const state = {
   data: null,
+  active: new Set(readStoredArray(STORAGE_KEYS.active)),
   completed: new Set(readStoredArray(STORAGE_KEYS.completed)),
   secured: new Set(readStoredArray(STORAGE_KEYS.secured)),
   route: readStoredValue(STORAGE_KEYS.route, "fence") === "mechanic" ? "mechanic" : "fence",
@@ -44,6 +48,11 @@ async function init() {
     }
 
     state.data = await response.json();
+    const validIds = new Set(state.data.quests.map((quest) => quest.id));
+    state.completed = new Set([...state.completed].filter((id) => validIds.has(id)));
+    state.active = new Set(
+      [...state.active].filter((id) => validIds.has(id) && !state.completed.has(id)),
+    );
     hydrateFilterOptions();
     renderAll();
     handleQuestHash();
@@ -174,7 +183,9 @@ function renderProgress() {
   const percent = routeQuests.length
     ? Math.round((completedCount / routeQuests.length) * 100)
     : 0;
-  const nextQuest = routeQuests.find((quest) => !state.completed.has(quest.id));
+  const nextQuest = routeQuests.find(
+    (quest) => state.active.has(quest.id) && !state.completed.has(quest.id),
+  ) || routeQuests.find((quest) => !state.completed.has(quest.id));
 
   dom.completedCount.textContent = completedCount;
   dom.routeCount.textContent = routeQuests.length;
@@ -270,6 +281,7 @@ function renderQuests() {
 
 function matchesFilters(quest) {
   const complete = state.completed.has(quest.id);
+  const active = state.active.has(quest.id);
   const searchBlob = JSON.stringify(quest).toLowerCase();
 
   if (state.filters.search && !searchBlob.includes(state.filters.search)) {
@@ -287,11 +299,15 @@ function matchesFilters(quest) {
   if (state.filters.status === "done" && !complete) {
     return false;
   }
+  if (state.filters.status === "active" && !active) {
+    return false;
+  }
   return true;
 }
 
 function renderQuestCard(quest) {
   const complete = state.completed.has(quest.id);
+  const active = state.active.has(quest.id) && !complete;
   const expanded = state.expanded.has(quest.id);
   const categoryLabel =
     quest.category === "parallel"
@@ -305,7 +321,7 @@ function renderQuestCard(quest) {
 
   return `
     <article
-      class="quest-card ${complete ? "is-complete" : ""} ${expanded ? "is-expanded" : ""}"
+      class="quest-card ${complete ? "is-complete" : ""} ${active ? "is-active-in-game" : ""} ${expanded ? "is-expanded" : ""}"
       id="quest-${escapeHtml(quest.id)}"
       data-card-id="${escapeHtml(quest.id)}"
       tabindex="-1"
@@ -316,6 +332,7 @@ function renderQuestCard(quest) {
           <h3 class="quest-title">${escapeHtml(quest.name)}</h3>
           <div class="quest-meta">
             <span class="quest-trader">${escapeHtml(quest.trader)}</span>
+            ${active ? '<span class="quest-badge active">Active in game</span>' : ""}
             <span class="quest-badge ${escapeHtml(quest.category)}">${escapeHtml(categoryLabel)}</span>
             ${(quest.maps || []).slice(0, 3).map((map) => `<span class="map-chip">${escapeHtml(map)}</span>`).join("")}
           </div>
@@ -327,6 +344,7 @@ function renderQuestCard(quest) {
             <span>Complete</span>
           </label>
           <a class="details-toggle plan-link" href="${escapeHtml(plannerHref)}" aria-label="Plan ${escapeHtml(quest.name)} on the tactical map">Plan raid</a>
+          ${complete ? "" : `<button class="details-toggle active-toggle" type="button" data-story-active="${escapeHtml(quest.id)}">${active ? "Clear active" : "Mark active"}</button>`}
           <button
             class="details-toggle"
             type="button"
@@ -449,6 +467,17 @@ function renderUnavailable() {
 }
 
 function handleQuestListClick(event) {
+  const activeButton = event.target.closest("[data-story-active]");
+  if (activeButton) {
+    const questId = activeButton.dataset.storyActive;
+    if (state.active.has(questId)) state.active.delete(questId);
+    else if (!state.completed.has(questId)) state.active.add(questId);
+    writeStoredArray(STORAGE_KEYS.active, [...state.active]);
+    renderProgress();
+    renderQuests();
+    showToast(state.active.has(questId) ? "Marked active in game" : "Cleared active state");
+    return;
+  }
   const button = event.target.closest("[data-expand]");
   if (!button) {
     return;
@@ -481,12 +510,14 @@ function handleQuestCompletion(event) {
   }
 
   if (input.checked) {
+    state.active.delete(quest.id);
     state.completed.add(quest.id);
     if (quest.mutually_exclusive_with) {
       const alternate = state.data.quests.find(
         (item) => item.name === quest.mutually_exclusive_with,
       );
       if (alternate) {
+        state.active.delete(alternate.id);
         state.completed.delete(alternate.id);
       }
     }
@@ -494,6 +525,7 @@ function handleQuestCompletion(event) {
     state.completed.delete(quest.id);
   }
 
+  writeStoredArray(STORAGE_KEYS.active, [...state.active]);
   writeStoredArray(STORAGE_KEYS.completed, [...state.completed]);
   renderProgress();
   renderQuests();
@@ -620,16 +652,29 @@ function captureQuestFocus() {
   }
 
   const checkbox = active.closest("[data-quest-id]");
+  const activeToggle = active.closest("[data-story-active]");
   const toggle = active.closest("[data-expand]");
   const card = active.closest("[data-card-id]");
-  const target = checkbox || toggle || card;
+  const target = checkbox || activeToggle || toggle || card;
   if (!target) {
     return null;
   }
 
-  const kind = checkbox ? "quest" : toggle ? "expand" : "card";
-  const attribute = kind === "quest" ? "questId" : kind === "expand" ? "expand" : "cardId";
-  const selector = kind === "quest" ? "[data-quest-id]" : kind === "expand" ? "[data-expand]" : "[data-card-id]";
+  const kind = checkbox ? "quest" : activeToggle ? "active" : toggle ? "expand" : "card";
+  const attribute = kind === "quest"
+    ? "questId"
+    : kind === "active"
+      ? "storyActive"
+      : kind === "expand"
+        ? "expand"
+        : "cardId";
+  const selector = kind === "quest"
+    ? "[data-quest-id]"
+    : kind === "active"
+      ? "[data-story-active]"
+      : kind === "expand"
+        ? "[data-expand]"
+        : "[data-card-id]";
   const peers = [...dom.questList.querySelectorAll(selector)];
   return {
     kind,
@@ -645,11 +690,15 @@ function restoreQuestFocus(snapshot) {
 
   const selector = snapshot.kind === "quest"
     ? "[data-quest-id]"
+    : snapshot.kind === "active"
+      ? "[data-story-active]"
     : snapshot.kind === "expand"
       ? "[data-expand]"
       : "[data-card-id]";
   const attribute = snapshot.kind === "quest"
     ? "questId"
+    : snapshot.kind === "active"
+      ? "storyActive"
     : snapshot.kind === "expand"
       ? "expand"
       : "cardId";
@@ -706,15 +755,18 @@ function mergeQuestSources(existing, quest) {
 function exportProgress() {
   const backup = {
     type: PROFILE_BACKUP_TYPE,
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     storyline: {
+      active: [...state.active],
       completed: [...state.completed],
       securedLoot: [...state.secured],
       route: state.route,
     },
     regular: {
+      active: readStoredArray(REGULAR_STORAGE_KEYS.active).filter(isString),
       completed: readStoredArray(REGULAR_STORAGE_KEYS.completed).filter(isString),
+      external: readStoredArray(REGULAR_STORAGE_KEYS.external).filter(isRecord),
       playerLevel: normalizePlayerLevel(
         readStoredValue(REGULAR_STORAGE_KEYS.playerLevel, "1"),
       ),
@@ -753,9 +805,13 @@ async function importProgress(event) {
 
     const validIds = new Set(state.data.quests.map((quest) => quest.id));
     state.completed = new Set(parsed.storyline.completed.filter((id) => validIds.has(id)));
+    state.active = new Set(
+      parsed.storyline.active.filter((id) => validIds.has(id) && !state.completed.has(id)),
+    );
     state.secured = new Set(parsed.storyline.securedLoot.filter(isString));
     state.route = parsed.storyline.route === "mechanic" ? "mechanic" : "fence";
 
+    writeStoredArray(STORAGE_KEYS.active, [...state.active]);
     writeStoredArray(STORAGE_KEYS.completed, [...state.completed]);
     writeStoredArray(STORAGE_KEYS.secured, [...state.secured]);
     writeStoredValue(STORAGE_KEYS.route, state.route);
@@ -782,14 +838,14 @@ function parseProgressBackup(backup) {
 
   const looksLikeProfileBackup =
     backup.type === PROFILE_BACKUP_TYPE ||
-    backup.version === 2 ||
+    [2, 3].includes(backup.version) ||
     "storyline" in backup ||
     "regular" in backup;
 
   if (looksLikeProfileBackup) {
     if (
       backup.type !== PROFILE_BACKUP_TYPE ||
-      backup.version !== 2 ||
+      ![2, 3].includes(backup.version) ||
       typeof backup.exportedAt !== "string" ||
       !isRecord(backup.storyline) ||
       !isRecord(backup.regular)
@@ -804,6 +860,12 @@ function parseProgressBackup(backup) {
       !isStringArray(storyline.securedLoot) ||
       !["fence", "mechanic"].includes(storyline.route) ||
       !isStringArray(regular.completed) ||
+      (backup.version === 3 && (
+        !isStringArray(storyline.active) ||
+        !isStringArray(regular.active) ||
+        !Array.isArray(regular.external) ||
+        !regular.external.every(isRecord)
+      )) ||
       !Number.isFinite(Number(regular.playerLevel)) ||
       typeof regular.faction !== "string" ||
       !isRecord(regular.reputation) ||
@@ -814,12 +876,15 @@ function parseProgressBackup(backup) {
 
     return {
       storyline: {
+        active: [...new Set(storyline.active || [])],
         completed: [...storyline.completed],
         securedLoot: [...storyline.securedLoot],
         route: storyline.route,
       },
       regular: {
+        active: [...new Set(regular.active || [])],
         completed: [...new Set(regular.completed)],
+        external: [...(regular.external || [])],
         playerLevel: normalizePlayerLevel(regular.playerLevel),
         faction: normalizeFaction(regular.faction),
         reputation: regular.reputation,
@@ -835,6 +900,7 @@ function parseProgressBackup(backup) {
 
   return {
     storyline: {
+      active: [],
       completed: backup.completed.filter(isString),
       securedLoot: backup.securedLoot.filter(isString),
       route: backup.route === "mechanic" ? "mechanic" : "fence",
@@ -844,7 +910,9 @@ function parseProgressBackup(backup) {
 }
 
 function writeRegularBackup(regular) {
+  writeStoredArray(REGULAR_STORAGE_KEYS.active, regular.active.filter(isString));
   writeStoredArray(REGULAR_STORAGE_KEYS.completed, regular.completed.filter(isString));
+  writeStoredArray(REGULAR_STORAGE_KEYS.external, regular.external.filter(isRecord));
   writeStoredValue(
     REGULAR_STORAGE_KEYS.playerLevel,
     String(normalizePlayerLevel(regular.playerLevel)),
@@ -872,6 +940,7 @@ function resetProgress() {
   }
 
   state.completed.clear();
+  state.active.clear();
   state.secured.clear();
   state.route = "fence";
   Object.values(STORAGE_KEYS).forEach((key) => {

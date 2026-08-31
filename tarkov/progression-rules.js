@@ -1,4 +1,59 @@
 (function installProgressionRules(root) {
+  const CURATED_MANUAL_REQUIREMENTS = Object.freeze({
+    "69c26c07683c9831020018c7": [{
+      label: "Complete the Icebreaker scientist-intercom and damaged-door interactions",
+      source: "wiki-requirement",
+    }],
+    "69ce1cfb298a6529b30d712b": [{
+      label: "Hand the Boreas compartment C-1 hard drives to Mechanic",
+      source: "wiki-requirement",
+    }],
+    "69ce1de03e15cd80bd06f6c9": [{
+      label: "Hand the Boreas compartment C-1 hard drives to Mechanic",
+      source: "wiki-requirement",
+    }],
+    "69ce21e990144e437802b1e0": [{
+      label: "Hand the Boreas compartment C-1 hard drives to Mechanic",
+      source: "wiki-requirement",
+    }],
+    "69ce204c8702b378f9091e4b": [{
+      label: "Hand the Boreas compartment C-1 hard drives to Mechanic",
+      source: "wiki-requirement",
+    }],
+    "67af4c1d8c9482eca103e477": [{
+      label: "Complete Profit Retention or Get a Foothold",
+      source: "wiki-prerequisite",
+    }],
+    "675c15fbf7da9792a4059871": [{
+      label: "Accept Easy Money - Part 2",
+      source: "wiki-prerequisite",
+      satisfiedByExternalNames: ["Easy Money - Part 2"],
+    }],
+  });
+
+  function normalizeQuestName(value) {
+    return String(value || "")
+      .replace(/^\s*\[\s*kord\s+breach\s*\]\s*/i, "")
+      .replace(/\s*\[\s*season\s+pvp\s*\]\s*$/i, "")
+      .normalize("NFKD")
+      .replace(/[\u2018\u2019\u02bc]/g, "'")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function getCuratedManualRequirements(task) {
+    return (CURATED_MANUAL_REQUIREMENTS[task?.id] || []).map((requirement) => ({ ...requirement }));
+  }
+
+  function curatedRequirementSatisfied(requirement, externalStatuses) {
+    const accepted = (requirement?.satisfiedByExternalNames || []).map(normalizeQuestName);
+    if (!accepted.length) return false;
+    return (externalStatuses || []).some((entry) =>
+      ["active", "completed"].includes(entry?.status) && accepted.includes(normalizeQuestName(entry.name)),
+    );
+  }
+
   function normalizeTier(value) {
     const tier = Number(value);
     return Number.isInteger(tier) && tier >= 1 && tier <= 4 ? tier : null;
@@ -61,7 +116,9 @@
   root.KordProgressionRules = Object.freeze({
     explicitOwnTraderTier,
     getCompactPoolLabel,
+    getCuratedManualRequirements,
     getModeledLoyaltyGate,
     getSeasonPool,
+    curatedRequirementSatisfied,
   });
 })(typeof window === "undefined" ? globalThis : window);

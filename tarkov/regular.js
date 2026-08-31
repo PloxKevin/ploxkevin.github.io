@@ -1,5 +1,7 @@
 const REGULAR_STORAGE = {
+  active: "kord-breach:regular-active",
   completed: "kord-breach:regular-completed",
+  external: "kord-breach:external-quest-status",
   level: "kord-breach:player-level",
   faction: "kord-breach:player-faction",
   reputation: "kord-breach:trader-reputation",
@@ -7,6 +9,7 @@ const REGULAR_STORAGE = {
 };
 
 const STORYLINE_STORAGE = {
+  active: "kord-breach:active",
   completed: "kord-breach:completed",
   securedLoot: "kord-breach:secured-loot",
   route: "kord-breach:route",
@@ -16,8 +19,11 @@ const progressionRules = window.KordProgressionRules;
 
 const regularState = {
   data: null,
+  storyline: null,
   wikiAudit: null,
+  active: new Set(readArray(REGULAR_STORAGE.active)),
   completed: new Set(readArray(REGULAR_STORAGE.completed)),
+  external: readArray(REGULAR_STORAGE.external),
   playerLevel: clamp(Number(readValue(REGULAR_STORAGE.level, 1)) || 1, 1, 100),
   faction: ["USEC", "BEAR"].includes(readValue(REGULAR_STORAGE.faction, "Any"))
     ? readValue(REGULAR_STORAGE.faction, "Any")
@@ -40,14 +46,17 @@ async function initializeRegularPlanner() {
   setExplorerControlsDisabled(true);
 
   try {
-    const [response, wikiAudit] = await Promise.all([
+    const [response, storylineResponse, wikiAudit] = await Promise.all([
       fetch("./data/regular_quest_progression.json"),
+      fetch("./data/kord_breach_quests.json"),
       fetch("./data/wiki-chain-audit.json")
         .then((auditResponse) => auditResponse.ok ? auditResponse.json() : null)
         .catch(() => null),
     ]);
     if (!response.ok) throw new Error(`Progression data returned ${response.status}`);
+    if (!storylineResponse.ok) throw new Error(`Storyline data returned ${storylineResponse.status}`);
     regularState.data = await response.json();
+    regularState.storyline = await storylineResponse.json();
     regularState.data.tasks = regularState.data.tasks.filter((task) => !task.hiddenFromTracker);
     regularState.wikiAudit = wikiAudit;
     hydrateRegularControls();
@@ -64,12 +73,13 @@ async function initializeRegularPlanner() {
 
 function cacheRegularDom() {
   const ids = [
+    "active-total",
     "active-filter-count",
+    "apply-quest-status",
     "clear-regular-filters",
     "completed-total",
     "completion-source",
     "export-regular",
-    "group-gate-total",
     "import-regular",
     "load-more",
     "open-total",
@@ -85,12 +95,15 @@ function cacheRegularDom() {
     "regular-toast",
     "regular-trader",
     "rep-opportunities",
+    "quest-reconciliation",
+    "quest-status-text",
     "reset-regular",
     "snapshot-date",
     "task-total",
     "trader-board",
     "trader-standings",
     "trader-summary",
+    "use-current-snapshot",
   ];
 
   for (const id of ids) regularDom[toCamel(id)] = document.getElementById(id);
@@ -171,10 +184,12 @@ function bindRegularEvents() {
       const result = markTaskAndRequiredPredecessors(checkbox.dataset.regularComplete);
       clearedAlternatives = result.clearedAlternatives;
       inferredPrerequisites = result.addedPrerequisites;
+      regularState.active.delete(checkbox.dataset.regularComplete);
     } else {
       regularState.completed.delete(checkbox.dataset.regularComplete);
     }
 
+    writeArray(REGULAR_STORAGE.active, [...regularState.active]);
     writeArray(REGULAR_STORAGE.completed, [...regularState.completed]);
     renderRegularPlanner({ preserveVisibleOrder: true });
     if (clearedAlternatives) {
@@ -182,6 +197,17 @@ function bindRegularEvents() {
     } else if (inferredPrerequisites) {
       showRegularToast(`Marked complete with ${inferredPrerequisites} required predecessor${inferredPrerequisites === 1 ? "" : "s"}`);
     }
+  });
+
+  regularDom.taskList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-regular-active]");
+    if (!button) return;
+    const taskId = button.dataset.regularActive;
+    if (regularState.active.has(taskId)) regularState.active.delete(taskId);
+    else if (!regularState.completed.has(taskId)) regularState.active.add(taskId);
+    persistRegularState();
+    renderRegularPlanner({ preserveVisibleOrder: true });
+    showRegularToast(regularState.active.has(taskId) ? "Marked active in game" : "Cleared active state");
   });
 
   regularDom.loadMore.addEventListener("click", () => {
@@ -193,6 +219,13 @@ function bindRegularEvents() {
   window.addEventListener("hashchange", () => handleTaskHash({ focus: false }));
   regularDom.exportRegular.addEventListener("click", exportRegularProgress);
   regularDom.importRegular.addEventListener("change", importRegularProgress);
+  regularDom.applyQuestStatus.addEventListener("click", () => {
+    applyQuestStatusText(regularDom.questStatusText.value, {
+      format: "game-status-paste",
+      fileName: "Pasted in-game list",
+    });
+  });
+  regularDom.useCurrentSnapshot.addEventListener("click", applyBundledQuestSnapshot);
   regularDom.resetRegular.addEventListener("click", resetRegularProgress);
 }
 
@@ -206,7 +239,6 @@ function hydrateRegularControls() {
   regularDom.playerFaction.value = regularState.faction;
   regularDom.loyalty.value = regularState.filters.loyaltyScope;
   regularDom.taskTotal.textContent = regularState.data.tasks.length;
-  regularDom.groupGateTotal.textContent = regularState.data.stats.tasksWithGlobalGroupGates;
   regularDom.snapshotDate.textContent = new Intl.DateTimeFormat(undefined, {
     day: "2-digit",
     month: "short",
@@ -215,6 +247,10 @@ function hydrateRegularControls() {
 
   const validTaskIds = new Set(regularState.data.tasks.map((task) => task.id));
   regularState.completed = new Set([...regularState.completed].filter((id) => validTaskIds.has(id)));
+  regularState.active = new Set(
+    [...regularState.active].filter((id) => validTaskIds.has(id) && !regularState.completed.has(id)),
+  );
+  regularState.external = sanitizeExternalStatus(regularState.external);
 
   const rank = (name) => {
     const index = TRADER_ORDER.indexOf(name);
@@ -237,7 +273,15 @@ function hydrateRegularControls() {
 }
 
 function setExplorerControlsDisabled(disabled) {
-  for (const control of [regularDom.search, regularDom.map, regularDom.loyalty, regularDom.status]) {
+  for (const control of [
+    regularDom.search,
+    regularDom.map,
+    regularDom.loyalty,
+    regularDom.status,
+    regularDom.questStatusText,
+    regularDom.applyQuestStatus,
+    regularDom.useCurrentSnapshot,
+  ]) {
     control.disabled = disabled;
   }
   for (const tab of regularDom.trader.querySelectorAll("[data-trader-tab]")) tab.disabled = disabled;
@@ -249,12 +293,18 @@ function setExplorerControlsDisabled(disabled) {
 function renderRegularPlanner(options = {}) {
   if (!regularState.data) return;
   const context = buildAvailabilityContext();
-  const openCount = regularState.data.tasks.filter(
-    (task) => getAvailability(task, context).status === "available",
-  ).length;
+  const availability = regularState.data.tasks.map((task) => getAvailability(task, context));
+  const modeledOpenCount = availability.filter((item) => item.modeledStatus === "available").length;
 
-  regularDom.openTotal.textContent = openCount;
-  regularDom.completedTotal.textContent = regularState.completed.size;
+  regularDom.activeTotal.textContent =
+    regularState.active.size +
+    readArray(STORYLINE_STORAGE.active).length +
+    regularState.external.filter((entry) => entry.status === "active").length;
+  regularDom.openTotal.textContent = modeledOpenCount;
+  regularDom.completedTotal.textContent =
+    regularState.completed.size +
+    readArray(STORYLINE_STORAGE.completed).length +
+    regularState.external.filter((entry) => entry.status === "completed").length;
   renderTraderBoard(context);
   renderCompletionSource();
   renderRepOpportunities(context);
@@ -306,7 +356,9 @@ function getTraderLoyalty(trader, reputation = getReputation(trader?.id)) {
 }
 
 function getAvailability(task, context) {
-  if (regularState.completed.has(task.id)) return { status: "done", reasons: [] };
+  if (regularState.completed.has(task.id)) {
+    return { status: "done", reasons: [], modeledStatus: "done", modeledReasons: [] };
+  }
 
   const reasons = [];
   if (regularState.playerLevel < task.minPlayerLevel) {
@@ -351,14 +403,20 @@ function getAvailability(task, context) {
   for (const requirement of task.taskRequirements) {
     const statuses = requirementStatuses(requirement);
     const prerequisiteComplete = regularState.completed.has(requirement.taskId);
-    const pureCompletion = statuses.length === 1 && statuses[0] === "complete";
-    if (pureCompletion && !prerequisiteComplete) {
+    const prerequisiteActive = regularState.active.has(requirement.taskId);
+    const satisfied =
+      (statuses.includes("complete") && prerequisiteComplete) ||
+      (statuses.includes("active") && prerequisiteActive);
+    if (satisfied) {
+      continue;
+    }
+    if (statuses.length === 1 && statuses[0] === "complete") {
       reasons.push({
         type: "prerequisite",
         label: `Complete ${requirement.taskName}`,
         taskId: requirement.taskId,
       });
-    } else if (!pureCompletion && !(statuses.includes("complete") && prerequisiteComplete)) {
+    } else {
       reasons.push({
         type: "manual",
         label: `${requirementAction(statuses)} ${requirement.taskName} in-game`,
@@ -395,6 +453,15 @@ function getAvailability(task, context) {
     }
   }
 
+  for (const requirement of progressionRules.getCuratedManualRequirements(task)) {
+    if (!progressionRules.curatedRequirementSatisfied(requirement, regularState.external)) {
+      reasons.push({
+        type: "manual",
+        label: `${requirement.label} (Wiki; missing from game-data feed)`,
+      });
+    }
+  }
+
   if (task.dialogueRequirements.length) {
     reasons.push({
       type: "manual",
@@ -406,8 +473,16 @@ function getAvailability(task, context) {
   }
 
   const priority = ["rep", "level", "prerequisite", "group", "timed", "manual"];
-  const status = priority.find((type) => reasons.some((reason) => reason.type === type)) || "available";
-  return { status, reasons };
+  const modeledStatus = priority.find((type) => reasons.some((reason) => reason.type === type)) || "available";
+  if (regularState.active.has(task.id)) {
+    return {
+      status: "active",
+      reasons: [],
+      modeledStatus,
+      modeledReasons: reasons,
+    };
+  }
+  return { status: modeledStatus, reasons, modeledStatus, modeledReasons: reasons };
 }
 
 function renderTraderBoard(context) {
@@ -468,14 +543,18 @@ function renderTraderBoard(context) {
 
 function renderRepOpportunities(context) {
   const opportunities = regularState.data.tasks
-    .filter((task) => getAvailability(task, context).status === "available")
+    .map((task) => ({ task, availability: getAvailability(task, context) }))
+    .filter(({ availability }) => ["active", "available"].includes(availability.status))
     .map((task) => ({
-      task,
-      gains: task.finishStanding.filter((reward) => reward.standing > 0),
-      maximum: Math.max(0, ...task.finishStanding.map((reward) => reward.standing)),
+      ...task,
+      gains: task.task.finishStanding.filter((reward) => reward.standing > 0),
+      maximum: Math.max(0, ...task.task.finishStanding.map((reward) => reward.standing)),
     }))
     .filter((item) => item.maximum > 0)
-    .sort((a, b) => b.maximum - a.maximum || b.task.experience - a.task.experience)
+    .sort((a, b) =>
+      Number(b.availability.status === "active") - Number(a.availability.status === "active") ||
+      b.maximum - a.maximum ||
+      b.task.experience - a.task.experience)
     .slice(0, 8);
 
   regularDom.repOpportunities.innerHTML = opportunities.length
@@ -487,7 +566,7 @@ function renderRepOpportunities(context) {
           <span class="opportunity-arrow" aria-hidden="true">→</span>
         </a>
       `).join("")
-    : '<p class="panel-intro">No positive-standing tasks are currently open under this PMC profile.</p>';
+    : '<p class="panel-intro">No active or modeled-open positive-standing tasks under this PMC profile.</p>';
 }
 
 function renderRegularTasks(context = buildAvailabilityContext(), options = {}) {
@@ -526,7 +605,7 @@ function renderRegularTasks(context = buildAvailabilityContext(), options = {}) 
     .join("");
 
   const scopeLabels = {
-    current: "reachable current-LL routes",
+    current: "current-LL routes + observed active/completed",
     next: "through next LL",
     all: "all LL bands",
   };
@@ -552,13 +631,16 @@ function captureTaskUi() {
   const visibleOrder = [...regularDom.taskList.querySelectorAll("[data-task-card]")]
     .map((card) => card.dataset.taskCard);
   const activeCheckbox = document.activeElement?.closest?.("[data-regular-complete]");
-  const focusedTaskId = activeCheckbox?.dataset.regularComplete || null;
-  const focusedCard = activeCheckbox?.closest("[data-task-card]");
+  const activeToggle = document.activeElement?.closest?.("[data-regular-active]");
+  const focusedTaskId = activeCheckbox?.dataset.regularComplete || activeToggle?.dataset.regularActive || null;
+  const focusedControl = activeCheckbox || activeToggle;
+  const focusedCard = focusedControl?.closest("[data-task-card]");
 
   return {
     expanded,
     visibleOrder,
     focusedTaskId,
+    focusedControlType: activeToggle ? "active" : "complete",
     focusedIndex: focusedTaskId ? visibleOrder.indexOf(focusedTaskId) : -1,
     focusedTop: focusedCard?.getBoundingClientRect().top ?? null,
   };
@@ -566,12 +648,16 @@ function captureTaskUi() {
 
 function restoreTaskUi(taskUi) {
   if (!taskUi.focusedTaskId) return;
-  const checkboxes = [...regularDom.taskList.querySelectorAll("[data-regular-complete]")];
-  let nextFocus = checkboxes.find(
-    (checkbox) => checkbox.dataset.regularComplete === taskUi.focusedTaskId,
+  const selector = taskUi.focusedControlType === "active"
+    ? "[data-regular-active]"
+    : "[data-regular-complete]";
+  const dataKey = taskUi.focusedControlType === "active" ? "regularActive" : "regularComplete";
+  const controls = [...regularDom.taskList.querySelectorAll(selector)];
+  let nextFocus = controls.find(
+    (control) => control.dataset[dataKey] === taskUi.focusedTaskId,
   );
-  if (!nextFocus && checkboxes.length) {
-    nextFocus = checkboxes[Math.min(Math.max(taskUi.focusedIndex, 0), checkboxes.length - 1)];
+  if (!nextFocus && controls.length) {
+    nextFocus = controls[Math.min(Math.max(taskUi.focusedIndex, 0), controls.length - 1)];
   }
   if (!nextFocus) {
     regularDom.resultCount.setAttribute("tabindex", "-1");
@@ -587,10 +673,10 @@ function restoreTaskUi(taskUi) {
   nextFocus.focus({ preventScroll: true });
 }
 
-const STATUS_RANK = { available: 0, done: 2 };
+const STATUS_RANK = { active: 0, available: 1, done: 3 };
 function compareProgression(a, b) {
   return (
-    (STATUS_RANK[a.availability.status] ?? 1) - (STATUS_RANK[b.availability.status] ?? 1) ||
+    (STATUS_RANK[a.availability.status] ?? 2) - (STATUS_RANK[b.availability.status] ?? 2) ||
     a.loyaltyDistance - b.loyaltyDistance ||
     a.depth - b.depth ||
     a.task.minPlayerLevel - b.task.minPlayerLevel ||
@@ -608,7 +694,11 @@ function getLoyaltyDistance(task, context) {
 }
 
 function matchesLoyaltyScope(task, context) {
-  if (regularState.completed.has(task.id) || regularState.filters.loyaltyScope === "all") return true;
+  if (
+    regularState.completed.has(task.id) ||
+    regularState.active.has(task.id) ||
+    regularState.filters.loyaltyScope === "all"
+  ) return true;
   const allowance = regularState.filters.loyaltyScope === "next" ? 1 : 0;
   return getLoyaltyScopeRequirements(task, context).every((requirement) => {
     const trader = context.traders.get(requirement.traderId);
@@ -646,7 +736,9 @@ function getLoyaltyScopeRequirements(task, context, visiting = new Set()) {
   }
 
   for (const requirement of task.taskRequirements || []) {
-    if (regularState.completed.has(requirement.taskId)) continue;
+    const statuses = requirementStatuses(requirement);
+    if (statuses.includes("complete") && regularState.completed.has(requirement.taskId)) continue;
+    if (statuses.includes("active") && regularState.active.has(requirement.taskId)) continue;
     const predecessor = context.taskById.get(requirement.taskId);
     if (!predecessor) continue;
     for (const inherited of getLoyaltyScopeRequirements(predecessor, context, nextVisiting)) {
@@ -680,12 +772,12 @@ const TRADER_ORDER = ["Prapor", "Therapist", "Fence", "Skier", "Peacekeeper", "M
 function renderTraderTabs(rows) {
   const available = new Map();
   for (const { task, availability } of rows) {
-    if (availability.status === "available") {
+    if (["active", "available"].includes(availability.status)) {
       available.set(task.traderName, (available.get(task.traderName) || 0) + 1);
     }
   }
 
-  const totalAvailable = rows.filter((row) => row.availability.status === "available").length;
+  const totalAvailable = rows.filter((row) => ["active", "available"].includes(row.availability.status)).length;
   for (const tab of regularDom.trader.querySelectorAll("[data-trader-tab]")) {
     const trader = tab.dataset.traderTab;
     const count = trader
@@ -695,7 +787,7 @@ function renderTraderTabs(rows) {
     tab.classList.toggle("is-active", active);
     tab.setAttribute("aria-selected", String(active));
     tab.tabIndex = active ? 0 : -1;
-    tab.querySelector(".tab-count").textContent = `${trader ? count : totalAvailable} open`;
+    tab.querySelector(".tab-count").textContent = `${trader ? count : totalAvailable} ready`;
   }
 }
 
@@ -733,6 +825,7 @@ function matchesRegularFilters({ task, availability }, context) {
     ...(task.taskRequirements || []).map((requirement) => requirement.taskName),
     ...successors.map(({ task: successor }) => successor.name),
     ...availability.reasons.map((reason) => reason.label),
+    ...(availability.modeledReasons || []).map((reason) => reason.label),
     progressionRules.getCompactPoolLabel(task),
     ...task.finishStanding.map((reward) => `${reward.traderName} ${reward.standing}`),
     task.kappaRequired ? "kappa required" : "",
@@ -751,6 +844,7 @@ function matchesRegularFilters({ task, availability }, context) {
 
 function regularTaskMarkup(task, availability, context, expanded) {
   const complete = availability.status === "done";
+  const observedActive = availability.status === "active";
   const statusLabel = getStatusLabel(availability.status);
   const gateDescriptions = getGateDescriptions(task, context);
   const mapNames = taskMapNames(task);
@@ -766,6 +860,7 @@ function regularTaskMarkup(task, availability, context, expanded) {
   const completionWarnings = complete ? getCompletionWarnings(task) : [];
   const poolLabel = progressionRules.getCompactPoolLabel(task);
   const factChips = [
+    observedActive ? "Active in game" : "",
     `${objectives.length} objective${objectives.length === 1 ? "" : "s"}`,
     ...mapNames.slice(0, 4),
     mapNames.length > 4 ? `+${mapNames.length - 4} maps` : "",
@@ -792,7 +887,7 @@ function regularTaskMarkup(task, availability, context, expanded) {
   const plannerHref = `./planner.html?${plannerParams.toString()}`;
 
   return `
-    <article id="${taskAnchor(task.id)}" data-task-card="${escapeRegular(task.id)}" class="regular-task ${complete ? "is-done" : ""} ${availability.status === "available" ? "is-available" : ""}">
+    <article id="${taskAnchor(task.id)}" data-task-card="${escapeRegular(task.id)}" class="regular-task ${complete ? "is-done" : ""} ${observedActive ? "is-active-in-game" : ""} ${availability.status === "available" ? "is-available" : ""}">
       <label class="regular-task-check" title="Mark ${escapeRegular(task.name)} complete">
         <input type="checkbox" data-regular-complete="${escapeRegular(task.id)}" ${complete ? "checked" : ""} aria-label="Mark ${escapeRegular(task.name)} complete">
       </label>
@@ -802,7 +897,7 @@ function regularTaskMarkup(task, availability, context, expanded) {
             <span class="regular-task-title">${escapeRegular(task.name)}</span>
             <span class="regular-task-meta"><span>${escapeRegular(task.traderName)}</span>${mapSummary ? `<span>${escapeRegular(mapSummary)}</span>` : ""}${poolLabel ? `<span>${escapeRegular(poolLabel)}</span>` : ""}${task.factionName !== "Any" ? `<span>${task.factionName}</span>` : ""}${variant ? `<span>${escapeRegular(variant)}</span>` : ""}</span>
           </span>
-          <span class="status-badge ${complete ? "done" : availability.status === "available" ? "available" : "blocked"}">${statusLabel}</span>
+          <span class="status-badge ${complete ? "done" : observedActive ? "active" : availability.status === "available" ? "available" : "blocked"}">${statusLabel}</span>
           <span class="disclosure-chevron" aria-hidden="true"></span>
         </summary>
         <div class="regular-task-body">
@@ -837,6 +932,8 @@ function regularTaskMarkup(task, availability, context, expanded) {
             <h3>${complete ? "Completion check" : "Current readiness"}</h3>
             ${complete
               ? `<p>Marked complete on this device.</p>${completionWarnings.length ? `<ul class="task-warning-list">${completionWarnings.map((warning) => `<li>${taskReferenceMarkup(warning)}</li>`).join("")}</ul>` : '<p class="task-state-ok">Direct completion requirements are consistent.</p>'}`
+              : observedActive
+                ? `<p class="task-state-active">Confirmed active by the imported in-game list. This observed state takes priority.</p>${availability.modeledReasons?.length ? `<aside class="model-disagreement"><strong>Tracker estimate differs</strong><p>The saved PMC profile still expects:</p><ul>${availability.modeledReasons.map((reason) => `<li>${taskReferenceMarkup(reason)}</li>`).join("")}</ul><small>Update PMC level or trader standing if stale. Inferred group and opening-pool gates can also differ from the game.</small></aside>` : '<p class="task-state-ok">The tracker model agrees that this task is open.</p>'}`
               : availability.reasons.length
                 ? `<ul>${availability.reasons.map((reason) => `<li>${taskReferenceMarkup(reason)}</li>`).join("")}</ul>`
                 : "<p>All modeled requirements are met. Confirm the task with the trader in-game.</p>"}
@@ -853,6 +950,7 @@ function regularTaskMarkup(task, availability, context, expanded) {
           </section>
           <nav class="task-detail-block task-actions" aria-label="${escapeRegular(task.name)} actions">
             <a class="task-action-link primary" href="${escapeRegular(plannerHref)}" aria-label="Plan ${escapeRegular(task.name)} on the tactical map">Plan on tactical map →</a>
+            ${complete ? "" : `<button class="task-action-link active-toggle" type="button" data-regular-active="${escapeRegular(task.id)}">${observedActive ? "Clear active state" : "Mark active in game"}</button>`}
             ${wikiHref ? `<a class="task-action-link" href="${escapeRegular(wikiHref)}" target="_blank" rel="noreferrer">Open Wiki guide ↗</a>` : '<span class="task-source-missing">No Wiki page linked in the data feed.</span>'}
           </nav>
         </div>
@@ -864,7 +962,8 @@ function regularTaskMarkup(task, availability, context, expanded) {
 function getStatusLabel(status) {
   const labels = {
     done: "Completed",
-    available: "Available now",
+    active: "Active in game",
+    available: "Modeled available",
     rep: "Rep / LL gate",
     level: "PMC level gate",
     prerequisite: "Prerequisite",
@@ -930,15 +1029,16 @@ function markTaskAndRequiredPredecessors(taskId) {
     }
 
     for (const alternative of regularState.data.tasks) {
-      if (
-        alternative.id !== task.id &&
-        alternative.name === task.name &&
-        regularState.completed.delete(alternative.id)
-      ) {
+      if (alternative.id === task.id || alternative.name !== task.name) continue;
+      const cleared = regularState.completed.delete(alternative.id) ||
+        regularState.active.has(alternative.id);
+      regularState.active.delete(alternative.id);
+      if (cleared) {
         clearedAlternatives += 1;
       }
     }
     if (!regularState.completed.has(task.id) && task.id !== selectedId) addedPrerequisites += 1;
+    regularState.active.delete(task.id);
     regularState.completed.add(task.id);
   };
 
@@ -1040,13 +1140,17 @@ function getCompletionWarnings(task) {
   for (const requirement of task.taskRequirements || []) {
     const statuses = requirementStatuses(requirement);
     const prerequisiteComplete = regularState.completed.has(requirement.taskId);
+    const prerequisiteActive = regularState.active.has(requirement.taskId);
+    const satisfied =
+      (statuses.includes("complete") && prerequisiteComplete) ||
+      (statuses.includes("active") && (prerequisiteActive || prerequisiteComplete));
+    if (satisfied) continue;
     if (statuses.length === 1 && statuses[0] === "complete" && !prerequisiteComplete) {
       warnings.push({
         label: `${requirement.taskName} is not marked complete`,
         taskId: requirement.taskId,
       });
-    } else if (!(statuses.includes("complete") && prerequisiteComplete) &&
-      (statuses.includes("active") || statuses.includes("failed"))) {
+    } else if (statuses.includes("active") || statuses.includes("failed")) {
       warnings.push({
         label: `${requirement.taskName} used an in-game branch state that this checkbox tracker cannot verify`,
         taskId: requirement.taskId,
@@ -1094,6 +1198,11 @@ function getGateDescriptions(task, context) {
     gates.push({
       label: `Estimated ${task.traderName} LL${modeledLoyaltyGate.tier} opening pool`,
     });
+  }
+  for (const requirement of progressionRules.getCuratedManualRequirements(task)) {
+    if (!progressionRules.curatedRequirementSatisfied(requirement, regularState.external)) {
+      gates.push({ label: `${requirement.label} · Wiki-only gate` });
+    }
   }
   if (task.dialogueRequirements.length) gates.push({ label: "Trader dialogue" });
   if (task.requiredPrestige) gates.push({ label: `Prestige ${task.requiredPrestige}` });
@@ -1188,15 +1297,18 @@ function taskAnchor(taskId) {
 function exportRegularProgress() {
   const payload = {
     type: "kord-breach-profile-backup",
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     storyline: {
+      active: readArray(STORYLINE_STORAGE.active),
       completed: readArray(STORYLINE_STORAGE.completed),
       securedLoot: readArray(STORYLINE_STORAGE.securedLoot),
       route: readValue(STORYLINE_STORAGE.route, "fence") === "mechanic" ? "mechanic" : "fence",
     },
     regular: {
+      active: [...regularState.active],
       completed: [...regularState.completed],
+      external: regularState.external,
       playerLevel: regularState.playerLevel,
       faction: regularState.faction,
       reputation: regularState.reputation,
@@ -1218,7 +1330,17 @@ async function importRegularProgress(event) {
   if (!file) return;
 
   try {
-    const payload = JSON.parse(await file.text());
+    const text = await file.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      applyQuestStatusText(text, {
+        format: "game-status-file",
+        fileName: file.name,
+      });
+      return;
+    }
     if (isUnifiedProfileBackup(payload)) {
       importUnifiedProfileBackup(payload);
       regularDom.playerLevel.value = regularState.playerLevel;
@@ -1240,19 +1362,27 @@ async function importRegularProgress(event) {
 
     if (parsed.replaceExisting) regularState.completed = new Set(parsed.completedIds);
     else parsed.completedIds.forEach((taskId) => regularState.completed.add(taskId));
+    for (const taskId of regularState.completed) regularState.active.delete(taskId);
     if (parsed.playerLevel) regularState.playerLevel = clamp(parsed.playerLevel, 1, 100);
     if (parsed.faction) regularState.faction = parsed.faction;
     if (parsed.reputation) regularState.reputation = sanitizeReputation(parsed.reputation);
-    regularState.completionSource = {
-      format: parsed.format,
-      fileName: file.name,
-      importedAt: new Date().toISOString(),
-      sourceUpdatedAt: parsed.updatedAt,
-      explicitCount: parsed.explicitIds.length,
-      inferredCount: parsed.inferredIds.length,
-      unknownCount: parsed.unknownIds.length,
-      profileOnly: parsed.profileOnly,
-    };
+    regularState.completionSource = parsed.profileOnly && regularState.completionSource?.format
+      ? {
+          ...regularState.completionSource,
+          profileFileName: file.name,
+          profileImportedAt: new Date().toISOString(),
+          profileSourceUpdatedAt: parsed.updatedAt,
+        }
+      : {
+          format: parsed.format,
+          fileName: file.name,
+          importedAt: new Date().toISOString(),
+          sourceUpdatedAt: parsed.updatedAt,
+          explicitCount: parsed.explicitIds.length,
+          inferredCount: parsed.inferredIds.length,
+          unknownCount: parsed.unknownIds.length,
+          profileOnly: parsed.profileOnly,
+        };
     persistRegularState();
     regularDom.playerLevel.value = regularState.playerLevel;
     regularDom.playerFaction.value = regularState.faction;
@@ -1267,8 +1397,116 @@ async function importRegularProgress(event) {
   }
 }
 
+async function applyBundledQuestSnapshot() {
+  try {
+    regularDom.useCurrentSnapshot.disabled = true;
+    const response = await fetch("./data/current-quest-snapshot.txt");
+    if (!response.ok) throw new Error(`Snapshot returned ${response.status}`);
+    applyQuestStatusText(await response.text(), {
+      format: "supplied-game-snapshot",
+      fileName: "In-game snapshot · 31 Aug 2026",
+      sourceUpdatedAt: "2026-08-31T00:00:00.000Z",
+    });
+  } catch (error) {
+    showRegularToast(`Snapshot failed: ${error.message}`);
+  } finally {
+    regularDom.useCurrentSnapshot.disabled = !regularState.data;
+  }
+}
+
+function applyQuestStatusText(text, source = {}) {
+  try {
+    const parsed = window.KordCompletionImport.parseQuestStatusText(
+      text,
+      regularState.data.tasks,
+      regularState.storyline,
+    );
+    const { foundSections } = parsed.sections;
+    if (!foundSections.active && !foundSections.completed) {
+      throw new Error("Add Active and/or Completed headings to the quest list");
+    }
+    const hasExistingState =
+      regularState.active.size ||
+      regularState.completed.size ||
+      regularState.external.length ||
+      readArray(STORYLINE_STORAGE.active).length ||
+      readArray(STORYLINE_STORAGE.completed).length;
+    if (hasExistingState && !window.confirm(
+      `Replace the imported ${foundSections.active && foundSections.completed ? "active and completed" : foundSections.active ? "active" : "completed"} quest state with ${parsed.counts.active} active and ${parsed.counts.completed} completed entries?`,
+    )) return;
+
+    if (foundSections.completed) {
+      regularState.completed = new Set(parsed.regularCompletedIds);
+    }
+    if (foundSections.active) {
+      regularState.active = new Set(parsed.regularActiveIds);
+    }
+    for (const taskId of regularState.completed) regularState.active.delete(taskId);
+
+    const validStorylineIds = new Set((regularState.storyline.quests || []).map((quest) => quest.id));
+    const storylineCompleted = foundSections.completed
+      ? new Set(parsed.storylineCompletedIds.filter((id) => validStorylineIds.has(id)))
+      : new Set(readArray(STORYLINE_STORAGE.completed).filter((id) => validStorylineIds.has(id)));
+    const storylineActive = foundSections.active
+      ? new Set(parsed.storylineActiveIds.filter((id) => validStorylineIds.has(id)))
+      : new Set(readArray(STORYLINE_STORAGE.active).filter((id) => validStorylineIds.has(id)));
+    for (const taskId of storylineCompleted) storylineActive.delete(taskId);
+    writeArray(STORYLINE_STORAGE.completed, [...storylineCompleted]);
+    writeArray(STORYLINE_STORAGE.active, [...storylineActive]);
+
+    const importedExternal = [
+      ...parsed.operational,
+      ...parsed.seasonPvpUnmatched,
+      ...parsed.unmatched,
+      ...parsed.ambiguous,
+    ].map((entry) => ({
+      status: entry.status,
+      name: entry.inputName,
+      displayName: entry.displayName,
+      kind: entry.kind,
+    }));
+    regularState.external = foundSections.active && foundSections.completed
+      ? importedExternal
+      : [
+          ...regularState.external.filter((entry) =>
+            foundSections.active ? entry.status !== "active" : entry.status !== "completed"),
+          ...importedExternal,
+        ];
+    regularState.completionSource = {
+      format: source.format || parsed.format,
+      fileName: source.fileName || "Pasted in-game list",
+      importedAt: new Date().toISOString(),
+      sourceUpdatedAt: source.sourceUpdatedAt || null,
+      observedSnapshot: true,
+      activeCount: parsed.counts.active,
+      completedCount: parsed.counts.completed,
+      regularActiveCount: parsed.regularActiveIds.length,
+      regularCompletedCount: parsed.regularCompletedIds.length,
+      storylineActiveCount: parsed.storylineActiveIds.length,
+      storylineCompletedCount: parsed.storylineCompletedIds.length,
+      explicitCount: parsed.regularCompletedIds.length,
+      inferredCount: 0,
+      operationalCount: parsed.operational.length,
+      seasonPvpCount: parsed.seasonPvpUnmatched.length,
+      unmatchedCount: parsed.unmatched.length,
+      ambiguousCount: parsed.ambiguous.length,
+      conflictCount: parsed.conflicts.length,
+      unknownCount: parsed.unmatched.length + parsed.ambiguous.length,
+      profileOnly: false,
+    };
+    persistRegularState();
+    renderRegularPlanner();
+    regularDom.questStatusText.value = "";
+    showRegularToast(
+      `Synced ${regularState.active.size} active · ${regularState.completed.size} completed regular quests`,
+    );
+  } catch (error) {
+    showRegularToast(`Import failed: ${error.message}`);
+  }
+}
+
 function isUnifiedProfileBackup(payload) {
-  return payload?.type === "kord-breach-profile-backup" && Number(payload.version) === 2;
+  return payload?.type === "kord-breach-profile-backup" && [2, 3].includes(Number(payload.version));
 }
 
 function importUnifiedProfileBackup(payload) {
@@ -1280,6 +1518,7 @@ function importUnifiedProfileBackup(payload) {
     !Array.isArray(storyline.securedLoot) ||
     !regular ||
     !Array.isArray(regular.completed) ||
+    (Number(payload.version) >= 3 && (!Array.isArray(storyline.active) || !Array.isArray(regular.active) || !Array.isArray(regular.external))) ||
     !isPlainObject(regular.reputation) ||
     !isPlainObject(regular.completionSource)
   ) {
@@ -1290,20 +1529,31 @@ function importUnifiedProfileBackup(payload) {
   const completed = regular.completed.filter(
     (taskId) => typeof taskId === "string" && validTaskIds.has(taskId),
   );
+  const completedSet = new Set(completed);
+  const active = (regular.active || []).filter(
+    (taskId) => typeof taskId === "string" && validTaskIds.has(taskId) && !completedSet.has(taskId),
+  );
   const playerLevel = clamp(Number(regular.playerLevel) || 1, 1, 100);
   const faction = ["USEC", "BEAR"].includes(regular.faction) ? regular.faction : "Any";
   const reputation = sanitizeReputation(regular.reputation);
   const completionSource = { ...regular.completionSource };
   const storylineCompleted = storyline.completed.filter((id) => typeof id === "string");
+  const storylineCompletedSet = new Set(storylineCompleted);
+  const storylineActive = (storyline.active || []).filter(
+    (id) => typeof id === "string" && !storylineCompletedSet.has(id),
+  );
   const securedLoot = storyline.securedLoot.filter((name) => typeof name === "string");
   const route = storyline.route === "mechanic" ? "mechanic" : "fence";
 
+  regularState.active = new Set(active);
   regularState.completed = new Set(completed);
+  regularState.external = sanitizeExternalStatus(regular.external || []);
   regularState.playerLevel = playerLevel;
   regularState.faction = faction;
   regularState.reputation = reputation;
   regularState.completionSource = completionSource;
   persistRegularState();
+  writeArray(STORYLINE_STORAGE.active, storylineActive);
   writeArray(STORYLINE_STORAGE.completed, storylineCompleted);
   writeArray(STORYLINE_STORAGE.securedLoot, securedLoot);
   writeValue(STORYLINE_STORAGE.route, route);
@@ -1319,13 +1569,34 @@ function sanitizeReputation(value) {
   );
 }
 
+function sanitizeExternalStatus(value) {
+  if (!Array.isArray(value)) return [];
+  const allowedKinds = new Set([
+    "operational",
+    "season-pvp-unmatched",
+    "unmatched",
+    "ambiguous",
+  ]);
+  return value
+    .filter((entry) => isPlainObject(entry) && ["active", "completed"].includes(entry.status))
+    .map((entry) => ({
+      status: entry.status,
+      name: String(entry.name || "").slice(0, 180),
+      displayName: String(entry.displayName || entry.name || "").slice(0, 180),
+      kind: allowedKinds.has(entry.kind) ? entry.kind : "unmatched",
+    }))
+    .filter((entry) => entry.name);
+}
+
 function isPlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
 }
 
 function resetRegularProgress() {
-  if (!window.confirm("Reset all-quest completion, PMC level, faction and trader standings on this device? Storyline progress will be kept.")) return;
+  if (!window.confirm("Reset all-quest active/completed state, imported in-game-only tasks, PMC level, faction and trader standings on this device? Storyline progress will be kept.")) return;
+  regularState.active.clear();
   regularState.completed.clear();
+  regularState.external = [];
   regularState.playerLevel = 1;
   regularState.faction = "Any";
   regularState.reputation = {};
@@ -1339,7 +1610,9 @@ function resetRegularProgress() {
 }
 
 function persistRegularState() {
+  writeArray(REGULAR_STORAGE.active, [...regularState.active]);
   writeArray(REGULAR_STORAGE.completed, [...regularState.completed]);
+  writeArray(REGULAR_STORAGE.external, regularState.external);
   writeValue(REGULAR_STORAGE.level, regularState.playerLevel);
   writeValue(REGULAR_STORAGE.faction, regularState.faction);
   writeObject(REGULAR_STORAGE.reputation, regularState.reputation);
@@ -1354,16 +1627,79 @@ function renderCompletionSource() {
   if (!source?.format) {
     regularDom.completionSource.innerHTML =
       '<span class="source-light" aria-hidden="true"></span><div><strong>Manual tracking</strong><small>No completion file imported yet.</small></div>';
+    regularDom.questReconciliation.hidden = true;
+    regularDom.questReconciliation.innerHTML = "";
     return;
   }
 
   const label = completionFormatLabel(source.format);
   const counts = source.profileOnly
     ? "Profile fields only · no quest IDs exposed"
-    : `${source.explicitCount || 0} matched${source.inferredCount ? ` · ${source.inferredCount} inferred` : ""}${source.unknownCount ? ` · ${source.unknownCount} unknown ignored` : ""}`;
+    : source.observedSnapshot
+      ? `${(source.regularActiveCount || 0) + (source.storylineActiveCount || 0)}/${source.activeCount || 0} active matched · ${(source.regularCompletedCount || 0) + (source.storylineCompletedCount || 0)}/${source.completedCount || 0} completed matched`
+      : `${source.explicitCount || 0} matched${source.inferredCount ? ` · ${source.inferredCount} inferred` : ""}${source.unknownCount ? ` · ${source.unknownCount} unknown ignored` : ""}`;
   regularDom.completionSource.innerHTML = `
     <span class="source-light" aria-hidden="true"></span>
-    <div><strong>${escapeRegular(label)}</strong><small>${escapeRegular(source.fileName || "Imported JSON")} · ${escapeRegular(counts)}</small></div>
+    <div><strong>${escapeRegular(label)}</strong><small>${escapeRegular(source.fileName || "Imported JSON")} · ${escapeRegular(counts)}${source.profileFileName ? ` · Profile fields refreshed from ${escapeRegular(source.profileFileName)}` : ""}</small></div>
+  `;
+  renderQuestReconciliation(source);
+}
+
+function renderQuestReconciliation(source) {
+  if (!source?.observedSnapshot) {
+    regularDom.questReconciliation.hidden = true;
+    regularDom.questReconciliation.innerHTML = "";
+    return;
+  }
+
+  const context = buildAvailabilityContext();
+  const modelDisagreements = regularState.data.tasks
+    .filter((task) => regularState.active.has(task.id))
+    .map((task) => ({ task, availability: getAvailability(task, context) }))
+    .filter(({ availability }) => availability.modeledStatus !== "available");
+  const externalItems = regularState.external.map((entry) => {
+    const labels = {
+      operational: "Operational task · in-game instance only",
+      "season-pvp-unmatched": "Season PvP task · absent from current seasonal feed",
+      ambiguous: "Ambiguous current quest name · not auto-matched",
+      unmatched: "Not found in current snapshot",
+    };
+    return `<li><span class="external-status ${escapeRegular(entry.status)}">${escapeRegular(entry.status)}</span><span><strong>${escapeRegular(entry.name)}</strong><small>${escapeRegular(labels[entry.kind] || labels.unmatched)}</small></span></li>`;
+  }).join("");
+  const storylineActive = new Set(readArray(STORYLINE_STORAGE.active));
+  const storylineCompleted = new Set(readArray(STORYLINE_STORAGE.completed));
+  const currentExternalActive = regularState.external.filter((entry) => entry.status === "active").length;
+  const currentExternalCompleted = regularState.external.filter((entry) => entry.status === "completed").length;
+  const currentActiveCount = regularState.active.size + storylineActive.size + currentExternalActive;
+  const currentCompletedCount = regularState.completed.size + storylineCompleted.size + currentExternalCompleted;
+  const storylineByName = new Map(
+    (regularState.storyline.quests || []).map((quest) => [quest.name, quest]),
+  );
+  const storylineChainWarnings = (regularState.storyline.quests || []).flatMap((quest) => {
+    if (!storylineCompleted.has(quest.id)) return [];
+    return (quest.prerequisites || [])
+      .filter((requirement) => requirement.status !== "active")
+      .map((requirement) => ({ quest, prerequisite: storylineByName.get(requirement.name) }))
+      .filter(({ prerequisite }) => prerequisite && !storylineCompleted.has(prerequisite.id));
+  });
+
+  regularDom.questReconciliation.hidden = false;
+  regularDom.questReconciliation.innerHTML = `
+    <div class="reconciliation-head">
+      <div><p class="eyebrow">Current tracked state</p><strong>${currentActiveCount} active · ${currentCompletedCount} completed</strong><small>Imported snapshot: ${source.activeCount || 0} active · ${source.completedCount || 0} completed</small></div>
+      <div class="reconciliation-counts" aria-label="Import match summary">
+        <span>${regularState.active.size} regular active</span>
+        <span>${storylineActive.size} KORD active</span>
+        <span>${regularState.completed.size} regular complete</span>
+        <span>${storylineCompleted.size} KORD complete</span>
+      </div>
+    </div>
+    <p>${modelDisagreements.length
+      ? `<strong>${modelDisagreements.length} active quest${modelDisagreements.length === 1 ? "" : "s"}</strong> override the saved level/standing or estimated chain model. Open those cards for the exact disagreement.`
+      : "Every imported regular active quest agrees with the currently saved model inputs."}</p>
+    ${externalItems ? `<details class="external-quest-list" open><summary><strong>${regularState.external.length} in-game entries kept outside the static quest graph</strong><span class="disclosure-chevron" aria-hidden="true"></span></summary><ul>${externalItems}</ul><p>Operational tasks are generated instances without a stable ID, objective, map, or expiry in this export. No marker or chain is invented for them.</p></details>` : ""}
+    ${storylineChainWarnings.length ? `<p class="reconciliation-warning"><strong>Chain check:</strong> ${storylineChainWarnings.map(({ quest, prerequisite }) => `${escapeRegular(quest.name)} is complete but ${escapeRegular(prerequisite.name)} was not listed as complete`).join("; ")}. The observed list was kept unchanged; verify this KORD history in-game.</p>` : ""}
+    ${source.conflictCount ? `<p class="reconciliation-warning">${source.conflictCount} quest status conflict${source.conflictCount === 1 ? " was" : "s were"} resolved in favor of Completed.</p>` : ""}
   `;
 }
 
@@ -1379,6 +1715,10 @@ function completionFormatLabel(format) {
     "tarkov-tracker-status-map": "TarkovTracker status map",
     "task-status-map": "Quest status map",
     "tarkov-dev-profile": "Tarkov.dev player profile",
+    "game-status-paste": "Pasted in-game quest snapshot",
+    "game-status-file": "In-game quest status file",
+    "observed-quest-status-list": "In-game quest snapshot",
+    "supplied-game-snapshot": "Supplied 31 Aug game snapshot",
   };
   return labels[format] || "Imported completion data";
 }

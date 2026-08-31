@@ -1,7 +1,10 @@
 const PLANNER_STORAGE = {
   plan: "kord-breach:raid-plan:v1",
   map: "kord-breach:planner-map",
+  regularActive: "kord-breach:regular-active",
   regularCompleted: "kord-breach:regular-completed",
+  external: "kord-breach:external-quest-status",
+  storylineActive: "kord-breach:active",
   storylineCompleted: "kord-breach:completed",
   playerLevel: "kord-breach:player-level",
   faction: "kord-breach:player-faction",
@@ -518,9 +521,16 @@ function buildRegularRows(selectedMap) {
       trader: task.traderName,
       wikiLink: task.wikiLink,
       mapSlug: selectedMap,
-      status: availability.status === "done" ? "done" : availability.status === "available" ? "available" : "future",
-      statusLabel: availability.status === "done" ? "Completed" : availability.status === "available" ? "Available now" : "Plan ahead",
-      reasons: availability.reasons,
+      status: availability.status,
+      statusLabel: availability.status === "done"
+        ? "Completed"
+        : availability.status === "active"
+          ? "Active in game"
+          : availability.status === "available"
+            ? "Modeled available"
+            : "Plan ahead",
+      reasons: availability.status === "active" ? availability.modeledReasons : availability.reasons,
+      reasonHeading: availability.status === "active" ? "Model estimate differs" : "Not ready yet",
       objectives,
       markers: objectives.flatMap((objective) => objective.markers),
     });
@@ -635,6 +645,7 @@ function buildStorylineRows(selectedMap) {
       status: availability.status,
       statusLabel: availability.label,
       reasons: availability.reasons,
+      reasonHeading: availability.status === "active" ? "Model estimate differs" : "Not ready yet",
       objectives,
       markers: objectives.flatMap((objective) => objective.markers),
     });
@@ -694,7 +705,9 @@ function questMapSlugs(quest) {
 }
 
 function buildRegularAvailabilityContext() {
+  const active = new Set(readArray(PLANNER_STORAGE.regularActive));
   const completed = new Set(readArray(PLANNER_STORAGE.regularCompleted));
+  const external = readArray(PLANNER_STORAGE.external);
   const playerLevel = Number(readValue(PLANNER_STORAGE.playerLevel, 1)) || 1;
   const faction = readValue(PLANNER_STORAGE.faction, "Any");
   const reputation = readObject(PLANNER_STORAGE.reputation);
@@ -705,11 +718,11 @@ function buildRegularAvailabilityContext() {
     const groupId = taskById.get(taskId)?.progressionGroupId;
     if (groupId) groupProgress.set(groupId, (groupProgress.get(groupId) || 0) + 1);
   }
-  return { completed, playerLevel, faction, reputation, traders, taskById, groupProgress };
+  return { active, completed, external, playerLevel, faction, reputation, traders, taskById, groupProgress };
 }
 
 function getRegularAvailability(task, context) {
-  if (context.completed.has(task.id)) return { status: "done", reasons: [] };
+  if (context.completed.has(task.id)) return { status: "done", reasons: [], modeledReasons: [] };
   const reasons = [];
   if (context.playerLevel < Number(task.minPlayerLevel || 0)) {
     reasons.push(`PMC level ${task.minPlayerLevel}`);
@@ -738,7 +751,8 @@ function getRegularAvailability(task, context) {
       .filter(Boolean)
       .map((status) => String(status).toLowerCase()));
     const complete = context.completed.has(requirement.taskId);
-    if (statuses.has("complete") && complete) continue;
+    const active = context.active.has(requirement.taskId);
+    if ((statuses.has("complete") && complete) || (statuses.has("active") && active)) continue;
     if (statuses.has("active") && statuses.has("complete")) {
       reasons.push(`Accept or complete ${requirement.taskName}`);
     } else if (statuses.has("active")) {
@@ -766,9 +780,17 @@ function getRegularAvailability(task, context) {
       reasons.push(`Estimated ${task.traderName} LL${modeledLoyaltyGate.tier} ${modeledLoyaltyGate.kind}`);
     }
   }
+  for (const requirement of progressionRules.getCuratedManualRequirements(task)) {
+    if (!progressionRules.curatedRequirementSatisfied(requirement, context.external)) {
+      reasons.push(`${requirement.label} (Wiki-only gate)`);
+    }
+  }
   if ((task.dialogueRequirements || []).length) reasons.push("Trader dialogue");
   if (task.hasUnresolvedRequirement) reasons.push("Special in-game condition");
-  return { status: reasons.length ? "future" : "available", reasons };
+  if (context.active.has(task.id)) {
+    return { status: "active", reasons: [], modeledReasons: reasons };
+  }
+  return { status: reasons.length ? "future" : "available", reasons, modeledReasons: reasons };
 }
 
 function getPlannerLoyalty(trader, context) {
@@ -790,11 +812,13 @@ function comparePlannerValue(actual, method, expected) {
 }
 
 function buildStorylineAvailabilityContext() {
+  const active = new Set(readArray(PLANNER_STORAGE.storylineActive));
   const completed = new Set(readArray(PLANNER_STORAGE.storylineCompleted));
   const byName = new Map((plannerState.storyline.quests || []).map((quest) => [quest.name, quest]));
   const route = String(readValue(PLANNER_STORAGE.route, "fence")).trim().toLowerCase();
   const regularContext = buildRegularAvailabilityContext();
   return {
+    active,
     completed,
     byName,
     route,
@@ -843,6 +867,9 @@ function getStorylineAvailability(quest, context) {
     const [minimum, maximum] = quest.unlock_delay_hours;
     reasons.push(`Confirm the ${minimum}–${maximum} hour trader unlock delay has elapsed`);
   }
+  if (context.active.has(quest.id)) {
+    return { status: "active", label: "Active in game", reasons };
+  }
   return reasons.length
     ? { status: "future", label: "Plan ahead", reasons }
     : { status: "available", label: "Storyline ready", reasons: [] };
@@ -851,16 +878,16 @@ function getStorylineAvailability(quest, context) {
 function storylineRequirementSatisfied(requirement, context) {
   const prerequisite = context.byName.get(requirement.name);
   if (!prerequisite) return false;
-  return context.completed.has(prerequisite.id);
+  return requirement.status === "active"
+    ? context.active.has(prerequisite.id)
+    : context.completed.has(prerequisite.id);
 }
 
 function storylineRequirementReason(requirement, context) {
   const action = requirement.status === "active" ? "Accept" : "Complete";
   const note = !context.byName.has(requirement.name)
     ? " (outside KORD tracker)"
-    : requirement.status === "active"
-      ? " (active state not tracked)"
-      : "";
+    : "";
   return `${action} ${requirement.name}${note}`;
 }
 
@@ -888,7 +915,7 @@ function matchesPlannerFilters(row) {
 function comparePlannerRows(a, b) {
   if (a.key === plannerState.focusedTaskKey) return -1;
   if (b.key === plannerState.focusedTaskKey) return 1;
-  const rank = { available: 0, future: 1, done: 2 };
+  const rank = { active: 0, available: 1, future: 2, done: 3 };
   return (
     rank[a.status] - rank[b.status] ||
     (a.source === "storyline" ? -1 : 1) - (b.source === "storyline" ? -1 : 1) ||
@@ -921,7 +948,7 @@ function taskPoolMarkup(row) {
 
   return `
     <article
-      class="pool-task ${planned ? "is-planned" : ""} ${row.status === "done" ? "is-done" : ""} ${open ? "is-focused" : ""}"
+      class="pool-task ${planned ? "is-planned" : ""} ${row.status === "active" ? "is-active-in-game" : ""} ${row.status === "done" ? "is-done" : ""} ${open ? "is-focused" : ""}"
       id="pool-${domSafe(row.key)}"
       data-pool-task="${escapePlanner(row.key)}"
       tabindex="-1"
@@ -944,7 +971,7 @@ function taskPoolMarkup(row) {
         <ul class="pool-objectives">
           ${row.objectives.map(objectivePoolMarkup).join("")}
         </ul>
-        ${row.reasons.length ? `<ul class="pool-objectives"><li><strong>Not ready yet</strong><small>${escapePlanner(row.reasons.slice(0, 3).join(" · "))}</small></li></ul>` : ""}
+        ${row.reasons.length ? `<ul class="pool-objectives"><li><strong>${escapePlanner(row.reasonHeading || "Not ready yet")}</strong><small>${escapePlanner(row.reasons.slice(0, 3).join(" · "))}</small></li></ul>` : ""}
         <div class="pool-task-actions">
           <button type="button" class="${planned ? "is-remove" : ""}" data-plan-toggle="${escapePlanner(row.key)}">${planned ? "Remove from raid" : "Add to raid"}</button>
           ${row.markers.length ? `<button type="button" class="is-remove" data-show-task="${escapePlanner(row.key)}">Show ${row.markers.length === 1 ? "pin" : "pins"}</button>` : ""}
