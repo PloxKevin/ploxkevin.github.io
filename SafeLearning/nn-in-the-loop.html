@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>14. Neural Networks in the Loop: QCs, IQCs &amp; Dissipativity — Safe Learning</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">14. Neural Networks in the Loop: QCs, IQCs &amp; Dissipativity</h1>
+    <p class="page-subtitle">Stability of NN-controlled systems via quadratic constraints, Zames&ndash;Falb multipliers, offset-free tracking, dissipative RNNs, synthesis with guarantees</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#feedback-setup">1. The Feedback Setup and Loop Transformations</a>
+      <a href="#local-sector-qc">2. Local Sector QCs and the Stability LMI (Yin, Seiler, Arcak)</a>
+      <a href="#zames-falb">3. Dynamic Multipliers: Acausal Zames&ndash;Falb (Pauli et al.)</a>
+      <a href="#offset-free">4. Offset-Free Setpoint Tracking With NN Controllers (Pauli et al.)</a>
+      <a href="#dissipativity-rnn">5. Dissipativity Analysis and Training of RNNs (Pauli et al.)</a>
+      <a href="#synthesis">6. Synthesis With Guarantees: Dissipativity-Constrained RL and Youla-REN</a>
+      <a href="#reachability-verification">7. Reachability of NN Loops and Verified Lyapunov Controllers</a>
+      <a href="#scalable-2026">8. Towards Scale: ReLU IQCs and Incremental Analysis (2025&ndash;2026)</a>
+      <a class="toc-interactive" href="#loop-walkthrough">Walkthrough: Stability LMI for a Linear Plant With a One-Layer NN</a>
+      <a class="toc-interactive" href="#loop-explorer">Interactive: A Neural Controller in Closed Loop</a>
+      <a href="#exercises">Exercises</a>
+      <a href="#papers">Key Papers</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <p>A reinforcement-learning agent or an imitation of an expensive MPC hands you a neural network $\pi$ that seems to control the plant well in simulation. Before it runs on hardware you want a <em>certificate</em>: a proof that the closed loop is stable, together with a region of initial states from which this is guaranteed. The network is a composition of affine maps and scalar activations, and every common activation obeys simple quadratic inequalities (sector and slope bounds). Pulling all activations into one diagonal block turns the closed loop into a <strong>Lur'e system</strong>, a linear system in feedback with a static nonlinearity, and sixty years of robust control apply: the S-procedure, integral quadratic constraints (IQCs), dissipativity and multipliers. This page follows the line that Patricia Pauli and co-authors built on the template of Yin, Seiler and Arcak (local sector constraints, then Zames&ndash;Falb multipliers, offset-free tracking and recurrent networks), then turns to synthesis, to reachability and to verified neural Lyapunov functions, and ends with the 2025&ndash;2026 work on scale. The tools are those of <a href="toolkit-lmi.html#s-procedure">Module 2</a>; the network-level constraints are those of <a href="lipsdp.html#slope-restriction-qc">Module 12</a>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Notation on this page</div>
+      <div>
+        Time index $t$ (the papers write $k$). Plant $x_{t+1}=Ax_t+Bu_t$ with $x\in\mathbb R^{n_x}$, $u\in\mathbb R^{n_u}$. A network with $\ell$ hidden layers: $w^0=x$, $v^i=W_{i-1}w^{i-1}+b_{i-1}$, $w^i=\phi(v^i)$ for $i=1,\dots,\ell$, and $u=W_\ell w^\ell+b_\ell$. We index weights from $0$ as Pauli et al. do; Yin et al. write $W^1,\dots,W^{\ell+1}$ for our $W_0,\dots,W_\ell$. The vectors $v,w\in\mathbb R^{n_\phi}$ stack all pre- and post-activations ($n_\phi$ = number of neurons), $\varphi:\mathbb R\to\mathbb R$ is the scalar activation and $\phi$ applies it elementwise. Sector bounds $[\alpha,\beta]$ and slope bounds $[\mu,\nu]$ (Module 12 writes slope bounds as $[\alpha,\beta]$; we need both at once in Section 3), per neuron collected in $D_\alpha=\mathrm{diag}(\alpha_i)$, $D_\beta=\mathrm{diag}(\beta_i)$; this $\beta$ is unrelated to the GP scaling $\beta_t$ of Modules 3&ndash;6. Multiplier $T=\mathrm{diag}(\lambda_1,\dots,\lambda_{n_\phi})\succeq0$ as in Module 2: the $\lambda_i$ are S-procedure multipliers, not the CMDP multiplier of Module 8. Lyapunov or storage matrix $P\succ0$, $V(x)=x^\top Px$, ellipsoid $\mathcal E(P,x_*)=\{x:(x-x_*)^\top P(x-x_*)\le1\}$. The stability LMI matrix is $\mathcal M$; an IQC multiplier is factorised as $\Pi=\Psi^{*}M\Psi$ with middle matrix $M$ (Pauli et al. call the middle matrix $P$ and the Lyapunov matrix $X$; we translate). $\gamma$ is an $\ell_2$ gain, never a discount. Equilibrium quantities carry a star, deviations a tilde: $\tilde x=x-x_*$.
+      </div>
+    </div>
+
+    <!-- ===== SECTION 1 ===== -->
+    <h2 class="section-heading" id="feedback-setup">1. The Feedback Setup and Loop Transformations</h2>
+
+    <p>Start with the plainest object: a linear time-invariant plant and a feedforward network used as a state-feedback controller. (Output feedback $u=\pi(Cx)$ only changes the first weight to $W_0C$; Yin et al., Remark 2.)</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; LTI plant with a feedforward NN controller</div>
+      <div>
+        $$\begin{aligned}&x_{t+1}=Ax_t+Bu_t,\qquad u_t=\pi(x_t):\\ &w^0_t=x_t,\qquad v^i_t=W_{i-1}w^{i-1}_t+b_{i-1},\qquad w^i_t=\phi(v^i_t)\quad(i=1,\dots,\ell),\\ &u_t=W_\ell w^\ell_t+b_\ell .\end{aligned}$$
+        An <strong>equilibrium</strong> is a tuple $(x_*,u_*,v_*,w_*)$ with $x_*=Ax_*+Bu_*$ and $u_*=\pi(x_*)$, where $v_*,w_*$ are obtained by propagating $x_*$ through the layers. Its <strong>region of attraction</strong> (ROA) is $\{x_0:\ x_t\to x_*\}$. The goal is an ellipsoid $\mathcal E(P,x_*)$ that is provably contained in the ROA, as large as possible (Yin et al., Def. 1 and eq. 1).
+      </div>
+    </div>
+
+    <p>The first move, used by <a class="cite" href="https://arxiv.org/abs/1903.01287" target="_blank" rel="noopener">Fazlyab, Morari &amp; Pappas (DeepSDP)</a> for a network alone and by <a class="cite" href="https://arxiv.org/abs/2006.07579" target="_blank" rel="noopener">Yin, Seiler &amp; Arcak, TAC 2022</a> for the loop, is to separate what is linear from what is not.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; Isolating the nonlinearities (LFT / Lur'e form)</div>
+      <div>
+        $$\begin{bmatrix}u_t\\ v_t\end{bmatrix}=\underbrace{\begin{bmatrix}N_{ux} & N_{uw} & N_{ub}\\ N_{vx} & N_{vw} & N_{vb}\end{bmatrix}}_{N}\begin{bmatrix}x_t\\ w_t\\ 1\end{bmatrix},\qquad w_t=\phi(v_t),$$
+        with $N_{ux}=0$, $N_{uw}=\begin{bmatrix}0 & \cdots & 0 & W_\ell\end{bmatrix}$, $N_{ub}=b_\ell$ and
+        $$N_{vx}=\begin{bmatrix}W_0\\ 0\\ \vdots\\ 0\end{bmatrix},\qquad N_{vw}=\begin{bmatrix}0 & & & \\ W_1 & 0 & & \\ & \ddots & \ddots & \\ & & W_{\ell-1} & 0\end{bmatrix},\qquad N_{vb}=\begin{bmatrix}b_0\\ \vdots\\ b_{\ell-1}\end{bmatrix}.$$
+        The closed loop is the feedback interconnection of a linear system and the diagonal static map $\phi$: $\ x_{t+1}=Ax_t+BN_{uw}w_t+BN_{ub}$, $\ v_t=N_{vx}x_t+N_{vw}w_t+N_{vb}$, $\ w_t=\phi(v_t)$.
+      </div>
+    </div>
+
+    <svg viewBox="0 0 560 190" width="560" height="190" style="display:block;max-width:100%;height:auto;margin:10px auto 4px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;" role="img" aria-label="Linear part in feedback with the diagonal activation block">
+      <defs><marker id="nl-arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#555"/></marker></defs>
+      <rect x="130" y="18" width="300" height="62" rx="6" fill="#e8f0fb" stroke="#2d5fa6"/>
+      <text x="280" y="42" text-anchor="middle" font-size="13" fill="#1a1a1a">linear part: plant (A, B) and all affine layers</text>
+      <text x="280" y="62" text-anchor="middle" font-size="12" fill="#555">weights W&#8320;&#8230;W&#8467;, biases, matrix N</text>
+      <rect x="170" y="118" width="220" height="50" rx="6" fill="#fdf1e6" stroke="#e67e22"/>
+      <text x="280" y="140" text-anchor="middle" font-size="13" fill="#1a1a1a">&#966; = diag(&#966;, &#8230;, &#966;)</text>
+      <text x="280" y="158" text-anchor="middle" font-size="12" fill="#555">n&#966; scalar activations, static</text>
+      <path d="M430,49 L480,49 L480,143 L396,143" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#nl-arr)"/>
+      <text x="488" y="100" font-size="14" font-style="italic" fill="#2d5fa6">v</text>
+      <path d="M170,143 L80,143 L80,49 L124,49" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#nl-arr)"/>
+      <text x="64" y="100" font-size="14" font-style="italic" fill="#e67e22">w</text>
+    </svg>
+    <p style="text-align:center;font-size:12px;color:#777;margin-top:0;">All pre-activations $v$ leave the linear block, all activations $w$ return to it; the state and the control stay inside the linear block.</p>
+
+    <p><strong>Why this form.</strong> Every certificate on this page has the same shape: a quadratic Lyapunov or storage function for the linear block, plus quadratic constraints that everything in the $\phi$ block is known to satisfy, glued together by the S-procedure. Because $N_{vw}$ is strictly block lower triangular, $w$ can be computed layer by layer, so the loop is well posed. Implicit (equilibrium) networks and RENs allow a full $N_{vw}$; then well-posedness needs a condition such as $2T-TN_{vw}-N_{vw}^\top T\succ0$ for a diagonal $T\succ0$ and activations slope-restricted in $[0,1]$ (<a class="cite" href="https://arxiv.org/abs/2104.05942" target="_blank" rel="noopener">Revay, Wang &amp; Manchester, TAC 2024</a>, eq. 12).</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; Removing the biases by an equilibrium shift</div>
+      <div class="collapsible-body">
+        <p><strong>Step 1 (equilibrium equations).</strong> An equilibrium satisfies $x_*=Ax_*+Bu_*$, $\begin{bmatrix}u_*\\ v_*\end{bmatrix}=N\begin{bmatrix}x_*\\ w_*\\ 1\end{bmatrix}$, $w_*=\phi(v_*)$ (Yin et al., eq. 12). Finding one is a fixed-point problem $x_*=Ax_*+B\pi(x_*)$; for a bias-free network whose activation satisfies $\varphi(0)=0$ (tanh, ReLU), $x_*=0$ always works, with $v_*=w_*=0$. Bias-free is not enough on its own: a sigmoid has $\sigma(0)=1/2$, so $\pi(0)\ne0$ in general.</p>
+        <p><strong>Step 2 (subtract).</strong> Subtracting the equilibrium equations from the loop equations, the constant column $N_{\cdot b}$ multiplies $1-1=0$:</p>
+        <div class="math-block">$$\tilde x_{t+1}=A\tilde x_t+B\tilde u_t,\qquad \begin{bmatrix}\tilde u_t\\ \tilde v_t\end{bmatrix}=\begin{bmatrix}N_{ux} & N_{uw}\\ N_{vx} & N_{vw}\end{bmatrix}\begin{bmatrix}\tilde x_t\\ \tilde w_t\end{bmatrix},\qquad \tilde w_t=\tilde\phi(\tilde v_t),$$</div>
+        <p>with the <strong>shifted activations</strong> $\tilde\varphi_i(s)=\varphi(s+v_{*,i})-\varphi(v_{*,i})$.</p>
+        <p><strong>Step 3 (what survives).</strong> (i) $\tilde\varphi_i(0)=0$, so the origin is the equilibrium of the shifted loop. (ii) Every chord of $\tilde\varphi_i$ is a chord of $\varphi$, so slope bounds are inherited unchanged. (iii) What is <em>lost</em>: if $v_{*,i}\ne v_{*,j}$ then $\tilde\varphi_i\ne\tilde\varphi_j$. The stacked map is then no longer a <em>repeated</em> nonlinearity (the same scalar function in every channel), and multipliers that exploit a repeated nonlinearity (coupling different neurons through monotonicity, such as ZF-R) become invalid between such neurons (Section 3, Exercise 14.6); multipliers that use only each neuron's own sector or slope bounds, including the full-block circle multipliers of Section 3, stay valid. Pauli et al. (CDC 2021) make exactly this point: the shift "eliminates the bias terms", but "in general" the components "are not identical", so they use repeated-nonlinearity IQCs only for bias-free networks at $x_*=0$. That case (with $\varphi(0)=0$, so that every $v_{*,i}=0$) is sufficient, not necessary: coupling stays valid within any group of neurons that carry the same activation with equal $v_{*,i}$ and share their slope bounds (Section 3). A general equilibrium shift destroys this.</p>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Sector and slope restrictions, global and local</div>
+      <div>
+        Let $\mathcal I\subseteq\mathbb R$ be an interval containing $v_*$, and write $\Delta v=v-v_*$, $\Delta\varphi=\varphi(v)-\varphi(v_*)$.
+        <ul>
+          <li>$\varphi$ satisfies the <strong>(offset) sector</strong> $[\alpha,\beta]$ around $(v_*,\varphi(v_*))$ on $\mathcal I$ if $(\Delta\varphi-\alpha\,\Delta v)(\beta\,\Delta v-\Delta\varphi)\ge0$ for all $v\in\mathcal I$ (Yin et al., Defs. 2&ndash;4). <em>Global</em>: $\mathcal I=\mathbb R$; <em>local</em>: a bounded $\mathcal I$; <em>centred</em>: $v_*=0$, $\varphi(0)=0$.</li>
+          <li>$\varphi$ is <strong>slope-restricted</strong> in $[\mu,\nu]$ on $\mathcal I$ if $\mu\le\frac{\varphi(v)-\varphi(v')}{v-v'}\le\nu$ for all $v\ne v'$ in $\mathcal I$.</li>
+        </ul>
+        Both are quadratic constraints: the sector condition is
+        $$\begin{bmatrix}\Delta v\\ \Delta\varphi\end{bmatrix}^{\top}\begin{bmatrix}-2\alpha\beta & \alpha+\beta\\ \alpha+\beta & -2\end{bmatrix}\begin{bmatrix}\Delta v\\ \Delta\varphi\end{bmatrix}\ge0,$$
+        and slope restriction is the same inequality for the pair $(v-v',\ \varphi(v)-\varphi(v'))$ with $(\mu,\nu)$ in place of $(\alpha,\beta)$. Slope restriction on $\mathcal I$ implies the sector $[\mu,\nu]$ around every point of the graph over $\mathcal I$; the converse fails. <code>tanh</code> and ReLU are globally slope-restricted, hence sector-bounded, in $[0,1]$. On $|v|\le\bar v$ the centred <code>tanh</code> has the local sector $[\tanh(\bar v)/\bar v,\ 1]$ and the local slope bounds $[1-\tanh^2\bar v,\ 1]$ (Exercise 14.2).
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why local bounds are unavoidable</div>
+      <div>The global sector $[0,1]$ contains the function $w\equiv0$, the controller switched off. A certificate built only from the global sector therefore proves stability for <em>every</em> function in the sector, including that one, and cannot exist when the open-loop plant is unstable (the walkthrough makes this exact). Near the equilibrium <code>tanh</code> is almost the identity, and a local sector $[\alpha,1]$ with $\alpha\gt0$ excludes the switched-off controller. The price is that the constraint is valid only while the pre-activations stay in a box, so the certificate must also prove that they do. For the lower sector bound use the chord slope $\tanh(\bar v)/\bar v$, not the smallest slope $1-\tanh^2\bar v$: the latter is the right lower bound for <em>slope</em> restriction and a valid but loose sector bound (for $\bar v=2$: $0.482$ against $0.071$; Module 2 compares the two).</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; Loop transformation: any sector to $[0,1]$</div>
+      <div>
+        Given a sector $[D_\alpha,D_\beta]$ with $D_\beta-D_\alpha\succ0$, define $\hat w=(D_\beta-D_\alpha)^{-1}(w-D_\alpha v)$, i.e. $w=D_\alpha v+(D_\beta-D_\alpha)\hat w$. Per neuron, $w_i-\alpha_iv_i=(\beta_i-\alpha_i)\hat w_i$ and $\beta_iv_i-w_i=(\beta_i-\alpha_i)(v_i-\hat w_i)$, so
+        $$(w_i-\alpha_iv_i)(\beta_iv_i-w_i)=(\beta_i-\alpha_i)^2\,\hat w_i\,(v_i-\hat w_i):$$
+        $w$ is in the sector $[\alpha,\beta]$ iff $\hat w$ is in the sector $[0,1]$. Substituting $w$ into the linear block gives $(I-N_{vw}D_\alpha)v=N_{vx}x+N_{vw}(D_\beta-D_\alpha)\hat w+N_{vb}$, and $I-N_{vw}D_\alpha$ is invertible (block lower triangular with identity blocks on the diagonal), so the transformed loop is again a linear system in feedback with a $[0,1]$-sector block. Pauli et al. use the multiplier-level version of this move: Zames&ndash;Falb multipliers for slope $[0,\infty]$ are mapped to slope $[\mu,\nu]$ by a congruence with $T=\begin{bmatrix}I\otimes\mathrm{diag}(\mu) & -I\\ -I\otimes\mathrm{diag}(\nu) & I\end{bmatrix}$ (CDC 2021, Sec. II-D). Per neuron this turns the graph of $\varphi$ into the monotone relation $\nu_iv_i-w_i\mapsto w_i-\mu_iv_i$. Neurons with different $(\mu_i,\nu_i)$ get different relations even when $\varphi$ is the same, so multipliers that couple neurons need common slope bounds within each coupled group (Section 3).
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Going deeper &mdash; Absolute stability: Lur'e systems, circle criterion, Zames&ndash;Falb</div>
+      <div class="collapsible-body">
+        <p>The <strong>Lur'e problem</strong> asks for stability of a linear system $G$ in feedback with <em>any</em> nonlinearity from a class (a sector, or a slope restriction). Two classical warnings shape everything below. First, checking the linear gains in the sector is not enough in general (Aizerman's conjecture is false); certificates must use the constraint itself. Second, the answer depends on the class: sector-bounded, slope-restricted and slope-restricted <em>and</em> odd nonlinearities admit progressively richer multipliers.</p>
+        <p><strong>Static multipliers</strong> (a constant $\lambda\ge0$ times the sector QC, the S-procedure) give circle-criterion type tests; by the KYP lemma (<a href="toolkit-lmi.html#dissipativity">Module 2</a>, <a class="cite" href="https://doi.org/10.1016/0167-6911(95)00063-1" target="_blank" rel="noopener">Rantzer 1996</a>) the frequency-domain and LMI forms are equivalent (the strict versions without any controllability assumption). <strong>Dynamic multipliers</strong> exploit that the nonlinearity has no memory and bounded slopes. The continuous-time Zames&ndash;Falb theorem, in the form collected by <a class="cite" href="https://doi.org/10.1016/j.ejcon.2015.10.003" target="_blank" rel="noopener">Carrasco, Turner &amp; Heath, EJC 2016</a> (Thm. 1): take a stable $G$ in negative feedback with $\varphi\in\mathrm{slope}[0,k]$, and assume that the loop is well posed. If $M(j\omega)=m_0-H(j\omega)$ with impulse response $h$, $\|h\|_1\lt m_0$, $h\ge0$ unless $\varphi$ is odd, and there is an $\varepsilon\gt0$ with
+        $$\mathrm{Re}\big\{M(j\omega)\,(1+kG(j\omega))\big\}\ge\varepsilon\quad\forall\omega\in\mathbb R,$$
+        then the loop is $L_2$-stable. With $H=0$ this is the circle-type test. Both qualifications matter. For $G(s)=-s/(s+1)$, $M=1$ and $k=1$ one has $\mathrm{Re}\{1+G(j\omega)\}=1/(1+\omega^2)\gt0$ at every frequency, but not uniformly. With $\varphi(v)=v$ that loop is not well posed ($1+G(\infty)=0$), and $(1+G)^{-1}=s+1$ is unbounded on $L_2$. Sections 2&ndash;3 use discrete-time, time-domain versions of both tests.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 2 ===== -->
+    <h2 class="section-heading" id="local-sector-qc">2. Local Sector QCs and the Stability LMI (Yin, Seiler, Arcak)</h2>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2006.07579" target="_blank" rel="noopener">Yin, Seiler &amp; Arcak</a> (TAC 67(4):1980&ndash;1987, 2022; arXiv 2020) gave the template that the rest of this page extends: a quadratic Lyapunov function, local sector constraints on the activations obtained by interval bound propagation, and one SDP whose solution is an ellipsoidal inner approximation of the ROA. Their Theorem 2 adds plant perturbations described by IQCs.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Lemma &mdash; Stacked offset local sector QC (Yin et al., Lemma 1)</div>
+      <div>
+        Let $\alpha,\beta,\underline v,\bar v,v_*\in\mathbb R^{n_\phi}$ with $\alpha\le\beta$ and $\underline v\le v_*\le\bar v$ elementwise, $w_*=\phi(v_*)$, and suppose the $i$-th activation satisfies the offset local sector $[\alpha_i,\beta_i]$ around $(v_{*,i},w_{*,i})$ for $v_i\in[\underline v_i,\bar v_i]$. Then for every $T=\mathrm{diag}(\lambda)$, $\lambda\ge0$,
+        $$\begin{gathered}\begin{bmatrix}v-v_*\\ w-w_*\end{bmatrix}^{\top}\underbrace{\begin{bmatrix}-2D_\alpha D_\beta T & (D_\alpha+D_\beta)T\\ (D_\alpha+D_\beta)T & -2T\end{bmatrix}}_{Q_{\alpha\beta}(T)}\begin{bmatrix}v-v_*\\ w-w_*\end{bmatrix}\ \ge\ 0\\ \text{for all }v\in[\underline v,\bar v],\ w=\phi(v).\end{gathered}$$
+        Yin et al. write the same matrix as $\Psi_\phi^{\top}M_\phi(\lambda)\Psi_\phi$ with $\Psi_\phi=\begin{bmatrix}D_\beta & -I\\ -D_\alpha & I\end{bmatrix}$, $M_\phi(\lambda)=\begin{bmatrix}0 & T\\ T & 0\end{bmatrix}$ (multiply out). <em>Proof.</em> The form equals $2\sum_i\lambda_i(\Delta w_i-\alpha_i\Delta v_i)(\beta_i\Delta v_i-\Delta w_i)$, a nonnegative combination of nonnegative numbers. $\blacksquare$
+      </div>
+    </div>
+
+    <p>The bounds $[\underline v,\bar v]$ must be <em>computed</em>, and they must contain every pre-activation the closed loop can produce. Yin et al. choose a box for the first layer and push it through the network with interval bound propagation (<a class="cite" href="https://arxiv.org/abs/1810.12715" target="_blank" rel="noopener">Gowal et al., IBP</a>):</p>
+
+    <div class="algorithm">
+      <div class="algorithm-title">Algorithm 1: Local sector bounds by interval bound propagation (Yin et al., Sec. II-D)</div>
+      <ol>
+        <li>Choose a first-layer box $[\underline v^1,\bar v^1]$ symmetric about $v^1_*$, e.g. $\bar v^1-v^1_*=v^1_*-\underline v^1=\delta\,\mathbf 1$.</li>
+        <li>For $i=1,\dots,\ell-1$: <span class="comment">// monotone activation</span></li>
+        <li><span class="indent"></span>output box $[\underline w^i,\bar w^i]=[\phi(\underline v^i),\phi(\bar v^i)]$; centre $c=\tfrac12(\bar w^i+\underline w^i)$, radius $r=\tfrac12(\bar w^i-\underline w^i)$;</li>
+        <li><span class="indent"></span>$\bar v^{i+1}_j=(W_i)_jc+(b_i)_j+\sum_k|(W_i)_{jk}|r_k$, $\ \underline v^{i+1}_j=(W_i)_jc+(b_i)_j-\sum_k|(W_i)_{jk}|r_k$ <span class="comment">// exact max/min of an affine function over a box</span></li>
+        <li>For each neuron compute the tightest offset sector on its interval. For <code>tanh</code>: $\beta_i=1$ and $\alpha_i=\min\Big\{\frac{\tanh\bar v_i-\tanh v_{*,i}}{\bar v_i-v_{*,i}},\ \frac{\tanh v_{*,i}-\tanh\underline v_i}{v_{*,i}-\underline v_i}\Big\}$ (Yin et al., Sec. II-C; $\beta_i$ can be tightened further).</li>
+      </ol>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Local stability and an ellipsoidal ROA estimate (Yin, Seiler &amp; Arcak, TAC 2022, Thm. 1)</div>
+      <div>
+        <em>Assumptions.</em> (i) LTI plant and $\ell$-layer feedforward network as above, with an equilibrium $(x_*,u_*,v_*,w_*)$. (ii) A first-layer box $\bar v^1$, $\underline v^1=2v^1_*-\bar v^1$, and vectors $\alpha,\beta$ such that $\phi$ satisfies the offset local sector $[\alpha,\beta]$ around $(v_*,w_*)$ for all $v$ in the box obtained by Algorithm 1 (their Property 1). (iii) With $R_V=\begin{bmatrix}I & 0\\ N_{ux} & N_{uw}\end{bmatrix}$ and $R_\phi=\begin{bmatrix}N_{vx} & N_{vw}\\ 0 & I\end{bmatrix}$ there exist $P\succ0$ and $T=\mathrm{diag}(\lambda)$, $\lambda\ge0$, such that
+        $$\mathcal M(P,T):=R_V^{\top}\begin{bmatrix}A^{\top}PA-P & A^{\top}PB\\ B^{\top}PA & B^{\top}PB\end{bmatrix}R_V+R_\phi^{\top}Q_{\alpha\beta}(T)R_\phi\ \prec\ 0,$$
+        $$\begin{bmatrix}(\bar v^1_i-v^1_{*,i})^2 & (W_0)_i\\ (W_0)_i^{\top} & P\end{bmatrix}\succeq0,\qquad i=1,\dots,n_1,$$
+        where $(W_0)_i$ is the $i$-th row of the first weight.<br>
+        <em>Statement.</em> (a) $x_*$ is locally asymptotically stable (the paper says "locally stable"; the proof gives asymptotic stability) and (b) $\mathcal E(P,x_*)$ is an inner approximation of the ROA.<br>
+        <em>In words.</em> On the ellipsoid, every first-layer pre-activation stays in its box, so every activation obeys its local sector; the first LMI says that $V$ strictly decreases for every nonlinearity obeying those sectors.<br>
+        <em>Why each assumption matters.</em> The equilibrium: the QCs are centred at it, and without one there is nothing to be stable. The box and Property 1: the sector bounds are only true inside the box; a box that misses reachable pre-activations makes the certificate unsound. The second LMI: it is what keeps the state inside the box (below), without it the local sectors may be used where they are false (Exercise 14.4). Strictness of the first LMI: it yields a margin $\varepsilon\|x-x_*\|^2$ and hence convergence, not just boundedness.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof sketch &mdash; Theorem 1 of Yin et al., with the reason for every step</div>
+      <div class="collapsible-body">
+        <p><strong>Step A (ellipsoid inside the box).</strong> The Schur complement of the second LMI with respect to $P\succ0$ gives $(W_0)_iP^{-1}(W_0)_i^{\top}\le(\bar v^1_i-v^1_{*,i})^2$. For $x\in\mathcal E(P,x_*)$ put $y=x-x_*$, $y^{\top}Py\le1$. By Cauchy&ndash;Schwarz in the $P$ inner product,</p>
+        <div class="math-block">$$|(W_0)_iy|=\big|\big(P^{-1/2}(W_0)_i^{\top}\big)^{\top}\big(P^{1/2}y\big)\big|\le\sqrt{(W_0)_iP^{-1}(W_0)_i^{\top}}\ \sqrt{y^{\top}Py}\le\bar v^1_i-v^1_{*,i}.$$</div>
+        <p>Since $v^1-v^1_*=W_0(x-x_*)$, every $x\in\mathcal E$ produces $v^1\in[\underline v^1,\bar v^1]$, and by Algorithm 1 every later pre-activation is in its box. So on $\mathcal E$ the QC of the Lemma holds. (Yin et al. cite a lemma of Hindi and Boyd for this containment; the Cauchy&ndash;Schwarz line above is its proof, and the bound is attained, so the condition is also necessary.)</p>
+        <p><strong>Step B (the quadratic form is the Lyapunov difference plus the QC).</strong> Strictness gives $\varepsilon\gt0$ with $\mathcal M\preceq-\varepsilon I$. Multiply by $\zeta_t=(\tilde x_t,\tilde w_t)$ on both sides. Because $R_V\zeta_t=(\tilde x_t,\tilde u_t)$, $R_\phi\zeta_t=(\tilde v_t,\tilde w_t)$ and $\tilde x_{t+1}=A\tilde x_t+B\tilde u_t$:</p>
+        <div class="math-block">$$\begin{gathered}\underbrace{V(x_{t+1})-V(x_t)}_{\text{first term}}+\underbrace{\begin{bmatrix}\tilde v_t\\ \tilde w_t\end{bmatrix}^{\top}Q_{\alpha\beta}(T)\begin{bmatrix}\tilde v_t\\ \tilde w_t\end{bmatrix}}_{\ge0\ \text{if}\ x_t\in\mathcal E}\ \le\ -\varepsilon\|\zeta_t\|^2\le-\varepsilon\|x_t-x_*\|^2,\\ V(x)=(x-x_*)^{\top}P(x-x_*).\end{gathered}$$</div>
+        <p><strong>Step C (induction removes the circularity).</strong> If $x_t\in\mathcal E$, Step A makes the QC valid at time $t$, so $V(x_{t+1})\le V(x_t)-\varepsilon\|x_t-x_*\|^2\le1$, i.e. $x_{t+1}\in\mathcal E$. Only the QC at the current time is used, so there is no circular argument: invariance is proved one step at a time.</p>
+        <p><strong>Step D (convergence).</strong> Summing, $\varepsilon\sum_t\|x_t-x_*\|^2\le V(x_0)\le1$, so $x_t\to x_*$; with $V$ a strict Lyapunov function on the invariant set $\mathcal E$ this is local asymptotic stability (Khalil, Thm. 4.1, as cited by Yin et al.). $\blacksquare$</p>
+      </div>
+    </div>
+
+    <p><strong>Computing the largest ellipsoid.</strong> For a fixed box both LMIs are linear in $(P,\lambda)$, and Yin et al. solve</p>
+    <div class="math-block">$$\min_{P\succ0,\ \lambda\ge0}\ \mathrm{trace}(P)\quad\text{s.t. the two LMIs of Theorem 1}.$$</div>
+    <p>A small $\mathrm{trace}(P)=\sum_j1/r_j^2$ (with $r_j$ the semi-axes) means a large ellipsoid; the volume $\propto\det(P)^{-1/2}$ would be more natural, but minimising $\log\det P$ is minimising a concave function, whereas the trace is linear. The box size is not a convex variable: shrinking $\delta$ tightens the sectors ($\alpha$ grows) but confines the ellipsoid to a smaller box, enlarging it loosens the sectors until the first LMI becomes infeasible (their Remark 1). Yin et al. grid $\delta$; Pauli et al. (CDC 2021) bisect for the largest feasible $\delta$ and then run a golden-section search on $\mathrm{trace}(P)$. The explorer below does the same.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Robust version with IQCs (Yin et al., Thm. 2, structure)</div>
+      <div>
+        The plant becomes $x_{t+1}=Ax_t+B_1q_t+B_2u_t$, $p_t=Cx_t+D_1q_t+D_2u_t$, $q=\Delta(p)$, where the perturbation $\Delta$ (unmodelled dynamics, saturation, delay, slope-restricted nonlinearities) satisfies a <strong>hard</strong> time-domain IQC: a stable filter $\Psi_\Delta$ with zero initial state maps $(p,q)$ to $r$ and $\sum_{t=0}^{N}r_t^{\top}M_\Delta r_t\ge0$ for all $N$. Assumption 1: the equilibrium is at the origin and $\Delta(0)=0$. With the extended state $\zeta=(x,\psi)$ (plant and filter), the first LMI gains the term $R_V^{\top}[C_\zeta\ D_\zeta]^{\top}M_\Delta[C_\zeta\ D_\zeta]R_V$, the containment LMI uses the zero-padded first weight, and the conclusion is local stability for every $\Delta$ satisfying the IQC with $\mathcal E(P_x,x_*)$, $P_x$ the upper-left block of $P$, inside the robust ROA (the filter starts at $\psi_0=0$, so only that slice of the ellipsoid is relevant). The same machinery admits an <em>off-by-one IQC</em> on the activations, a causal Zames&ndash;Falb multiplier of order one (Lessard, Recht &amp; Packard, 2016) that relates the pairs $(v_t,w_t)$ and $(v_{t-1},w_{t-1})$ at consecutive times and encodes the local slope bounds; its filter stores $w_{t-1}-\mathrm{diag}(\nu)v_{t-1}$ ($\nu$ the upper local slope bounds) and adds $n_\phi$ states.
+      </div>
+    </div>
+
+    <p><strong>Examples in the paper.</strong> (1) An inverted pendulum ($m=0.15$ kg, $l=0.5$ m, friction $0.5$ Nms/rad, input saturation at $0.7$ Nm) with a policy-gradient controller: two tanh layers of 32 neurons, biases fixed to zero during training so that $x_*=0$, sampling time $0.02$ s. The term $\theta-\sin\theta$ is treated as a perturbation that is slope-restricted in $[0,0.2548]$ and sector-bounded in $[0,0.087]$ for $|\theta|\le0.73$, the saturation by a local sector, and the first-layer box uses $\delta=0.1$; both assumptions are checked on the resulting ellipsoid. (2) Vehicle lateral dynamics with a 32&ndash;32 tanh policy, saturation at $\pi/6$ and a norm-bounded LTI actuator uncertainty ($\|\Delta\|_\infty\le0.1$): adding the off-by-one IQC reduces $\mathrm{trace}(P_x)$ from $4.4$ to $2.9$, increases $\det(P_x^{-1})$ (proportional to the squared volume) from $3.2\times10^5$ to $1.1\times10^6$, and raises the largest feasible box from $\delta=0.67$ to $\delta=1.4$.</p>
+
+    <p><strong>Complexity.</strong> The first LMI has size $n_x+n_\phi$ and, with a diagonal $T$, about $n_x(n_x+1)/2+n_\phi$ variables; the $n_1$ containment LMIs have size $1+n_x$. By the usual interior-point estimate (each Newton step costs on the order of $mn^3+m^2n^2$ for $m$ variables and matrix size $n$, and about $\sqrt n$ steps are needed) a wide network costs roughly $n_\phi^4$ per step and $n_\phi^{4.5}$ in total: comfortable for hundreds of neurons, hopeless for millions, which motivates Section 8.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; What the certificate covers</div>
+      <div>It covers the model $(A,B)$ exactly (or the IQC-described family of Theorem 2), the network exactly as trained (a changed weight invalidates it), and the ellipsoid only; states outside it may or may not converge. The interval propagation is itself conservative in deep networks (boxes inflate layer by layer), which loosens the sectors of later layers. Floating-point: an SDP solver returns a numerically feasible point; for a real certificate one re-checks the LMIs (the explorer does this with an eigenvalue computation) or backs off the margin.</div>
+    </div>
+
+    <!-- ===== SECTION 3 ===== -->
+    <h2 class="section-heading" id="zames-falb">3. Dynamic Multipliers: Acausal Zames&ndash;Falb (Pauli et al.)</h2>
+
+    <p>A static QC uses one time instant. But an activation is memoryless <em>and</em> slope-restricted, so values at different times are related too: $w_t-w_{t-1}=\tilde\varphi(v_t)-\tilde\varphi(v_{t-1})$ has the slope of a chord. <a class="cite" href="https://arxiv.org/abs/2103.17106" target="_blank" rel="noopener">Pauli, Gramlich, Berberich &amp; Allg&ouml;wer, CDC 2021</a> brought the full class of dynamic multipliers for slope-restricted nonlinearities to NN loops: full-block circle and Yakubovich-type multipliers (following Fetzer and Scherer) combined with <em>acausal</em> Zames&ndash;Falb multipliers realised by FIR filters.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Integral quadratic constraints (Megretski &amp; Rantzer 1997; discrete-time form of Pauli et al., Defs. 4&ndash;5)</div>
+      <div>
+        Signals $v,w\in\ell_2^n$ satisfy the <strong>frequency-domain IQC</strong> defined by $\Pi:\{|z|=1\}\to\mathbb C^{2n\times2n}$ if <span class="math-scroll-xs">$\int_0^{2\pi}\begin{bmatrix}\hat v(e^{j\omega})\\ \hat w(e^{j\omega})\end{bmatrix}^{*}\Pi(e^{j\omega})\begin{bmatrix}\hat v(e^{j\omega})\\ \hat w(e^{j\omega})\end{bmatrix}d\omega\ge0$</span>. With a factorisation $\Pi=\Psi^{*}M\Psi$, $\Psi$ stable, let $r=\Psi\begin{bmatrix}v\\ w\end{bmatrix}$ (zero initial filter state). The pair satisfies the <strong>soft IQC</strong> if $\sum_{t=0}^{\infty}r_t^{\top}Mr_t\ge0$ and the <strong>hard IQC</strong> if $\sum_{t=0}^{N}r_t^{\top}Mr_t\ge0$ for every $N\ge0$. An operator satisfies an IQC if all its input&ndash;output pairs do. A static QC is the special case $\Psi=I$ that holds at every $t$.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; IQC stability theorem (Megretski &amp; Rantzer, TAC 1997)</div>
+      <div>
+        Let $G$ be a stable LTI system and $\Delta$ a bounded causal operator. Assume (i) the loop $v=Gw+f$, $w=\Delta(v)+e$ is well posed for $\tau\Delta$, every $\tau\in[0,1]$; (ii) $\tau\Delta$ satisfies the IQC defined by $\Pi$ for every $\tau\in[0,1]$; (iii) there is $\varepsilon\gt0$ with
+        $$\begin{bmatrix}G(j\omega)\\ I\end{bmatrix}^{*}\Pi(j\omega)\begin{bmatrix}G(j\omega)\\ I\end{bmatrix}\preceq-\varepsilon I\qquad\forall\omega.$$
+        Then the loop is stable (<a class="cite" href="https://doi.org/10.1109/9.587335" target="_blank" rel="noopener">Megretski &amp; Rantzer, TAC 42(6), 1997</a>; stated in continuous time there). <em>In words:</em> if the linear part maps every signal pair into the region where the IQC is violated, the only pair consistent with both is the zero pair, robustly. <em>Why the assumptions:</em> the homotopy in $\tau$ (from the trivially stable loop $\tau=0$ to the real one) is how the proof works with soft IQCs; well-posedness makes the loop define signals at all.
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; Two proof routes, two sets of hypotheses</div>
+      <div>The homotopy proof above works with soft IQCs and a frequency-domain inequality. Yin et al. and Pauli et al. follow the other route, surveyed by <a class="cite" href="https://doi.org/10.1109/MCS.2022.3157117" target="_blank" rel="noopener">Scherer, IEEE CSM 2022</a>: a <em>hard</em> factorised IQC, a storage function for the plant plus filter states, and a dissipation inequality summed over time. That route needs the hard property (the inequality on every finite horizon), and is what makes local, region-of-attraction statements possible. Do not mix the hypotheses of one route with the conclusion of the other.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Discrete-time acausal Zames&ndash;Falb multipliers with FIR factorisation (Pauli et al., Sec. II-D)</div>
+      <div>
+        For monotone nonlinearities with $\varphi(0)=0$, i.e. slope restriction $[0,\infty]$ (Pauli et al. write "the sector $[0,\infty]$, which corresponds to monotonicity"; a sector bound alone would not do, because the cross terms compare values at different times or of different neurons), take FIR coefficients $M_{-\ell},\dots,M_{\ell}\in\mathbb R^{n\times n}$ and the block matrix
+        $$\tilde P=\begin{bmatrix}M_0 & M_{-1} & \cdots & M_{-\ell}\\ M_1 & 0 & \cdots & 0\\ \vdots & \vdots & \ddots & \vdots\\ M_\ell & 0 & \cdots & 0\end{bmatrix},\qquad \Pi^{ZF}_{[0,\infty]}=\Big\{\begin{bmatrix}0 & \tilde P^{\top}\\ \tilde P & 0\end{bmatrix}\Big\},$$
+        acting on the window $(v_t,\dots,v_{t-\ell},w_t,\dots,w_{t-\ell})$, i.e. with the FIR filter
+        $$\Psi^{ZF}(z)=\mathrm{blkdiag}\big([I,z^{-1}I,\dots,z^{-\ell}I]^{\top},\ [I,z^{-1}I,\dots,z^{-\ell}I]^{\top}\big).$$
+        The coefficients must satisfy the row and column sum conditions
+        $$\Big(\sum_{j=-\ell}^{\ell}M_j\Big)\mathbf 1\ge0,\qquad \mathbf 1^{\top}\Big(\sum_{j=-\ell}^{\ell}M_j\Big)\ge0,$$
+        together with sign conditions: all entries except the diagonal of $M_0$ are nonpositive; for <em>odd</em> nonlinearities these are replaced by absolute-value dominance conditions of the diagonal of $M_0$ over all other entries. Slope bounds $[\mu,\nu]$ follow by the loop transformation of Section 1: $\Pi^{ZF}_{[\mu,\nu]}=T^{\top}\Pi^{ZF}_{[0,\infty]}T$. Per-neuron bounds $\mu,\nu\in\mathbb R^n$ are fine for diagonal $M_j$; an entry of $M_j$ that couples neurons $i$ and $k$ also needs $\mu_i=\mu_k$ and $\nu_i=\nu_k$ (theorem below).
+      </div>
+    </div>
+
+    <p>Written out, the quadratic form is $2w_t^{\top}(M_0v_t+M_{-1}v_{t-1}+\dots+M_{-\ell}v_{t-\ell})+2\sum_{j=1}^{\ell}w_{t-j}^{\top}M_jv_t$. The multiplier $\sum_jM_jz^{-j}$ contains positive powers of $z$ (future values), which is what <strong>acausal</strong> means; the factorisation nevertheless uses only delays, because the future terms are moved to the other signal: "$v_t$ against a past $w$" plays the role of "$w$ against a future $v$". The IQC is a property of the signals, not a filter one implements, so non-causality costs nothing.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Hard IQC for acausal Zames&ndash;Falb multipliers (Pauli et al., CDC 2021, Thm. 1)</div>
+      <div>
+        Let $\tilde\phi:\mathbb R^n\to\mathbb R^n$ be a <em>diagonally repeated</em> nonlinearity (the same scalar function in every channel) that is slope-restricted in $[\mu,\nu]$ with scalar bounds $\mu,\nu$ common to all channels, and let $\Pi\in\Pi^{ZF}_{[\mu,\nu]}$ with middle matrix $M$. Then all $v,w\in\ell_2^n$ with $w_t=\tilde\phi(v_t)$ (and $v_t=w_t=0$ for $t\lt0$) satisfy
+        $$\sum_{t=0}^{N}\begin{bmatrix}v_t\\ \vdots\\ v_{t-\ell}\\ w_t\\ \vdots\\ w_{t-\ell}\end{bmatrix}^{\top}M\begin{bmatrix}v_t\\ \vdots\\ v_{t-\ell}\\ w_t\\ \vdots\\ w_{t-\ell}\end{bmatrix}\ge0\qquad\forall N\in\mathbb N_0,$$
+        a hard IQC with the FIR filter $\Psi^{ZF}$. If $\tilde\phi$ is not diagonally repeated, or its slope bounds $\mu_i,\nu_i$ differ between neurons, the statement holds with diagonal $M_j=\mathrm{diag}(m_j)$; block-diagonal $M_j$ (ZF-RL) need the repeated function and the common bounds only within each block.<br>
+        <em>In words:</em> over every finite horizon, the multiplier-weighted products of current and delayed inputs and outputs of the nonlinearity add up to something nonnegative. <em>Why the assumptions:</em> slope restriction (not only a sector) is what makes products at different times valid; the repeated structure is what allows full $M_j$ to couple different neurons (derivation below, Exercise 14.6), and after the loop transformation the channels are repeated only if they share $(\mu,\nu)$. The paper writes $T$ with per-neuron vectors $\mu,\nu$; with coupled $M_j$ that is not enough: for $\varphi(s)=s/2$ in two channels, $\mu=(1/4,0)$, $\nu=(1,3/4)$ and $M_0=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}$ (all other $M_j=0$), the pair $v=(1,1)$, $w=(1/2,1/2)$ gives the value $-1/8$ at a single time step. The zero values before $t=0$ (zero initial filter state) give the finite-horizon, hard version that the Lyapunov argument needs.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; Why the conditions work: doubly hyperdominant matrices and rearrangement</div>
+      <div class="collapsible-body">
+        <p>A matrix is <strong>doubly hyperdominant</strong> if its off-diagonal entries are nonpositive and its row and column sums are nonnegative. The key lemma (Willems and Brockett, as used by Pauli et al., Lemma 2): if $\varphi$ is monotone ($\mathrm{slope}[0,\infty]$) with $\varphi(0)=0$ and $\mathsf M$ is doubly hyperdominant, the repeated map $\phi$ satisfies $v^{\top}\mathsf M\phi(v)\ge0$ for all $v$.</p>
+        <p><strong>The $2\times2$ case shows both ingredients.</strong> Take $\mathsf M=\begin{bmatrix}m & -c\\ -c & m\end{bmatrix}$ with $m\ge c\ge0$. Then</p>
+        <div class="math-block">$$v^{\top}\mathsf M\phi(v)=(m-c)\big[v_1\varphi(v_1)+v_2\varphi(v_2)\big]+c\,\big(v_1-v_2\big)\big(\varphi(v_1)-\varphi(v_2)\big).$$</div>
+        <p>The first bracket is $\ge0$ by the <em>sector</em> property ($v\varphi(v)\ge0$); the second product is $\ge0$ by <em>monotonicity of one and the same function</em> evaluated at $v_1$ and $v_2$ (a rearrangement inequality). If the two channels carried different functions $\varphi_1\ne\varphi_2$, the second term would read $(v_1-v_2)(\varphi_1(v_1)-\varphi_2(v_2))$, which can be negative: that is why this monotonicity-based coupling of <em>different neurons</em> needs a repeated nonlinearity, while coupling <em>the same neuron at different times</em> (the off-diagonal time structure of $\tilde P$) is always fine for a time-invariant activation.</p>
+        <p><strong>Hard IQC.</strong> Stack the finite sequence $(v_0,\dots,v_N)$ and $(w_0,\dots,w_N)$. The sum over $t$ of the FIR quadratic form equals $\mathbf v^{\top}\mathsf M_N\mathbf w$ for a banded block-Toeplitz matrix $\mathsf M_N$ built from the $M_j$; conditions (row/column sums and signs) make $\mathsf M_N$ doubly hyperdominant for every $N$, and the lemma applied to the long vector gives nonnegativity for every horizon, i.e. a hard IQC (Pauli et al., Appendix B).</p>
+        <p><strong>Slope bounds $[\mu,\nu]$.</strong> The lemma is applied to the loop-transformed channels $a_i=\nu_iv_i-w_i$, $b_i=w_i-\mu_iv_i$. For a chord of slope $s\in[\mu_i,\nu_i]$, $\Delta a_i\,\Delta b_i=(\nu_i-s)(s-\mu_i)\Delta v_i^2\ge0$, so each $a_i\mapsto b_i$ is monotone (possibly multi-valued), and it passes through $0$ when $\varphi(0)=0$. The rearrangement step for coupled neurons $i,k$ needs these two relations to be the same. For a repeated $\varphi$ that is guaranteed when $\mu_i=\mu_k$ and $\nu_i=\nu_k$, and fails in general otherwise. Per-neuron local bounds from interval propagation usually differ, so a coupled multiplier needs one common pair of bounds, valid on the common interval of the group, as in Step 4 of the proof sketch below. The counterexample in the theorem's "why" line fails already at a single time step.</p>
+      </div>
+    </div>
+
+    <p>With the IQCs in hand, the stability test is a dissipation inequality for the plant plus filter states. Let $\eta=(\tilde x,\xi)$ stack the plant state and the state $\xi$ of the filters $\Psi$ driven by $(\tilde v,\tilde w)$, with realisation $\eta_{t+1}=A_{\rm tot}\eta_t+B_{\rm tot}\tilde w_t$, $r_t=C_{\rm tot}\eta_t+D_{\rm tot}\tilde w_t$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Stability and ROA with general hard IQCs (Pauli et al., CDC 2021, Thm. 2 and Cor. 1; our notation)</div>
+      <div>
+        <em>Assumptions.</em> The shifted network $\tilde\phi$ satisfies $\tilde\phi\in\mathrm{slope}[\mu,\nu]\cap\mathrm{sec}[\alpha,\beta]$ for all inputs in a box $[\underline d,\bar d]$, obtained by interval propagation from a first-layer box $\tilde v^1\in[-d^1,d^1]$. $M$ belongs to the chosen multiplier class (e.g. diagonal circle plus ZF, or the combination $\Pi^{\rm comb}$ of full-block and ZF classes). With $Q:=W_0C$ (the network input is $y=Cx$; $C=I$ for state feedback) and rows $Q_j$, there exist $P=\begin{bmatrix}P_x & P_{x\xi}\\ P_{\xi x} & P_\xi\end{bmatrix}\succ0$ and $M$ with
+        $$\begin{bmatrix}I & 0\\ A_{\rm tot} & B_{\rm tot}\\ C_{\rm tot} & D_{\rm tot}\end{bmatrix}^{\top}\begin{bmatrix}-P & 0 & 0\\ 0 & P & 0\\ 0 & 0 & M\end{bmatrix}\begin{bmatrix}I & 0\\ A_{\rm tot} & B_{\rm tot}\\ C_{\rm tot} & D_{\rm tot}\end{bmatrix}\prec0,$$ $$\begin{bmatrix}(d^1_j)^2 & Q_j & 0\\ Q_j^{\top} & P_x & P_{x\xi}\\ 0 & P_{\xi x} & P_\xi\end{bmatrix}\succeq0\ \ (j=1,\dots,n_1).$$
+        <em>Statement.</em> For every $\tilde x_0\in\mathcal E(P_x,0)$ the loop is locally asymptotically stable, and $\mathcal E(P_x,x_*)$ is an inner approximation of the ROA of the original loop. Theorem 1 of Yin et al. is the special case of static multipliers.<br>
+        <em>In words:</em> a quadratic storage for the plant and filter states that dissipates against the IQC supply, plus an ellipsoid that keeps the first layer inside its box, certifies that ellipsoid. <em>Why the assumptions:</em> the slope and sector bounds hold only inside the box, hence the containment LMI; the multiplier class must be valid for the shifted, in general non-repeated nonlinearity (coupled $M_j$ only within groups of neurons that carry the same shifted function and share their slope bounds, e.g. a bias-free network with $\varphi(0)=0$ at $x_*=0$ and one common interval per group; diagonal $M_j$ otherwise); the hard IQC requires the filter to start at $\xi_0=0$, which is why only that slice of $\mathcal E(P,0)$ is certified.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof sketch &mdash; Summed dissipation, and why "local" needs one more argument</div>
+      <div class="collapsible-body">
+        <p><strong>Step 1.</strong> Multiply the first LMI by $(\eta_t,\tilde w_t)$: with $\eta_{t+1}=A_{\rm tot}\eta_t+B_{\rm tot}\tilde w_t$ and $r_t=C_{\rm tot}\eta_t+D_{\rm tot}\tilde w_t$ this is $\eta_{t+1}^{\top}P\eta_{t+1}-\eta_t^{\top}P\eta_t+r_t^{\top}Mr_t\le-\varepsilon\|\eta_t\|^2$.</p>
+        <p><strong>Step 2 (sum, then use the hard IQC).</strong> Summing over $t=0,\dots,N$ gives $\eta_{N+1}^{\top}P\eta_{N+1}+\varepsilon\sum_t\|\eta_t\|^2\le\eta_0^{\top}P\eta_0-\sum_{t=0}^Nr_t^{\top}Mr_t\le\eta_0^{\top}P\eta_0$. With dynamic multipliers $V(\eta_t)$ need <em>not</em> decrease at every step; only $V(\eta_t)\le V(\eta_0)$ is guaranteed, which is still enough for invariance of the sublevel set and, with the summable $\|\eta_t\|^2$, for convergence.</p>
+        <p><strong>Step 3 (box).</strong> The Schur complement of the second LMI gives $(Q_j\tilde x_t)^2\le(d^1_j)^2\eta_t^{\top}P\eta_t\le(d^1_j)^2\eta_0^{\top}P\eta_0\le(d^1_j)^2$ when $\xi_0=0$ and $\tilde x_0\in\mathcal E(P_x,0)$ (because then $\eta_0^{\top}P\eta_0=\tilde x_0^{\top}P_x\tilde x_0$).</p>
+        <p><strong>Step 4 (local validity).</strong> A hard IQC is a statement about whole sequences, so the one-step induction of Section 2 is not available. Pauli et al. first assume the bounds hold globally and then argue that behaviour outside the box is irrelevant. One way to make this precise: replace $\tilde\varphi_i$ outside its interval $[\underline d_i,\bar d_i]$ by an affine extension with slope $\alpha_i$ (the tight lower sector bound, which lies in $[\mu_i,\nu_i]$ because it is a chord slope); every new chord slope and every new ratio $\hat\varphi_i(s)/s$ is a convex combination of old ones and $\alpha_i$, so the extension satisfies the bounds globally (for the repeated classes use one common interval, and hence common bounds, for all coupled neurons, so that the extension is again repeated); the theorem applies to it, trajectories from $\mathcal E$ never leave the box (Step 3), and on the box the extension equals the true activation, so these trajectories are trajectories of the real loop. $\blacksquare$</p>
+      </div>
+    </div>
+
+    <p><strong>How much structure to exploit.</strong> The multiplier class is a dial between conservatism and cost (Pauli et al., Table I; $n$ neurons, FIR orders $\ell_-,\ell_+$):</p>
+
+    <table>
+      <thead><tr><th>Multiplier class</th><th>Encodes</th><th>Valid for</th><th>Decision variables</th></tr></thead>
+      <tbody>
+        <tr><td>Diagonal circle $\Pi^d_{[\alpha,\beta]}$</td><td>sector</td><td>any activations</td><td>$n$</td></tr>
+        <tr><td>Full-block circle $\Pi_{[\alpha,\beta]}$</td><td>sector</td><td>any activations</td><td>$2n(2n+1)/2$</td></tr>
+        <tr><td>Circle + Yakubovich $\Pi^{cy}$</td><td>sector and slope (one-step differences)</td><td>any activations</td><td>$4n(4n+1)/2$</td></tr>
+        <tr><td>ZF, diagonal $M_j$</td><td>slope, across time</td><td>any activations</td><td>$(\ell_-+\ell_++1)n$</td></tr>
+        <tr><td>ZF-RL, block-diagonal by layer</td><td>slope, across time and neurons of a layer</td><td>repeated within each layer, one slope bound per layer (e.g. bias-free, $\varphi(0)=0$, $x_*=0$)</td><td>$(\ell_-+\ell_++1)\sum_in_i^2$</td></tr>
+        <tr><td>ZF-R, full $M_j$</td><td>slope, across time and all neurons</td><td>repeated, one slope bound for all neurons (e.g. bias-free, $\varphi(0)=0$, $x_*=0$)</td><td>$(\ell_-+\ell_++1)n^2$</td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>Numbers from the paper.</strong> (1) A linearised inverted pendulum with a bias-free $5$&ndash;$5$ tanh network trained on MPC data ($|u|\le1$): diagonal ZF ($\ell=1$) barely improves on the diagonal circle criterion, while the repeated classes ZF-RL and ZF-R give markedly smaller $\mathrm{trace}(P_x)$, i.e. larger certified ellipses. (2) The vehicle example of Yin et al. (a $32$&ndash;$32$ tanh policy with saturation and LTI uncertainty):</p>
+
+    <table>
+      <thead><tr><th>Multiplier</th><th>$\min_\delta\mathrm{trace}(P_x)$</th><th>$\delta_{\max}$</th><th>decision variables</th><th>solve time</th></tr></thead>
+      <tbody>
+        <tr><td>diagonal circle (static)</td><td>3.842</td><td>0.67</td><td>98</td><td>0.88 s</td></tr>
+        <tr><td>causal ZF, $\ell=1$ (= off-by-one IQC)</td><td>2.726</td><td>1.47</td><td>2,754</td><td>123.9 s</td></tr>
+        <tr><td>acausal ZF, $\ell=1$</td><td>2.696</td><td>1.51</td><td>9,442</td><td>2,095 s</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>Dynamic multipliers roughly double the admissible box and shrink the trace by 30% here; the step from causal to acausal is small in this example but costs 17 times the computation. The large gains come from encoding more <em>true</em> structure: slope information across time, and, when the network is bias-free with $\varphi(0)=0$ and analysed at the origin, the fact that all neurons share one function (used with common slope bounds). The price is that each extra piece of structure is only valid under its own hypothesis.</div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; Check every multiplier condition against its hypothesis</div>
+      <div>Zames&ndash;Falb conditions differ between monotone and odd nonlinearities (sign constraints versus absolute-value dominance), between continuous time ($\|h\|_1\lt m_0$) and the discrete FIR version above (row and column sums), and between causal and acausal classes. The repeated classes ZF-R and ZF-RL couple neurons, which is valid only between neurons that carry the same function and use the same slope bounds. After a shift to a nonzero equilibrium the neurons generally carry different functions (neurons with equal $v_{*,i}$ still share one), and per-neuron local slope bounds break the repetition as well; between such neurons only diagonal $M_j$ remain valid. The IQCs of this section are also only <em>local</em> (they need the box), and the Lyapunov argument needs them <em>hard</em>.</div>
+    </div>
+
+    <!-- ===== SECTION 4 ===== -->
+    <h2 class="section-heading" id="offset-free">4. Offset-Free Setpoint Tracking With NN Controllers (Pauli et al.)</h2>
+
+    <p>Stabilising one equilibrium is rarely the job; a controller must bring the output to a setpoint $r$, and every $r$ has its own equilibrium. Section 2 would have to be redone for each of them, and Yin et al. fixed the biases to zero precisely to keep $x_*=0$. <a class="cite" href="https://proceedings.mlr.press/v144/pauli21a.html" target="_blank" rel="noopener">Pauli, K&ouml;hler, Berberich, Koch &amp; Allg&ouml;wer, L4DC 2021</a> add the oldest trick in control, an integrator, and obtain certificates that cover whole sets of references.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; NN controller with integral action (Pauli et al., L4DC 2021, Sec. 2.1)</div>
+      <div>
+        Plant $x_{t+1}=Ax_t+Bu_t$, $y_t=Cx_t$ with as many inputs as outputs ($n_u=n_r$). Controller
+        $$\xi_{t+1}=\xi_t+r-y_t,\qquad u_t=k_\xi\,\xi_t+\kappa(x_t,r),$$
+        where $k_\xi$ is invertible and $\kappa$ is an $\ell$-layer network with input $w^0=H_xx+H_rr$ (state feedback: $H_x=I$, $H_r=0$; output-error feedback: $H_x=-C$, $H_r=I$). The augmented state $\chi=(x,\xi)$ obeys
+        $$\begin{gathered}\chi_{t+1}=\tilde A\chi_t+\tilde B\,\kappa(x_t,r)+B_rr,\qquad y_t=\tilde C\chi_t,\\ \tilde A=\begin{bmatrix}A & Bk_\xi\\ -C & I\end{bmatrix},\ \tilde B=\begin{bmatrix}B\\ 0\end{bmatrix},\ B_r=\begin{bmatrix}0\\ I\end{bmatrix},\ \tilde C=\begin{bmatrix}C & 0\end{bmatrix}.\end{gathered}$$
+        <strong>Standing assumption:</strong> $A_a=\begin{bmatrix}A-I & B\\ C & 0\end{bmatrix}$ is square and nonsingular, so each $r$ has a unique steady state $\begin{bmatrix}x_*\\ u_*\end{bmatrix}=A_a^{-1}\begin{bmatrix}0\\ r\end{bmatrix}$ with $y_*=r$; then $\xi_*=k_\xi^{-1}\big(u_*-\kappa(x_*,r)\big)$ and $v_*,w_*$ follow by propagating $(x_*,r)$ through the network.
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Why the integrator makes zero offset structural</div>
+      <div>At any equilibrium of the augmented loop $\xi_{t+1}=\xi_t$, hence $r-y=0$. Nothing about the weights and biases of $\kappa$ entered this argument; nor would a model error or a constant input disturbance, as long as the loop still converges to <em>some</em> equilibrium. The certificate therefore only has to prove convergence, and zero offset follows. Without the integrator, zero offset would require $\kappa(x_*(r),r)=u_*(r)$ exactly for every $r$, an equation a trained network satisfies only approximately and that any model error breaks (Exercise 14.5). As the paper puts it, no structural constraints on the weights and biases are needed, because any undesired offset is eliminated by the integrator.</div>
+    </div>
+
+    <p>In error coordinates $\tilde\chi=\chi-\chi_*$ the reference drops out of the linear part: $\tilde\chi_{t+1}=\tilde A\tilde\chi_t+\tilde B\big(\kappa(x_t,r)-\kappa(x_*,r)\big)$ and $y_t-r=\tilde C\tilde\chi_t$, since $B_rr$ is the same at every time. It still enters through the equilibrium $v_*(r)$ at which the activations are shifted. The activations are described by the slope QC around the equilibrium, $\alpha\le\frac{\varphi(v_{i})-\varphi(v_{*,i})}{v_i-v_{*,i}}\le\beta$ with $0\le\alpha\lt\beta$, stacked with a <strong>diagonal</strong> multiplier; the paper points out that the richer coupled multipliers once claimed for LipSDP are invalid, by the counterexample of <a class="cite" href="https://arxiv.org/abs/2005.02929" target="_blank" rel="noopener">Pauli et al., L-CSS 2022</a> (see <a href="lipsdp.html#lipsdp-network-error">Module 12</a>).</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Global exponential stability and offset-free tracking (Pauli et al., L4DC 2021, Thm. 1)</div>
+      <div>
+        Let $R_V$ map $(\tilde\chi,\tilde w)\mapsto(\tilde\chi,\tilde u)$ and $R_\phi$ map $(\tilde\chi,\tilde w)\mapsto(\tilde v,\tilde w)$, built from the weights as in Section 1 (the integrator state does not enter the network). If there exist a diagonal $T\succeq0$ and $P\succ0$ with
+        $$R_V^{\top}\begin{bmatrix}\tilde A^{\top}P\tilde A-P & \tilde A^{\top}P\tilde B\\ \tilde B^{\top}P\tilde A & \tilde B^{\top}P\tilde B\end{bmatrix}R_V+R_\phi^{\top}\begin{bmatrix}-2\alpha\beta T & (\alpha+\beta)T\\ (\alpha+\beta)T & -2T\end{bmatrix}R_\phi\ \prec\ 0,$$
+        then for every initial condition and <em>every</em> reference $r$ the steady state $\chi_*(r)$ is globally exponentially stable and $y_t\to r$.<br>
+        <em>Assumptions used:</em> $A_a$ square and nonsingular (one steady state per $r$), $k_\xi$ invertible, $n_u=n_r$, and every activation slope-restricted on all of $\mathbb R$ with bounds $0\le\alpha\lt\beta$ (the paper uses one pair $[\alpha,\beta]$ as slope bounds and as the sector bounds they imply around every equilibrium). <em>In words:</em> one quadratic Lyapunov shape works around every equilibrium that a reference can induce, and the integrator turns convergence into zero offset.<br>
+        <em>Why one LMI covers all references.</em> Slope restriction is incremental: the sector $[\alpha,\beta]$ holds around <em>every</em> point of the graph, so the QC around $v_*(r)$ has the same matrix for every $r$, and the LMI contains no $r$. The Lyapunov function $V_r(\chi)=(\chi-\chi_*(r))^{\top}P(\chi-\chi_*(r))$ changes with $r$, its matrix does not.
+      </div>
+    </div>
+
+    <p>Networks trained on data from a bounded region are rarely globally stabilising (in the paper's example Theorem 1 is infeasible), so the paper localises the analysis in two ways.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Local stability for one reference and for a set of references (Pauli et al., L4DC 2021, Thms. 3&ndash;4)</div>
+      <div>
+        <em>One reference.</em> Choose $d\gt0$, the box $v^1\in[v^1_*-d,\ v^1_*+d]$, propagate it and compute tight local bounds $D_\alpha,D_\beta$. If the LMI of Theorem 1 holds with $D_\alpha,D_\beta$ in place of $\alpha,\beta$ and $\begin{bmatrix}d_j^2 & (N_0^1)_j\\ (N_0^1)_j^{\top} & P\end{bmatrix}\succeq0$ for every first-layer neuron $j$ (with $v^1-v^1_*=N^1_0\tilde\chi$), then for all $\chi_0\in\mathcal E(P,\chi_*)$ the steady state is exponentially stable and $y_t\to r$.<br>
+        <em>A set of references.</em> The steady-state map is linear, $x_*(r)=\Gamma r$ (from $A_a^{-1}$). With bounds computed for a nominal $r_{\rm nom}$, define the joint ellipsoid
+        $$\begin{aligned}\mathcal E_{P,Q}(r_{\rm nom})=\Big\{(\chi,r):\ &(\chi-\chi_*(r))^{\top}P(\chi-\chi_*(r))\\ &+(r-r_{\rm nom})^{\top}Q(r-r_{\rm nom})\le1\Big\}.\end{aligned}$$
+        If the same LMI holds and a Schur-complement LMI in $\mathrm{blkdiag}(P,Q)$ bounds the first-layer deviation $v^1-v^1_*(r_{\rm nom})$, an affine function of $(\chi-\chi_*(r),\,r-r_{\rm nom})$, by $d$ on $\mathcal E_{P,Q}$, then for every pair $(\chi_0,r)\in\mathcal E_{P,Q}(r_{\rm nom})$ the loop converges exponentially to $\chi_*(r)$ and $y_t\to r$.<br>
+        <em>Why the assumptions:</em> the tight local bounds (a larger lower bound than the global $0$) are what make the first LMI feasible where Theorem 1 fails, but they are true only on the box; the containment LMI keeps the state (and, in the second version, the reference) where they are true, and the proof is the one-step induction of Section 2. The weight $Q$ trades the size of the admissible initial states against the distance of $r$ from $r_{\rm nom}$.
+      </div>
+    </div>
+
+    <p>Two remarks make these statements usable. First, for <strong>output-error feedback</strong> the first-layer input at steady state is $W_0(r-Cx_*)+b_0=b_0$ for every $r$, so the bounds are the same for all references and the one-reference theorem already certifies every $r$ with an ellipsoid of fixed shape centred at $\chi_*(r)$: local stability depends only on the tracking error. Second (our remark; the paper computes the bounds for $r_{\rm nom}$ and leaves this implicit), for a set of references the sector bounds must hold around every equilibrium $v_*(r)$ in the set, not only around $v_*(r_{\rm nom})$; slope bounds over the box (smallest and largest derivative) have this property, because the joint containment LMI keeps $v_*(r)$ itself in the box.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Algorithm idea &mdash; Reference governor on the certified set (Pauli et al., Sec. 3.4)</div>
+      <div>
+        At every time, replace the desired reference $r$ by the closest reference for which the current state is certified:
+        $$\begin{aligned}\hat r_t=\operatorname*{arg\,min}_{\hat r}\ \|r-\hat r\|^2\quad\text{s.t.}\quad&(\chi_t-\chi_*(\hat r))^{\top}P(\chi_t-\chi_*(\hat r))\\ &+(\hat r-r_{\rm nom})^{\top}Q(\hat r-r_{\rm nom})\le1 .\end{aligned}$$
+        The state then always lies in the certified set of the reference actually applied, the guaranteed ROA becomes the union of the ellipsoids over all admissible references, and $\hat r_t\to r$ whenever $r$ is admissible (otherwise the closest admissible reference is tracked with zero offset).
+      </div>
+    </div>
+
+    <p><strong>The example.</strong> A linearised inverted pendulum ($m=0.15$ kg, $L=0.5$ m, friction $0.5$) discretised with $T_s=0.02$ s, controlled by a state-feedback network with two tanh layers of 5 neurons, trained by supervised learning to imitate an MPC with $|u|\le1$ on trajectories from $x_0\sim\mathcal U(-0.5,0.5)$, and $k_\xi=1$. The global theorem is infeasible. With $d_i=0.345$ the one-reference theorem ($r=0$, 1.14 s) and the set-of-references theorem ($r_{\rm nom}=0$, 0.50 s) are feasible; every reference angle $r\in[-0.2,0.2]$ can be tracked, the union of ellipsoids is much larger than the single one, and a reference governor tracks the closest admissible point to $r=-1$, while the same loop without the governor diverges.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; This is an analysis paper</div>
+      <div>The network in the L4DC example is trained by plain supervised imitation of an MPC; no LMI is enforced during training, and the certificate is computed afterwards. Remark 2 of the paper only notes that the LMI of Theorem 1 <em>can</em> be imposed during training, as in Pauli et al.'s Lipschitz training (L-CSS 2022, an ADMM scheme; <a href="lipsdp.html#training-with-lipsdp">Module 12</a>) or Revay et al.'s convex parameterisations. Training with such constraints is a separate step with its own cost and convergence issues (Section 6).</div>
+    </div>
+
+    <!-- ===== SECTION 5 ===== -->
+    <h2 class="section-heading" id="dissipativity-rnn">5. Dissipativity Analysis and Training of RNNs (Pauli et al.)</h2>
+
+    <p>A recurrent network is itself a dynamical system, and its robustness is an input&ndash;output property: how much can a perturbation of the input sequence change the output sequence? <a class="cite" href="https://doi.org/10.1515/auto-2022-0032" target="_blank" rel="noopener">Pauli, Berberich &amp; Allg&ouml;wer, at &ndash; Automatisierungstechnik 70(8):730&ndash;739, 2022</a> give a comprehensive introduction to the analysis of RNNs with robust control and dissipativity theory, use the $\mathcal H_2$ performance and the $\ell_2$ gain as robustness measures with respect to input perturbations, and present LMI constraints for training robust RNNs. The construction below is the standard one behind such results.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; Source access</div>
+      <div>The full text of the at-Automatisierungstechnik paper was not available when these notes were written; its content is summarised from the abstract. The LFT model, the $\ell_2$-gain LMI and its derivation below are the textbook construction (dissipativity plus the S-procedure with sector constraints), not a transcription of the paper's LMIs, and its $\mathcal H_2$ LMI is not reproduced.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; RNN as a linear system in feedback with its activations</div>
+      <div>
+        $$\begin{gathered}x_{t+1}=Ax_t+B_1w_t+B_2u_t,\qquad v_t=C_1x_t+D_{11}w_t+D_{12}u_t,\\ y_t=C_2x_t+D_{21}w_t+D_{22}u_t,\qquad w_t=\phi(v_t).\end{gathered}$$
+        A vanilla RNN $h_{t+1}=\phi(W_hh_t+W_uu_t)$, $y_t=C_hh_t$ has $x=h$, $A=0$, $B_1=I$, $B_2=0$, $C_1=W_h$, $D_{12}=W_u$, $C_2=C_h$ and $D_{11}=0$. A nonzero $D_{11}$ gives an implicit (equilibrium) layer, as in the REN.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Dissipativity and QSR supply rates (Willems 1972; ordering of Module 2)</div>
+      <div>
+        The system is dissipative with respect to $s(u,y)$ if there is a storage $V\ge0$ with $V(x_{t+1})-V(x_t)\le s(u_t,y_t)$ along all trajectories (<a class="cite" href="https://doi.org/10.1007/BF00276493" target="_blank" rel="noopener">Willems, Arch. Rational Mech. Anal. 1972</a>). A QSR supply is $s=\begin{bmatrix}y\\ u\end{bmatrix}^{\top}\begin{bmatrix}Q & S\\ S^{\top} & R\end{bmatrix}\begin{bmatrix}y\\ u\end{bmatrix}$; the $\ell_2$ gain $\gamma$ is $Q=-I$, $S=0$, $R=\gamma^2I$: summing from $x_0=0$ gives $\sum_t\|y_t\|^2\le\gamma^2\sum_t\|u_t\|^2$.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; $\ell_2$-gain LMI for an RNN with activations in the sector $[0,1]$</div>
+      <div>
+        With $\zeta=(x,w,u)$, the certificate is $P\succeq0$, $T=\mathrm{diag}(\lambda)\succeq0$ and $\gamma$ such that
+        $$\begin{aligned}&\begin{bmatrix}A & B_1 & B_2\\ I & 0 & 0\end{bmatrix}^{\top}\begin{bmatrix}P & 0\\ 0 & -P\end{bmatrix}\begin{bmatrix}A & B_1 & B_2\\ I & 0 & 0\end{bmatrix}\\ &+\begin{bmatrix}C_2 & D_{21} & D_{22}\\ 0 & 0 & I\end{bmatrix}^{\top}\begin{bmatrix}I & 0\\ 0 & -\gamma^2I\end{bmatrix}\begin{bmatrix}C_2 & D_{21} & D_{22}\\ 0 & 0 & I\end{bmatrix}\\ &+\begin{bmatrix}C_1 & D_{11} & D_{12}\\ 0 & I & 0\end{bmatrix}^{\top}\begin{bmatrix}0 & T\\ T & -2T\end{bmatrix}\begin{bmatrix}C_1 & D_{11} & D_{12}\\ 0 & I & 0\end{bmatrix}\preceq0 .\end{aligned}$$
+        For fixed weights it is linear in $(P,T,\gamma^2)$, so the smallest certified gain is an SDP.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; From the LMI to the gain bound</div>
+      <div class="collapsible-body">
+        <p><strong>Step 1.</strong> Multiply the LMI by $\zeta_t=(x_t,w_t,u_t)$ on both sides. The three terms become, in order, $V(x_{t+1})-V(x_t)$ (because $x_{t+1}=Ax_t+B_1w_t+B_2u_t$), $\|y_t\|^2-\gamma^2\|u_t\|^2$ (because $y_t=C_2x_t+D_{21}w_t+D_{22}u_t$), and $2w_t^{\top}T(v_t-w_t)=2\sum_i\lambda_iw_{t,i}(v_{t,i}-w_{t,i})$.</p>
+        <p><strong>Step 2.</strong> For activations in the sector $[0,1]$ with $\varphi(0)=0$ (tanh, ReLU) each $w_i(v_i-w_i)\ge0$, so the third term is nonnegative and $V(x_{t+1})-V(x_t)\le\gamma^2\|u_t\|^2-\|y_t\|^2$: dissipativity with the $\ell_2$-gain supply.</p>
+        <p><strong>Step 3.</strong> Sum from $0$ to $N-1$ with $x_0=0$ and use $V\ge0$: $\sum_{t\lt N}\|y_t\|^2\le\gamma^2\sum_{t\lt N}\|u_t\|^2$ for every $N$. If $D_{11}\ne0$ the layer is implicit, and this argument presupposes that it is well posed (that $w_t$ exists and is unique); the sector bound alone does not give that. The $(w,w)$ block contains $TD_{11}+D_{11}^{\top}T-2T$. If this is negative definite (which forces $T\succ0$) <em>and</em> the activations are slope-restricted in $[0,1]$, as tanh and ReLU are, the implicit layer is well posed (Section 1; REN paper, eq. 12 under its Assumption 1). A sector bound is not enough: $\varphi(v)=v(1+\sin10v)/2$ lies in the sector $[0,1]$, and with $D_{11}=0.5$, $T=1$ one has $2T-TD_{11}-D_{11}^{\top}T=1\gt0$, yet $v=0.5\,\varphi(v)+0.39$ has three solutions ($v\approx0.409,\ 0.736,\ 0.779$).</p>
+      </div>
+    </div>
+
+    <p><strong>Incremental version and contraction.</strong> The sector QC compares one trajectory with the equilibrium $0$. Replacing it by the slope QC applied to the difference of two trajectories, $(\Delta v,\Delta w)$, with a <em>diagonal</em> $T$, turns the same LMI into a bound on the incremental gain, $\sum_t\|\Delta y_t\|^2\le\gamma^2\sum_t\|\Delta u_t\|^2+V(\Delta x_0)$: the RNN is $\gamma$-Lipschitz as a map between input and output sequences, up to a term from the initial states, and if the LMI holds strictly it also forgets its initial conditions (contraction). This is exactly the certificate built into the recurrent equilibrium network (<a class="cite" href="https://arxiv.org/abs/2104.05942" target="_blank" rel="noopener">Revay, Wang &amp; Manchester, TAC 2024</a>, Thm. 1): an incremental Lyapunov function $V(\Delta x)=\|\Delta x\|_P^2$ with $V(\Delta x_{t+1})\le\alpha^2V(\Delta x_t)-\Gamma(\Delta v_t,\Delta w_t)$ for contraction at some rate $\alpha\lt\bar\alpha$ (their eq. 17; $\Gamma\ge0$ is the incremental QC with a diagonal multiplier), and an incremental dissipation inequality for the incremental IQC defined by $(Q,S,R)$ with $Q\preceq0$ (their Lipschitz case is $Q=-\gamma^{-1}I$, $S=0$, $R=\gamma I$, a rescaling of ours).</p>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall &mdash; Coupled multipliers and incremental properties</div>
+      <div>Multipliers designed for repeated nonlinearities (coupling different neurons) certify boundedness of signals but, as the REN paper notes (Remark 5), are not valid for incremental IQCs and contraction. This is the same error that invalidated LipSDP-Network (<a href="lipsdp.html#lipsdp-network-error">Module 12</a>): an incremental constraint compares two input vectors, and the ordering between different neurons that a repeated nonlinearity provides for a single input is lost.</div>
+    </div>
+
+    <p><strong>Training under the constraint.</strong> The weights $(A,B_1,C_1,D_{11},\dots)$ appear multiplied by $P$ and $T$, so the LMI is not jointly convex in weights and certificate (REN paper, Remark 4). Three remedies appear in this literature: fix the multipliers and enforce the LMI during training by ADMM (Pauli et al., L-CSS 2022) or by a barrier term in the loss (<a class="cite" href="https://arxiv.org/abs/2201.00632" target="_blank" rel="noopener">Pauli et al., CDC 2022</a>, which reports that barrier training is much faster than ADMM); change variables so that the constraint is jointly convex (the convex parameterisations of the REN paper, Sec. IV); or parameterise the weights so that the LMI holds for every parameter value, which makes training unconstrained (REN direct parameterisation, Sec. V; <a href="lipschitz-by-design.html#rens">Module 13</a>).</p>
+
+    <!-- ===== SECTION 6 ===== -->
+    <h2 class="section-heading" id="synthesis">6. Synthesis With Guarantees: Dissipativity-Constrained RL and Youla-REN</h2>
+
+    <p>Analysis certifies a given network. Synthesis must search over networks while keeping the certificate, and the difficulty is algebraic: the closed-loop matrices are affine in the controller parameters, but the certificate multiplies them by $P$ and $T$, so the design condition is a bilinear matrix inequality (BMI). Two recent answers take opposite routes: convexify and project (Junnarkar, Arcak &amp; Seiler), or build the certificate into the parameterisation (Youla-REN).</p>
+
+    <h3 class="subsection-heading">Projection-based RL under a closed-loop dissipativity LMI</h3>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2404.07373" target="_blank" rel="noopener">Junnarkar, Arcak &amp; Seiler, Automatica 193 (2026) 113185</a> synthesise neural controllers that maximise an RL reward subject to the hard constraint that the closed loop is dissipative. Their setting is continuous time. The plant is an LTI system $G_p$ in feedback with an uncertainty $\Delta_p$ (unmodelled dynamics and nonlinearities) described by a hard IQC, with disturbance $d$, performance output $e$ and measurement $y$. The controller is a <strong>recurrent implicit neural network</strong> (RINN):</p>
+    <div class="math-block">$$\begin{gathered}\dot x_k=A_kx_k+B_{kw}w_k+B_{ky}y,\qquad v_k=C_{kv}x_k+D_{kvw}w_k+D_{kvy}y,\\ u=C_{ku}x_k+D_{kuw}w_k+D_{kuy}y,\qquad w_k=\phi(v_k),\end{gathered}$$</div>
+    <p>with activations sector-bounded and slope-restricted in $[0,1]$. With $A_k,B_{kw},B_{ky},C_{kv},C_{ku}$ all zero it is a static implicit network, and a feedforward network is the case of a strictly block lower triangular $D_{kvw}$ (their Example 1). Performance is dissipativity with a quadratic supply $s(d,e)=\begin{bmatrix}d\\ e\end{bmatrix}^{\top}X\begin{bmatrix}d\\ e\end{bmatrix}$ and a quadratic storage $x^{\top}Px$ (stability: $s=0$ with $P\succ0$; $\ell_2$ gain: $\gamma^2\|d\|^2-\|e\|^2$; passivity: $d^{\top}e$). The activations enter through the sector QC with multiplier $\begin{bmatrix}0 & \Lambda\\ \Lambda & -2\Lambda\end{bmatrix}$, $\Lambda\succeq0$ diagonal.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Convexification for full-order controllers (Junnarkar, Arcak &amp; Seiler, Thm. 4)</div>
+      <div>
+        <em>Assumptions.</em> The uncertainty IQC is static, or dynamic with a factorisation $\Psi=\mathrm{diag}(\Psi_1,\Psi_2)$, $M=\mathrm{diag}(I,-I)$, $\Psi$ stable with a stable proper inverse (their Lemma 3 transforms it to a static one); $X_{ee}\preceq0$ (e.g. $\ell_2$ gain, passivity) and $M_{\Delta_p,vv}\succeq0$ (e.g. LTI uncertainty, sector $[0,1]$ nonlinearities); the controller state has the plant's dimension.<br>
+        <em>Statement.</em> For fixed $M_{\Delta_p}$ and $X$, there exist a controller and a quadratic storage certifying closed-loop dissipativity with $P\succ0$ and $\Lambda\succ0$ <strong>if and only if</strong> there exist new variables $\hat\theta=\{S,R,N_A,N_B,N_C,$ $D_{kuw},\hat D_{kvy},\hat D_{kvw},\Lambda\}$ satisfying an LMI that is affine in $\hat\theta$, with $S\succ0$, $R\succ0$, $\Lambda\succ0$ and $\begin{bmatrix}R & I\\ I & S\end{bmatrix}\succ0$.<br>
+        <em>The change of variables.</em> Partition $P=\begin{bmatrix}S & U\\ U^{\top} & \star\end{bmatrix}$, $P^{-1}=\begin{bmatrix}R & V\\ V^{\top} & \star\end{bmatrix}$, apply the congruence $\mathrm{diag}(Y,I)$ with $Y=\begin{bmatrix}R & I\\ V^{\top} & 0\end{bmatrix}$ and set $\hat D_{kvy}=\Lambda D_{kvy}$, $\hat D_{kvw}=\Lambda D_{kvw}$, $N_B=SB_{pu}D_{kuw}+UB_{kw}$, $N_C=\Lambda D_{kvy}C_{py}R+\Lambda C_{kv}V^{\top}$ and
+        $$\begin{aligned}N_A=&\begin{bmatrix}SA_pR & 0\\ 0 & 0\end{bmatrix}\\ &+\begin{bmatrix}U & SB_{pu}\\ 0 & I\end{bmatrix}\begin{bmatrix}A_k & B_{ky}\\ C_{ku} & D_{kuy}\end{bmatrix}\begin{bmatrix}V^{\top} & 0\\ C_{py}R & I\end{bmatrix}.\end{aligned}$$
+        The controller is recovered from $\hat\theta$ by an SVD $VU^{\top}=I-RS$ (invertible because $\begin{bmatrix}R & I\\ I & S\end{bmatrix}\succ0$) and solving these linear equations. This is the change of variables of Scherer, Gahinet and Chilali for $\mathcal H_\infty$ synthesis, extended to the multiplier $\Lambda$ of the network.<br>
+        <em>Why the assumptions:</em> $X_{ee}\preceq0$ and $M_{\Delta_p,vv}\succeq0$ allow the factorisations $X_{ee}=-L_X^{\top}L_X$ and $M_{\Delta_p,vv}=L_{\Delta_p}^{\top}L_{\Delta_p}$, so a Schur complement removes the terms that are quadratic in the closed-loop matrices and leaves a condition that is bilinear only through $P$, $\Lambda$ and the controller; the plant-order controller makes the congruence $Y$ and the recovery of $(A_k,B_{kw},\dots)$ from $\hat\theta$ possible; the restriction on the IQC lets their Lemma 3 absorb the filters into an extended plant with a static IQC.
+      </div>
+    </div>
+
+    <div class="algorithm">
+      <div class="algorithm-title">Algorithm 2: RL with a dissipativity-enforcing projection (Junnarkar, Arcak &amp; Seiler, Alg. 1)</div>
+      <ol>
+        <li>Initialise the controller parameters $\theta$ (randomly, or warm-started), and $P,\Lambda\leftarrow I$.</li>
+        <li>For $i=1,2,\dots$:</li>
+        <li><span class="indent"></span>$\theta'\leftarrow$ one reinforcement-learning step on $\theta$ <span class="comment">// reward only; the training environment may differ from the design model</span></li>
+        <li><span class="indent"></span>If some $(P',\Lambda')$ certifies $\theta'$ (an LMI in $(P,\Lambda)$ for fixed $\theta'$): $\theta,P,\Lambda\leftarrow\theta',P',\Lambda'$.</li>
+        <li><span class="indent"></span>Else: build $\hat\theta'$ from $(\theta',P,\Lambda)$; project it onto the convex set of Theorem 4 (minimum Frobenius distance, then a re-solve that trades at most a factor $\beta$ of projection error for better conditioning of $I-RS$);</li>
+        <li><span class="indent"></span><span class="indent"></span>extract $P,\Lambda$ from the projection and set $\theta\leftarrow\arg\min\|\theta-\theta'\|$ over controllers certified by this $(P,\Lambda)$ <span class="comment">// again an SDP</span></li>
+      </ol>
+    </div>
+
+    <p>Every iterate that leaves the loop is certified for the design model. Well-posedness of the implicit layer is added as $\Lambda D_{kvw}+D_{kvw}^{\top}\Lambda-2\Lambda\prec0$ (their Remark 7). The authors estimate the cost of the dissipativity check as $\mathcal O\big((n_p^2+n_\phi)^2(n_p+n_\phi)^2\big)$ and of each projection as $\mathcal O\big((n_p+n_\phi)^6\big)$ flops ($n_p$ plant states, $n_\phi$ neurons), which is why the check runs first and the projections only when it fails. Examples: an inverted pendulum and a flexible rod on a cart. Reward maximisation is the soft objective and dissipativity the hard constraint, a certificate-level analogue of the constrained RL of <a href="cmdp.html#cmdp-definition">Module 8</a>.</p>
+
+    <h3 class="subsection-heading">Stable by design: the Youla-REN</h3>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2112.04219" target="_blank" rel="noopener">Wang, Barbara, Revay &amp; Manchester, IEEE L-CSS 7:91&ndash;96, 2023</a> take the opposite route. For a partially observed linear plant $x_{t+1}=Ax_t+Bu_t+d^x_t$, $y_t=Cx_t+d^y_t$ (stabilisable and detectable), pick gains with $A-BK$ and $A-LC$ stable and augment the observer-based controller with a nonlinear <strong>Youla parameter</strong> $\mathcal Q$:</p>
+    <div class="math-block">$$\hat x_{t+1}=A\hat x_t+Bu_t+L\tilde y_t,\qquad u_t=-K\hat x_t+\mathcal Q(\tilde y)_t,\qquad \tilde y_t=y_t-C\hat x_t .$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Nonlinear Youla parameterisation (Wang et al., L-CSS 2023, Props. 1&ndash;2)</div>
+      <div>
+        (1) For every contracting and Lipschitz $\mathcal Q$, the closed loop is contracting and the map from disturbances to the performance output is Lipschitz. (2) Conversely, every output-feedback controller (with a locally Lipschitz state-space realisation) that achieves a contracting and Lipschitz closed loop can be written in this form with a contracting and Lipschitz $\mathcal Q$. The closed-loop response is $z=T_0d+T_1\mathcal Q(T_2d)$ with stable LTI systems $T_0,T_1,T_2$. (3) RENs approximate any contracting and Lipschitz $\mathcal Q$ arbitrarily well on bounded input sets, so the Youla-REN is a universal approximator of stabilising controllers.<br>
+        <em>Why it works.</em> The observer error $x-\hat x$ evolves as $(A-LC)(x-\hat x)+d^x-Ld^y$, independent of $u$; hence the innovation $\tilde y=T_2d$ does not depend on what $\mathcal Q$ outputs, and $\mathcal Q$ sits outside every feedback loop: stability reduces to a cascade of stable systems, and no LMI has to be solved during learning.
+      </div>
+    </div>
+
+    <p>Because the REN is directly parameterised (every parameter vector gives a contracting, Lipschitz $\mathcal Q$; <a href="lipschitz-by-design.html#rens">Module 13</a>), learning is unconstrained: exact gradients through a differentiable model, or random search with a zeroth-order oracle as in RL. The paper reports faster convergence to better controllers than competing policy classes, with stability preserved during the learning transients. The guarantee is for the nominal linear model; with model error the innovation depends on $u$ again and robustness must be argued separately (for instance by small gain with the Lipschitz bound of $\mathcal Q$). The survey of <a class="cite" href="https://doi.org/10.1146/annurev-control-022624-032459" target="_blank" rel="noopener">Manchester, Wang &amp; Barbara, Annu. Rev. 2026</a> collects these model classes and their use as observers and policies. A faster recurrent class from the same group, R2DN (<a class="cite" href="https://arxiv.org/abs/2504.01250" target="_blank" rel="noopener">Barbara, Wang &amp; Manchester, CDC 2026</a>), replaces the REN's equilibrium layer by a 1-Lipschitz feedforward network in feedback with an LTI system and reports up to an order of magnitude faster training and inference.</p>
+
+    <table>
+      <thead><tr><th>Route</th><th>What is guaranteed, when</th><th>Plant class</th><th>Computation</th></tr></thead>
+      <tbody>
+        <tr><td>Analysis LMI (Sections 2&ndash;4)</td><td>stability / ROA for the trained network, after training</td><td>LTI, perturbations via IQCs</td><td>one SDP per certificate</td></tr>
+        <tr><td>Constrained training (ADMM, barrier; Module 12)</td><td>the LMI at the end of training (ADMM); at every iterate with projection or a log-det barrier</td><td>LTI + QCs</td><td>SDP-type steps or barrier gradients</td></tr>
+        <tr><td>Projection-based RL (Junnarkar et al.)</td><td>closed-loop dissipativity of every accepted iterate</td><td>LTI + IQC uncertainty, full-order controller</td><td>check LMI, convex projection when it fails</td></tr>
+        <tr><td>Youla-REN</td><td>contraction and Lipschitz closed loop for every parameter value</td><td>known partially observed LTI</td><td>none beyond gradient steps</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== SECTION 7 ===== -->
+    <h2 class="section-heading" id="reachability-verification">7. Reachability of NN Loops and Verified Lyapunov Controllers</h2>
+
+    <p>Stability says where trajectories end; safety asks where they go on the way. Two very different certificate styles address this: SDP relaxations built from the same QCs as above, and complete verification by bound propagation and branch-and-bound (<a href="verification.html#bound-propagation">Module 15</a>).</p>
+
+    <h3 class="subsection-heading">Reach-SDP</h3>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2004.07876" target="_blank" rel="noopener">Hu, Fazlyab, Morari &amp; Pappas, CDC 2020</a> over-approximate the forward reachable sets of a linear time-varying plant $x_{t+1}=A_tx_t+B_tu_t+c_t$ with a projected ReLU policy $u_t=\mathrm{Proj}_{\mathcal U_t}(\pi(x_t))$, $\mathcal U_t$ a box. The projection is itself written as two extra ReLU layers, $x^{\ell+1}=\max(W_\ell x^\ell+b_\ell-\underline u,0)+\underline u$ and $x^{\ell+2}=-\max(\bar u-x^{\ell+1},0)+\bar u$, so the whole loop map is a ReLU network plus linear algebra. Three families of QCs describe it, all in the basis $\boldsymbol\xi=(x_0,\text{all neurons},1)$: the initial set (for a polytope $\{Hx\le h\}$: $(Hx-h)^{\top}\Gamma(Hx-h)\ge0$ for any $\Gamma$ with nonnegative entries), each ReLU ($y_i\ge x_i$, $y_i\ge0$, $y_i^2=x_iy_i$) and the coupled repeated-ReLU constraints $\lambda_{ij}\big[(y_j-y_i)(x_j-x_i)-(y_j-y_i)^2\big]\ge0$, and the candidate output set $\{y:[y;1]^{\top}S[y;1]\le0\}$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; SDP for the one-step reachable set (Hu et al., CDC 2020, Thm. 1)</div>
+      <div>
+        If the initial set satisfies the QCs defined by $M_{\rm in}(\cdot)$, the projected network those defined by $M_{\rm mid}(\cdot)$, and $M_{\rm out}(S)$ encodes the candidate set $\bar{\mathcal R}$, then feasibility of
+        $$M_{\rm in}(P)+M_{\rm mid}(Q)+M_{\rm out}(S)\preceq0$$
+        for some admissible multipliers $(P,Q,S)$ implies $\mathcal R(\mathcal X_0)\subseteq\bar{\mathcal R}(\mathcal X_0)$. <em>Proof.</em> Multiply by the basis vector $\boldsymbol\xi$ generated by any $x_0\in\mathcal X_0$: the first two quadratic terms are $\ge0$, so the third is $\le0$, which says that the successor state lies in $\bar{\mathcal R}$. $\blacksquare$ For a polytope with fixed facet normals $a_i$ one solves $\min b_i$ for each facet; for an ellipsoid, $\min-\log\det$ of its shape matrix (convex after a Schur complement). Multi-step sets are obtained recursively, $\bar{\mathcal R}_{t+1}=\mathrm{ReachSDP}(\bar{\mathcal R}_t)$, so over-approximation errors accumulate with the horizon.
+      </div>
+    </div>
+
+    <p>The paper verifies a double integrator (sampling time 1 s, $|u|\le1$) under a ReLU network with hidden layers of 10 and 5 neurons trained on 2420 samples of a linear MPC: every $x_0\in[2.5,3]\times[-0.25,0.25]$ reaches $[-0.25,0.25]^2$ within 6 steps without violating the state constraint, and the polytopic over-approximations are tight. A second example certifies a network that imitates a nonlinear MPC for a 6-D quadrotor.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to Module 12</div>
+      <div>The coupled terms $\lambda_{ij}$ are <em>valid here</em>: they relate two neurons evaluated at the same input, i.e. two points $(x_i,y_i)$ and $(x_j,y_j)$ of one and the same scalar ReLU, so the chord between them has slope in $[0,1]$. The same coupling applied to <em>increments</em> $\varphi(x_i)-\varphi(x'_i)$ and $\varphi(x_j)-\varphi(x'_j)$ of two different input vectors has no such interpretation, which is why it is invalid in LipSDP (<a href="lipsdp.html#lipsdp-network-error">Module 12</a>) and in incremental analysis (Section 5).</div>
+    </div>
+
+    <h3 class="subsection-heading">Formally verified neural Lyapunov controllers</h3>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2404.07956" target="_blank" rel="noopener">Yang, Dai, Shi, Hsieh, Tedrake &amp; Zhang, ICML 2024</a> drop the linear plant and the quadratic Lyapunov function. For $x_{t+1}=f(x_t,u_t)$ with continuous $f$ they train a controller $u=\mathrm{clamp}(\phi_\pi(x)-\phi_\pi(x_*)+u_*,u_{\rm lo},u_{\rm up})$, for output feedback also a neural observer $\hat x_{t+1}=f(\hat x_t,u_t)+\phi_{\rm obs}(\hat x_t,y_t-h(\hat x_t))-\phi_{\rm obs}(\hat x_t,0)$, and a Lyapunov function $V$ that is positive definite by construction, on the internal state $\xi$ ($\xi=x$, or $\xi=(x,\hat x-x)$ for output feedback).</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Verifiable ROA condition (Yang et al., ICML 2024, Thm. 3.3)</div>
+      <div>
+        Let $\mathcal B$ be a compact "region of interest" containing the equilibrium $\xi_*$, $\kappa\gt0$ a decay rate, $\mathcal S=\{\xi\in\mathcal B:V(\xi)\lt\rho\}$ and $F(\xi)=V(f_{\rm cl}(\xi))-(1-\kappa)V(\xi)$. If
+        $$\big(F(\xi)\le0\ \wedge\ f_{\rm cl}(\xi)\in\mathcal B\big)\ \vee\ V(\xi)\ge\rho\qquad\forall\,\xi\in\mathcal B,$$
+        then $\mathcal S$ is forward invariant, $V$ decays exponentially on it, and $\mathcal S$ is an inner approximation of the ROA (proof: for $\xi\in\mathcal S$ the second alternative is false, so $V(\xi^+)\le(1-\kappa)V(\xi)\lt\rho$ and $\xi^+\in\mathcal B$, i.e. $\xi^+\in\mathcal S$).<br>
+        <em>Why the disjunction.</em> Earlier works demanded decrease on all of $\mathcal B$ and then took the largest sublevel set inside $\mathcal B$, which wastes the part of $\mathcal B$ outside $\mathcal S$ (not invariant anyway) and yields a smaller certified set. Here decrease is required only where $V\lt\rho$, and the condition is still stated on the explicitly defined box $\mathcal B$ that a verifier can handle.
+      </div>
+    </div>
+
+    <p>The condition is checked by $\alpha,\beta$-CROWN (bound propagation plus branch-and-bound; <a class="cite" href="https://arxiv.org/abs/2011.13824" target="_blank" rel="noopener">Xu et al., ICLR 2021</a>, <a class="cite" href="https://arxiv.org/abs/2103.06624" target="_blank" rel="noopener">Wang et al., NeurIPS 2021</a>), extended to the nonlinear operations of the dynamics, and the largest verifiable $\rho$ is found by bisection. Training alternates adversarial search for counterexamples with a loss that also enlarges $\mathcal S$. The authors report larger verified regions than prior neural Lyapunov methods and, to their knowledge, the first formally verified neural output-feedback controllers with Lyapunov certificates. Context: <a href="lyapunov-mpc.html#neural-certificates">Module 11</a>.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Two certificate cultures</div>
+      <div>LMI certificates are cheap, compositional and scale polynomially, but need a linear (or IQC-bounded) plant and a quadratic storage, and their conservatism is structural. Bound-propagation verification accepts nonlinear plants and neural Lyapunov functions, and is complete in principle, but branch-and-bound is exponential in the worst case (complete verification of ReLU networks is NP-hard) and in practice limited to low-dimensional state spaces. SDP-CROWN-type methods (Module 15) try to import SDP tightness into bound propagation.</div>
+    </div>
+
+    <!-- ===== SECTION 8 ===== -->
+    <h2 class="section-heading" id="scalable-2026">8. Towards Scale: ReLU IQCs and Incremental Analysis (2025&ndash;2026)</h2>
+
+    <p>Two recent preprints from the Seiler&ndash;Hu&ndash;Dullerud collaboration push the IQC programme in the two directions that matter most: tighter descriptions of the activation, and certificates whose size does not grow with depth. Both are arXiv preprints; statements may change between versions.</p>
+
+    <p><strong>ReLU-specific hard IQCs.</strong> <a class="cite" href="https://arxiv.org/abs/2511.12826" target="_blank" rel="noopener">Vahedi Noori, Hu, Dullerud &amp; Seiler (arXiv, Nov. 2025)</a> analyse internal stability of a discrete-time feedback system with a ReLU nonlinearity, motivated by recurrent networks. After reviewing static QCs for slope-restricted nonlinearities they derive hard IQCs for the scalar ReLU from FIR filters and structured matrices, combine them with a dissipation inequality into an LMI, prove that the new IQCs form a superset of the Zames&ndash;Falb IQCs for slope-restricted nonlinearities, and report less conservative stability margins than Zames&ndash;Falb multipliers and static QCs, sometimes dramatically so.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Intuition (an illustration, not the paper's construction)</div>
+      <div>Zames&ndash;Falb multipliers use only monotonicity and slope bounds, so they hold for every function in $\mathrm{slope}[0,1]$. ReLU has more structure: $w=\max(v,0)$ gives $w\ge0$, $w-v\ge0$ and $w(w-v)=0$, the constraints DeepSDP and Reach-SDP use at a single time. Products of nonnegative quantities at <em>different</em> times are again valid quadratic constraints, e.g. $w_t(w_s-v_s)\ge0$ and $w_tw_s\ge0$ for all $t,s$; none of them holds for a general slope-restricted function (tanh takes negative values). A multiplier class that includes such cross-time terms can therefore be strictly larger than the Zames&ndash;Falb class.</div>
+    </div>
+
+    <p><strong>Depth-independent incremental certificates.</strong> <a class="cite" href="https://arxiv.org/abs/2609.22576" target="_blank" rel="noopener">Wang, Seiler, Dullerud &amp; Hu (arXiv, Sept. 2026)</a> consider an LTI plant $G$ in feedback with a deep feedforward network and an uncertainty $\Delta_U$ described by incremental $\rho$-hard IQCs. With nonzero biases the equilibrium may move or not exist, so they study pairs of trajectories (incremental convergence and incremental $\ell_2$ gain) instead of an equilibrium. For layers $h^l=\phi(W_lh^{l-1}+b_l)$, $l=1,\dots,N$ (their indexing), activations slope-restricted in $[0,1]$ with $\phi(0)=0$, the whole network satisfies the <strong>$\Lambda$-incremental QC</strong></p>
+    <div class="math-block">$$\begin{bmatrix}\delta v\\ \delta h\end{bmatrix}^{\top}\underbrace{\begin{bmatrix}0 & W_1^{\top}\Lambda_1 & & \\ \Lambda_1W_1 & -2\Lambda_1 & W_2^{\top}\Lambda_2 & \\ & \Lambda_2W_2 & \ddots & \ddots\\ & & \ddots & -2\Lambda_N\end{bmatrix}}_{M_{\rm NN}(\Lambda)}\begin{bmatrix}\delta v\\ \delta h\end{bmatrix}\ge0,\qquad \Lambda_l\ \text{diagonal},\ \Lambda_l\succeq0,$$</div>
+    <p>because the form equals $\sum_l2(\delta h^l)^{\top}\Lambda_l(W_l\delta h^{l-1}-\delta h^l)=\sum_{l,i}2\lambda_{l,i}\,\delta h^l_i(\delta z^l_i-\delta h^l_i)$, with $\delta z^l=W_l\delta h^{l-1}$ the pre-activation increment (the bias cancels), and slope $[0,1]$ gives $\delta h_i(\delta z_i-\delta h_i)\ge0$ neuron by neuron. The full-order SDP built from it grows with the total number of neurons. The paper decomposes it and combines the decomposition with scalable Lipschitz estimation for the inner layers, so that the remaining control-analysis LMIs depend only on the widths of the <em>last two</em> layers and not on the depth; the incremental small-gain test is recovered as a special case, and a multi-round alternating update of the coupling variables reduces conservatism. They also show that incremental convergence implies convergence of all trajectories to a common limit point under an extra assumption (existence of one convergent trajectory), with a counterexample without it.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Open problems (as of 2026)</div>
+      <div>
+        <ul>
+          <li><strong>Richer incremental multipliers.</strong> The repeated-nonlinearity (coupled) multipliers fail incrementally; which larger classes are valid for Lipschitz and contraction certificates, and how tight can they be?</li>
+          <li><strong>Synthesis without BMIs</strong> beyond full-order changes of variables and direct parameterisations: reduced-order and structured controllers, output feedback with uncertain models, dynamic multipliers optimised jointly with the network.</li>
+          <li><strong>Local certificates with constraints</strong>: saturation, state constraints and safe sets (Module 10) together with regions of attraction, for moving references and in the presence of disturbances.</li>
+          <li><strong>Scale and architecture</strong>: convolutional and state-space layers (the 2-D systems view of Module 12), deep networks without layer-wise blow-up, and nonlinear plants beyond sector-bounded IQC models.</li>
+          <li><strong>Learned plants</strong>: combining statistical model-error bounds (Modules 3 and 11) with IQC certificates for the loop.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <h2 class="section-heading" id="loop-walkthrough">Walkthrough: Stability LMI for a Linear Plant With a One-Layer NN</h2>
+
+    <p>The smallest loop in which every step of Section 2 is visible has one state and one neuron. The six steps derive the stability LMI, solve it in closed form, and turn the insight box of Section 1 into an exact statement: with a global sector, what is certified is exactly what the two extreme members of the sector allow, and only the local sector can certify an open-loop unstable plant.</p>
+
+    <div class="interactive-container" id="nl-walkthrough" data-title="Derivation: stability LMI for a scalar plant with one tanh neuron"></div>
+
+    <div class="insight-box">
+      <div class="box-label">What carries over to the general case</div>
+      <div>Steps 2&ndash;4 are Theorem 1 of Yin et al. with every matrix of size one: the decrease form is $R_V^{\top}[\cdot]R_V$, the QC is $R_\phi^{\top}Q_{\alpha\beta}(T)R_\phi$, and homogeneity plus the containment LMI is how the ellipsoid gets its size. What does <em>not</em> carry over is the closed-form answer: with several states and neurons the S-procedure combines many constraints and is only sufficient, and the explorer below has to solve the SDP numerically.</div>
+    </div>
+
+    <!-- ===== EXPLORER ===== -->
+    <h2 class="section-heading" id="loop-explorer">Interactive: A Neural Controller in Closed Loop</h2>
+
+    <p>The plant is a linearised pendulum, discretised by Euler's method with $h=0.1$: $x_{t+1}=\begin{bmatrix}1&amp;h\\ ah&amp;1-0.5h\end{bmatrix}x_t+\begin{bmatrix}0\\ bh\end{bmatrix}u_t$ (angle and rate; unstable for $a\gt0$). The controller is a bias-free tanh network with two neurons, $u=W_1\tanh(W_0x)$ with $W_0=w_0\begin{bmatrix}1&amp;0.5\\ 0&amp;1\end{bmatrix}$ and $W_1=w_1\begin{bmatrix}-6&amp;-1.5\end{bmatrix}$: a saturating PD law with linearisation $u\approx W_1W_0x$ and $|u|\le7.5\,w_1$. For every setting the page solves the SDP of Section 2 in the browser: a log-barrier interior-point method for the $4\times4$ LMI in $(P,\lambda_1,\lambda_2)$ and the two $3\times3$ containment LMIs, with a margin $\mathcal M\preceq-5\cdot10^{-5}\,\mathrm{trace}(P)\,I$. Feasibility is decided by a phase-I problem: with $\mathrm{trace}(P)=1$, minimise $s$ subject to $\mathcal M\preceq sI$ and $P\succeq-sI$. Here $s\lt0$ is exactly a certificate, and the page accepts $s\lt-2\cdot10^{-4}$. Missing that threshold is not treated as a proof that no certificate exists: the panel shows the signed value of $s$ and claims impossibility only when a linear law inside the sector is itself not asymptotically stable. In local mode it bisects for the largest box $|v_i|\le\delta$ on which the sector $[\tanh(\delta)/\delta,1]$ still admits a certificate and then minimises $\mathrm{trace}(P)$ over $\delta$ by golden-section search, as Pauli et al. do. The returned $(P,T)$ is re-checked with a Jacobi eigenvalue computation. Independently of all that, the true nonlinear loop is <em>simulated</em>, on a grid and from points on the certified ellipse.</p>
+
+    <div class="interactive-container">
+      <div class="interactive-label">Certified ellipse (proof) vs simulated region of attraction (evidence)</div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Plant a (unstable if a &gt; 0) <span id="nl-a-v">2.0</span></label><input type="range" id="nl-a" min="-2" max="3" step="0.1" value="2"></div>
+        <div class="slider-control"><label>Input gain b <span id="nl-b-v">1.0</span></label><input type="range" id="nl-b" min="0.5" max="2" step="0.1" value="1"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Input-weight scale w&#8320; <span id="nl-w0-v">1.0</span></label><input type="range" id="nl-w0" min="0.2" max="3" step="0.1" value="1"></div>
+        <div class="slider-control"><label>Output-weight scale w&#8321; <span id="nl-w1-v">1.0</span></label><input type="range" id="nl-w1" min="0.1" max="2" step="0.05" value="1"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:13px;">
+        <label for="nl-mode">Sector:</label>
+        <select id="nl-mode" style="padding:4px 8px;font-size:13px;border:1px solid #ccc;border-radius:4px;max-width:100%;">
+          <option value="local" selected>local [tanh(&delta;)/&delta;, 1], search over &delta; (Yin et al.)</option>
+          <option value="global">global [0, 1]</option>
+        </select>
+        <button id="nl-preset" style="padding:4px 10px;font-size:12px;border:1px solid #2d5fa6;color:#2d5fa6;background:#fff;border-radius:4px;cursor:pointer;">Preset: stable plant, small gain, global</button>
+        <button id="nl-reset" style="padding:4px 10px;font-size:12px;border:1px solid #888;color:#555;background:#fff;border-radius:4px;cursor:pointer;">Reset</button>
+      </div>
+      <div id="nl-info" style="background:#f0f4ff;border:1px solid #c5d0e6;border-radius:6px;padding:10px 14px;font-size:13px;line-height:1.6;margin-bottom:12px;">Computing&hellip;</div>
+      <svg id="nl-svg" viewBox="0 0 600 395" width="600" height="395" style="display:block;max-width:100%;height:auto;border:1px solid #e0e0e0;border-radius:6px;background:#fff;" role="img" aria-label="Phase plane with certified ellipse, simulated region of attraction and trajectories"></svg>
+      <div style="display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:#555;margin-top:8px;">
+        <span><span style="display:inline-block;width:14px;height:10px;background:rgba(21,101,192,0.15);border:2px solid #1565c0;vertical-align:-1px;"></span> certified set $\mathcal E(P,0)$ (a proof)</span>
+        <span><span style="display:inline-block;width:14px;height:10px;background:#e3f2e5;border:1px solid #c8e6c9;vertical-align:-1px;"></span> / <span style="display:inline-block;width:14px;height:10px;background:#fdeceb;border:1px solid #f5c6c3;vertical-align:-1px;"></span> / <span style="display:inline-block;width:14px;height:10px;background:#eeeeee;border:1px solid #ccc;vertical-align:-1px;"></span> simulation converges / does not converge / undecided within the step budget (evidence)</span>
+        <span><span style="display:inline-block;width:16px;border-top:2px dashed #e67e22;vertical-align:3px;"></span> box $|v_i|\le\delta$ where the local sectors hold</span>
+        <span><span style="display:inline-block;width:16px;border-top:2px solid #1565c0;vertical-align:3px;"></span> / <span style="display:inline-block;width:16px;border-top:2px solid #7b1fa2;vertical-align:3px;"></span> trajectories from inside / outside the certificate</span>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; Reading the explorer</div>
+      <div>The shading is a finite simulation (600 steps per grid point, up to 6000 when the loop decays slowly; grey means that a point neither converged nor escaped within that budget, shown only when the linearised loop is Schur stable), the ellipse a proof. The ellipse can never contain red points; in slow, nearly marginal settings part of it may be grey, because the decay guaranteed by the certificate can take thousands of steps. The converse is not required, and the gap between the ellipse and the green region is the conservatism of a quadratic $V$, of diagonal static multipliers and of the box. The certificate is for the model: an Euler-discretised linear plant with exactly these weights. The margin and the eigenvalue re-check make it robust to rounding, but it is not a verified-arithmetic proof.</div>
+    </div>
+
+    <!-- ===== EXERCISES ===== -->
+    <h2 class="section-heading" id="exercises">Exercises</h2>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 14.1 &mdash; A two-layer network loop in LFT form
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Plant $x_{t+1}=Ax_t+Bu_t$, $x\in\mathbb R^{n_x}$; controller $v^1=W_0x+b_0$, $w^1=\phi(v^1)$, $v^2=W_1w^1+b_1$, $w^2=\phi(v^2)$, $u=W_2w^2+b_2$ with widths $n_1,n_2$. (a) Write the loop in the form of Section 1 with $v=(v^1,v^2)$, $w=(w^1,w^2)$. (b) Why is it well posed? (c) Without biases, give $R_V$ and $R_\phi$ of Theorem 1 and the size of the stability LMI. (d) What changes for output feedback $u=\pi(Cx)$, and for nonzero biases?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <div class="math-block">$$\begin{bmatrix}u\\ v^1\\ v^2\end{bmatrix}=\begin{bmatrix}0 & 0 & W_2 & b_2\\ W_0 & 0 & 0 & b_0\\ 0 & W_1 & 0 & b_1\end{bmatrix}\begin{bmatrix}x\\ w^1\\ w^2\\ 1\end{bmatrix}$$</div>
+            <p><strong>(a)</strong> So $N_{ux}=0$, $N_{uw}=[0\ \ W_2]$, $N_{vx}=\begin{bmatrix}W_0\\ 0\end{bmatrix}$, $N_{vw}=\begin{bmatrix}0 & 0\\ W_1 & 0\end{bmatrix}$, $N_{ub}=b_2$, $N_{vb}=(b_0,b_1)$, and $x_{t+1}=Ax_t+BW_2w^2_t+Bb_2$. <strong>(b)</strong> $N_{vw}$ is strictly block lower triangular: $v^1$ depends on $x$ only, then $w^1$, then $v^2$ and $w^2$. Forward substitution computes $w$ for any activation; there is no algebraic loop.</p>
+            <p><strong>(c)</strong> With $\zeta=(x,w^1,w^2)$, $R_V\zeta=(x,u)$ and $R_\phi\zeta=(v^1,v^2,w^1,w^2)$:</p>
+            <div class="math-block">$$R_V=\begin{bmatrix}I & 0 & 0\\ 0 & 0 & W_2\end{bmatrix},\qquad R_\phi=\begin{bmatrix}W_0 & 0 & 0\\ 0 & W_1 & 0\\ 0 & I & 0\\ 0 & 0 & I\end{bmatrix}.$$</div>
+            <p style="margin-bottom:0;">The first LMI has size $n_x+n_1+n_2$ and $n_x(n_x+1)/2+n_1+n_2$ variables; the local version adds $n_1$ containment LMIs of size $1+n_x$. <strong>(d)</strong> Output feedback replaces $W_0$ by $W_0C$ (Yin et al., Remark 2). With biases, first solve $x_*=Ax_*+B\pi(x_*)$ and shift: the bias column drops out, but neuron $i$ now carries $\tilde\varphi_i(s)=\varphi(s+v_{*,i})-\varphi(v_{*,i})$, so the sectors are offset sectors computed per neuron (Algorithm 1) and multipliers that rely on a repeated nonlinearity are in general no longer valid, except between neurons with equal $v_{*,i}$ and common slope bounds (Exercise 14.6, Section 3).</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 14.2 &mdash; The sector QC of tanh, global and local (proof)
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">(a) Prove that $\tanh$ is slope-restricted and sector-bounded in $[0,1]$, and write the sector condition as a QC. (b) Prove that on $|v|\le\bar v$ the tightest centred sector is $[\tanh(\bar v)/\bar v,\,1]$ and the tightest slope bounds are $[1-\tanh^2\bar v,\,1]$. (c) Compare the lower bounds for $\bar v=1,2$; which one may Theorem 1 of Yin et al. use, and why?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> $\tanh'(s)=1-\tanh^2s\in(0,1]$. By the mean value theorem every chord slope equals some $\tanh'(\xi)\in(0,1]$: slope $[0,1]$. The chord to the origin ($\tanh0=0$) gives $0\lt\tanh(v)/v\le1$: sector $[0,1]$. With $w=\tanh v$: $w(v-w)\ge0$, i.e. $\begin{bmatrix}v\\ w\end{bmatrix}^{\top}\begin{bmatrix}0 & 1\\ 1 & -2\end{bmatrix}\begin{bmatrix}v\\ w\end{bmatrix}\ge0$, the matrix of Section 1 with $\alpha=0$, $\beta=1$.</p>
+            <p><strong>(b)</strong> $r(v)=\tanh(v)/v$ ($r(0)=1$) is even, and for $v\gt0$, $r'(v)=-h(v)/v^2$ with $h(v)=\tanh v-v(1-\tanh^2v)$. As $h(0)=0$ and $h'(v)=2v\tanh v\,(1-\tanh^2v)\gt0$, $h\gt0$ and $r$ decreases strictly on $(0,\infty)$. So $r(v)\in[r(\bar v),1)$ on $0\lt|v|\le\bar v$, with the lower end attained at $\pm\bar v$ and the upper approached as $v\to0$: the tightest sector is $[\tanh(\bar v)/\bar v,1]$. $\tanh'$ is even and decreasing in $|s|$, and a chord slope is the mean of $\tanh'$ over a subinterval of $[-\bar v,\bar v]$, so it lies in $[1-\tanh^2\bar v,1]$; short chords near $\pm\bar v$ and near $0$ approach both ends.</p>
+            <p style="margin-bottom:0;"><strong>(c)</strong> $\bar v=1$: $0.762$ (sector) vs $0.420$ (slope); $\bar v=2$: $0.482$ vs $0.071$. The sector bound is always larger, since $\tanh(\bar v)/\bar v=\frac1{\bar v}\int_0^{\bar v}\tanh'(s)\,ds\ge\tanh'(\bar v)$. Theorem 1 uses a non-incremental QC relative to the equilibrium, so the tighter sector bound is valid there, but only on the box (hence the containment LMI). Slope bounds are needed wherever increments between two arbitrary points appear: Zames&ndash;Falb multipliers (Section 3), incremental gains and contraction (Sections 5 and 8), and certificates around a whole family of equilibria (Section 4).</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 14.3 &mdash; Solve the walkthrough LMI numerically
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">(a) For $a=0.8$, $b=1$, $W_0=2$, $W_1=-0.6$: decide feasibility with Step 5, compute $\lambda^\star$ for $p=1$, $\mathcal M(1,\lambda^\star)$ and its eigenvalues, and all admissible $\lambda$. (b) Same network, $a=1.3$: show that the global LMI fails, find the largest interval certified with local sectors and check it by simulation. (c) Give an explicit multiplier for the box $\bar v=3$.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> $g=bW_1=-0.6$, $c=gW_0=-1.2$; $|a|\lt1$ and $a+c=-0.4$: feasible. $\lambda^\star=(1-0.64+0.96)/4=0.33$ and</p>
+            <div class="math-block">$$\mathcal M(1,0.33)=\begin{bmatrix}-0.36 & -0.48+0.66\\ -0.48+0.66 & 0.36-0.66\end{bmatrix}=\begin{bmatrix}-0.36 & 0.18\\ 0.18 & -0.30\end{bmatrix},$$</div>
+            <p>with eigenvalues $-0.148$, $-0.512$ and determinant $0.0756=\big(1.32^2-1.44\big)/4$, as Step 5 predicts. The determinant $-4\lambda^2+2.64\lambda-0.36$ is positive for $\lambda\in(0.193,\,0.467)$, where the $(2,2)$ entry $0.36-2\lambda$ is negative too: every such $\lambda$ (with $p=1$, or any positive multiple of the pair) certifies global exponential stability.</p>
+            <p><strong>(b)</strong> The $(1,1)$ entry is $0.69p\gt0$: infeasible. The linearisation $a+c=0.1$ is stable and $(a-1)/|c|=0.25$, so $\tanh(\bar v^\star)/\bar v^\star=0.25$ gives $\bar v^\star=3.997$: every $|x_0|\lt\bar v^\star/|W_0|=1.9987$ is certified. Simulating $x^+=1.3x-0.6\tanh(2x)$: $x_0=1.9985$ converges and $x_0=1.999$ diverges, because the nonzero equilibria sit at $\pm1.9987$. The certificate is exact.</p>
+            <p style="margin-bottom:0;"><strong>(c)</strong> $\alpha=\tanh(3)/3=0.332$, $a+\alpha c=0.902\lt1$. After the loop transformation $a'=0.902$, $c'=(1-\alpha)c=-0.802$, so $\lambda'^\star=(1-a'^2-a'c')/W_0^2=0.227$. Since $\hat w(v-\hat w)=(w-\alpha v)(v-w)/(1-\alpha)^2$, the multiplier in the original coordinates is $\lambda=\lambda'^\star/(1-\alpha)^2=0.509$. Check: $\begin{bmatrix}a^2-1-2\alpha\lambda W_0^2 & ag+(1+\alpha)\lambda W_0\\ \cdot & g^2-2\lambda\end{bmatrix}=\begin{bmatrix}-0.661 & 0.576\\ 0.576 & -0.658\end{bmatrix}$ has eigenvalues $-0.084$, $-1.236$ (any $\lambda\in(0.269,0.750)$ works). Rescaled to $p=W_0^2/\bar v^2=4/9$, $\lambda=0.226$, the containment LMI holds with equality and $|x|\le1.5$ is certified.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 14.4 &mdash; Why a local sector needs an invariant set (proof)
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">(a) A colleague argues: "The sector $[\alpha,1]$ holds on the box $\mathcal B=\{x:|v_i|\le\delta\ \forall i\}$ and the first LMI of Theorem 1 holds with it, so $V$ decreases on $\mathcal B$ and every $x_0\in\mathcal B$ converges." Find the gap. (b) Test the claim on the explorer's default loop ($a=2$, $b=1$, $w_0=w_1=1$, local mode, $\delta\approx2.87$) at $x_0=(-4.25,\,2.80)$. (c) Explain how the containment LMI and the induction of Section 2 close the gap, and why that is not circular.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> "$V$ decreases on $\mathcal B$" means: if $x_t\in\mathcal B$ then $V(x_{t+1})\lt V(x_t)$. It does not give $x_{t+1}\in\mathcal B$. The box is a parallelogram, not a sublevel set of $V$, so a step can lower $V$ and still leave $\mathcal B$; outside, the sector is false and the LMI says nothing. The argument assumes what it must prove: that the state stays where the QC holds.</p>
+            <p><strong>(b)</strong> $v_1=x_1+0.5x_2=-2.85$ and $v_2=2.80$, so $x_0\in\mathcal B$. With the explorer's $P\approx\begin{bmatrix}0.162 & 0.060\\ 0.060 & 0.144\end{bmatrix}$, however, $V(x_0)\approx2.63\gt1$: $x_0$ lies outside the certified ellipse. In simulation, $V$ decreases while the state is in $\mathcal B$, the state leaves $\mathcal B$ at $t=4$ ($|v_1|\gt\delta$), $V$ bottoms out near $1.46$ around $t=11$, and the trajectory then diverges: it started beyond the stable manifold of the saddle equilibrium $(-2.985,0)$ (solution of $2x_1=6\tanh x_1$). So a point of the box is not in the region of attraction; the box corners $(\mp4.31,\pm2.87)$ diverge as well.</p>
+            <p style="margin-bottom:0;"><strong>(c)</strong> The containment LMI gives $\mathcal E(P,0)\subseteq\mathcal B$ (Cauchy&ndash;Schwarz, Step A of the proof in Section 2). Induction: $x_0\in\mathcal E$ by assumption; if $x_t\in\mathcal E$ then $x_t\in\mathcal B$, so the QC holds <em>at time $t$</em>, so $V(x_{t+1})\le V(x_t)-\varepsilon\|x_t\|^2\le1$ and $x_{t+1}\in\mathcal E$. Each step uses the QC only at the current state, whose membership in $\mathcal B$ was established one step earlier. The ellipse works because it is both a sublevel set of $V$ (decrease keeps you inside) and a subset of $\mathcal B$ (the QC is valid inside). In the scalar walkthrough the two sets coincide, which is why no gap appeared there.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 14.5 &mdash; Offset-free tracking needs integral action, even with a perfect network
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Scalar plant $x_{t+1}=ax_t+bu_t+d$, $y=x$, nominal $a=0.5$, $b=1$, $d=0$. The network $\kappa(x,r)=(1-a)r/b-0.3\tanh(x-r)$ is "perfect" for the nominal model: $\kappa(x_*(r),r)=u_*(r)$ with $x_*(r)=r$ for every $r$. (a) Show that with $d=0.1$, or with the true gain $b=1.2$, the output settles at a wrong value; compute both offsets for $r=1$. (b) Add $\xi_{t+1}=\xi_t+r-y_t$ and $u=k_\xi\xi+\kappa(x,r)$ with $k_\xi=0.2$: show that every equilibrium has $y=r$ and check stability. (c) What must the certificate of Section 4 prove, and what not?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> An equilibrium satisfies $x_\infty=ax_\infty+b\kappa(x_\infty,r)+d$; let $e=x_\infty-r$. Nominal $b$, $d=0.1$: $0.5e+0.3\tanh e=0.1$, so $e=0.125$ (linearised: $d/(1-a+0.3b)=0.125$). True $b=1.2$, $d=0$: $(1-a)(r+e)=1.2\big[(1-a)r-0.3\tanh e\big]$, i.e. $0.5e+0.36\tanh e=0.1r$, so $e=0.116$ for $r=1$. The loop converges (the map $x\mapsto ax+b\kappa(x,r)+d$ has slope in $[0.14,0.5]$), but to $y\ne r$: zero offset needs $\kappa(x_*(r),r)=u_*(r)$ for the <em>true</em> plant and disturbance, which no network fitted to a model can guarantee.</p>
+            <p><strong>(b)</strong> At an equilibrium $\xi_{t+1}=\xi_t$, hence $r-y=0$; the argument uses neither $a$, $b$, $d$ nor $\kappa$. The equilibrium exists: $x=r$ and $\xi=\big[(1-a)r-b\kappa(r,r)-d\big]/(bk_\xi)$, e.g. $\xi=-0.833$ for $b=1.2$, $d=0.1$, $r=1$. The linearisation $\begin{bmatrix}a-0.3b & bk_\xi\\ -1 & 1\end{bmatrix}$ has spectral radius $0.632$ ($b=1$) and $0.616$ ($b=1.2$). Simulated from rest, $y\to1.000000$ for $d=0.1$ with $b=1$ or $b=1.2$, and $y\to-0.5$ for $r=-0.5$.</p>
+            <p style="margin-bottom:0;"><strong>(c)</strong> It must prove convergence of the augmented loop: for all references (Theorem 1 of Pauli et al., via slope restriction), for one reference (Theorem 3) or for a set of references (Theorem 4). Zero offset is then structural, and the network's steady-state map needs no constraint. With model error or disturbances, the stability certificate must cover the perturbed plant (e.g. with the IQC version of Section 2), but offset-freeness holds whenever the true loop converges.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 14.6 &mdash; Coupled multipliers after an equilibrium shift (counterexample)
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Two tanh neurons of a biased network have equilibrium pre-activations $v_{*,1}=0$ and $v_{*,2}=2$. (a) Write the shifted activations; show that each is slope-restricted in $[0,1]$ and vanishes at $0$. (b) The repeated-nonlinearity class would admit the doubly hyperdominant $\mathsf M=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}$, i.e. the QC $\tilde v^{\top}\mathsf M\tilde\phi(\tilde v)\ge0$. Show that it fails at $\tilde v=(-1,-1.5)$. (c) Why does it hold for a bias-free network at $x_*=0$, and which multipliers survive the shift?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> $\tilde\varphi_1(s)=\tanh s$, $\tilde\varphi_2(s)=\tanh(s+2)-\tanh2$. Every chord of $\tilde\varphi_2$ is a chord of $\tanh$, so both are slope-restricted in $[0,1]$, and $\tilde\varphi_i(0)=0$.</p>
+            <p><strong>(b)</strong> $\tilde v^{\top}\mathsf M\tilde\phi(\tilde v)=(\tilde v_1-\tilde v_2)\big(\tilde\varphi_1(\tilde v_1)-\tilde\varphi_2(\tilde v_2)\big)$. At $(-1,-1.5)$: $\tilde\varphi_1(-1)=-0.7616$ and $\tilde\varphi_2(-1.5)=\tanh0.5-\tanh2=-0.5019$, so the value is $0.5\times(-0.2597)=-0.130\lt0$. The QC is false and every certificate built on it is unsound: two different functions can be "out of order", which one monotone function never is.</p>
+            <p style="margin-bottom:0;"><strong>(c)</strong> Bias-free at $x_*=0$ means $v_*=0$ for all neurons (because $\tanh0=0$, every layer's equilibrium is $0$), so $\tilde\varphi_1=\tilde\varphi_2=\tanh$ and $(\tilde v_1-\tilde v_2)(\tanh\tilde v_1-\tanh\tilde v_2)\ge0$ by monotonicity; with the sector terms this is the doubly hyperdominant lemma of Section 3. Being bias-free is sufficient, not necessary: neurons with equal $v_{*,i}$ would share one shifted function too, but here $v_{*,1}\ne v_{*,2}$. (With local slope bounds, a coupled multiplier also needs one common pair $(\mu,\nu)$ for the coupled neurons; Section 3.) After the shift only multipliers that do not rely on the repeated structure survive: the circle multipliers, which use each neuron's own sector (the diagonal one, here $\tilde v_1\tilde\varphi_1=0.762\ge0$ and $\tilde v_2\tilde\varphi_2=0.753\ge0$, and also the full-block one, which is required to be nonnegative for every diagonal gain matrix in the sector box and therefore holds for any diagonal nonlinearity), and Zames&ndash;Falb with diagonal $M_j$, which couples a neuron only with itself at other times, harmless for a time-invariant channel. The same failure of the coupled LipSDP-Network multiplier is why the offset-free analysis (Section 4) and the incremental certificates (Section 5, Module 12) use a diagonal $T$.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <!-- ===== KEY PAPERS ===== -->
+    <h2 class="section-heading" id="papers">Key Papers</h2>
+
+    <table>
+      <thead><tr><th>Paper</th><th>Venue</th><th>Contribution</th><th>Why read it</th></tr></thead>
+      <tbody>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2006.07579" target="_blank" rel="noopener">Stability Analysis Using Quadratic Constraints for Systems With Neural Network Controllers</a> (Yin, Seiler, Arcak)</td><td>IEEE TAC 67(4), 2022</td><td>Local offset sector QCs by interval propagation; stability LMI and ellipsoidal ROA inner approximation; IQC-robust version</td><td>The template of Section 2 and of the walkthrough</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2103.17106" target="_blank" rel="noopener">Linear systems with neural network nonlinearities: Improved stability analysis via acausal Zames-Falb multipliers</a> (Pauli, Gramlich, Berberich, Allg&ouml;wer)</td><td>CDC 2021</td><td>Hard IQCs for acausal FIR Zames&ndash;Falb multipliers; repeated-nonlinearity classes; larger certified ROAs</td><td>Dynamic multipliers for NN loops, and which class is valid when</td></tr>
+        <tr><td><a class="cite" href="https://proceedings.mlr.press/v144/pauli21a.html" target="_blank" rel="noopener">Offset-free setpoint tracking using neural network controllers</a> (Pauli, K&ouml;hler, Berberich, Koch, Allg&ouml;wer)</td><td>L4DC 2021, PMLR 144</td><td>Integral action plus slope QCs: one LMI for all references; local versions; reference governor</td><td>Structure (an integrator) doing what training cannot</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1515/auto-2022-0032" target="_blank" rel="noopener">Robustness analysis and training of recurrent neural networks using dissipativity theory</a> (Pauli, Berberich, Allg&ouml;wer)</td><td>at &ndash; Automatisierungstechnik 70(8), 2022</td><td>RNN robustness via dissipativity: $\mathcal H_2$ and $\ell_2$-gain measures, LMI constraints for training</td><td>From feedforward Lipschitz bounds to recurrent models</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2404.07373" target="_blank" rel="noopener">Synthesizing Neural Network Controllers with Closed-Loop Dissipativity Guarantees</a> (Junnarkar, Arcak, Seiler)</td><td>Automatica 193, 2026</td><td>Convexifying change of variables for full-order implicit NN controllers; RL with a dissipativity projection</td><td>Synthesis with a hard closed-loop constraint</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2112.04219" target="_blank" rel="noopener">Learning Over All Stabilizing Nonlinear Controllers for a Partially-Observed Linear System</a> (Wang, Barbara, Revay, Manchester)</td><td>IEEE L-CSS 7, 2023</td><td>Nonlinear Youla parameterisation with a REN: every parameter value gives a contracting, Lipschitz closed loop, and large enough RENs approximate, on bounded inputs, every controller that achieves such a loop</td><td>Stability by construction instead of by constraint</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2004.07876" target="_blank" rel="noopener">Reach-SDP: Reachability Analysis of Closed-Loop Systems with Neural Network Controllers via Semidefinite Programming</a> (Hu, Fazlyab, Morari, Pappas)</td><td>CDC 2020</td><td>Reachable-set over-approximation of NN loops by an SDP of QCs, incl. coupled repeated-ReLU constraints</td><td>Safety (where trajectories go), and where coupling is valid</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2404.07956" target="_blank" rel="noopener">Lyapunov-stable Neural Control for State and Output Feedback: A Novel Formulation</a> (Yang, Dai, Shi, Hsieh, Tedrake, Zhang)</td><td>ICML 2024</td><td>Verifiable ROA condition on a box; neural Lyapunov functions and observers checked by &alpha;,&beta;-CROWN</td><td>The bound-propagation alternative for nonlinear plants</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2511.12826" target="_blank" rel="noopener">Discrete-Time Stability Analysis of ReLU Feedback Systems via Integral Quadratic Constraints</a> (Vahedi Noori, Hu, Dullerud, Seiler)</td><td>arXiv 2025</td><td>ReLU-specific hard IQCs containing the Zames&ndash;Falb class</td><td>Where multiplier design is heading</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2609.22576" target="_blank" rel="noopener">Scalable Incremental Robustness Analysis of Neural Network Feedback Systems</a> (Wang, Seiler, Dullerud, Hu)</td><td>arXiv 2026</td><td>$\Lambda$-incremental QC; decomposition making the control LMIs depth-independent</td><td>The current answer to "does it scale?"</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1109/9.587335" target="_blank" rel="noopener">System analysis via integral quadratic constraints</a> (Megretski, Rantzer)</td><td>IEEE TAC 42(6), 1997</td><td>The IQC framework and stability theorem</td><td>The language of Sections 2, 3 and 8</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1109/MCS.2022.3157117" target="_blank" rel="noopener">Dissipativity and Integral Quadratic Constraints: Tailored Computational Robustness Tests for Complex Interconnections</a> (Scherer)</td><td>IEEE CSM 42(3), 2022</td><td>IQC theorems via dissipation and hard IQCs; tailored LMI tests</td><td>The proof route used by Yin et al. and Pauli et al.</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1016/j.ejcon.2015.10.003" target="_blank" rel="noopener">Zames-Falb multipliers for absolute stability: From O'Shea's contribution to convex searches</a> (Carrasco, Turner, Heath)</td><td>European J. Control 28, 2016</td><td>Survey of Zames&ndash;Falb multipliers and convex (FIR) searches</td><td>Get the multiplier conditions right</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1146/annurev-control-022624-032459" target="_blank" rel="noopener">Neural Networks in the Loop: Learning with Stability and Robustness Guarantees</a> (Manchester, Wang, Barbara)</td><td>Annu. Rev. Control Robot. Auton. Syst. 9, 2026</td><td>Survey: direct parameterisations, RENs, Youla-type policies</td><td>A map of the synthesis side of this module</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="nl-flashcards"></div>
+
+    <div class="page-nav">
+      <a href="lipschitz-by-design.html">&larr; 13. Lipschitz-by-Design Networks &amp; Direct Parameterizations</a>
+      <a href="verification.html">15. Verification &amp; Distribution-Free Guarantees &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('nn-in-the-loop');
+    initCollapsibles();
+
+    initWalkthrough('nl-walkthrough', [
+      {
+        tab: '1. Loop',
+        title: 'Step 1: The loop in Lur\'e form',
+        text: 'Take the scalar plant $x_{t+1}=ax_t+bu_t$ and a one-neuron network without bias, $u_t=W_1\\tanh(W_0x_t)$, with scalar weights $W_0\\ne0$ and $W_1$, so that $x_*=0$ is an equilibrium. Name the pre-activation $v_t=W_0x_t$ and the activation $w_t=\\tanh(v_t)$, and abbreviate $g=bW_1$ (gain from $w$ to $x^+$) and $c=gW_0=bW_1W_0$ (loop gain of the linearisation). This is Section 1 with $N_{ux}=0$, $N_{uw}=W_1$, $N_{vx}=W_0$, $N_{vw}=0$:',
+        visual: '<div class="math-block">$$\\begin{gathered}x_{t+1}=ax_t+g\\,w_t,\\qquad v_t=W_0x_t,\\qquad w_t=\\tanh(v_t),\\\\ w_t(v_t-w_t)\\ge0\\ \\ \\text{for all }v_t\\in\\mathbb R .\\end{gathered}$$</div>',
+        insight: 'The last inequality is the global sector $[0,1]$ of $\\tanh$ ($0\\le\\tanh(v)/v\\le1$), and it is <em>all</em> the certificate will know about the network. It also holds for $w=v$ (the linearisation, $x^+=(a+c)x$) and for $w\\equiv0$ (the controller switched off, $x^+=ax$). Keep these two extreme members of the sector in mind.'
+      },
+      {
+        tab: '2. Lyapunov',
+        title: 'Step 2: Lyapunov candidate and decrease condition',
+        text: 'Try $V(x)=px^2$ with $p\\gt0$. We want $V(x_{t+1})-V(x_t)\\le-\\varepsilon x_t^2$ for some $\\varepsilon\\gt0$ along every trajectory. Substituting $x_{t+1}=ax_t+gw_t$ turns the difference into a quadratic form in $\\zeta_t=(x_t,w_t)$:',
+        visual: '<div class="math-block">$$V(x_{t+1})-V(x_t)=p(ax_t+gw_t)^2-px_t^2=\\begin{bmatrix}x_t\\\\ w_t\\end{bmatrix}^{\\top}\\begin{bmatrix}p(a^2-1) & pag\\\\ pag & pg^2\\end{bmatrix}\\begin{bmatrix}x_t\\\\ w_t\\end{bmatrix}.$$</div>',
+        insight: 'The form only has to be negative on the pairs $(x,w)$ that the loop can produce, not on all of $\\mathbb R^2$. Its $(2,2)$ entry $pg^2\\ge0$ shows that it is never negative definite on its own; the sector QC is what describes the admissible pairs.'
+      },
+      {
+        tab: '3. S-procedure',
+        title: 'Step 3: Add the sector QC with a multiplier',
+        text: 'For every $\\lambda\\ge0$ the admissible pairs satisfy $2\\lambda\\,w(W_0x-w)\\ge0$, again a quadratic form in $\\zeta$. If the <em>sum</em> of the two forms satisfies $\\zeta^{\\top}\\mathcal M\\zeta\\le-\\varepsilon\\|\\zeta\\|^2$, then on admissible pairs $V(x^+)-V(x)\\le V(x^+)-V(x)+2\\lambda w(v-w)\\le-\\varepsilon(x^2+w^2)$, because adding a nonnegative number cannot decrease the left side. This is the S-procedure of Module 2 with a single constraint.',
+        visual: '<div class="math-block">$$2\\lambda\\,w(W_0x-w)=\\begin{bmatrix}x\\\\ w\\end{bmatrix}^{\\top}\\begin{bmatrix}0 & \\lambda W_0\\\\ \\lambda W_0 & -2\\lambda\\end{bmatrix}\\begin{bmatrix}x\\\\ w\\end{bmatrix}=\\begin{bmatrix}v\\\\ w\\end{bmatrix}^{\\top}\\begin{bmatrix}0 & \\lambda\\\\ \\lambda & -2\\lambda\\end{bmatrix}\\begin{bmatrix}v\\\\ w\\end{bmatrix}\\ \\ge\\ 0 .$$</div>',
+        insight: 'The right-hand matrix is $Q_{\\alpha\\beta}(T)$ of Section 2 with $\\alpha=0$, $\\beta=1$ and $T=\\lambda$, and the middle one is $R_\\phi^{\\top}Q_{\\alpha\\beta}R_\\phi$ with $R_\\phi=\\mathrm{diag}(W_0,1)$. In the scalar case the multiplier matrix is a single number.'
+      },
+      {
+        tab: '4. LMI',
+        title: 'Step 4: Assemble the $2\\times2$ LMI in $(p,\\lambda)$',
+        text: 'Adding the two matrices gives Theorem 1 of Yin et al. for this loop, without the containment LMI because the sector is global. For fixed weights it is linear in the unknowns $(p,\\lambda)$:',
+        visual: '<div class="math-block">$$\\mathcal M(p,\\lambda)=\\begin{bmatrix}p(a^2-1) & pag+\\lambda W_0\\\\ pag+\\lambda W_0 & pg^2-2\\lambda\\end{bmatrix}\\prec0,\\qquad p\\gt0,\\ \\ \\lambda\\ge0 .$$</div><p style="font-size:14px;">If it holds, strictness gives $\\varepsilon\\gt0$ with $\\mathcal M\\preceq-\\varepsilon I$, hence $V(x_{t+1})\\le V(x_t)-\\varepsilon x_t^2=(1-\\varepsilon/p)V(x_t)$ for every $x_t\\in\\mathbb R$: global exponential stability.</p>',
+        insight: 'Both conditions are homogeneous: if $(p,\\lambda)$ works, so does $(\\kappa p,\\kappa\\lambda)$ for every $\\kappa\\gt0$, so we may fix $p=1$. In the local version the containment LMI breaks this symmetry and fixes the scale of $p$; that scale is what sizes the certified region.'
+      },
+      {
+        tab: '5. Solve',
+        title: 'Step 5: Solve the feasibility problem by hand',
+        text: 'Set $p=1$. A symmetric $2\\times2$ matrix is negative definite iff its $(1,1)$ entry is negative and its determinant is positive (the $(2,2)$ entry is then negative as well). The $(1,1)$ entry requires $a^2\\lt1$. The determinant is a concave quadratic in $\\lambda$. The $(2,2)$ entry forces $\\lambda\\gt g^2/2\\ge0$, so a positive determinant needs $2(1-a^2-ac)\\lambda\\gt W_0^2\\lambda^2+g^2\\ge0$, i.e. $1-a^2-ac\\gt0$, and then the maximum over $\\lambda$ is attained at some $\\lambda^\\star\\gt0$:',
+        visual: '<div class="math-block">$$\\begin{aligned}\\det\\mathcal M(1,\\lambda)&=(a^2-1)(g^2-2\\lambda)-(ag+\\lambda W_0)^2\\\\ &=-W_0^2\\lambda^2+2(1-a^2-ac)\\lambda-g^2,\\end{aligned}$$</div><div class="math-block">$$\\lambda^\\star=\\frac{1-a^2-ac}{W_0^2},\\qquad \\det\\mathcal M(1,\\lambda^\\star)=\\frac{(1-a^2-ac)^2-c^2}{W_0^2}.$$</div><p style="font-size:14px;">So the LMI is feasible iff $|a|\\lt1$ and $1-a^2-ac\\gt|c|$. For $c\\ge0$, $1-a^2-ac-c=(1+a)(1-a-c)$; for $c\\lt0$, $1-a^2-ac+c=(1-a)(1+a+c)$. With $|a|\\lt1$ both cases collapse to</p><div class="math-block">$$\\mathcal M(p,\\lambda)\\prec0\\ \\text{is feasible}\\iff|a|\\lt1\\ \\ \\text{and}\\ \\ |a+c|\\lt1 .$$</div><p style="font-size:14px;">Example: $a=0.5$, $b=1$, $W_0=1$, $W_1=-1$, so $g=c=-1$. Then $\\lambda^\\star=1.25$ and $\\mathcal M(1,1.25)=\\begin{bmatrix}-0.75&0.75\\\\0.75&-1.5\\end{bmatrix}$ has eigenvalues $-0.29$ and $-1.96$: certified. With $a=1.5$ the $(1,1)$ entry is $1.25p\\gt0$ for every $p$: no certificate, although the linearisation $x^+=0.5x$ is stable.</p>',
+        insight: 'The certificate exists exactly when the two extreme members of the sector, $w\\equiv0$ ($x^+=ax$) and $w=v$ ($x^+=(a+c)x$), are stable. For a first-order plant this is also what every nonlinearity in the sector needs: an admissible pair has $w=\\kappa v$ with $\\kappa\\in[0,1]$, so $x^+=(a+\\kappa c)x$, and $|a+\\kappa c|\\lt1$ for all $\\kappa\\in[0,1]$ iff it holds at both ends. The S-procedure with one constraint lost nothing here. With several states, stability of the extreme linear gains is necessary but not sufficient (Section 1), and the LMI is a sufficient test that can be conservative.'
+      },
+      {
+        tab: '6. Region',
+        title: 'Step 6: The certified region, global and local',
+        text: '<strong>Global sector:</strong> the QC holds for every $v$, so no invariance argument is needed and the certified region is all of $\\mathbb R$. The price is Step 5: an open-loop unstable plant ($|a|\\ge1$) is never certified, however good the network. <strong>Local sector:</strong> on $|v|\\le\\bar v$ the chord slope of $\\tanh$ gives the sector $[\\alpha,1]$ with $\\alpha=\\tanh(\\bar v)/\\bar v$. The loop transformation $w=\\alpha v+(1-\\alpha)\\hat w$ of Section 1 maps this to Step 5 with $a\\to a+\\alpha c$ and $c\\to(1-\\alpha)c$, so the first LMI below, $\\mathcal M_\\alpha\\prec0$, is feasible iff $|a+\\alpha c|\\lt1$ and $|a+c|\\lt1$. The containment LMI below it means $p\\ge W_0^2/\\bar v^2$; by homogeneity we can take $p=W_0^2/\\bar v^2$ and certify $|x|\\le\\bar v/|W_0|$.',
+        visual: '<div class="math-block">$$\\begin{gathered}\\mathcal M_\\alpha(p,\\lambda)=\\begin{bmatrix}p(a^2-1)-2\\alpha\\lambda W_0^2 & pag+(1+\\alpha)\\lambda W_0\\\\ pag+(1+\\alpha)\\lambda W_0 & pg^2-2\\lambda\\end{bmatrix}\\prec0,\\\\ \\begin{bmatrix}\\bar v^2 & W_0\\\\ W_0 & p\\end{bmatrix}\\succeq0,\\end{gathered}$$</div><div class="math-block">$$\\begin{aligned}a\\gt1,\\ c\\lt0,\\ |a+c|\\lt1:\\quad\\text{certified for }\\bar v&\\iff\\frac{\\tanh\\bar v}{\\bar v}\\gt\\frac{a-1}{|c|}\\\\ &\\iff\\bar v\\lt\\bar v^\\star,\\qquad\\frac{\\tanh\\bar v^\\star}{\\bar v^\\star}=\\frac{a-1}{|c|}.\\end{aligned}$$</div><p style="font-size:14px;">For $a=1.5$, $b=1$, $W_0=1$, $W_1=-1$: $(a-1)/|c|=0.5$ and $\\bar v^\\star=1.915$. At $\\bar v=1.5$: $\\alpha=0.603$, $a+\\alpha c=0.897$, and $(p,\\lambda)=(1,1.5)$ make $\\mathcal M_\\alpha$ negative definite (eigenvalues $-2.44$ and $-0.12$); rescaled to $p=1/2.25$ it certifies $|x|\\le1.5$.</p>',
+        insight: 'The union of the certified intervals is $|W_0x|\\lt\\bar v^\\star$, and it is the exact region of attraction: $\\pm\\bar v^\\star$ solve $(1-a)y=c\\tanh y$, so they are equilibria of $y^+=ay+c\\tanh y$ with $y=W_0x$, and beyond them $|y|$ grows (simulation: $x_0=1.914$ converges, $x_0=1.916$ diverges). One state and one neuron is the best case. In higher dimensions the shape of the ellipsoid, the interval propagation through the layers and the S-procedure with many constraints each cost something, which is why the explorer searches the box size numerically.'
+      }
+    ]);
+
+    initFlashcards('nl-flashcards', [
+      { q: 'Why write a neural-network-controlled loop in Lur\'e (LFT) form?',
+        a: 'It separates everything linear (plant and all affine layers, collected in $N$) from one diagonal, static block $w=\\phi(v)$ of scalar activations. Then a quadratic storage for the linear part, quadratic constraints for $\\phi$ and the S-procedure turn stability into an LMI.' },
+      { q: 'Why can a global sector $[0,1]$ never certify an open-loop unstable plant?',
+        a: 'The sector contains $w\\equiv0$, the switched-off controller, so the certificate would also prove $x^+=Ax$ stable. In the scalar walkthrough: feasible iff $|a|\\lt1$ and $|a+c|\\lt1$, $c=bW_1W_0$.' },
+      { q: 'Tight local sector and local slope bounds of $\\tanh$ on $|v|\\le\\bar v$?',
+        a: 'Sector $[\\tanh(\\bar v)/\\bar v,\\,1]$ (chord slope); slope $[1-\\tanh^2\\bar v,\\,1]$. For $\\bar v=2$: $0.482$ vs $0.071$. The sector bound suffices for stability of one equilibrium; slope bounds are needed for incremental properties and dynamic multipliers.' },
+      { q: 'What does the second LMI in Theorem 1 of Yin, Seiler & Arcak do?',
+        a: '$\\begin{bmatrix}(\\bar v_i-v_{*,i})^2 & (W_0)_i\\\\ (W_0)_i^{\\top} & P\\end{bmatrix}\\succeq0$ is equivalent to $(W_0)_iP^{-1}(W_0)_i^{\\top}\\le(\\bar v_i-v_{*,i})^2$, i.e. the ellipsoid $\\mathcal E(P,x_*)$ lies inside the first-layer box. The local sectors then hold on an invariant set, and one-step induction removes the circularity.' },
+      { q: 'How is the largest certified ellipsoid computed, and why not maximise the volume directly?',
+        a: 'For a fixed box: $\\min\\mathrm{trace}(P)$ subject to both LMIs, an SDP. Minimising $\\log\\det P$ would minimise a concave function. The box size enters non-convexly through the sectors, so it is gridded (Yin et al.) or found by bisection and golden-section search (Pauli et al.).' },
+      { q: 'What does "acausal" mean for a Zames&ndash;Falb multiplier, and why is it harmless?',
+        a: 'The multiplier $\\sum_jM_jz^{-j}$ also contains positive powers of $z$ (future values). An IQC is a property of signal pairs, not a filter to be implemented, and the factorisation still uses only delays: future terms of one signal are rewritten as past terms of the other.' },
+      { q: 'When are repeated-nonlinearity (coupled) multipliers such as ZF-R valid?',
+        a: 'Only between channels that carry the same scalar function and use the same slope bounds, so that after the loop transformation they are one repeated monotone relation. The standard case is a bias-free network with $\\varphi(0)=0$ analysed at $x_*=0$, with one common interval per coupled group; neurons with equal $v_{*,i}$ also qualify. A general equilibrium shift, or per-neuron local slope bounds, breaks the repetition, and then only multipliers that do not use it remain valid (circle multipliers, diagonal Zames&ndash;Falb). These coupled multipliers are not valid for incremental QCs even for a repeated nonlinearity (the LipSDP-Network error; REN paper, Remark 5).' },
+      { q: 'Hard vs soft IQC, and which proof needs which?',
+        a: 'Soft: $\\sum_{t=0}^{\\infty}r_t^{\\top}Mr_t\\ge0$; hard: $\\sum_{t=0}^{N}r_t^{\\top}Mr_t\\ge0$ for every $N$. The Megretski&ndash;Rantzer homotopy proof works with soft IQCs and a frequency-domain inequality; the dissipation-inequality proof (Scherer) and local ROA arguments need hard IQCs.' },
+      { q: 'Why does an integrator give offset-free tracking with any NN controller?',
+        a: 'At an equilibrium $\\xi_{t+1}=\\xi_t$ forces $r-y=0$, whatever the weights, biases, model error or constant disturbance. The certificate only has to prove convergence; with slope restriction one LMI covers every reference (Pauli et al., L4DC 2021, Thm. 1).' },
+      { q: 'What are the ingredients of the $\\ell_2$-gain LMI for an RNN in LFT form?',
+        a: 'Storage $V=x^{\\top}Px$, supply $\\gamma^2\\|u\\|^2-\\|y\\|^2$, and the sector QC $2w^{\\top}T(v-w)\\ge0$ with diagonal $T\\succeq0$. The LMI is linear in $(P,T,\\gamma^2)$ for fixed weights but bilinear in weights and certificate, hence ADMM, barriers or direct parameterisations for training.' },
+      { q: 'Why is synthesis a BMI, and what are the two ways around it?',
+        a: 'Controller parameters are multiplied by $P$ and by the multipliers. Junnarkar, Arcak & Seiler use a change of variables that makes the full-order problem convex and project RL iterates onto it. The Youla-REN builds stability into the parameterisation, so learning is unconstrained.' },
+      { q: 'Why are coupled neuron constraints valid in Reach-SDP but not in LipSDP?',
+        a: 'Reach-SDP couples two neurons evaluated at the same input: two points on the graph of one scalar ReLU, whose chord has slope in $[0,1]$. LipSDP couples increments caused by two different inputs, which have no such interpretation.' },
+      { q: 'What is the verifiable ROA condition of Yang et al. (ICML 2024)?',
+        a: 'On a box $\\mathcal B$: $\\big(V(f_{\\rm cl}(\\xi))\\le(1-\\kappa)V(\\xi)\\wedge f_{\\rm cl}(\\xi)\\in\\mathcal B\\big)\\vee V(\\xi)\\ge\\rho$. Then $\\{\\xi\\in\\mathcal B:V(\\xi)\\lt\\rho\\}$ is forward invariant and inside the ROA; the condition is checked by $\\alpha,\\beta$-CROWN.' },
+      { q: 'What do the 2025&ndash;2026 IQC papers add?',
+        a: 'Vahedi Noori et al.: ReLU-specific hard IQCs that contain the Zames&ndash;Falb class, hence less conservative tests. Wang et al.: a $\\Lambda$-incremental QC for deep networks and a decomposition whose control LMIs depend only on the widths of the last two layers, not on the depth.' }
+    ]);
+
+    // ===== Explorer: the stability LMI of Section 2 (log-barrier SDP, Jacobi re-check) vs simulation =====
+    (function () {
+      var H = 0.1, DMP = 0.5, W0B = [[1, 0.5], [0, 1]], W1B = [-6, -1.5], EPS = 5e-5, PH1 = 2e-4;
+      function el(id) { return document.getElementById(id); }
+      if (!el('nl-svg')) return;
+      function Z(n) { var A = []; for (var i = 0; i < n; i++) A.push(new Array(n).fill(0)); return A; }
+      function cp(F) { return F.map(function (r) { return r.slice(); }); }
+      function neg(F) { return F.map(function (r) { return r.map(function (x) { return -x; }); }); }
+      function quad(Q, x) { return Q[0][0] * x[0] * x[0] + 2 * Q[0][1] * x[0] * x[1] + Q[1][1] * x[1] * x[1]; }
+      function chol(F) { // F = L L^T; null if F is not positive definite
+        var n = F.length, L = Z(n), i, j, k, s;
+        for (i = 0; i < n; i++) for (j = 0; j <= i; j++) {
+          for (s = F[i][j], k = 0; k < j; k++) s -= L[i][k] * L[j][k];
+          if (i > j) L[i][j] = s / L[j][j]; else if (s > 0) L[i][i] = Math.sqrt(s); else return null;
+        }
+        return L;
+      }
+      function inv(F) { // inverse of a positive definite matrix, two triangular solves per column
+        var L = chol(F), n = F.length, X = Z(n), y = [], i, j, k, s;
+        if (!L) return null;
+        for (j = 0; j < n; j++) {
+          for (i = 0; i < n; i++) { for (s = i === j ? 1 : 0, k = 0; k < i; k++) s -= L[i][k] * y[k]; y[i] = s / L[i][i]; }
+          for (i = n - 1; i >= 0; i--) { for (s = y[i], k = i + 1; k < n; k++) s -= L[k][i] * y[k]; X[i][j] = y[i] = s / L[i][i]; }
+        }
+        return X;
+      }
+      function logdet(F) { var L = chol(F), s = 0, i; if (!L) return null; for (i = 0; i < L.length; i++) s += 2 * Math.log(L[i][i]); return s; }
+      function jacobi(S) { // eigenvalues of a symmetric matrix by cyclic Jacobi rotations, ascending
+        var n = S.length, a = cp(S), it, p, q, i, th, t, c, s, off, u, v;
+        for (it = 0; it < 100; it++) {
+          for (off = 0, p = 0; p < n; p++) for (q = p + 1; q < n; q++) off += a[p][q] * a[p][q];
+          if (off < 1e-26) break;
+          for (p = 0; p < n; p++) for (q = p + 1; q < n; q++) if (a[p][q] !== 0) {
+            th = (a[q][q] - a[p][p]) / (2 * a[p][q]); t = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1)); c = 1 / Math.sqrt(t * t + 1); s = t * c;
+            for (i = 0; i < n; i++) { u = a[i][p]; v = a[i][q]; a[i][p] = c * u - s * v; a[i][q] = s * u + c * v; }
+            for (i = 0; i < n; i++) { u = a[p][i]; v = a[q][i]; a[p][i] = c * u - s * v; a[q][i] = s * u + c * v; }
+          }
+        }
+        return a.map(function (r, i) { return r[i]; }).sort(function (x, y) { return x - y; });
+      }
+      function mk(fun, m) { // affine matrix function F(z) = F0 + sum_k z_k Fk, read off at 0 and at the unit vectors
+        var z = new Array(m).fill(0), F0 = fun(z), Fk = [], k;
+        for (k = 0; k < m; k++) { z[k] = 1; Fk.push(fun(z).map(function (r, i) { return r.map(function (x, j) { return x - F0[i][j]; }); })); z[k] = 0; }
+        return { F0: F0, Fk: Fk };
+      }
+      function ev(b, z) { var F = cp(b.F0), n = F.length, i, j, k; for (k = 0; k < z.length; k++) if (z[k]) for (i = 0; i < n; i++) for (j = 0; j < n; j++) F[i][j] += z[k] * b.Fk[k][i][j]; return F; }
+      function barrier(Bl, c, z, stop) { // min c'z s.t. F_j(z) > 0: Newton steps on t c'z - sum_j log det F_j(z), then t <- 8t
+        var m = z.length, J = 0, t = 1, o, it, ls, q, k, l, i, j, r, n;
+        Bl.forEach(function (b) { J += b.F0.length; });
+        function f(z) { var s = 0, k, d; for (k = 0; k < m; k++) s += t * c[k] * z[k]; for (k = 0; k < Bl.length; k++) { d = logdet(ev(Bl[k], z)); if (d === null) return Infinity; s -= d; } return s; }
+        for (o = 0; o < 40; o++) {
+          for (it = 0; it < 50; it++) {
+            var g = c.map(function (x) { return t * x; }), Hs = Z(m), d = [], dec = 0, f0, tau = 1, zn;
+            for (q = 0; q < Bl.length; q++) {
+              var Fi = inv(ev(Bl[q], z)), G = []; if (!Fi) return null;
+              for (n = Fi.length, k = 0; k < m; k++) { // G_k = F^-1 F_k: gradient of -log det F is -tr G_k, Hessian tr(G_k G_l)
+                G.push(Z(n));
+                for (i = 0; i < n; i++) for (j = 0; j < n; j++) for (r = 0; r < n; r++) G[k][i][j] += Fi[i][r] * Bl[q].Fk[k][r][j];
+                for (i = 0; i < n; i++) g[k] -= G[k][i][i];
+              }
+              for (k = 0; k < m; k++) for (l = 0; l < m; l++) for (i = 0; i < n; i++) for (j = 0; j < n; j++) Hs[k][l] += G[k][i][j] * G[l][j][i];
+            }
+            for (k = 0; k < m; k++) Hs[k][k] += 1e-12 * (1 + Hs[k][k]);
+            var Hi = inv(Hs); if (!Hi) break;
+            for (k = 0; k < m; k++) { for (d[k] = 0, l = 0; l < m; l++) d[k] -= Hi[k][l] * g[l]; dec -= g[k] * d[k]; }
+            if (dec < 2e-10) break; // squared Newton decrement
+            for (f0 = f(z), ls = 0; ls < 50; ls++, tau /= 2) { zn = z.map(function (x, k) { return x + tau * d[k]; }); if (f(zn) <= f0 - 0.25 * tau * dec) break; }
+            if (ls === 50) break;
+            z = zn; if (stop && stop(z)) return z;
+          }
+          if (J / t < 1e-8) break; t *= 8;
+        }
+        return z;
+      }
+      function Mfun(S, al) { // LMI matrix of Section 2 in zeta = (x, w), sector [al, 1], z = (p11, p12, p22, lam1, lam2)
+        var A = S.A, B = S.B, G = [A[0].concat([B[0] * S.W1[0], B[0] * S.W1[1]]), A[1].concat([B[1] * S.W1[0], B[1] * S.W1[1]])]; // x+ = G zeta
+        return function (z) {
+          var P = [[z[0], z[1]], [z[1], z[2]]], M = Z(4), i, j, k, l, q, w, lam;
+          for (i = 0; i < 4; i++) for (j = 0; j < 4; j++) { for (k = 0; k < 2; k++) for (l = 0; l < 2; l++) M[i][j] += G[k][i] * P[k][l] * G[l][j]; if (i < 2 && j < 2) M[i][j] -= P[i][j]; }
+          for (q = 0; q < 2; q++) { // + lam_q [ -2 al v_q^2 + 2 (1 + al) v_q w_q - 2 w_q^2 ],  v_q = W0[q] x
+            w = S.W0[q]; lam = z[3 + q]; M[2 + q][2 + q] -= 2 * lam;
+            for (i = 0; i < 2; i++) { M[i][2 + q] += (1 + al) * lam * w[i]; M[2 + q][i] += (1 + al) * lam * w[i]; for (j = 0; j < 2; j++) M[i][j] -= 2 * al * lam * w[i] * w[j]; }
+          }
+          return M;
+        };
+      }
+      function phase1(S, al) { // the LMI is homogeneous: fix trace P = 1, min s s.t. M < sI, P > -sI; stop once s < -PH1
+        var Mf = Mfun(S, al), zOf = function (y) { return [y[0], y[1], 1 - y[0], y[2], y[3]]; }, y0 = [0.5, 0, 1, 1, 1];
+        Mf(zOf(y0)).forEach(function (r) { r.forEach(function (x) { y0[4] += Math.abs(x); }); });
+        var y = barrier([mk(function (y) { var M = neg(Mf(zOf(y))); for (var i = 0; i < 4; i++) M[i][i] += y[4]; return M; }, 5),
+                         mk(function (y) { return [[y[0] + y[4], y[1]], [y[1], 1 - y[0] + y[4]]]; }, 5)], [0, 0, 0, 0, 1], y0, function (y) { return y[4] < -PH1; });
+        return y ? { ok: y[4] < -PH1, s: y[4], z: zOf(y) } : { ok: false, s: NaN };
+      }
+      function phase2(S, al, dl, zh) { // min trace P s.t. M <= -EPS trace(P) I and [[dl^2, W0_i],[W0_i', P]] >= 0, from the rescaled phase-1 point
+        var Mf = Mfun(S, al), Pi = inv([[zh[0], zh[1]], [zh[1], zh[2]]]), mx = 0, Bl;
+        S.W0.forEach(function (w) { mx = Math.max(mx, quad(Pi, w)); });
+        Bl = [mk(function (z) { var M = neg(Mf(z)); for (var i = 0; i < 4; i++) M[i][i] -= EPS * (z[0] + z[2]); return M; }, 5)];
+        S.W0.forEach(function (w) { Bl.push(mk(function (z) { return [[dl * dl, w[0], w[1]], [w[0], z[0], z[1]], [w[1], z[1], z[2]]]; }, 5)); });
+        return barrier(Bl, [1, 0, 1, 0, 0], zh.map(function (x) { return x * (1.1 * mx / (dl * dl) + 1e-9); }), null);
+      }
+      function rho2(M) { var t = M[0][0] + M[1][1], d = M[0][0] * M[1][1] - M[0][1] * M[1][0], D = t * t / 4 - d; return D >= 0 ? Math.abs(t / 2) + Math.sqrt(D) : Math.sqrt(d); }
+      function stepf(S, x) { var u = S.W1[0] * Math.tanh(S.W0[0][0] * x[0] + S.W0[0][1] * x[1]) + S.W1[1] * Math.tanh(S.W0[1][0] * x[0] + S.W0[1][1] * x[1]); return [x[0] + H * x[1], S.a * H * x[0] + (1 - DMP * H) * x[1] + S.b * H * u]; }
+      function fmt(x, d) { var a = Math.abs(x); return x === 0 ? '0' : (a < 1e-3 || a >= 1e4) ? x.toExponential(1).replace(/e([-+]?)(\d+)/, function (m, sg, e) { return '&times;10<sup>' + (sg === '-' ? '&minus;' : '') + e + '</sup>'; }) : x.toFixed(d === undefined ? 3 : d); }
+      function nice(v) { var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), m = v / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; }
+
+      function compute() {
+        var t0 = Date.now(), a = +el('nl-a').value, b = +el('nl-b').value, w0 = +el('nl-w0').value, w1 = +el('nl-w1').value, mode = el('nl-mode').value, k;
+        var S = { a: a, b: b, A: [[1, H], [a * H, 1 - DMP * H]], B: [0, b * H], W0: W0B.map(function (r) { return r.map(function (x) { return w0 * x; }); }), W1: W1B.map(function (x) { return w1 * x; }) };
+        function clr(k1, k2) { // spectral radius of A + B W1 diag(k1, k2) W0
+          var K = [0, 1].map(function (j) { return k1 * S.W1[0] * S.W0[0][j] + k2 * S.W1[1] * S.W0[1][j]; });
+          return rho2([[1, H], [a * H + b * H * K[0], 1 - DMP * H + b * H * K[1]]]);
+        }
+        var R = { S: S, mode: mode, rOL: rho2(S.A), rCL: clr(1, 1), umax: 7.5 * w1 }, al = function (d) { return Math.tanh(d) / d; };
+        if (mode === 'global') {
+          var gp = phase1(S, 0); R.s = gp.s; R.corner = -1; [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(function (q) { var r = clr(q[0], q[1]); if (r > R.corner) { R.corner = r; R.cornerK = q; } });
+          if (gp.ok) { R.z = gp.z; R.al = 0; }
+        } else if ((R.tb = phase1(S, al(0.02))).ok) {
+          var lo = 0.02, hi = 40;
+          if (phase1(S, al(hi)).ok) lo = hi; else for (k = 0; k < 18; k++) { var mid = Math.sqrt(lo * hi); if (phase1(S, al(mid)).ok) lo = mid; else hi = mid; } // bisection on the box
+          var tr = function (d) { var q = phase1(S, al(d)), z = q.ok ? phase2(S, al(d), d, q.z) : null; return z ? { t: z[0] + z[2], z: z, d: d } : { t: Infinity }; };
+          var gr = (Math.sqrt(5) - 1) / 2, x1 = 0.05 * lo, x4 = 0.998 * lo, x2 = x4 - gr * (x4 - x1), x3 = x1 + gr * (x4 - x1), f2 = tr(x2), f3 = tr(x3);
+          for (k = 0; k < 14; k++) { // golden-section search of min trace P over the box size
+            if (f2.t < f3.t) { x4 = x3; x3 = x2; f3 = f2; x2 = x4 - gr * (x4 - x1); f2 = tr(x2); } else { x1 = x2; x2 = x3; f2 = f3; x3 = x1 + gr * (x4 - x1); f3 = tr(x3); }
+          }
+          var best = f2.t < f3.t ? f2 : f3;
+          R.dmax = lo; if (isFinite(best.t)) { R.d = best.d; R.al = al(best.d); R.z = best.z; }
+        }
+        if (R.z) { // re-check the returned certificate with Jacobi eigenvalues
+          var z = R.z; R.P = [[z[0], z[1]], [z[1], z[2]]]; R.lam = [z[3], z[4]]; R.Pi = inv(R.P);
+          R.eM = jacobi(Mfun(S, R.al)(z))[3]; R.eP = jacobi(R.P)[0];
+          R.eC = mode === 'global' ? 1 : Math.min.apply(null, S.W0.map(function (w) { return jacobi([[R.d * R.d, w[0], w[1]], [w[0], z[0], z[1]], [w[1], z[1], z[2]]])[0]; }));
+          R.cert = R.eM < 0 && R.eP > 0 && R.eC >= 0 && !!R.Pi;
+        }
+        R.ms = Date.now() - t0; simulate(R); draw(R); info(R);
+      }
+
+      function simulate(R) { // pure simulation of the nonlinear loop: evidence, not proof
+        var S = R.S, X = 5, Y = 5, st = [], k, i, j, t, x, n, v0, xn, cnt = 0, und = 0, Lc = R.cert ? chol(R.P) : null;
+        if (R.cert && R.mode === 'local') { X = 1.8 * Math.sqrt(R.Pi[0][0]); Y = 1.8 * Math.sqrt(R.Pi[1][1]); }
+        function onLevel(th, r) { var x1 = r * Math.sin(th) / Lc[1][1]; return [(r * Math.cos(th) - Lc[1][0] * x1) / Lc[0][0], x1]; } // x'Px = r^2
+        if (R.cert) {
+          R.cmax = R.mode === 'local' ? 1 : 0.81 / Math.max(R.Pi[0][0] / (X * X), R.Pi[1][1] / (Y * Y));
+          for (k = 0; k < 8; k++) st.push([onLevel(2 * Math.PI * k / 8 + 0.3, 0.98 * Math.sqrt(R.cmax)), 1]);
+          if (R.mode === 'local') for (k = 0; k < 4; k++) st.push([onLevel(2 * Math.PI * k / 4 + 0.75, 1.6), 0]);
+        } else for (k = 0; k < 8; k++) st.push([[0.85 * X * Math.cos(2 * Math.PI * k / 8 + 0.3), 0.85 * Y * Math.sin(2 * Math.PI * k / 8 + 0.3)], 0]);
+        var sc = X + Y; R.X = X; R.Y = Y; R.vr = 0; R.n = [0, 0, 0, 0]; // starts inside / converged, outside / converged
+        R.traj = st.map(function (s) {
+          var pts = [s[0]]; x = s[0];
+          for (t = 0; t < 20000; t++) { // only 12 starts, so a long budget is cheap
+            xn = stepf(S, x);
+            if (s[1] && (v0 = quad(R.P, x)) > 1e-14 * R.cmax) R.vr = Math.max(R.vr, quad(R.P, xn) / v0);
+            x = xn; n = Math.abs(x[0]) + Math.abs(x[1]); if (t < 400) pts.push(x);
+            if (n < 1e-6 * sc || !(n < 1e3 * sc)) break;
+          }
+          R.n[s[1] ? 0 : 2]++; if (n < 1e-2 * sc) R.n[s[1] ? 1 : 3]++;
+          return { pts: pts, inside: s[1] };
+        });
+        var rate = Math.max(R.rCL, R.cert && R.vr ? Math.sqrt(R.vr) : 0); // grid step budget: longer when the loop decays slowly
+        R.NG = rate < 1 ? Math.min(6000, Math.max(600, Math.ceil(Math.log(0.02) / Math.log(rate)))) : 600;
+        R.NX = 60; R.NY = 40; R.grid = [];
+        for (j = 0; j < R.NY; j++) for (i = 0; i < R.NX; i++) {
+          for (x = [-X + (i + 0.5) * 2 * X / R.NX, -Y + (j + 0.5) * 2 * Y / R.NY], t = 0; t < R.NG; t++) { x = stepf(S, x); n = Math.abs(x[0]) + Math.abs(x[1]); if (n < 1e-4 * sc || !(n < 1e3 * sc)) break; }
+          k = n < 0.05 * sc ? 1 : n < 1e3 * sc && R.rCL < 1 ? 2 : 0; R.grid.push(k); cnt += k === 1 ? 1 : 0; und += k === 2 ? 1 : 0; // 1 converged, 0 not converging, 2 undecided (still decaying?) within the budget
+        }
+        R.frac = cnt / (R.NX * R.NY); R.und = und / (R.NX * R.NY);
+      }
+
+      function draw(R) {
+        var L = 54, T = 12, pw = 534, ph = 339, X = R.X, Y = R.Y, i, j, k, v, s, cw = pw / R.NX, ch = ph / R.NY;
+        function sx(v) { return (L + (v + X) / (2 * X) * pw).toFixed(1); }
+        function sy(v) { return (T + (Y - v) / (2 * Y) * ph).toFixed(1); }
+        function pl(p, col, w, dash, fill) { return '<polyline points="' + p.map(function (q) { return sx(q[0]) + ',' + sy(q[1]); }).join(' ') + '" fill="' + (fill || 'none') + '" stroke="' + col + '" stroke-width="' + w + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>'; }
+        s = '<defs><clipPath id="nl-clip"><rect x="' + L + '" y="' + T + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs>';
+        for (j = 0; j < R.NY; j++) for (i = 0; i < R.NX; i = k) { // shading, merged into runs
+          for (k = i; k < R.NX && R.grid[j * R.NX + k] === R.grid[j * R.NX + i]; k++);
+          s += '<rect x="' + (L + i * cw).toFixed(1) + '" y="' + (T + (R.NY - 1 - j) * ch).toFixed(1) + '" width="' + ((k - i) * cw + 0.5).toFixed(1) + '" height="' + (ch + 0.5).toFixed(1) + '" fill="' + ['#fdeceb', '#e3f2e5', '#eeeeee'][R.grid[j * R.NX + i]] + '"/>';
+        }
+        var dx = nice(X / 2.5), dy = nice(Y / 2.5);
+        for (v = -Math.floor(X / dx) * dx; v <= X + 1e-9; v += dx) s += '<line x1="' + sx(v) + '" y1="' + T + '" x2="' + sx(v) + '" y2="' + (T + ph) + '" stroke="' + (Math.abs(v) < 1e-9 ? '#bbb' : '#e8e8e8') + '"/><text x="' + sx(v) + '" y="' + (T + ph + 15) + '" font-size="11" fill="#666" text-anchor="middle">' + (+v.toFixed(4)) + '</text>';
+        for (v = -Math.floor(Y / dy) * dy; v <= Y + 1e-9; v += dy) s += '<line x1="' + L + '" y1="' + sy(v) + '" x2="' + (L + pw) + '" y2="' + sy(v) + '" stroke="' + (Math.abs(v) < 1e-9 ? '#bbb' : '#e8e8e8') + '"/><text x="' + (L - 6) + '" y="' + (+sy(v) + 4) + '" font-size="11" fill="#666" text-anchor="end">' + (+v.toFixed(4)) + '</text>';
+        s += '<g clip-path="url(#nl-clip)">';
+        if (R.cert && R.mode === 'local') R.S.W0.forEach(function (w) { // box lines w.x = +-delta
+          var nn = w[0] * w[0] + w[1] * w[1], e = [-w[1] * 4 * (X + Y) / Math.sqrt(nn), w[0] * 4 * (X + Y) / Math.sqrt(nn)];
+          [-1, 1].forEach(function (sg) { var p = [sg * R.d * w[0] / nn, sg * R.d * w[1] / nn]; s += pl([[p[0] - e[0], p[1] - e[1]], [p[0] + e[0], p[1] + e[1]]], '#e67e22', 1.5, '6 4'); });
+        });
+        if (R.cert) { // certified ellipse (local) or level sets of V (global): x = L^-T u, |u| = r
+          var Lc = chol(R.P);
+          (R.mode === 'local' ? [1] : [1, 0.4, 0.12]).forEach(function (f, idx) {
+            var p = [], r = Math.sqrt(f * R.cmax);
+            for (k = 0; k <= 72; k++) { var x1 = r * Math.sin(k * Math.PI / 36) / Lc[1][1]; p.push([(r * Math.cos(k * Math.PI / 36) - Lc[1][0] * x1) / Lc[0][0], x1]); }
+            s += R.mode === 'local' ? pl(p, '#1565c0', 2, '', 'rgba(21,101,192,0.15)') : pl(p, '#1565c0', idx ? 1 : 1.8, idx ? '4 3' : '');
+          });
+        }
+        R.traj.forEach(function (tj) { var col = tj.inside ? '#1565c0' : '#7b1fa2'; s += pl(tj.pts, col, 1.3) + '<circle cx="' + sx(tj.pts[0][0]) + '" cy="' + sy(tj.pts[0][1]) + '" r="3" fill="' + col + '"/>'; });
+        s += '</g><rect x="' + L + '" y="' + T + '" width="' + pw + '" height="' + ph + '" fill="none" stroke="#999"/>';
+        s += '<text x="' + (L + pw / 2) + '" y="387" font-size="12" fill="#333" text-anchor="middle">x&#8321; (angle)</text><text x="14" y="' + (T + ph / 2) + '" font-size="12" fill="#333" text-anchor="middle" transform="rotate(-90 14 ' + (T + ph / 2) + ')">x&#8322; (rate)</text>';
+        el('nl-svg').innerHTML = s;
+      }
+
+      function info(R) {
+        var ok = '<strong style="color:#2e7d32;">', bad = '<strong style="color:#c62828;">', h, n = R.n;
+        function ph(s) { // what phase I computed: a signed value, not a proof of infeasibility
+          return isNaN(s) ? 'phase I (trace P = 1) stopped without a result' : 'phase I (trace P = 1, minimise s with &lambda;<sub>max</sub>(&#8499;) &le; s and &lambda;<sub>min</sub>(P) &ge; &minus;s; s &lt; 0 is a certificate) ends at s = ' + fmt(s) + '; the page accepts only s &lt; ' + fmt(-PH1);
+        }
+        h = 'Open loop &rho;(A) = ' + fmt(R.rOL) + (R.rOL > 1 + 1e-9 ? ' (unstable)' : R.rOL > 1 - 1e-9 ? ' (marginally stable)' : ' (stable)') + ' &middot; linearised loop &rho;(A + BW&#8321;W&#8320;) = ' + fmt(R.rCL) + ' &middot; |u| &le; ' + fmt(R.umax, 2) + '<br>';
+        var cert = R.cert ? 'P = [' + fmt(R.P[0][0]) + ', ' + fmt(R.P[0][1]) + '; ' + fmt(R.P[0][1]) + ', ' + fmt(R.P[1][1]) + '], &lambda; = (' + fmt(R.lam[0]) + ', ' + fmt(R.lam[1]) + '); Jacobi re-check: &lambda;<sub>max</sub>(&#8499;) = ' + fmt(R.eM) + ' &lt; 0' : '';
+        if (R.mode === 'global') {
+          if (R.cert) h += ok + 'Certified globally</strong> (the sector [0, 1] holds for all v): ' + cert + '. V = x&#7488;Px decreases along every trajectory; dashed: level sets of V.<br>';
+          else h += bad + 'Not certified</strong> by the global sector: ' + ph(R.s) + '. ' + (R.corner >= 1 - 1e-9
+            ? 'The sector contains the laws w = diag(&kappa;)v, &kappa; &isin; {0,1}&sup2;, and the worst, &kappa; = (' + R.cornerK.join(', ') + ')' + (R.cornerK[0] + R.cornerK[1] ? (R.cornerK[0] * R.cornerK[1] ? ', the linearised loop,' : ',') : ', the controller switched off,') + ' has &rho; = ' + fmt(R.corner) + ' &ge; 1: no certificate can exist.<br>'
+            : 'The four laws w = diag(&kappa;)v, &kappa; &isin; {0,1}&sup2;, are stable (worst &rho; = ' + fmt(R.corner) + ')' + (isNaN(R.s) ? '.<br>'
+              : R.s > 0 ? ', yet s &gt; 0: numerically (not a proof), no quadratic V with diagonal multipliers works for every nonlinearity in the sector.<br>'
+              : R.s < -PH1 ? '; phase I met the margin, but the eigenvalue re-check rejected its point (a numerical failure, not infeasibility).<br>'
+              : '; the phase-I point meets the LMIs only with a margin below the required one, so no certificate is claimed.<br>'));
+        } else if (R.cert) {
+          var r = R.S.W0.map(function (w) { return fmt(Math.sqrt(quad(R.Pi, w)), 2); });
+          h += 'Bisection: &delta;<sub>max</sub> = ' + fmt(R.dmax, 2) + (R.dmax >= 40 ? ' (search cap)' : '') + '; golden section picks &delta; = ' + fmt(R.d, 2) + ', i.e. the sector [' + fmt(R.al) + ', 1] on |v<sub>i</sub>| &le; &delta;.<br>' + ok + 'Certified</strong>: ' + cert + ', &lambda;<sub>min</sub>(containment) = ' + fmt(R.eC) + ' &ge; 0, trace P = ' + fmt(R.P[0][0] + R.P[1][1]) + '. Every x&#8320; in the blue ellipse converges to 0; on it max|v&#8321;| = ' + r[0] + ', max|v&#8322;| = ' + r[1] + ' (&le; &delta;).<br>';
+        } else h += bad + 'No local certificate</strong>: ' + (R.rCL >= 1 - 1e-9 ? 'the linearised loop is not Schur stable (&rho; = ' + fmt(R.rCL) + ' &ge; 1), and w = v lies in every sector [&alpha;, 1], so no certificate can exist.'
+          : R.tb && !R.tb.ok ? 'none found with the required margin, even for the box |v<sub>i</sub>| &le; 0.02: ' + ph(R.tb.s) + '. The linearised loop is Schur stable (&rho; = ' + fmt(R.rCL, 5) + '), so certificates exist for small enough boxes; here one would need a smaller box or a smaller margin.'
+          : 'phase I is feasible for boxes up to &delta; = ' + fmt(R.dmax, 2) + ', but the minimisation of trace P or the eigenvalue re-check returned no certificate (a numerical failure, not infeasibility).') + '<br>';
+        h += '<span style="color:#555;">Simulation (evidence, not proof): ' + (R.cert ? n[1] + '/' + n[0] + ' starts on the ' + (R.mode === 'local' ? 'ellipse' : 'outer level set') + ' converge with V(x<sub>t+1</sub>)/V(x<sub>t</sub>) &le; ' + fmt(R.vr) + ' &lt; 1 at every step' + (n[2] ? '; ' + n[3] + '/' + n[2] + ' starts outside converge. ' : '. ') : n[3] + '/' + n[2] + ' starts converge. ');
+        el('nl-info').innerHTML = h + Math.round(100 * R.frac) + '% of the grid converges' + (R.und ? ', ' + (R.und < 0.01 ? '&lt;1' : Math.round(100 * R.und)) + '% undecided after ' + R.NG + ' steps (grey)' : '') + ' (' + R.ms + ' ms).</span>';
+      }
+
+      var timer = null;
+      function schedule() {
+        [['nl-a', 1], ['nl-b', 1], ['nl-w0', 1], ['nl-w1', 2]].forEach(function (p) { el(p[0] + '-v').textContent = (+el(p[0]).value).toFixed(p[1]); });
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(compute, 60);
+      }
+      ['nl-a', 'nl-b', 'nl-w0', 'nl-w1'].forEach(function (id) { el(id).addEventListener('input', schedule); });
+      el('nl-mode').addEventListener('change', schedule);
+      function setAll(v) { ['nl-a', 'nl-b', 'nl-w0', 'nl-w1', 'nl-mode'].forEach(function (id, i) { el(id).value = v[i]; }); schedule(); }
+      el('nl-preset').addEventListener('click', function () { setAll([-1, 1, 1, 0.2, 'global']); });
+      el('nl-reset').addEventListener('click', function () { setAll([2, 1, 1, 1, 'local']); });
+      schedule();
+    })();
+  </script>
+</body>
+</html>

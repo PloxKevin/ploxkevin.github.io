@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5. Is Safe BO Actually Safe? Real-β-SafeOpt and LoSBO — Safe Learning</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">5. Is Safe BO Actually Safe? Real-&beta;-SafeOpt and LoSBO</h1>
+    <p class="page-subtitle">The &beta;-heuristic gap, Real-&beta;-SafeOpt, Lipschitz-only safe BO, LoS-GP-UCB, MCLoSBO and event-triggered safe BO</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#the-gap">1. The Gap Between Theory and Practice</a>
+      <a href="#real-beta">2. Real-&beta;-SafeOpt</a>
+      <a class="toc-interactive" href="#st-beta-explorer">Interactive: How Large Is a Real &beta;<sub>t</sub>?</a>
+      <a href="#losbo">3. LoSBO: Safety from a Lipschitz Constant Alone</a>
+      <a href="#los-gp-ucb">4. LoS-GP-UCB: Dropping the Grid</a>
+      <a href="#mclosbo">5. Multiple Constraints and Automotive Control</a>
+      <a href="#time-varying">6. Event-Triggered and Time-Varying Safe BO</a>
+      <a href="#consequences">7. Consequences for Control and Open Problems</a>
+      <a class="toc-interactive" href="#losbo-walkthrough">Walkthrough: The LoSBO Safety Proof</a>
+      <a class="toc-interactive" href="#losbo-explorer">Interactive: Break SafeOpt, Not LoSBO</a>
+      <a href="#exercises">Exercises</a>
+      <a href="#papers">Key Papers</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <p>Module 4 ended with a comfortable picture: SafeOpt certifies a growing safe set from GP confidence bounds, and Theorem 1 of <a class="cite" href="https://proceedings.mlr.press/v37/sui15.html" target="_blank" rel="noopener">Sui et al., ICML 2015</a> promises that all queries are safe with probability at least $1-\delta$. This module asks the uncomfortable follow-up question posed by <a class="cite" href="https://arxiv.org/abs/2403.12948" target="_blank" rel="noopener">Fiedler, Menn, Kreisk&ouml;ther and Trimpe, TMLR 2024</a>: does that promise survive contact with an implementation? The answer is no, for two independent reasons, and the fix (LoSBO) is a small change to one line of the algorithm that separates <em>safety</em> from <em>statistics</em> entirely.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Notation for this module</div>
+      <div>
+        Unknown objective $f: D \to \mathbb{R}$ on a set $D$ with metric $d$; a query $x$ is <strong>safe</strong> iff $f(x) \ge h$ for a known threshold $h$ (SafeOpt convention: the letter $h$ is a scalar threshold here, not the barrier function $h(x)$ of Module 10). Observations $y_t = f(x_t) + \epsilon_t$. GP posterior mean $\mu_t$ and standard deviation $\sigma_t$ after $t$ observations, computed with <em>nominal</em> noise variance $\lambda$ in $(K_t + \lambda I_t)^{-1}$; we write $\sigma_n^2$ only for a physical noise variance (exception: in Section 5, where $n$ counts iterations as in the MCLoSBO paper, $\sigma_n(\theta, i)$ is a posterior standard deviation). Confidence band $\mu_t \pm \beta_t\sigma_t$ (Chowdhury&ndash;Gopalan convention, $\beta_t$ multiplies $\sigma_t$ directly); RKHS $\mathcal{H}_k$ with $\|f\|_k \le B$ where $B$ bounds the <em>norm</em>. Safe set $S_t$, expanders $G_t$, maximizers $M_t$, lower/upper bounds $\ell_t, u_t$, width $w_t = u_t - \ell_t$. Lipschitz constant $L$, noise bound $E$. Noise always carries a subscript ($\epsilon_t$, $\epsilon_{i,n}$); an unsubscripted $\epsilon$ is SafeOpt's accuracy (Section 3.2) or ETSO's safety margin (Section 6), and $\varepsilon$ is the rate of change of ET-GP-UCB. Maximum information gain $\gamma_t$ (not a discount factor in this module; the reset indicator $\gamma_{\mathrm{reset}}$ of Section 6 and the confidence parameter $\gamma$ of Tokmak et al. in Section 7 are unrelated to it).
+      </div>
+    </div>
+
+    <!-- ===== SECTION 1: THE GAP ===== -->
+    <h2 class="section-heading" id="the-gap">1. The Gap Between Theory and Practice</h2>
+
+    <h3 class="subsection-heading">1.1 Where the guarantee lives</h3>
+
+    <p>Every SafeOpt-type guarantee rests on one event. Let $Q_t(x) = [\mu_{t-1}(x) \pm \beta_t\sigma_{t-1}(x)]$, $C_t(x) = C_{t-1}(x) \cap Q_t(x)$ with $C_0(x) = [h,\infty)$ on $S_0$ and $C_0(x) = \mathbb{R}$ elsewhere, $\ell_t = \min C_t$, $u_t = \max C_t$. Define the <em>good event</em></p>
+
+    <div class="math-block">$$\mathcal{E}_\delta := \big\{\, \ell_t(x) \le f(x) \le u_t(x) \quad \forall x \in D,\ \forall t \ge 1 \,\big\}.$$</div>
+
+    <p>Everything downstream of $\mathcal{E}_\delta$ is deterministic: on $\mathcal{E}_\delta$ the Lipschitz expansion $S_t = \bigcup_{x \in S_{t-1}}\{x' : \ell_t(x) - L\,d(x,x') \ge h\}$ only ever adds points with $f(x') \ge f(x) - L\,d(x,x') \ge \ell_t(x) - L\,d(x,x') \ge h$. The <em>only</em> probabilistic statement in the whole theory is $\mathbb{P}[\mathcal{E}_\delta] \ge 1-\delta$, and that statement is a theorem about $\beta_t$, not about the algorithm. The walkthrough below spells this out step by step, because the next two subsections are about what happens when the theorem is not applied.</p>
+
+    <div class="interactive-container" id="st-walkthrough-safeopt" data-title="Derivation: Where β enters the SafeOpt safety proof"></div>
+
+    <p>Three bounds of the form $\nu(x) = \beta\,\sigma(x)$ certify $\mathcal{E}_\delta$ for a fixed $f \in \mathcal{H}_k$ (frequentist setting: $f$ is not random, only the noise is; see <a href="toolkit-gp.html#confidence-bounds">Module 3</a>). In the convention of this module ($\|f\|_k \le B$, $\beta$ multiplies $\sigma$ directly) and with the time indices of the sources: the Srinivas and Chowdhury&ndash;Gopalan multipliers $\beta_t$ are stated for $\sigma_{t-1}$, the posterior after $t-1$ observations (as in $Q_t$ above), eq. (7) for $\sigma_t$, with $K_t$ the Gram matrix of $t$ observations. Written for the same posterior, the first two simply shift $t \to t+1$.</p>
+
+    <table>
+      <thead><tr><th>Source</th><th>$\beta_t$</th><th>Assumptions</th></tr></thead>
+      <tbody>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/0912.3995" target="_blank" rel="noopener">Srinivas et al. 2010</a>, Thm 6, used by SafeOpt</td><td>$\sqrt{2B^2 + 300\,\gamma_t \ln^3(t/\delta)}$</td><td>noise zero-mean given the past and a.s. bounded by $\sigma$, GP run with $\lambda = \sigma^2$; Sui et al. write $\|f\|_k^2 \le B$ and $\beta_t^{1/2}\sigma_t$, hence the square root here</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1704.00445" target="_blank" rel="noopener">Chowdhury &amp; Gopalan 2017</a>, Thm 2 (eq. 5 of Fiedler et al.)</td><td>$B + R\sqrt{2(\gamma_{t-1} + 1 + \ln(1/\delta))}$</td><td>conditionally $R$-sub-Gaussian noise; GP run with $\lambda = 1+\eta$, $\eta = 2/T$ for a known horizon $T$ (the "$+1$" absorbs $\eta t \le 2$); Fiedler et al. paraphrase this as $\lambda \gt 1$, or $\lambda \ge 1$ with $k$ positive definite</td></tr>
+        <tr><td>Abbasi-Yadkori 2013 (thesis), stated as eq. 7 of Fiedler et al. 2024; cf. <a class="cite" href="https://arxiv.org/abs/2105.02796" target="_blank" rel="noopener">Fiedler, Scherer &amp; Trimpe, AAAI 2021</a></td><td>$B + \dfrac{R}{\sqrt{\lambda}}\sqrt{2\ln\!\big(\delta^{-1}\det(I_t + \lambda^{-1}K_t)^{1/2}\big)}$</td><td>same noise model, any $\lambda \gt 0$, $k$ positive definite; data-dependent (a-posteriori), no $\gamma_t$</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="subsection-heading">1.2 The &beta; problem</h3>
+
+    <p>To the best of Fiedler et al.'s knowledge, no implementation of SafeOpt or its variants before their paper evaluated any of these $\beta_t$; all used heuristics. They document the constants actually used: $\beta_t \equiv 2$ in <a class="cite" href="https://arxiv.org/abs/1509.01066" target="_blank" rel="noopener">Berkenkamp, Schoellig &amp; Krause, ICRA 2016</a> and in SafeMDP (<a class="cite" href="https://arxiv.org/abs/1606.04753" target="_blank" rel="noopener">Turchetta et al., NeurIPS 2016</a>), $\beta_t \equiv 3$ in Helwa et al. 2019 and in GoSafe (<a class="cite" href="https://arxiv.org/abs/2105.13281" target="_blank" rel="noopener">Baumann et al., ICRA 2021</a>), $\beta_t \equiv 4$ in GoSafeOpt (<a class="cite" href="https://arxiv.org/abs/2201.09562" target="_blank" rel="noopener">Sukhija et al., AIJ 2023</a>). These are multipliers of $\sigma$, the convention of Fiedler et al. and of this module. Two of the papers print their band as $\mu \pm \beta^{1/2}\sigma$ instead: SafeMDP sets $\beta_t = 2$ and GoSafe $\beta_n \equiv 3$, which read literally would be multipliers $\sqrt2$ and $\sqrt3$. The code settles it. SafeMDP's public implementation (<a class="cite" href="https://github.com/befelix/SafeMDP" target="_blank" rel="noopener">befelix/SafeMDP</a>) multiplies $\sigma$ by <code>beta</code> $= 2$ directly. GoSafe's implementation builds on the SafeOpt package (<a class="cite" href="https://github.com/befelix/SafeOpt" target="_blank" rel="noopener">befelix/SafeOpt</a>), whose <code>beta</code> likewise multiplies $\sigma$ directly (default 2), so its 3 is presumably a multiplier of $\sigma$ too. The group's own event-triggered quadcopter work (Section 6) also uses $\beta \equiv 2$. The usual justification is conservatism: in the words of the SafeOpt-MC paper (<a class="cite" href="https://arxiv.org/abs/1602.04450" target="_blank" rel="noopener">Berkenkamp, Krause &amp; Schoellig, ML 2023</a>), the theoretical $\beta_n$ "may be impractically conservative for experiments", and a constant $\beta$ "roughly corresponds to bounding the failure probability per iteration, rather than over all iterations" (SafeMDP argues the same for its $\beta_t = 2$).</p>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall &mdash; a heuristic $\beta$ is not a weaker guarantee, it is no guarantee</div>
+      <div>
+        With $\beta_t \equiv 2$ the probability of $\mathcal{E}_\delta$ is simply unknown; nothing bounds it, per iteration or otherwise. And unlike ordinary BO, SafeOpt has <strong>no tuning phase</strong>: the hard constraint $f(x_t) \ge h$ must hold from the first query, so $\beta$ cannot be calibrated by trial and error without leaving the problem setting. Fiedler et al. conclude that what practitioners have been running is not hard-constrained safe BO but <em>cautious BO</em>, which happens to work often.
+      </div>
+    </div>
+
+    <p><strong>How often does the tube break?</strong> Fiedler et al. sample 100 functions from the RKHS of a squared-exponential kernel (length scale $0.2/\sqrt{2}$, domain $[-2,2]$, RKHS norm exactly 10, built from the RKHS orthonormal basis), draw $10^4$ datasets per function (100 uniformly sampled inputs, i.i.d. Gaussian noise of variance $0.01$), fit the GP with the correct kernel and check on a fine grid whether $f$ lies inside $\mu \pm 2\sigma$. Result: $2727 \pm 3882$ of the $10^4$ datasets per function (mean $\pm$ SD over functions) violate the tube. Running SafeOpt with $\beta \equiv 2$ on one such function from a random safe start gave $2862$ unsafe runs out of $10^4$.</p>
+
+    <h3 class="subsection-heading">1.3 The RKHS-norm problem</h3>
+
+    <p>Suppose we do evaluate a rigorous $\beta_t$. All three formulas above need $B \ge \|f\|_k$ (Assumption 2 of the paper), and the RKHS norm is the one quantity in the whole setup that no engineer can supply. Fiedler et al. survey the known characterizations and conclude that, to the best of their knowledge, none currently turns realistic prior knowledge into a numerical <em>upper</em> bound in non-trivial cases:</p>
+
+    <ul>
+      <li><strong>Variational / discretization characterizations</strong> (maximization over families of lower bounds, minimum-norm interpolation problems, matrix inequalities): explicit, kernel-agnostic, but they need exact function values and can only produce <em>lower</em> bounds numerically (the minimum-norm interpolant of any finite data set has a norm no larger than that of $f$).</li>
+      <li><strong>Mercer / weighted $\ell^2$ representation</strong> for continuous kernels on compact spaces: explains the regularization behaviour of kernel machines, gives no number.</li>
+      <li><strong>Fourier representation</strong> for translation-invariant kernels: $\|f\|_k$ is a weighted energy of $\hat f$ that penalizes high frequencies; Sobolev and Fock spaces have analogous formulas. Again intuition, no quantitative bound.</li>
+    </ul>
+
+    <p>Worse, $f \in \mathcal{H}_k$ is itself delicate: for squared-exponential kernels the RKHSs for different length scales are different spaces (Steinwart &amp; Christmann, Sect. 4.4), so a wrong length scale can push the norm to infinity, and hyperparameters are routinely re-fitted during BO. Both over- and under-estimating $B$ hurt: too small voids the guarantee silently, too large freezes the safe set. With a misspecified $B = 2.5$ (true norm 10) Real-$\beta$-SafeOpt (Section 2) produced $1338$ unsafe runs out of $10^4$ on the test function, against a promised $\delta = 0.01$.</p>
+
+    <h3 class="subsection-heading">1.4 Which noise?</h3>
+
+    <p>The three bounds also differ in what they assume about $\epsilon_t$. Sui et al. inherit Srinivas' Theorem 6, which needs noise that is zero-mean given the past and <em>uniformly bounded</em> by $\sigma$, while the GP likelihood is Gaussian (a deliberately misspecified but frequentist-valid model, see <a href="toolkit-gp.html#misspecification">Module 3</a>). Chowdhury&ndash;Gopalan and Abbasi-Yadkori allow conditionally $R$-sub-Gaussian martingale differences, which covers bounded zero-mean and Gaussian noise. LoSBO (Section 3) will need a hard bound $|\epsilon_t| \le E$, which Gaussian noise violates with positive probability. Keep the three models apart: <em>zero-mean bounded</em> (Srinivas) $\subset$ <em>conditionally sub-Gaussian</em> (Chowdhury&ndash;Gopalan, Abbasi-Yadkori), whereas LoSBO's <em>hard bound</em> needs neither zero mean nor a martingale structure (a bounded bias is allowed) but excludes Gaussian noise; only the hard bound supports a deterministic guarantee.</p>
+
+    <h3 class="subsection-heading">1.5 The numbers</h3>
+
+    <p>Table 1 of the paper is the empirical core of this module. Setup: 100 functions from the SE-kernel RKHS with $B = 10$, each algorithm run $10^4$ times per function for 20 iterations from a random initial safe point (the table caption says two initial safe points, the text of Sect. 6.3 describes a singleton seed drawn from the plateau around the maximizer where $f \ge h + E$); the threshold is $h = \hat\mu(f) - 0.2\,\widehat{\mathrm{SD}}(f)$ (empirical mean and standard deviation of $f$ on a fine grid); $L$ is $1.1\times$ the numerically computed maximum slope; noise uniform on $[-B_\epsilon, B_\epsilon]$ with $B_\epsilon = 0.01$ (Sect. 6.3; the single-function $\beta \equiv 2$ experiment of Sect. 5.1, whose 2862 unsafe runs per $10^4$ match the worst-function entry 28.62%, used Gaussian noise of variance 0.01); $\delta = 0.01$. The paper (arXiv v1) does not define "not started"; we read it as runs that never left their initial safe points. "Final performance" is $\hat f^*_t = \big(f(\arg\max_{x\in S_t}\mu_t(x)) - h\big)/(f^* - h)$.</p>
+
+    <table>
+      <thead><tr><th>Algorithm</th><th>SafeOpt $\beta \equiv 2$</th><th>Real-$\beta$, $B = 2.5$</th><th>Real-$\beta$, $B = 10$ (true)</th><th>Real-$\beta$, $B = 20$</th><th>LoSBO</th></tr></thead>
+      <tbody>
+        <tr><td>Not started %</td><td>1.93</td><td>3.16</td><td>30.40</td><td>68.34</td><td>0.018</td></tr>
+        <tr><td>Safety violations % (all runs)</td><td>3.95</td><td>0.859</td><td>0</td><td>0</td><td>0</td></tr>
+        <tr><td>Safety violations, worst function %</td><td>28.62</td><td>13.38</td><td>0</td><td>0</td><td>0</td></tr>
+        <tr><td>Final performance %</td><td>88.75</td><td>88.76</td><td>82.45</td><td>76.69</td><td>90.90</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>
+        Read the table column by column. The heuristic is unsafe (3.95% of runs, 28.62% on the worst function) but explores well. Real-$\beta$ with the true norm is safe but does not start in 30% of runs. Real-$\beta$ with an under-estimated norm looks reassuring on average (0.859%) and is catastrophic on the worst function (13.38%), i.e. the failure is invisible unless you happen to test the bad case. LoSBO is safe <em>and</em> explores best, which the authors attribute to its $\beta$ being free to be optimistic.
+      </div>
+    </div>
+
+    <!-- ===== SECTION 2: REAL-BETA ===== -->
+    <h2 class="section-heading" id="real-beta">2. Real-&beta;-SafeOpt</h2>
+
+    <p>The first fix is the obvious one: run SafeOpt (Algorithm 2 of the paper, i.e. Sui et al.'s original with Lipschitz expansion) but actually compute a valid $\beta_t$. Fiedler et al. call this <strong>Real-$\beta$-SafeOpt</strong> and use the a-posteriori bound that follows from Theorem 3.11 and Remark 3.13 of Abbasi-Yadkori's 2013 thesis, the RKHS version of the self-normalized inequality of <a class="cite" href="https://proceedings.neurips.cc/paper/2011/hash/e1d5be1c7f2f456670de3d53c7b54f4a-Abstract.html" target="_blank" rel="noopener">Abbasi-Yadkori, P&aacute;l &amp; Szepesv&aacute;ri, NeurIPS 2011</a>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Data-dependent frequentist GP bound (eq. 7 of Fiedler et al. 2024, after Abbasi-Yadkori 2013)</div>
+      <div>
+        <p style="margin-top:0;"><strong>Assumptions.</strong> (i) $k$ is a positive definite kernel and $f \in \mathcal{H}_k$ with $\|f\|_k \le B$; (ii) there is a filtration $(\mathcal{F}_t)$ such that each input $x_t$ is $\mathcal{F}_{t-1}$-measurable (predictable: it may depend on all past data, as in BO, but not on the noise it is about to receive) and each $\epsilon_t$ is $\mathcal{F}_t$-measurable; (iii) the noise is conditionally $R$-sub-Gaussian: $\mathbb{E}[e^{\nu\epsilon_t}\mid\mathcal{F}_{t-1}] \le e^{R^2\nu^2/2}$ for all $\nu \in \mathbb{R}$ (which forces $\mathbb{E}[\epsilon_t \mid \mathcal{F}_{t-1}] = 0$, a martingale difference sequence); (iv) $\mu_t, \sigma_t$ are the GP posterior mean and standard deviation for a zero-mean prior with covariance $k$ and nominal noise variance $\lambda \gt 0$.</p>
+        <p><strong>Statement.</strong> For any $\delta \in (0,1)$, with</p>
+        <div class="math-block">$$\beta_t = B + \frac{R}{\sqrt{\lambda}}\sqrt{2\ln\!\Big(\frac{1}{\delta}\det\big(I_t + \lambda^{-1}K_t\big)^{1/2}\Big)} \;=\; B + \frac{R}{\sqrt{\lambda}}\sqrt{\ln\det\big(I_t + \lambda^{-1}K_t\big) - 2\ln\delta},$$</div>
+        <div class="math-block">$$\mathbb{P}\Big[\,|f(x) - \mu_t(x)| \le \beta_t\,\sigma_t(x)\quad \forall x \in D,\ \forall t \ge 1\,\Big] \ge 1-\delta.$$</div>
+        <p style="margin-bottom:0;"><strong>In words.</strong> The band is valid uniformly over inputs <em>and</em> time, with a width that depends only on the data actually collected (through $K_t$), on the noise level $R$, on the regularization $\lambda$ and on the norm bound $B$. No maximum information gain appears.</p>
+      </div>
+    </div>
+
+    <p><strong>Why each assumption matters.</strong> Positive definiteness of $k$ is part of the setting in which Fiedler et al. state eqs. (6)&ndash;(7) (it makes $K_t$ invertible for distinct inputs). Predictability of $x_t$ is what allows the bound inside a closed loop (BO chooses $x_t$ from past $y$'s, never from the noise of the current measurement); it is paid for by the martingale structure of the noise. Sub-Gaussianity gives the exponential supermartingale behind the method of mixtures (Module 3, <a href="toolkit-gp.html#confidence-bounds">confidence bounds</a>). The nominal $\lambda$ is a free algorithmic choice; it is not the physical noise variance, and the factor $1/\sqrt{\lambda}$ shows that under-regularizing is penalized.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Interpretation &mdash; realized versus maximal information gain</div>
+      <div>
+        For a GP with noise variance $\lambda$, $\tfrac12\ln\det(I_t + \lambda^{-1}K_t) = I(\mathbf{y}_t;\mathbf{f}_t)$ is the information gained by the <em>actual</em> design $x_1,\dots,x_t$ (<a href="toolkit-gp.html#information-gain">Module 3</a>). Chowdhury&ndash;Gopalan replace it by the maximal information gain $\gamma_{t-1}$ over all designs (plus a $+1$ and without $1/\sqrt{\lambda}$). So eq. (7) is the same bound evaluated a posteriori: $\beta_t = B + \frac{R}{\sqrt{\lambda}}\sqrt{2\,I(\mathbf{y}_t;\mathbf{f}_t) + 2\ln(1/\delta)}$. When $R/\sqrt{\lambda}$ is small it is dominated by $B$. Justifying a constant $\beta \equiv 2$ with this theorem would therefore need <span class="math-scroll-xs">$B + \frac{R}{\sqrt{\lambda}}\sqrt{\ln\det(I_t + \lambda^{-1}K_t) - 2\ln\delta} \le 2$</span>, roughly a norm bound $\|f\|_k \lesssim 2$ (a sufficient condition from one theorem, not an equivalence).
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; eq. (7) coincides with the corrected AAAI-2021 bound for $0 \lt \lambda \lt 1$</div>
+      <div class="collapsible-body">
+        <p>The corrected Theorem 1 of <a class="cite" href="https://arxiv.org/abs/2105.02796" target="_blank" rel="noopener">Fiedler, Scherer &amp; Trimpe, AAAI 2021</a> (arXiv v2; the original lacked the $1/\sqrt{\lambda}$ and the $\bar\lambda/\lambda$ factor) reads, with $\bar\lambda = \max\{1,\lambda\}$,</p>
+        <div class="math-block">$$\beta_t^{(6)} = B + \frac{R}{\sqrt{\lambda}}\sqrt{\ln\det\!\Big(\tfrac{\bar\lambda}{\lambda}K_t + \bar\lambda I_t\Big) - 2\ln\delta}.$$</div>
+        <p><em>Step 1 (rewrite eq. 7).</em> Using $\ln(a^{1/2}) = \tfrac12\ln a$ and $\ln(\delta^{-1}a) = \ln a - \ln\delta$ (in the paper's eq. 7 as printed the exponent $\tfrac12$ on the determinant is missing; the rewritten form below, which the paper states immediately afterwards, is the correct Abbasi-Yadkori form and the one that coincides with eq. 6):</p>
+        <div class="math-block">$$2\ln\!\Big(\frac{1}{\delta}\det(I_t + \lambda^{-1}K_t)^{1/2}\Big) = \ln\det(I_t + \lambda^{-1}K_t) - 2\ln\delta.$$</div>
+        <p><em>Step 2 (case $0 \lt \lambda \lt 1$).</em> Then $\bar\lambda = 1$, so $\tfrac{\bar\lambda}{\lambda}K_t + \bar\lambda I_t = \lambda^{-1}K_t + I_t$, which is exactly the matrix in Step 1. Hence $\beta_t^{(6)} = \beta_t^{(7)}$: the AAAI-21 result reproduces Abbasi-Yadkori's bound in this regime.</p>
+        <p><em>Step 3 (case $\lambda \ge 1$).</em> Now $\bar\lambda = \lambda$ and the matrix becomes $K_t + \lambda I_t = \lambda(I_t + \lambda^{-1}K_t)$, so $\ln\det(K_t + \lambda I_t) = t\ln\lambda + \ln\det(I_t + \lambda^{-1}K_t)$. The two bounds differ by $t\ln\lambda \ge 0$ inside the square root; (7) is the tighter one. The difference vanishes at $\lambda = 1$ and grows linearly in $t$; the paper expects a noticeable difference only for $\lambda \gg 1$ and calls it negligible in practice. For $\lambda \ge 1$ the original (uncorrected) AAAI-21 statement was already valid, as the paper's Corrections section notes.</p>
+        <p><em>Why it matters.</em> Lower-bounding the nominal noise variance by 1 (as Chowdhury&ndash;Gopalan do through $\lambda = 1 + \eta$) is harmless for regret analysis but wasteful for a safe set when the noise is small: with $\lambda = 1$ the posterior barely trusts the data. Eq. (7) holds for any $\lambda \gt 0$ and pays only the prefactor $R/\sqrt{\lambda}$: with the paper's choice $\lambda = R$ it is $\sqrt{R}$, with $\lambda = R^2$ (the variance scale of $R$-sub-Gaussian noise) it is $1$.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">2.1 The algorithm and its cost</h3>
+
+    <p>Real-$\beta$-SafeOpt is Algorithm 2 of the paper with line 17 ("compute updated $\beta_t$") implemented as an evaluation of eq. (7): after each update, compute the Cholesky factor of $I_t + \lambda^{-1}K_t$, read off $\ln\det$ as twice the sum of the log-diagonal, and form $Q_t(x) = [\mu_t(x) \pm \beta_t\sigma_t(x)]$. The $O(t^3)$ determinant is irrelevant at the tens of evaluations typical for controller tuning. Inputs: $B$, $R$, $\lambda$, $\delta$, $L$, $S_0$, $h$. The noise must be conditionally $R$-sub-Gaussian with $R$ known; zero-mean noise bounded in $[-B_\epsilon, B_\epsilon]$ gives $R = B_\epsilon$ (Hoeffding's lemma: a zero-mean variable with values in $[a,b]$ is $\tfrac{b-a}{2}$-sub-Gaussian).</p>
+
+    <h3 class="subsection-heading">2.2 The conservatism trade-off</h3>
+
+    <p>With the true norm and $\delta = 0.01$, Real-$\beta$-SafeOpt made <strong>zero</strong> unsafe queries in $10^6$ runs, comfortably inside the promised $\delta$. The price is in the first row of Table 1: with $B = 10$, 30.40% of the runs are "not started" (never leave their initial points, in our reading), with $B = 20$ 68.34%. The mechanism is structural, not a bug: the certificate $\ell_t(x) - L\,d(x,x') \ge h$ needs $\ell_t(x)$ well above $h$, and $\ell_t = \mu_t - \beta_t\sigma_t$ with $\beta_t \approx B$ is far below $\mu_t$ wherever $\sigma_t$ is not tiny. A safe set that cannot grow is safe in the same way a switched-off robot is.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; under-estimating $B$ breaks Real-$\beta$ silently</div>
+      <div>
+        Nothing in the algorithm detects an invalid $B$: the band looks perfectly reasonable, the safe set grows nicely, and the failure probability quietly rises from $\le 1\%$ to 13% on the worst function ($B = 2.5$ instead of 10). There is no data-driven repair either: lower bounds on $\|f\|_k$ from data are easy, upper bounds are not (Section 7). Fiedler et al. also stress that a "very conservative" $B$ is not an option because the user has no way to judge what conservative means for an RKHS norm. Exercise 5.2 constructs the failure explicitly.
+      </div>
+    </div>
+
+    <p>Real-$\beta$-SafeOpt also inherits every other assumption of Section 1: the kernel and its hyperparameters must be right (with a length scale 4$\times$ too large, the paper reports safety violations in 12.57% of all runs and in 943 of $10^4$ runs for the worst-behaving function; it does not name the algorithm, but only Real-$\beta$ can violate there, and the two numbers are inconsistent as printed in arXiv v1, since a worst-function rate of 9.43% cannot lie below an average of 12.57%), and hyperparameters may not be adapted online. Fiedler et al. are careful to note that a comparison between Real-$\beta$-SafeOpt and heuristic SafeOpt is meaningless: they solve different problems (hard safety versus cautious BO).</p>
+
+    <h3 class="subsection-heading" id="st-beta-explorer">Interactive: How Large Is a Real &beta;<sub>t</sub>?</h3>
+
+    <p>This explorer computes the three theoretical scalings on a real design: it runs uncertainty sampling (greedy maximum-variance selection, which approximates the maximal-information design) on a 200-point grid with a squared-exponential kernel, evaluates $\ln\det(I_t + \lambda^{-1}K_t)$ by Cholesky at every $t$, sets $\gamma_t \approx \tfrac12\ln\det(I_t + \lambda^{-1}K_t)$ for that design (the information gain of one design is a lower bound on $\gamma_t$, so the two $\gamma_t$-based curves are, if anything, too low), and plots $\beta_t$ on a log scale against the heuristics $2,3,4$. The Chowdhury&ndash;Gopalan curve is evaluated with your $\lambda$ for comparison, although their theorem fixes $\lambda = 1 + 2/T$.</p>
+
+    <div class="interactive-container">
+      <div class="interactive-label">Real &beta;<sub>t</sub> versus heuristics</div>
+      <div class="slider-group">
+        <div class="slider-control"><label>RKHS norm bound B <span id="st-b-B-val">10</span></label><input type="range" id="st-b-B" min="0.5" max="20" step="0.5" value="10"></div>
+        <div class="slider-control"><label>Sub-Gaussian noise R <span id="st-b-R-val">0.10</span></label><input type="range" id="st-b-R" min="0.01" max="1" step="0.01" value="0.1"></div>
+        <div class="slider-control"><label>Nominal noise variance &lambda; <span id="st-b-lam-val">0.10</span></label><input type="range" id="st-b-lam" min="0.01" max="4" step="0.01" value="0.1"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Failure probability &delta; <span id="st-b-del-val">0.010</span></label><input type="range" id="st-b-del" min="0.001" max="0.2" step="0.001" value="0.01"></div>
+        <div class="slider-control"><label>SE length scale &ell; (domain [0,1]) <span id="st-b-ell-val">0.10</span></label><input type="range" id="st-b-ell" min="0.03" max="0.5" step="0.01" value="0.1"></div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+        <svg id="st-b-svg" viewBox="0 0 760 320" style="display:block;max-width:100%;flex:1 1 420px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;"></svg>
+        <div id="st-b-info" style="flex:1 1 220px;min-width:200px;background:#f0f4ff;border:1px solid #c5d0e6;border-radius:6px;padding:12px 14px;font-size:13px;"></div>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 3: LOSBO ===== -->
+    <h2 class="section-heading" id="losbo">3. LoSBO: Safety from a Lipschitz Constant Alone</h2>
+
+    <p>The second fix attacks objective (O2) of the paper: <em>safety should rest only on assumptions that the user can verify and interpret</em>. Two such assumptions have decades of use in system identification (Milanese &amp; Novara's set-membership bounds, Calliess' kinky inference): a bound on the slope of $f$ and a bound on the size of the measurement noise. Both are engineering quantities, related to sensitivity analysis and sensor specifications. LoSBO builds the safe set from these two alone and leaves the GP to do what it is good at, guiding exploration.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Assumption &mdash; LoSBO safety assumptions (Assumption 1 and Proposition 1 of Fiedler et al. 2024)</div>
+      <div>
+        <ol style="margin:0 0 0 18px;">
+          <li><strong>Lipschitz regularity.</strong> $D$ carries a metric $d$ and $f$ is $L$-Lipschitz with a <em>known</em> constant: $|f(x) - f(x')| \le L\,d(x,x')$ for all $x,x' \in D$.</li>
+          <li><strong>Bounded noise.</strong> $y_t = f(x_t) + \epsilon_t$ with $|\epsilon_t| \le E$ for all $t \ge 1$, $E$ known.</li>
+          <li><strong>Safe seed.</strong> A non-empty $S_0 \subseteq D$ with $f(x) \ge h$ for all $x \in S_0$.</li>
+        </ol>
+        <p style="margin:8px 0 0;">Nothing is assumed about $f \in \mathcal{H}_k$, about $\|f\|_k$, about the kernel or its hyperparameters, or about the distribution of $\epsilon_t$ beyond its support.</p>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; the LoSBO safe set (eq. 11)</div>
+      <div>
+        <div class="math-block">$$S_t = S_{t-1} \cup \big\{\, x \in D \;:\; y_{t-1} - E - L\,d(x_{t-1}, x) \ge h \,\big\}, \qquad t \ge 1,$$</div>
+        <p style="margin:0;">with $S_1 = S_0$ (no measurement yet). Geometrically: lower the last measurement by the noise bound, hang a Lipschitz cone of slope $L$ below it, and certify every point where the cone is still above $h$. Since $\{x : y - E - L\,d(x_s,x) \ge h\} = \bar B_r(x_s)$ with radius $r = (y - E - h)/L$ (empty if $y - E \lt h$), the safe set is a union of closed metric balls around queried points, plus $S_0$.</p>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Proposition 1 &mdash; LoSBO is deterministically safe (Fiedler et al. 2024)</div>
+      <div>
+        Let $f$ be $L$-Lipschitz, $|\epsilon_t| \le E$ for all $t \ge 1$, and $\emptyset \ne S_0 \subseteq D$ with $f \ge h$ on $S_0$. Then for <strong>any</strong> choice of the scaling factors $\beta_t \gt 0$, LoSBO queries only safe inputs: $f(x_t) \ge h$ for all $t \ge 1$.
+        <p style="margin:8px 0 0;"><em>Proof.</em> It suffices that $f \ge h$ on every $S_t$, by induction. $t = 0$: assumption. $t \ge 1$: for $x \in S_{t-1}$ use the hypothesis; otherwise $y_{t-1} - E - L\,d(x_{t-1},x) \ge h$ and</p>
+        <div class="math-block">$$f(x) = \underbrace{f(x_{t-1}) + \epsilon_{t-1}}_{y_{t-1}} - \epsilon_{t-1} + \big(f(x) - f(x_{t-1})\big) \;\ge\; y_{t-1} - E - L\,d(x_{t-1},x) \;\ge\; h. \qquad\blacksquare$$</div>
+        <p style="margin:0;">The full argument, with the reason for every inequality, is the walkthrough in Section 8. The guarantee holds surely, not with probability $1-\delta$: the kind of statement control and robotics usually want.</p>
+      </div>
+    </div>
+
+    <div class="algorithm">
+      <div class="algorithm-title">Algorithm 3 (Fiedler et al. 2024): LoSBO</div>
+      <ol>
+        <li><strong>Require:</strong> Lipschitz constant $L$, noise bound $E$, a rule for $\beta_t$ (a tuning knob), safe seed $S_0$, threshold $h$.</li>
+        <li>$Q_0(x) \leftarrow \mathbb{R}$; $C_0(x) \leftarrow [h,\infty)$ for $x \in S_0$, $C_0(x) \leftarrow \mathbb{R}$ otherwise. <span class="comment">// uncertainty sets, as in SafeOpt</span></li>
+        <li><strong>for</strong> $t = 1, 2, \dots$ <strong>do</strong></li>
+        <li><span class="indent"></span>$C_t(x) \leftarrow C_{t-1}(x) \cap Q_{t-1}(x)$; $\ell_t \leftarrow \min C_t$, $u_t \leftarrow \max C_t$. <span class="comment">// GP bounds: exploration only</span></li>
+        <li><span class="indent"></span>$S_t \leftarrow S_{t-1} \cup \{x : y_{t-1} - E - L\,d(x_{t-1},x) \ge h\}$ if $t \gt 1$, else $S_1 \leftarrow S_0$. <span class="comment">// safety: Lipschitz + noise bound only</span></li>
+        <li><span class="indent"></span>$G_t \leftarrow \{x \in S_t : \exists x' \in D\setminus S_t,\ u_t(x) - L\,d(x,x') \ge h\}$ <span class="comment">// expanders (optimistic)</span></li>
+        <li><span class="indent"></span>$M_t \leftarrow \{x \in S_t : u_t(x) \ge \max_{x_S \in S_t}\ell_t(x_S)\}$ <span class="comment">// maximizers</span></li>
+        <li><span class="indent"></span>$x_t \leftarrow \arg\max_{x \in G_t \cup M_t} w_t(x)$, $w_t = u_t - \ell_t$; query $y_t = f(x_t) + \epsilon_t$.</li>
+        <li><span class="indent"></span>Update the GP with $(x_t, y_t)$; choose $\beta_t$; $Q_t(x) \leftarrow [\mu_t(x) \pm \beta_t\sigma_t(x)]$.</li>
+        <li><strong>end for</strong></li>
+      </ol>
+    </div>
+
+    <p>Compare with SafeOpt's Algorithm 2: the only change is the safe-set line (line 8 of the paper's Algorithms 2 and 3, line 5 of the box above), where $\ell_t(x_s) - L\,d(x_s,x) \ge h$ over all $x_s \in S_{t-1}$ became $y_{t-1} - E - L\,d(x_{t-1},x) \ge h$ for the single last query. The measurement replaces the GP lower bound; the cone is the same. Everything else, expanders, maximizers, uncertainty sampling, is untouched, so LoSBO is a drop-in change for any SafeOpt variant (the paper expects it to transfer to most of them). A note on indices: the pseudocode labels the band by the posterior it uses, $Q_{t-1} = [\mu_{t-1} \pm \beta_{t-1}\sigma_{t-1}]$, whereas Section 1.1 followed the paper's prose, which calls the same band $Q_t$ and indexes $\beta$ by the round in which it is used; both describe the same intersection $C_t = C_{t-1} \cap [\mu_{t-1} \pm \beta\,\sigma_{t-1}]$.</p>
+
+    <p>Neither pseudocode says what happens when that intersection is <em>empty</em>. With a valid $\beta$ this has probability at most $\delta$, because $f(x)$ lies in every band. With a heuristic $\beta$ a measurement can contradict an earlier band. For example, a single seed point with $f = h = 1$, $k(x,x) = 1$, $\lambda = 1$, a noise-free measurement and $\beta = 0.5$ gives $\mu_1 = 0.5$, $\sigma_1 = 1/\sqrt2$ and an upper band end $0.854 \lt h$, so $C_2 = [h,\infty) \cap Q_1 = \emptyset$. Then $\ell_t$, $u_t$ and $w_t$ are undefined, so an implementation needs an explicit rule. A naive one that keeps the crossed endpoints gets negative widths and can end up with an empty $G_t \cup M_t$. For LoSBO any rule is harmless for safety as long as queries are taken from $S_t$. Two natural choices are to restart $C_t(x)$ from the current band (the rule used by the explorer in Section 9) or to drop the intersection altogether, as SafeOpt-MC's practical version and MCLoSBO do (Section 5). For SafeOpt and Real-$\beta$-SafeOpt, an empty intersection (given a safe seed) proves that some band missed $f(x)$, i.e. that the model behind the safety certificate is wrong.</p>
+
+    <h3 class="subsection-heading">3.1 What the separation buys</h3>
+
+    <ul>
+      <li><strong>$\beta_t$ is a tuning parameter.</strong> It may be constant, adapted online, or over-optimistic; the paper runs $\beta \equiv 2$ throughout and suggests ("it appears") that this over-optimism is what makes LoSBO explore better than Real-$\beta$-SafeOpt (Table 1: 90.90% vs 82.45%).</li>
+      <li><strong>No RKHS norm, no kernel correctness.</strong> Assumption 2 disappears. A wrong kernel or length scale can degrade exploration but cannot cause an unsafe query; hyperparameter optimization during the run is allowed. In the misspecified experiments (Matérn functions, length scale $4\times$ or $0.2\times$ the truth, SE model on Matérn functions) LoSBO's certificate is untouched, since $L$ and $E$ remain valid, whereas the $4\times$ setting produced safety violations in 12.57% of all runs, which can only be Real-$\beta$'s (Section 2.2).</li>
+      <li><strong>Deterministic, not probabilistic.</strong> The bound $f(x_t) \ge y_t - E$ holds for every realization. This is the Milanese&ndash;Novara set-membership philosophy imported into BO.</li>
+    </ul>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Going deeper &mdash; Remark 2: asymmetric noise and general moduli of continuity</div>
+      <div class="collapsible-body">
+        <p>The proof uses only two inequalities, $f(x_{t-1}) \ge y_{t-1} - E$ and $f(x) \ge f(x_{t-1}) - L\,d(x_{t-1},x)$. Each can be weakened separately.</p>
+        <p><em>Noise.</em> Assume two functions $E_\ell, E_u : D\times\mathbb{N}_0 \to \mathbb{R}_{\ge 0}$ with $-E_\ell(x,t) \le \epsilon_t \le E_u(x,t)$ whenever $x$ is queried at time $t$ (asymmetric, time-varying, heteroscedastic; the paper prints $E_\ell(x,t) \le \epsilon_t$ with $E_\ell \ge 0$, evidently meaning $-E_\ell$). Only the <em>upper</em> noise bound enters safety: $f(x_{t-1}) = y_{t-1} - \epsilon_{t-1} \ge y_{t-1} - E_u(x_{t-1},t-1)$, so the rule becomes $y_{t-1} - E_u(x_{t-1},t-1) - L\,d(x_{t-1},x) \ge h$.</p>
+        <p><em>Regularity.</em> Replace Lipschitz continuity by a modulus: a continuous, strictly increasing $\phi : \mathbb{R}_{\ge 0} \to \mathbb{R}_{\ge 0}$ with $\phi(0) = 0$ and $f(x') \ge f(x) - \phi(d(x,x'))$ (a one-sided condition suffices). The rule becomes $y_{t-1} - E - \phi(d(x_{t-1},x)) \ge h$. With the slack $s = y_{t-1} - E - h$, the certified set is empty if $s \lt 0$, the closed ball of radius $\phi^{-1}(s)$ if $0 \le s \lt \sup_{r \ge 0}\phi(r)$, and all of $D$ if $s \ge \sup_{r \ge 0}\phi(r)$. The last case can only occur for a bounded modulus such as $\phi(r) = 1 - e^{-r}$, which the assumptions allow. H&ouml;lder continuity, $\phi(r) = C r^\alpha$, is unbounded, so there $\phi^{-1}(s) = (s/C)^{1/\alpha}$ for every $s \ge 0$; it is the case treated by Calliess' kinky inference, and Exercise 5.3 works it out.</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; Remark 3: why the experiments use $E = 2B_\epsilon$</div>
+      <div>
+        Suppose $|\epsilon_t| \le B_\epsilon$ is sharp (e.g. $\epsilon_t = \pm B_\epsilon$ with probability $\tfrac12$ each). With $E = B_\epsilon$ LoSBO is safe by Proposition 1, but the boundary of the safe set sits where $f \approx h$; a query there with $\epsilon_t \approx -B_\epsilon$ returns $y_t \lt h$ although $f(x_t) \ge h$. Formally safe, it looks like a violation to the operator and may trigger an emergency stop. Setting $E = 2B_\epsilon$ removes these false alarms at the price of conservatism: every point certified by a cone then has $f \ge y_s - B_\epsilon - L\,d \ge h + B_\epsilon$, so any later measurement there satisfies $y \ge h$ (seed points need the same margin $f \ge h + B_\epsilon$, which is how the experiments choose them). The paper leaves the choice ($B_\epsilon$, $2B_\epsilon$, or in between) to the practitioner. Note what this does <em>not</em> do: it does not make Gaussian noise admissible (Exercise 5.5).
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">3.2 What the separation costs: no exploration theorem</h3>
+
+    <p>SafeOpt's Theorem 1 also guarantees that for all $t \ge t^*$ the point $\hat x_t = \arg\max_{x \in S_t}\ell_t(x)$ is $\epsilon$-optimal with respect to the best value on the $\epsilon$-reachable safe region $\bar R_\epsilon(S_0)$. Its proof relies on the GP model interacting with the safety mechanism: the safe set grows exactly when the lower bound at an expander rises above $h + L\,d$, and the uncertainty-sampling rule shrinks $w_t$ at expanders. In LoSBO the safe set no longer depends on the GP at all, so this coupling is gone; Fiedler et al. state that the last inequality in the proof of Sui et al.'s Lemma 7 cannot be ensured, and they suspect (but never observed) pathological cases where LoSBO under-explores. Their position is that this loss is acceptable: SafeOpt's own exploration guarantee is conditional on the kernel through the growth of $\gamma_t$ ($t^*$ is the smallest $t$ with $t/(\beta_t^2\gamma_t) \ge C_1(|\bar R_0(S_0)| + 1)/\epsilon^2$, $C_1 = 8/\ln(1 + \sigma^{-2})$ with $\sigma$ the noise bound, in this module's convention; note that the size of the larger $0$-reachable set $\bar R_0(S_0)$ sets the time, while $\epsilon$-optimality is measured on $\bar R_\epsilon(S_0)$; Sui et al. write $\beta_t\gamma_t$ for their squared multiplier, so the statement is vacuous unless $t/(\beta_t^2\gamma_t)$ grows), and LoSBO's $\beta_t$ is a free knob for fixing under-exploration when it happens. Providing exploration guarantees for LoSBO is listed as open.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall &mdash; $L$ and $E$ must be valid upper bounds, and they cannot be learned safely</div>
+      <div>
+        Proposition 1 is only as good as its inputs. An under-estimated $L$ (or $E$) certifies a ball that is too large and the guarantee fails just as silently as Real-$\beta$ with a small $B$ (try the explorer in Section 9 with the $L$ factor below 1). Estimating a Lipschitz constant from data, as in global optimization or set-membership identification, requires queries, which in the hard-safety setting must already be safe; the paper notes this circularity explicitly. What makes $L$ and $E$ different from $B$ is not that they are free, but that an engineer can reason about them: slopes come from sensitivity analyses or simulation, noise bounds from sensor specifications.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">3.3 Experimental evidence</h3>
+
+    <p>The frequentist protocol of Section 1.5 (100 functions, $10^4$ repetitions each, 20 iterations, functions from the pre-RKHS $f = \sum_i \alpha_i k(\cdot,x_i)$ or from the SE orthonormal basis, norm 10, uniform noise with $B_\epsilon = 0.01$, $R = B_\epsilon$, nominal noise variance $\lambda = R$, $\delta = 0.01$, $E = 2B_\epsilon$, $\beta \equiv 2$ in LoSBO) gives the LoSBO column of Table 1: never a violation, essentially never stuck (0.018%), best final performance. Two details are worth remembering for your own experiments: the target functions are generated in two ways for variety, and ONB samples turn out "bumpier" and harder for the bounds than pre-RKHS samples; and Matérn-3/2 functions are slightly harder for both algorithms, which the authors relate to their lower smoothness (both algorithms rely on a Lipschitz bound, which is tied to regularity).</p>
+
+    <!-- ===== SECTION 4: LOS-GP-UCB ===== -->
+    <h2 class="section-heading" id="los-gp-ucb">4. LoS-GP-UCB: Dropping the Grid</h2>
+
+    <p>Objective (O3) of the paper is scalability. Computing SafeOpt's sets exactly needs a <em>discrete</em> $D$: expanders count the points of $D \setminus S_t$ that an optimistic observation would certify, maximizers compare $u_t$ against a maximum over $S_t$. On a continuous domain the enumerated implementations therefore grid, and grids are hopeless beyond $d \approx 3$ (the motivation for LineBO, <a class="cite" href="https://arxiv.org/abs/1902.03229" target="_blank" rel="noopener">Kirschner et al., ICML 2019</a>, and for GoSafeOpt). A fixed grid is not intrinsic to every SafeOpt-type method, though: the swarm-based SafeOpt of <a class="cite" href="https://doi.org/10.1016/j.ifacol.2017.08.1991" target="_blank" rel="noopener">Duivenvoorden et al., IFAC 2017</a> (SafeOptSwarm, built on the Lipschitz-free SafeOpt) searches a continuous parameter space and approximates the sets with particle swarms, an adaptive discretization; Fiedler et al. note that it comes with only heuristic safety guarantees. LoSBO as stated in Algorithm 3 enumerates its sets and inherits the grid. Fiedler et al. remove it with three observations.</p>
+
+    <ol>
+      <li><strong>Safety needs only a safe feasible region.</strong> Any acquisition rule restricted to a set $S$ with $f|_S \ge h$ is safe, whatever the rule and however the optimization is carried out. Expanders and maximizers were introduced for the exploration proof, not for safety.</li>
+      <li><strong>LoSBO's safe sets are unions of balls.</strong> By eq. (11) and the geometric reading above,
+        <div class="math-block">$$S_t = \bigcup_{j=1}^{N_t} \bar B_{r_j}(z_j), \qquad \bar B_r(z) = \{x \in D : d(z,x) \le r\},$$</div>
+        with, for a singleton seed $x_0$ and no repeated inputs, $N_t = t+1$, $z_1 = x_0$ (radius 0) and $z_j = x_{j-1}$, $r_j = (y_{j-1} - E - h)/L$ for $j = 2,\dots,t+1$ (eq. 15; balls with negative radius are dropped). Few evaluations means few balls. Note the index shift: here, as in Section 7 of the paper, $S_t$ is the safe set available <em>after</em> the $t$-th observation (it would be $S_{t+1}$ in Algorithm 3), which is why $x_{t+1}$ is chosen from $S_t$ below.</li>
+      <li><strong>Modern BO does not grid.</strong> Acquisition functions are maximized by multi-start local (gradient-based) optimization, which copes with moderate dimensions; BoTorch does this by default.</li>
+    </ol>
+
+    <div class="definition-box">
+      <div class="box-label">Algorithm idea &mdash; LoS-GP-UCB (eqs. 13&ndash;16, Algorithm 4)</div>
+      <div>
+        Start from GP-UCB, $x_{t+1} = \arg\max_{x\in D}\ \mu_t(x) + \beta_t\sigma_t(x)$, restrict it to the LoSBO safe set, $x_{t+1} = \arg\max_{x \in S_t}\ \mu_t(x) + \beta_t\sigma_t(x)$, and use the ball decomposition to split the constrained problem into $N_t$ independent problems, one per ball, with $a_t(x) = \mu_t(x) + \beta_t\sigma_t(x)$:
+        <div class="math-block">$$x_j^\star \in \operatorname*{arg\,max}_{x \in \bar B_{r_j}(z_j)} a_t(x) \quad (j = 1,\dots,N_t), \qquad x_{t+1} = x_{j^\star}^\star \ \text{ with } \ j^\star \in \operatorname*{arg\,max}_{j = 1,\dots,N_t} a_t(x_j^\star).$$</div>
+        (The paper's eq. (16) writes this compactly as a nested $\arg\max$ over $j$ and $x$.) Each inner problem is a maximization over a closed ball, a convex set when $D \subseteq \mathbb{R}^d$ is convex and $d$ comes from a norm (the paper's setting), solved by gradient-based local optimization from several starts inside the ball; the inner problems and their multistarts are embarrassingly parallel. After the query, add the new centre $x_{t+1}$ with radius $(y_{t+1} - E - h)/L$.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; why the LoSBO safe set is a union of closed balls</div>
+      <div class="collapsible-body">
+        <p><em>Claim</em> (indexing of Algorithm 3, queries $x_1, x_2, \dots$). For all $t \ge 1$, $S_t = S_0 \cup \bigcup_{1 \le s \le t-1} \bar B_{r_{s}}(x_s)$ with $r_s = (y_s - E - h)/L$, where balls with $r_s \lt 0$ are empty. (In the post-observation indexing of this section the union runs up to $s = t$.)</p>
+        <p><em>Step 1.</em> Fix a query $x_s$ with observation $y_s$. The certified set $\{x : y_s - E - L\,d(x_s,x) \ge h\}$ is, after rearranging, $\{x : d(x_s,x) \le (y_s - E - h)/L\}$ when $L \gt 0$. If $y_s - E - h \ge 0$ this is the closed ball $\bar B_{r_s}(x_s)$; otherwise no $x$ satisfies it (distances are non-negative), and the set is empty. If $L = 0$ the function is constant, and the set is either all of $D$ or empty.</p>
+        <p><em>Step 2 (induction).</em> $S_1 = S_0$ is the claim for $t = 1$ (empty union). If $S_{t-1} = S_0 \cup \bigcup_{1 \le s \le t-2}\bar B_{r_s}(x_s)$, eq. (11) adds exactly the set of Step 1 for $s = t-1$, giving the claim for $t$. Repeated inputs simply produce concentric balls, of which the largest matters.</p>
+        <p><em>Consequence.</em> Membership $x \in S_t$ is a check of at most $N_t$ distances, so the constraint set of the acquisition problem is cheap to represent in any dimension, and each ball is convex when $d$ is a norm distance and $D \subseteq \mathbb{R}^d$ is convex. Nothing about this used a grid.</p>
+      </div>
+    </div>
+
+    <p>LoS-GP-UCB keeps Proposition 1 verbatim (the query is always in $S_t$), needs no RKHS norm bound, and Remarks 2 and 3 apply. Its exploration behaviour is the interesting question: Sui et al. already tested a "Safe-UCB" variant of GP-UCB restricted to the certified set and found that it can get stuck at low-value boundary points that it never expands. In the 1-D comparison of Fiedler et al. (100 Matérn-3/2 pre-RKHS functions, 1000 runs each, $\beta \equiv 2$), LoS-GP-UCB is only slightly worse than LoSBO and still better than Real-$\beta$-SafeOpt, and the authors attribute the absence of severe under-exploration to the optimism of $\beta \equiv 2$. On benchmarks without a discrete alternative (Camelback in 2-D, Hartmann in 6-D, a Gaussian bump $\exp(-4\|x\|_2^2)$ in 10-D; SE kernel with output variance 1, length scale $1/L$, prior mean $0.5$, noise level $0.01$, 100 iterations, 100 repetitions) it outperforms random search started from the same initial safe set (Fig. 8 of the paper).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to Module 4 and Module 6</div>
+      <div>
+        LoS-GP-UCB is the Lipschitz-only counterpart of the practical, Lipschitz-free SafeOpt of <a href="safe-bo.html#practical-variants">Module 4</a>: there, the safe set is $\{x : \ell_t(x) \ge h\}$ and everything depends on $\beta$; here, the safe set is $\bigcup_j \bar B_{r_j}(z_j)$ and nothing depends on $\beta$. Only LoS-GP-UCB gives up the expander/maximizer machinery for scalability; the Lipschitz-free SafeOpt keeps both sets (its expanders are found by adding an optimistic fake observation to the GP) and therefore still needs a finite candidate set: a grid, or the adaptively placed particles of its swarm version. GoSafeOpt (<a href="gosafe.html#gosafeopt">Module 6</a>) attacks the same dimensionality problem for dynamical systems with a different tool, backup policies, but keeps the GP-based safe set with a heuristic constant multiplier (4 or 3, depending on the experiment).
+      </div>
+    </div>
+
+    <!-- ===== SECTION 5: MCLOSBO ===== -->
+    <h2 class="section-heading" id="mclosbo">5. Multiple Constraints and Automotive Control</h2>
+
+    <p>Controller tuning rarely has a single safety requirement on the objective. SafeOpt-MC (<a class="cite" href="https://arxiv.org/abs/1602.04450" target="_blank" rel="noopener">Berkenkamp, Krause &amp; Schoellig, ML 2023</a>) and StageOpt (<a class="cite" href="https://arxiv.org/abs/1806.07555" target="_blank" rel="noopener">Sui et al., ICML 2018</a>) handle $q$ unknown constraint functions $g_i(\theta) \ge 0$, but through GP bounds, hence with RKHS-norm bounds for every $g_i$ and probabilistic guarantees. <a class="cite" href="https://arxiv.org/abs/2501.12969" target="_blank" rel="noopener">Menn, Pelizzari, Fleps-Dezasse &amp; Trimpe, CDC 2024</a> transplant the LoSBO safe set into that setting; the result, MCLoSBO, was tuned on a real car.</p>
+
+    <h3 class="subsection-heading">5.1 Setting and assumptions</h3>
+
+    <p>Parameters $\theta \in \Theta \subseteq \mathbb{R}^d$ (the paper's $\theta$ is our $x$), objective $f$ and constraints $g_i$, $i \in I_g = \{1,\dots,q\}$, with thresholds normalized to zero. Every query returns noisy values of all functions, $y_{0,n} = f(\theta_n) + \epsilon_{0,n}$ and $y_{i,n} = g_i(\theta_n) + \epsilon_{i,n}$, each modelled by its own GP. The requirement is $g_i(\theta_n) \ge 0$ for all $i$ and all $n$. Assumption 1: each $g_i$ is $L_i$-Lipschitz, $|g_i(\theta) - g_i(\theta')| \le L_i\|\theta - \theta'\|$. Assumption 2: $|\epsilon_{i,n}| \le E_i$. A safe seed $\theta_0$ is given. The constants are per constraint, which matters: a stability-type constraint may be much steeper than a tracking-error constraint.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; MCLoSBO safe set (eq. 5) and Proposition 3</div>
+      <div>
+        <div class="math-block">$$S_n = \bigcap_{i \in I_g} A_{i,n}, \qquad A_{i,n} = A_{i,n-1} \cup \big\{\theta' \in \Theta : y_{i,n-1} - E_i - L_i\|\theta_{n-1} - \theta'\| \ge 0\big\}, \qquad A_{i,0} = S_0,$$</div>
+        <p style="margin:0 0 8px;">i.e. each constraint keeps its own LoSBO set, accumulated over all measured points, and a parameter is safe once every constraint certifies it, possibly from different measurements. This is our reading of the paper's eq. (5), $S_n = \bigcap_{i}\bigcup_{\theta \in S_{n-1}}\{\theta' : y_{n,i} - E_i - L_i\|\theta - \theta'\| \ge 0\}$, whose union runs over the measured points $\theta$, each with its own measurement (the printed index of $y$ does not track $\theta$); the safe set is built only from points with measured values. The simpler recursion $S_n = S_{n-1} \cup \bigcap_i\{\theta' : y_{i,n-1} - E_i - L_i\|\theta_{n-1} - \theta'\| \ge 0\}$, which admits a new point only if the latest measurement certifies it for all constraints at once, is also safe but more conservative. <strong>Proposition 3.</strong> Under Assumptions 1 and 2, for any $\beta \in \mathbb{R}_+$, MCLoSBO yields only safe inputs: $g_i(\theta_n) \ge 0$ for all $i \in I_g$ and $n \ge 1$. <em>Proof:</em> the argument of Proposition 1, applied to each $g_i$ with its own set $A_{i,n}$, gives $g_i \ge 0$ on $A_{i,n}$; hence every $\theta \in S_n = \bigcap_i A_{i,n}$ satisfies all constraints, and queries are taken from $S_n$.</p>
+      </div>
+    </div>
+
+    <p>Relative to SafeOpt-MC's Algorithm 1, two things changed. The first is the safe set. The second is easy to miss: the bounds are the current GP confidence intervals $Q_n(\theta,i) = [\mu_{n-1}(\theta,i) \pm \beta\sigma_{n-1}(\theta,i)]$ themselves, with a tuning factor $\beta$, so that $l_{i,n}(\theta) = \mu_{n-1}(\theta,i) - \beta\sigma_{n-1}(\theta,i)$ and $u_{i,n}(\theta) = \mu_{n-1}(\theta,i) + \beta\sigma_{n-1}(\theta,i)$ (the paper's eq. (6) and the definitions after it). There is no intersection $C_n = C_{n-1} \cap Q_n$ over time. SafeOpt-MC's own practical version (its Section 4.3) drops the intersection as well. Since these bounds never enter the safe set, dropping the intersection costs nothing in safety, and the empty-intersection problem of Section 3 cannot arise. They drive the rest: maximizers $M_n = \{\theta \in S_n : u_{0,n}(\theta) \ge \max_{\theta' \in S_n} l_{0,n}(\theta')\}$ (objective only), expanders $G_n = \{\theta \in S_n : e_n(\theta) \gt 0\}$ with $e_n(\theta) = |\{\theta' \in \Theta\setminus S_n : \exists i \in I_g,\ u_{i,n}(\theta) - L_i\|\theta - \theta'\| \ge 0\}|$ (the paper's eq. (7) and Algorithm 1 print $e_n(\theta) \ge 0$, as does the algorithm box of SafeOpt-MC; for a cardinality that would make every safe point an expander, and SafeOpt-MC's own definition, its eq. (13), uses $\gt 0$). The count $e_n(\theta)$ is optimistic and per constraint: it counts uncertified points that an optimistic measurement of at least one constraint at $\theta$ could certify for that constraint, not points that would become jointly safe. The acquisition picks the most uncertain function at the most uncertain point, <span class="math-scroll-xs">$\theta_n = \arg\max_{\theta \in G_n \cup M_n}\max_{i \in \{0\}\cup I_g}\ u_{i,n}(\theta) - l_{i,n}(\theta)$</span>. With $q = 1$ and $g_1 = f$ this recovers LoSBO's setting and safety rule (the paper says it recovers "the setting of LoSBO"). The acquisition, however, then uses the current bands $Q_n$ instead of the intersected $C_t$ of Algorithm 3, so the two algorithms need not query the same points.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; how two constraints' safe sets intersect</div>
+      <div class="collapsible-body">
+        <p>Take $\Theta = [0,1]$, seed $\theta_0 = 0.5$, and two constraints with $(L_1, E_1) = (3, 0.2)$ and $(L_2, E_2) = (1, 0.1)$. Measuring at $\theta_0$ returns $y_{1,0} = 1.4$ and $y_{2,0} = 0.35$. Per-constraint radii:</p>
+        <div class="math-block">$$r_1 = \frac{y_{1,0} - E_1}{L_1} = \frac{1.4 - 0.2}{3} = 0.4, \qquad r_2 = \frac{y_{2,0} - E_2}{L_2} = \frac{0.35 - 0.1}{1} = 0.25.$$</div>
+        <p>Constraint 1 certifies $[0.1, 0.9]$, constraint 2 certifies $[0.25, 0.75]$, and $S_1 = [0.25, 0.75]$: the most restrictive constraint at each point governs. Note that the steeper constraint ($L_1 = 3$) is <em>not</em> the binding one here, because its measured margin is larger; what matters is the ratio (margin)/(slope). A second query at $\theta_1 = 0.75$ with $y_{1,1} = 1.1$, $y_{2,1} = 0.3$ adds $r_1 = 0.3$ (constraint 1 now covers $[0.1, 1.0]$) and $r_2 = 0.2$ (constraint 2 covers $[0.25, 0.95]$), so $S_2 = [0.25, 0.95]$. Each constraint's set only ever grows, and the intersection grows with them, but never faster than the slowest constraint. Exercise 5.4 continues this computation on a grid.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">5.2 Practical adaptations</h3>
+
+    <ul>
+      <li><strong>Asynchronous experiments.</strong> On a driving vehicle there is no pause between experiments to wait for the optimizer. MCLoSBO uses a batch acquisition with a pending parameter $\tilde\theta$: since $\sigma_n$ does not depend on $y$, a virtual data point $(\tilde\theta, \mu_n(\tilde\theta))$ is added to the GP before evaluating the acquisition, which discourages re-querying near $\tilde\theta$. The safe set, however, is computed only from points with measured values, so safety is untouched.</li>
+      <li><strong>Hyperparameter optimization.</strong> Marginal-likelihood fitting of length scales and output scales during the run is allowed for the same reason. The authors point out that hyperparameter optimization inside SafeOpt-MC has led to safety violations in earlier controller-tuning work (safe model-free adaptive control, and controller design with the parameter-space approach), precisely because there the covariance function <em>is</em> the safety mechanism.</li>
+    </ul>
+
+    <h3 class="subsection-heading">5.3 The automotive application</h3>
+
+    <p>The task is lateral trajectory tracking on a closed test track with two straights and two turns (about 55 km/h on the straights). The controller is a rear-axle tracking controller with three free parameters, treated as a black box. With cross-track error $e_{ct}$ and course-angle error $e_{ca}$, the objective (to be minimized, so its sign is flipped for BO) is</p>
+
+    <div class="math-block">$$f(\theta) = \frac{\int_{T_0}^{T_1}|e_{ct}(t)| + |e_{ca}(t)|\,dt}{T_1 - T_0} + \max_{t \in [T_0, T_1)}|e_{ct}(t)|,$$</div>
+
+    <p>and the two safety constraints are $g_1(\theta) = 2\,\mathrm{m} - \max_{t\in[T_0,T_1)}|e_{ct}(t)|$ (stay on the track) and $g_2(\theta) = 0.2\,\mathrm{rad/s} - \max_{t \in [T_1,T_2)}|\dot\psi(t)|$ (no oscillation of the yaw rate after a virtual 1 m cross-track disturbance injected at $T_1$ on the long straight, emulating side wind). The second constraint catches controllers that track corners well but oscillate on straights, a real hazard when tuning on the vehicle.</p>
+
+    <table>
+      <thead><tr><th>Study</th><th>Setup</th><th>Outcome</th></tr></thead>
+      <tbody>
+        <tr><td>Simulation</td><td>1, 2 and 3 parameters; 100 runs each; Matérn-5/2 kernels; $E_1 = E_2 = 0.1$, $L_1 = 10$, $L_2 = 3$; synchronous and asynchronous variants, with and without hyperparameter optimization; baseline SafeOpt-MC</td><td>No violations for either algorithm in this study; asynchronous MCLoSBO performs best for 2 and 3 parameters; the authors stress that SafeOpt-MC's safety depends on kernel and hyperparameter choices, MCLoSBO's does not</td></tr>
+        <tr><td>Vehicle, experiment 1</td><td>Opel Astra Sports Tourer; 1 parameter, 15 iterations, $L_1 = 4$, $L_2 = 1.5$, conservative initial set</td><td>No violations; nearly the whole safe set explored; best objective 70% better than the initial controller. During the vehicle experiments a communication flaw transmitted some false measurements (the true values were recovered from logs afterwards; the paper's Fig. 5 marks them), and the method proved robust to them</td></tr>
+        <tr><td>Vehicle, experiment 2</td><td>3 parameters, 13 iterations, $L_1 = 10$, $L_2 = 1.5$, safe set seeded from experiment 1</td><td>No violations; about 28% improvement over the initial safe set of this run</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters</div>
+      <div>
+        According to the authors, this is the first real-world implementation of a LoSBO-type algorithm, here with several constraints. The Lipschitz constants were determined by "expert knowledge and the insights gained from simulation", which is exactly the kind of prior knowledge the TMLR paper argues is available to engineers, whereas an RKHS norm bound is not. The sequential protocol (tune one parameter conservatively, then use its safe set to seed a three-parameter run) is a good template.
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: TIME-VARYING ===== -->
+    <h2 class="section-heading" id="time-varying">6. Event-Triggered and Time-Varying Safe BO</h2>
+
+    <p>All safe sets so far assume $f$ is fixed. Wear, payload changes or a re-tuned inner loop shift the objective, and a parameter certified safe last week may be unsafe today. Two responses exist: model the drift (time-varying BO), or detect it and start over (event triggering). The Trimpe group has done both, and the event-triggered route leads to the group's safe variant.</p>
+
+    <h3 class="subsection-heading">6.1 ET-GP-UCB: a GP error bound as an event trigger</h3>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2208.10790" target="_blank" rel="noopener">Brunzema, von Rohr, Solowjow &amp; Trimpe, TMLR 2025</a> work in the Bayesian time-varying setting of Bogunovic et al.: $f_t = \sqrt{1-\varepsilon}\,f_{t-1} + \sqrt{\varepsilon}\,g_t$ with i.i.d. $g_t \sim \mathcal{GP}(0,k)$, $k \le 1$, i.i.d. Gaussian noise $w_t \sim \mathcal{N}(0,\sigma_n^2)$ and an <em>unknown</em> rate of change $\varepsilon$. Instead of forgetting at a rate that requires $\varepsilon$, ET-GP-UCB treats $f$ as static, runs GP-UCB, and resets the dataset when an observation is inconsistent with the posterior. The trigger is an error bound, in the spirit of event-triggered learning (<a class="cite" href="https://arxiv.org/abs/1904.03042" target="_blank" rel="noopener">Solowjow &amp; Trimpe, Automatica 2020</a>): learn only when the data say the model is wrong.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; the ET-GP-UCB event trigger (Definition 2, Lemma 3, eq. 11)</div>
+      <div>
+        Let $t_r$ count the steps since the last reset and pick $\pi_{t_r} \gt 0$ with $\sum_{t_r \ge 1}\pi_{t_r}^{-1} = 1$ (e.g. $\pi_{t_r} = \pi^2 t_r^2/6$). With
+        <div class="math-block">$$\rho_{t_r} = 2\ln\frac{2\pi_{t_r}}{\delta_B}, \qquad \bar w_{t_r}^2 = 2\sigma_n^2\ln\frac{2\pi_{t_r}}{\delta_B},$$</div>
+        the trigger resets the dataset iff
+        <div class="math-block">$$\gamma_{\mathrm{reset}} = 1 \iff \underbrace{|y_t - \mu_{D_t}(x_t)|}_{\text{test } \psi_t} \;\gt\; \underbrace{\sqrt{\rho_{t_r}}\,\sigma_{D_t}(x_t) + \bar w_{t_r}}_{\text{threshold } \kappa_t}.$$</div>
+        <strong>Lemma 3.</strong> If $\varepsilon = 0$ (nothing changed), then with probability at least $1 - \delta_B$ the threshold is exceeded at no $t_r \ge 1$ of the current segment, i.e. of the steps since the last reset. So a trigger is evidence of change at level $\delta_B$, the single design parameter, but per segment. Every reset, including the forced one at $t_r = \bar N$ (below), restarts $t_r$ and with it the union bound, so the lemma is no false-alarm guarantee for a whole run. Applied segment by segment, it bounds the probability of a false trigger in $m$ segments of a stationary run only by $m\delta_B$, so false triggers must be expected over a long run. A run-wide guarantee would need segment budgets $\delta_{B,j}$ with $\sum_j \delta_{B,j} \le \delta_B$.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; Lemma 3 from a GP bound and a Gaussian tail bound</div>
+      <div class="collapsible-body">
+        <p><em>Step 1 (function error, Lemma 1 = Srinivas et al. Lemma 5.5).</em> For $f \sim \mathcal{GP}(0,k)$ and any fixed $x_t$, $f(x_t) - \mu_{D_t}(x_t) \sim \mathcal{N}(0, \sigma_{D_t}^2(x_t))$ conditionally on the data, so $\mathbb{P}[|f(x_t) - \mu_{D_t}(x_t)| \gt \sqrt{\rho}\,\sigma_{D_t}(x_t)] \le e^{-\rho/2}$. Choosing $e^{-\rho_{t_r}/2} = \delta'/\pi_{t_r}$, i.e. $\rho_{t_r} = 2\ln(\pi_{t_r}/\delta')$, and a union bound over $t_r = 1, 2, \dots$ (the steps of one segment between resets) gives failure probability $\sum_{t_r}\delta'/\pi_{t_r} = \delta'$.</p>
+        <p><em>Step 2 (noise, Lemma 2).</em> For $w \sim \mathcal{N}(0,\sigma_n^2)$ the same tail bound gives $\mathbb{P}[|w_{t_r}| \gt \bar w_{t_r}] \le e^{-\bar w_{t_r}^2/(2\sigma_n^2)}$; setting $\bar w_{t_r}^2 = 2\sigma_n^2\ln(\pi_{t_r}/\delta')$ and a union bound over $t_r$ again costs $\delta'$.</p>
+        <p><em>Step 3 (combine).</em> Since $y_t = f_t(x_t) + w_t$ and $\varepsilon = 0$ means $f_t = f$, the triangle inequality gives $|y_t - \mu_{D_t}(x_t)| \le |f(x_t) - \mu_{D_t}(x_t)| + |w_t| \le \sqrt{\rho_{t_r}}\sigma_{D_t}(x_t) + \bar w_{t_r}$ on the intersection of both events. Spending $\delta' = \delta_B/2$ on each event yields the constants $2\ln(2\pi_{t_r}/\delta_B)$ of the statement and total failure probability $\delta_B$. Note that this is a <em>Bayesian</em> bound ($f$ is a GP sample, noise is Gaussian), unlike the frequentist bounds of Section 2, and the two settings genuinely differ: for the usual infinite-dimensional RKHSs, GP sample paths lie outside the RKHS of their own kernel with probability one (<a class="cite" href="https://arxiv.org/abs/1807.02582" target="_blank" rel="noopener">Kanagawa et al. 2018</a>). The trigger only monitors the current query location, and the $\pi_{t_r}$ series makes the threshold grow slowly with time since the last reset.</p>
+      </div>
+    </div>
+
+    <p>Resets are confined to a window $[\underline N, \bar N]$ of steps since the last reset (a forced reset at $\bar N$), and the paper's Theorem 1 and Corollary 1 bound the regret of <em>any</em> reset strategy inside such a window, which is how ET-GP-UCB inherits guarantees without knowing $\varepsilon$.</p>
+
+    <h3 class="subsection-heading">6.2 ETSO: event-triggered SafeOpt on quadcopters</h3>
+
+    <p><a class="cite" href="https://arxiv.org/abs/2312.08058" target="_blank" rel="noopener">Holzapfel, Brunzema &amp; Trimpe, L4DC 2024</a> combine the trigger with safe BO for controller tuning under unknown mode changes $\xi_t$ of the closed loop (minimum dwell time between changes). The performance $J_{\xi_t}(\theta)$ must stay above a mode-dependent threshold $J_{\min,t}$. <strong>Assumption 1:</strong> a backup controller $\theta_B$ (typically the manufacturer's robust default) is safe for all modes, with a safe neighbourhood, $J_{\xi_t}(\theta_B) - \epsilon \ge J_{\mathrm{crit}}$. ETSO runs the practical SafeOpt of Berkenkamp et al. 2016 for $T_L$ learning rounds, monitored at every step by the trigger of Definition 1 (test $\psi_t = |\hat J_t - \mu_{D_t}(\theta_t)|$, threshold $\kappa_t = \sqrt{\rho_{t'}}\sigma_{D_t}(\theta_t) + \bar w_{t'}$ with $t'$ the steps since the last reset), then exploits $\arg\max_{\theta \in S_t}\mu_t(\theta)$. When the trigger fires:</p>
+
+    <ol>
+      <li>apply the backup controller $\theta_B$ and observe $\hat J_B$;</li>
+      <li>reset the data set to $D_{t+1} = \{(\theta_B, \hat J_B), (\theta_t, \hat J_t)\}$, which resets the safe set;</li>
+      <li>recompute the threshold $J_{\min,t}$ from $\hat J_B$ and restart safe exploration ($t' \leftarrow 2$).</li>
+    </ol>
+
+    <p><strong>Assumption 2</strong> asks that every performance-relevant change is detected and that the parameters in use at the moment of change are at least critically stable in the new mode; under Assumptions 1 and 2, <strong>Corollary 3</strong> states that ETSO stays safe across time variations, by chaining the stationary SafeOpt guarantee across the segments between resets.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; what ETSO's guarantee rests on</div>
+      <div>
+        Three things to keep straight. (i) The safety inside each segment is the <em>probabilistic</em> SafeOpt guarantee; even with a valid $\beta$ every segment would spend its own $\delta$, and these add up over segments like the trigger's $\delta_B$ in Lemma 3. The implementation, moreover, uses $\beta_{\mathrm{const}} = 2$ "a value widely used in the literature", so Section 1 applies in full. (ii) The trigger threshold actually used in the experiments is the heuristically scaled $\kappa_t = \tfrac34\sqrt{\rho_{t'}}\,\sigma_{D_t}(\theta_t) + \tfrac14\bar w_{t'}$ (eq. 7), because the union-bound series makes $\bar w_{t'}$ grow too large in practice; the scaled threshold is no longer covered by Lemma 2. (iii) Assumption 2 cannot be verified beforehand and, as the authors note, not every change can or should be detected; insignificant changes should not trigger. The formal content is therefore mainly the decomposition into stationary segments.
+      </div>
+    </div>
+
+    <p>The experiments are nonetheless instructive. In simulation with the attitude-controller gains multiplied by 0.65 (AC.65), SafeOpt without a budget limit (SafeOpt$^\infty$) crashed in 50 of 50 runs after the change, while ETSO detected the change in all 50 runs, reset to the backup and had no crash (the budget-limited SafeOpt, which only exploits after its $T_L$ learning rounds, had none either). On hardware (AC.40, attitude gains multiplied by 0.4) SafeOpt crashed in 2 of 10 runs and SafeOpt$^\infty$ in 2 of 10; ETSO reset in 9 of 10 runs and never crashed. For an insignificant trajectory change (2DTV) the trigger never fired on hardware (0 of 10 runs; the simulation figure reports 2 resets in 50 runs), so ETSO behaved like SafeOpt.</p>
+
+    <h3 class="subsection-heading">6.3 Modelling the drift instead: UI-TVBO</h3>
+
+    <p>The alternative is to keep all data and let the model forget. <a class="cite" href="https://arxiv.org/abs/2207.11120" target="_blank" rel="noopener">Brunzema, von Rohr &amp; Trimpe, CDC 2022</a> observe that in controller tuning changes are typically <em>incremental and lasting</em> (wear), not mean-reverting, and that the tuning objective is often convex in the parameters. Their UI-TVBO models the objective as a spatio-temporal GP with a Wiener-process temporal kernel,</p>
+
+    <div class="math-block">$$k\big((\theta,t),(\theta',t')\big) = k_{\mathrm{SE}}(\theta,\theta')\cdot\sigma_w^2\big(\min(t,t') - c_0\big), \qquad c_0 = -\sigma_w^{-2}\ \text{ so that } k_T(0,t') = 1 \text{ for all } t' \ge 0,$$</div>
+
+    <p>which injects uncertainty linearly in time between queries without pulling the mean back to the prior (contrast: back-to-prior forgetting with a stationary temporal kernel). Convexity is encouraged through GPs with linear inequality constraints: nonnegative second derivatives, enforced coordinate-wise at finitely many virtual observation points, which, as the authors note, does not enforce a positive semidefinite Hessian in more than one dimension. The benefit reported is fewer unstable controllers tried during online tuning, a safety lever even without a formal safe set. The 2026 review of <a class="cite" href="https://arxiv.org/abs/2609.09403" target="_blank" rel="noopener">Stenger et al.</a> places these time-varying and event-triggered variants in the wider landscape of BO for controller tuning.</p>
+
+    <!-- ===== SECTION 7: CONSEQUENCES ===== -->
+    <h2 class="section-heading" id="consequences">7. Consequences for Control and Open Problems</h2>
+
+    <p>The thesis of this module in one sentence, from Fiedler et al.: <em>in the hard-safety setting, safety should rest only on assumptions that practitioners judge reliable, that have a clear interpretation, and that connect to established prior knowledge in the application area</em>. Lipschitz constants and noise bounds pass that test; RKHS norms, kernels and hyperparameters do not. The short companion paper "Safety in safe Bayesian optimization and its ramifications for control" (Fiedler, Menn and Trimpe, SysDO 2024, arXiv 2501.13697) restates this for the control audience; cite the TMLR paper for the results.</p>
+
+    <table>
+      <thead><tr><th>Method</th><th>Needs $B \ge \|f\|_k$</th><th>Needs $L$</th><th>Noise assumption</th><th>Safety guarantee</th></tr></thead>
+      <tbody>
+        <tr><td>SafeOpt with theoretical $\beta_t$ (Sui et al. 2015)</td><td>yes (on $\|f\|_k^2$)</td><td>yes</td><td>zero-mean, bounded by $\sigma$</td><td>w.p. $\ge 1-\delta$</td></tr>
+        <tr><td>Practical SafeOpt, $\beta \equiv 2,3,4$ (ICRA 2016, GoSafe, GoSafeOpt, ETSO)</td><td>not used; justifiable via (7) only if $\|f\|_k \lesssim \beta$</td><td>optional</td><td>&mdash;</td><td>none ("cautious BO")</td></tr>
+        <tr><td>Real-$\beta$-SafeOpt</td><td>yes</td><td>yes</td><td>$R$-sub-Gaussian, $R$ known</td><td>w.p. $\ge 1-\delta$; may not explore</td></tr>
+        <tr><td>LoSBO / LoS-GP-UCB</td><td>no</td><td>yes</td><td>$|\epsilon_t| \le E$</td><td>deterministic; no exploration theorem</td></tr>
+        <tr><td>MCLoSBO</td><td>no</td><td>$L_i$ per constraint</td><td>$|\epsilon_{i,n}| \le E_i$</td><td>deterministic</td></tr>
+        <tr><td>ISE / ITL (<a class="cite" href="https://arxiv.org/abs/2212.04914" target="_blank" rel="noopener">Bottero et al. 2022</a>, <a class="cite" href="https://arxiv.org/abs/2402.15898" target="_blank" rel="noopener">H&uuml;botter et al. 2024</a>)</td><td>yes (via a C&amp;G/AY $\beta_t$)</td><td>no</td><td>sub-Gaussian</td><td>w.p. $\ge 1-\delta$ (ISE: continuous domains)</td></tr>
+        <tr><td>RKHS-norm over-estimation (<a class="cite" href="https://arxiv.org/abs/2503.10352" target="_blank" rel="noopener">Tokmak et al., AISTATS 2025</a>)</td><td>estimated $B_t$ from data</td><td>no (kernel metric $d_k$)</td><td>sub-Gaussian</td><td>with confidence $\ge 1-\kappa$, w.p. $\ge (1-\gamma)(1-\delta)$ ($\gamma$ a confidence parameter here); needs an i.i.d. assumption on $\|f\|_k$</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Consequence for the rest of this section</div>
+      <div>
+        The Trimpe-lens modules that follow are affected by the same caveat. GoSafe's Furuta-pendulum runs used $\beta_n \equiv 3$ (printed with a $\beta_n^{1/2}$ band, but presumably a multiplier of $\sigma$ in the SafeOpt code it builds on; Section 1.2), and GoSafeOpt multiplied $\sigma$ by 4 (its $\beta_n^{1/2}$, our $\beta$) in its 8-D simulated reaching task and by 3 in the 11-D path-following simulation and on the Franka arm (its Table E.2; <a href="gosafe.html#experiments">Module 6</a>); their near-perfect safety records (100% on the Franka path-following task, 99.9% in the first simulated reaching task) are empirical, not the $1-\delta$ of their theorems. The same holds for every method that certifies a set from a frequentist GP band: the Lyapunov-based safe RL of Berkenkamp et al. (<a href="lyapunov-mpc.html#berkenkamp-2017">Module 11</a>) and the learning-enhanced robust synthesis of Fiedler, Scherer and Trimpe (<a href="lyapunov-mpc.html#statistical-robust-synthesis">Module 11</a>) inherit the RKHS-norm problem through their $B$. Wherever you see "$\beta_n$ as in Chowdhury and Gopalan" in a paper, ask what $B$ was used.
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">7.1 Open problems</h3>
+
+    <ul>
+      <li><strong>Estimating the RKHS norm.</strong> Data only give lower bounds (minimum-norm interpolation), and queries needed for estimation must already be safe. Tokmak et al. (AISTATS 2025) over-estimate $\|f\|_k$ by comparing with random RKHS functions in a sampling-and-discarding scenario programme (<a href="verification.html#scenario-approach">Module 15</a>), which is rigorous but rests on the assumption that $\|f\|_k$ is an i.i.d. sample from the same distribution as the comparison functions. PACSBO (<a class="cite" href="https://arxiv.org/abs/2409.01163" target="_blank" rel="noopener">Tokmak, Sch&ouml;n &amp; Baumann, SysDO 2024</a>) estimates an upper bound on the RKHS norm from data in a probably-approximately-correct sense and treats the norm locally, much as Lipschitz methods use local slopes. The 2026 preprint of Wenzel, Tokmak and Fiedler (arXiv 2605.20091) uses superconvergence of kernel interpolation for sampling-based norm estimation, assuming noise-free and safe access to the target function (a setting that arises, e.g., in approximate MPC), not the noisy, safety-constrained queries of safe BO. None of these yet delivers the "engineering-knowledge" bound that Real-$\beta$-SafeOpt would need.</li>
+      <li><strong>Hyperparameter adaptation with guarantees.</strong> Online length-scale fitting changes the RKHS; theory for uncertainty bounds under adapted hyperparameters is only emerging (the TMLR paper points to Teckentrup and Karvonen et al.). A-GP-UCB (<a class="cite" href="https://www.jmlr.org/papers/v20/18-213.html" target="_blank" rel="noopener">Berkenkamp, Schoellig &amp; Krause, JMLR 2019</a>) keeps sublinear regret with unknown hyperparameters by slowly enlarging the function class, but, as Fiedler et al. note, such schemes may query unsafe inputs. LoSBO sidesteps the issue for safety, not for exploration quality.</li>
+      <li><strong>Gaussian noise versus hard bounds.</strong> LoSBO's $|\epsilon_t| \le E$ excludes Gaussian noise; the practical remedy $E = 2B_\epsilon$ addresses false alarms, not unboundedness. A quantile-based $E$ restores a probabilistic guarantee (Exercise 5.5), which is a different promise. Heteroscedastic and asymmetric bounds are covered by Remark 2 but rarely known.</li>
+      <li><strong>Exploration guarantees for Lipschitz-only methods.</strong> SafeOpt's Theorem 1 does not transfer; that under-exploration of LoS-GP-UCB (the Safe-UCB effect of Sui et al.) stays mild is only an empirical finding. The optimality properties of the set-membership lower bound (Milanese &amp; Novara) might offer a starting point.</li>
+      <li><strong>Connection to cautious BO.</strong> If practice runs cautious BO, then conservative bandits and cautious BO with tolerated, bounded violations (e.g. CONFIG, <a class="cite" href="https://arxiv.org/abs/2211.00162" target="_blank" rel="noopener">Xu et al., ICML 2023</a>, which bounds cumulative violation) may be the honest theoretical frame for $\beta \equiv 2$; the TMLR paper flags this as future work.</li>
+      <li><strong>Transfer to other SafeOpt variants and to dynamical systems.</strong> The LoSBO modification applies to any algorithm of the generic SafeOpt class; a Lipschitz-only GoSafeOpt with backup policies certified from trajectory data (<a href="gosafe.html#backup-walkthrough">Module 6</a>) would combine deterministic parameter-space safety with global exploration; we are not aware that it has been done.</li>
+    </ul>
+
+    <!-- ===== SECTION 8: WALKTHROUGH ===== -->
+    <h2 class="section-heading" id="losbo-walkthrough">8. Walkthrough: The LoSBO Safety Proof</h2>
+
+    <p>Proposition 1 is one line in the paper. Here it is taken apart inequality by inequality, because the point of LoSBO is <em>which</em> assumption each inequality uses, and which it does not.</p>
+
+    <div class="interactive-container" id="st-walkthrough" data-title="Derivation: LoSBO is safe for any β (Proposition 1)"></div>
+
+    <!-- ===== SECTION 9: EXPLORER ===== -->
+    <h2 class="section-heading" id="losbo-explorer">9. Interactive: Break SafeOpt, Not LoSBO</h2>
+
+    <p>A small Monte-Carlo version of the paper's Table 1 in the browser. Each run samples $K$ functions $f = \sum_{i=1}^{12}\alpha_i k(\cdot, x_i)$ from the pre-RKHS of a squared-exponential kernel (length scale $0.2$ on $[0,1]$), rescales the coefficients so that $\|f\|_k = \sqrt{\alpha^\top K\alpha}$ equals the chosen norm exactly, sets $h = \hat\mu(f) - 0.2\,\widehat{\mathrm{SD}}(f)$, computes $L_{\mathrm{true}}$ as the largest slope of $f$ (the maximum of $|f'|$ on a 401-point grid, raised if necessary to the exact Lipschitz constant of $f$ on the query grid), picks a random safe seed from the plateau around the maximizer where $f \ge h + E$, and then runs three algorithms for 25 iterations on a 40-point grid with a real GP posterior (Cholesky solves, intersection of confidence sets, expanders and maximizers as in Algorithms 2 and 3). Where a measurement contradicts an earlier band, $C_{t-1}(x) \cap Q(x)$ is empty and the algorithms are undefined (Section 3). There the explorer restarts $C_t(x)$ from the current band $Q(x)$. This keeps $\ell_t \le u_t$ everywhere, so the maximizer of $\ell_t$ over $S_t$ always lies in $M_t$ and no other fallback is needed; the last column of the table reports the share of runs in which a restart happened. The three algorithms are SafeOpt with a heuristic constant $\beta$, Real-$\beta$-SafeOpt with eq. (7) and $B = (\text{factor})\times\|f\|_k$, and LoSBO with $E = (\text{multiple})\times B_\epsilon$ and the same $\beta$ as its (safety-irrelevant) tuning knob. All three use the same Lipschitz constant $L = (\text{factor})\times L_{\mathrm{true}}$ (SafeOpt's expansion rule needs it too, so an under-estimated $L$ can hurt every algorithm, while an under-estimated $B$ or $\beta$ only hurts the GP-certified ones). Noise is uniform on $[-B_\epsilon, B_\epsilon]$ ($R = B_\epsilon$, nominal $\lambda = B_\epsilon$ as in the paper) or, to break LoSBO's assumption, Gaussian with $\sigma_n = B_\epsilon$. Besides violations, the table reports which share of the truly safe grid points the final safe set certifies. The absolute rates are not comparable with Table 1 (coarser grid, larger noise, 25 iterations, small $K$), and the "never expanded" column is mostly a grid effect: a seed whose margin $f - h$ is below roughly $L$ times the grid spacing cannot certify a neighbour under any of the three rules, so, unlike Table 1's "not started" row, it is often the same for all three (when it differs, it is mostly Real-$\beta$ that is left behind). The ordering of the violations and of the certified shares is what carries over.</p>
+
+    <div class="interactive-container">
+      <div class="interactive-label">Break SafeOpt, not LoSBO</div>
+      <div class="slider-group">
+        <div class="slider-control"><label>RKHS norm of the sampled functions <span id="st-mc-norm-val">10</span></label><input type="range" id="st-mc-norm" min="2" max="20" step="1" value="10"></div>
+        <div class="slider-control"><label>&beta;: SafeOpt's constant, LoSBO's knob <span id="st-mc-beta-val">2.0</span></label><input type="range" id="st-mc-beta" min="0.5" max="8" step="0.25" value="2"></div>
+        <div class="slider-control"><label>Real-&beta;: B / true norm <span id="st-mc-bfac-val">1.00</span></label><input type="range" id="st-mc-bfac" min="0.1" max="2" step="0.05" value="1"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label><span style="font-weight:400;color:#555;">L-estimate factor L / L<sub>true</sub> (used by all three)</span> <span id="st-mc-lfac-val">1.10</span></label><input type="range" id="st-mc-lfac" min="0.3" max="1.5" step="0.05" value="1.1"></div>
+        <div class="slider-control"><label><span style="font-weight:400;color:#555;">LoSBO: E as multiple of B<sub>&epsilon;</sub></span> <span id="st-mc-efac-val">2.0</span></label><input type="range" id="st-mc-efac" min="0" max="3" step="0.25" value="2"></div>
+        <div class="slider-control"><label><span style="font-weight:400;color:#555;">Noise half-width B<sub>&epsilon;</sub></span> <span id="st-mc-beps-val">0.05</span></label><input type="range" id="st-mc-beps" min="0.01" max="0.2" step="0.01" value="0.05"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Functions K <span id="st-mc-K-val">20</span></label><input type="range" id="st-mc-K" min="5" max="40" step="1" value="20"></div>
+        <div class="slider-control"><label>Function shown <span id="st-mc-show-val">1</span></label><input type="range" id="st-mc-show" min="1" max="20" step="1" value="1"></div>
+        <div class="slider-control"><label>Noise model / model shown</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <select id="st-mc-noise" style="padding:4px 6px;font-size:12px;border:1px solid #bbb;border-radius:4px;background:#fff;"><option value="uniform">uniform, bounded</option><option value="gauss">Gaussian, unbounded</option></select>
+            <select id="st-mc-model" style="padding:4px 6px;font-size:12px;border:1px solid #bbb;border-radius:4px;background:#fff;"><option value="safeopt">band: SafeOpt</option><option value="realbeta">band: Real-&beta;</option><option value="losbo" selected>band: LoSBO</option></select>
+            <button id="st-mc-resample" style="padding:4px 10px;font-size:12px;border:1px solid #2d5fa6;border-radius:4px;background:#fff;color:#2d5fa6;cursor:pointer;">Resample</button>
+          </div>
+        </div>
+      </div>
+      <div id="st-mc-table" style="overflow-x:auto;margin-bottom:10px;"></div>
+      <svg id="st-mc-svg" viewBox="0 0 760 360" style="display:block;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fff;"></svg>
+      <div id="st-mc-note" style="font-size:12px;color:#555;margin-top:8px;"></div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">What to try</div>
+      <div>
+        (1) Leave the defaults: SafeOpt with $\beta = 2$ breaks the tube and queries an unsafe point in a sizeable fraction of runs (30% in the default sample), while certifying as much of the grid as LoSBO (74% of the safe points for both); Real-$\beta$ with the true norm never violates but typically certifies the least (64%); LoSBO never violates. The last column shows what $\beta = 2$ means for these functions: in 75% of the runs a measurement contradicts an earlier band, for SafeOpt and LoSBO alike, since they use the same band. A valid $\beta$ allows this only with probability $\delta$ (Real-$\beta$: 0%); in LoSBO it only affects exploration. Final performance is almost the same for all three here, because the seed lies on the maximizer's plateau and the optimum of a 40-point grid is easy to reach. (2) Slide the Real-$\beta$ factor to 0.25 (the paper's $B = 2.5$): violations appear (20% of runs in the default sample), and nothing warns you in time. The band looks as plausible as before, and the empty intersections of the last column mostly come too late: over the default sample and nine resamples, 66 runs violated; in 53 of them the first restart came only after the first unsafe query, and in 2 there was none. About half of the runs that stayed safe had a restart too. Slide it to 2 ($B = 20$): the certified share shrinks markedly (64% to 44% in the default sample) and final performance drops, the last Real-$\beta$ column of Table 1 in miniature. (3) Slide the $L$ factor below 1: at 0.9 LoSBO violates in some runs, at 0.5 all three do (Real-$\beta$'s wide band hides a mild under-estimate). With bounded noise and a safe seed (guaranteed here by construction), Proposition 1 can only be broken by under-estimating $L$ or $E$; on this coarse grid an $E$ below $B_\epsilon$ rarely shows, for the reason given in (4). (4) Switch to Gaussian noise with $E = 2B_\epsilon$: the hard bound is exceeded in about 4.6% of measurements, yet LoSBO violations stay rare, because an exceedance by $\epsilon_t - E$ over-certifies only a shell of width $(\epsilon_t - E)/L$ (far below the grid spacing here) and the default $L$ factor 1.1 adds slack; with $L$ factor 1.0 and $E = B_\epsilon$ an occasional LoSBO violation shows up if you resample long enough (3 of 800 runs over the default sample and 39 resamples). (5) Raise $\beta$: at 4 SafeOpt still violates about as often as at 2 (32.5% of runs at both over the default sample and nine resamples; 40% against 30% in the default sample itself), at 6 rarely, at 8 not at all. Meanwhile its certified share falls towards Real-$\beta$'s and the empty intersections disappear, the trade-off of Table 1. LoSBO's certified share grows with $\beta$, because there $\beta$ only steers exploration.
+      </div>
+    </div>
+
+    <!-- ===== EXERCISES ===== -->
+    <h2 class="section-heading" id="exercises">Exercises</h2>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 5.1 &mdash; Proposition 1 with asymmetric, heteroscedastic noise</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Assume $f$ is $L$-Lipschitz, $f \ge h$ on $S_0 \ne \emptyset$, and the noise satisfies $-E_\ell(x,t) \le \epsilon_t \le E_u(x,t)$ whenever $x$ is the input queried at time $t$ (Remark 2). Propose the safe-set rule, prove that every query is safe for any $\beta_t \gt 0$, and explain why $E_\ell$ plays no role.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><em>Rule.</em> $S_t = S_{t-1} \cup \{x \in D : y_{t-1} - E_u(x_{t-1},t-1) - L\,d(x_{t-1},x) \ge h\}$, $S_1 = S_0$.</p>
+            <p><em>Proof.</em> Claim: $f \ge h$ on $S_t$ for all $t \ge 0$; then $x_t \in G_t \cup M_t \subseteq S_t$ is safe whatever the GP did. Induction: $t = 0$ is the seed assumption. For $t \ge 1$ and $x \in S_t \setminus S_{t-1}$ we have $y_{t-1} - E_u(x_{t-1},t-1) - L\,d(x_{t-1},x) \ge h$. Since $y_{t-1} = f(x_{t-1}) + \epsilon_{t-1}$ and $\epsilon_{t-1} \le E_u(x_{t-1},t-1)$, we get $f(x_{t-1}) = y_{t-1} - \epsilon_{t-1} \ge y_{t-1} - E_u(x_{t-1},t-1)$ (a large positive noise makes the measurement flatter the function; subtracting the largest possible positive error is the worst case). Lipschitz continuity gives $f(x) \ge f(x_{t-1}) - L\,d(x_{t-1},x)$. Chaining: $f(x) \ge y_{t-1} - E_u(x_{t-1},t-1) - L\,d(x_{t-1},x) \ge h$. $\blacksquare$</p>
+            <p style="margin-bottom:0;"><em>Why $E_\ell$ is irrelevant.</em> A negative noise realization makes $y$ smaller than $f$, so the certified region is smaller than it could be, which is conservative but safe. Only the upper noise bound can make a measurement lie <em>about how large</em> $f$ is. (The lower bound would matter for an upper confidence bound on $f$, which LoSBO takes from the GP, not from the noise model.) Note also that $E_u$ is evaluated at the queried point and time, so known heteroscedastic sensors, e.g. noise growing with speed, are handled without change.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 5.2 &mdash; Real-&beta; with $B \lt \|f\|_k$ can be unsafe: a construction</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Work noise-free ($R = 0$, $\lambda \to 0$, so $\mu_t = s$ is the minimum-norm interpolant of the data and $\sigma_t^2$ is the power function). (a) Assume distinct inputs (so $K_t$ is invertible), $B_{\mathrm{true}} \ge \|s\|_k$ and $\sigma_t(x) \gt 0$. Show that there is an $f \in \mathcal{H}_k$ interpolating the data with $\|f\|_k = B_{\mathrm{true}}$ and $f(x) = s(x) - \sqrt{B_{\mathrm{true}}^2 - \|s\|_k^2}\;\sigma_t(x)$. (b) Conclude that the Real-$\beta$ lower bound with $B_{\mathrm{est}} \lt \sqrt{B_{\mathrm{true}}^2 - \|s\|_k^2}$ is violated at $x$, and construct a three-point domain on which this produces an unsafe query.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><em>(a)</em> Let $V = \mathrm{span}\{k(\cdot,x_i)\}_{i \le t}$ and $g_x = k(\cdot,x) - P_V k(\cdot,x)$ the residual of the orthogonal projection onto $V$. Then $g_x \perp V$, so $g_x(x_i) = \langle g_x, k(\cdot,x_i)\rangle_k = 0$ for all data points (reproducing property), and $g_x(x) = \langle g_x, k(\cdot,x)\rangle_k = \langle g_x, g_x + P_Vk(\cdot,x)\rangle_k = \|g_x\|_k^2$. The squared norm of the residual is the power function, $\|g_x\|_k^2 = k(x,x) - k_t(x)^\top K_t^{-1}k_t(x) = \sigma_t^2(x)$ (noise-free posterior variance, <a href="toolkit-gp.html#noise-free-bound">Module 3</a>). Set $f_c = s + c\,g_x$. It interpolates the data, $f_c(x) = s(x) + c\,\sigma_t^2(x)$, and since $s \in V \perp g_x$, $\|f_c\|_k^2 = \|s\|_k^2 + c^2\sigma_t^2(x)$. Choosing $c = -\sqrt{B_{\mathrm{true}}^2 - \|s\|_k^2}/\sigma_t(x)$ (this is where $\sigma_t(x) \gt 0$ and $B_{\mathrm{true}} \ge \|s\|_k$ are needed; if $\sigma_t(x) = 0$ the data pin down $f(x) = s(x)$) gives $\|f_c\|_k = B_{\mathrm{true}}$ and $f_c(x) = s(x) - \sqrt{B_{\mathrm{true}}^2 - \|s\|_k^2}\,\sigma_t(x)$. This is the extremal function of the noise-free bound $|f(x) - s(x)| \le \sqrt{B^2 - \|s\|^2}\,\sigma_t(x)$: the bound is tight, and no smaller multiplier of $\sigma_t$ is valid.</p>
+            <p><em>(b)</em> In the noise-free limit the Real-$\beta$ band has $\beta_t = B_{\mathrm{est}}$ (the $R$ term vanishes), so $\ell_t(x) \ge s(x) - B_{\mathrm{est}}\sigma_t(x) \gt f_c(x)$ whenever $B_{\mathrm{est}} \lt \sqrt{B_{\mathrm{true}}^2 - \|s\|_k^2}$: the tube is violated at $x$ with certainty, not with probability $\delta$.</p>
+            <p><em>A complete three-point example.</em> Let $D = \{0, 1, 2\} \subset \mathbb{R}$ with $d(x,x') = |x - x'|$ and the kernel given by its Gram matrix $K = \begin{pmatrix} 1 & 0 & 0\\ 0 & 1 & 2\\ 0 & 2 & 5\end{pmatrix}$ (positive definite: leading minors $1, 1, 1$). Take $f = -2\,k(\cdot,1)$, i.e. $\big(f(0), f(1), f(2)\big) = (0, -2, -4)$ with $\|f\|_k = 2 = B_{\mathrm{true}}$; this is the extremal function of (a) for the data point $0$ and $x = 1$. Let $h = -3$, so $0$ and $1$ are safe and $2$ is not; $L = 2$ is the exact Lipschitz constant; seed $S_0 = \{0, 1\}$ (two safe points, as in the caption of Table 1); run Real-$\beta$-SafeOpt noise-free with $B_{\mathrm{est}} = 0.5$.</p>
+            <ul style="margin:0 0 8px 18px;">
+              <li>$t = 1$: $S_1 = S_0$ and both seed points have infinite width; break the tie towards $x_1 = 0$ and observe $y_1 = f(0) = 0$.</li>
+              <li>Posterior: $\mu_1 \equiv 0$ (because $k(\cdot, 0)$ vanishes at $1$ and $2$) and $\sigma_1^2 = (0, 1, 5)$. With $\beta = 0.5$: $\ell_2 = (0, -0.5, -\tfrac{\sqrt5}{2})$ and $u_2 = (0, 0.5, \tfrac{\sqrt5}{2})$ (the seed floor $h = -3$ is inactive).</li>
+              <li>Safe set: from $x_s = 1$, $\ell_2(1) - L\,d(1,2) = -0.5 - 2 = -2.5 \ge -3$, so $2$ is certified and $S_2 = D$, although $f(2) = -4 \lt h$. The culprit is the tube violation at the <em>unobserved</em> seed point: $\ell_2(1) = -0.5 \gt f(1) = -2$.</li>
+              <li>Acquisition: $G_2 = \emptyset$ (no uncertified points are left), $\max_{S_2}\ell_2 = 0 \le u_2$ everywhere, so $M_2 = D$; the widths are $(0, 1, \sqrt5)$, hence $x_2 = 2$: an unsafe query.</li>
+            </ul>
+            <p>With any $B_{\mathrm{est}} \gt 1$ (in particular a valid $B_{\mathrm{est}} \ge B_{\mathrm{true}} = 2$) the certificate fails, $\ell_2(1) - 2 = -B_{\mathrm{est}} - 2 \lt -3$, and $2$ is never admitted. Note that entering the safe set is not the same as being queried; here the maximizer rule picks $2$ because it is the most uncertain candidate.</p>
+            <p style="margin-bottom:0;"><em>Moral.</em> The lower confidence bound at <em>unobserved</em> safe points is where SafeOpt-type algorithms are exposed; the RKHS norm is exactly the quantity controlling how far $f$ can dip below the interpolant there, which is why no data-driven proxy for $B$ can be safe without extra assumptions.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 5.3 &mdash; From a H&ouml;lder modulus to a LoSBO rule</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Suppose $|f(x) - f(x')| \le C\,d(x,x')^\alpha$ with known $C \gt 0$ and $\alpha \in (0,1]$. (a) State the safe-set update and prove its safety. (b) Compute the radius of the certified ball around a query with slack $y - E - h = 0.3$ for $C = 3$ and $\alpha \in \{1, \tfrac12\}$. (c) For which slacks does the H&ouml;lder-$\tfrac12$ ball beat the Lipschitz ball with the same $C$?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><em>(a)</em> $S_t = S_{t-1} \cup \{x : y_{t-1} - E - C\,d(x_{t-1},x)^\alpha \ge h\}$. Proof as in Proposition 1 with $\phi(r) = Cr^\alpha$, which is continuous, strictly increasing, $\phi(0) = 0$: $f(x) \ge f(x_{t-1}) - C\,d(x_{t-1},x)^\alpha \ge y_{t-1} - E - C\,d(x_{t-1},x)^\alpha \ge h$. The GP is again untouched.</p>
+            <p><em>(b)</em> For a slack $y - E - h \ge 0$ the certified set is $\{x : d(x_{t-1},x) \le r\}$ with $r = \phi^{-1}(y - E - h) = \big((y-E-h)/C\big)^{1/\alpha}$; a negative slack certifies nothing (do not feed it to the formula, which for $\alpha = \tfrac12$ would square it into a positive radius). With slack $0.3$ and $C = 3$: $\alpha = 1$ gives $r = 0.1$; $\alpha = \tfrac12$ gives $r = 0.1^2 = 0.01$.</p>
+            <p style="margin-bottom:0;"><em>(c)</em> $r_{1/2} = (s/C)^2 \gt r_1 = s/C$ iff $s/C \gt 1$, i.e. only for slacks larger than $C$ (distances above 1 in the chosen units). For small slacks, the typical situation near the boundary of the safe set, a rougher regularity class certifies far less; this is the price of weaker prior knowledge. (The paper's Matérn-3/2 experiments still use a Lipschitz bound, so this effect is not what is measured there; the authors explain the slightly slower exploration on Matérn functions by their lower smoothness, to which a global Lipschitz bound is tied.)</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 5.4 &mdash; Compute LoSBO and MCLoSBO safe sets on a grid</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $D = \{0, 0.1, \dots, 1.0\}$, $h = 0$, $L = 3$, $E = 0.2$, $S_0 = \{0.5\}$. The queries and measurements are $(0.5, 1.4)$, then $(0.9, 0.8)$, then $(0.1, 0.25)$. (a) Compute $S_1, S_2, S_3$. (b) Add a second constraint with $L_2 = 1$, $E_2 = 0.1$ and measurements $0.35$ at $0.5$; which of the planned queries is now inadmissible, and what is $S_1$ for MCLoSBO? (c) Suppose $L = 2$ had been used instead of $3$ for the first constraint and the true function has $f(0) = -0.1$. What happens?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><em>(a)</em> $S_1 = S_0$ (no measurement before the first query). After $(0.5, 1.4)$: radius $(1.4 - 0.2 - 0)/3 = 0.4$, so $S_2 = \{0.1, 0.2, \dots, 0.9\}$. After $(0.9, 0.8)$: radius $(0.8 - 0.2)/3 = 0.2$, adding $1.0$ (and re-certifying $0.7$&ndash;$0.9$), so $S_3 = \{0.1,\dots,1.0\}$. After $(0.1, 0.25)$: radius $0.05/3 \approx 0.017 \lt 0.1$, nothing new; $S_4 = S_3$. Every step is an explicit union of balls, and a measurement below $h + E = 0.2$ would have certified nothing at all (radius $\lt 0$).</p>
+            <p><em>(b)</em> Constraint 2 at $0.5$ gives radius $(0.35 - 0.1)/1 = 0.25$, certifying $\{0.3, \dots, 0.7\}$. In MCLoSBO's indexing (Section 5: the seed measurement is $y_{i,0}$, so the set after it is $S_1$; it plays the role of $S_2$ in (a)), $S_1 = A_{1,1} \cap A_{2,1} = \{0.1,\dots,0.9\} \cap \{0.3,\dots,0.7\} = \{0.3,\dots,0.7\}$, so the planned query at $0.9$ is inadmissible: the next query must be chosen inside $\{0.3,\dots,0.7\}$ (the acquisition picks the most uncertain point of $G_1 \cup M_1$, which depends on the GPs, e.g. $0.3$ or $0.7$). The tighter constraint governs even though constraint 1 was the steeper one.</p>
+            <p style="margin-bottom:0;"><em>(c)</em> With $L = 2$ the first radius becomes $1.2/2 = 0.6$ and $S_2 = D$ including $0$ and $1.0$. If the true $f$ has slope up to $3$, $f(0) = -0.1 \lt 0$ is consistent with the data ($f(0.5) \in [1.2, 1.6]$ and $|f(0.5) - f(0)| \le 1.5$ allows $f(0) \ge -0.3$), so an unsafe query at $0$ can follow. An under-estimated $L$ fails exactly like an under-estimated $B$: silently, on the boundary, in the direction of the largest cone.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 5.5 &mdash; Gaussian noise breaks the hard bound; what does $E = 2B_\epsilon$ actually fix?</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $\epsilon_t \sim \mathcal{N}(0,\sigma_n^2)$ i.i.d. and $E = 2\sigma_n$. (a) Compute the probability that a single measurement violates $|\epsilon_t| \le E$, and that at least one of $T = 25$ does. (b) Explain why not every exceedance causes an unsafe query. (c) Derive an $E_T$ such that all $T$ measurements satisfy $|\epsilon_t| \le E_T$ with probability $\ge 1-\delta$, and state what LoSBO then guarantees; evaluate for $T = 25$, $\delta = 0.01$. (d) What is the actual purpose of $E = 2B_\epsilon$ in the paper?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><em>(a)</em> $\mathbb{P}[|\epsilon_t| \gt 2\sigma_n] = 2\Phi(-2) \approx 0.0455$. Over 25 independent measurements, $1 - (1 - 0.0455)^{25} \approx 0.69$: an exceedance is the rule, not the exception, so Proposition 1 does not apply to Gaussian noise at all.</p>
+            <p><em>(b)</em> Safety needs $f(x_{t-1}) \ge y_{t-1} - E$, i.e. only $\epsilon_{t-1} \le E$ (one-sided, probability of failure $\Phi(-2) \approx 0.023$ per query); a violation also requires the over-certified ball to contain a point $x$ with $f(x) \lt h$. Rearranging the certificate, such an $x$ satisfies $f(x_{t-1}) - h \lt L\,d(x_{t-1},x) \le f(x_{t-1}) - h + (\epsilon_{t-1} - E)$, because $f(x) \ge f(x_{t-1}) - L\,d(x_{t-1},x)$ would otherwise give $f(x) \ge h$. So $f$ must fall from $f(x_{t-1})$ to below $h$ at (almost) the full rate $L$ along the way, and the wrongly certified points lie in a shell of width $(\epsilon_{t-1} - E)/L$ just beyond the true reach of the cone, with $f(x) \ge h - (\epsilon_{t-1} - E)$. The query itself need not be near the boundary (for $f(x) = 1 - x$, $h = 0$, $L = 1$, a query at $x = 0$ with $\epsilon_{t-1} - E = 0.1$ certifies the unsafe point $x = 1.05$). Exceedances on flat parts of $f$, or with a conservative $L$, are harmless, which is why the explorer shows only occasional violations under Gaussian noise.</p>
+            <p><em>(c)</em> Gaussian tail and union bound: $\mathbb{P}[\exists t \le T : |\epsilon_t| \gt E_T] \le T\cdot 2e^{-E_T^2/(2\sigma_n^2)} = \delta$ for $E_T = \sigma_n\sqrt{2\ln(2T/\delta)}$. On the event that all $|\epsilon_t| \le E_T$, Proposition 1 applies verbatim, so LoSBO with $E = E_T$ is safe <em>with probability at least $1-\delta$</em>, the same structure as Lemma 2 of ET-GP-UCB (Section 6). For $T = 25$, $\delta = 0.01$: $E_T = \sigma_n\sqrt{2\ln 5000} \approx 4.13\,\sigma_n$. The guarantee is now probabilistic and horizon-dependent (an anytime version uses $\pi_t$ weights as in Section 6), which is the honest statement for unbounded noise.</p>
+            <p style="margin-bottom:0;"><em>(d)</em> Remark 3 is about <em>bounded</em> noise with a sharp bound $B_\epsilon$: with $E = B_\epsilon$, queries near the boundary can return $y_t \lt h$ although $f(x_t) \ge h$, which looks like a violation and may trigger costly reactions. $E = 2B_\epsilon$ avoids these false alarms at the price of smaller balls. It does nothing about unboundedness; for Gaussian noise the relevant remedy is (c).</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 5.6 &mdash; How large is a real $\beta_t$ in numbers?</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Take $B = 10$, $R = 0.05$, $\lambda = 0.05$, $\delta = 0.01$, and suppose after $t = 20$ queries $\ln\det(I_t + \lambda^{-1}K_t) = 12$. Evaluate eq. (7), the Chowdhury&ndash;Gopalan $\beta_t$ with $\gamma_{t-1}$ replaced by the realized information gain, and the Srinivas-type $\sqrt{2B^2 + 300\gamma_t\ln^3(t/\delta)}$. Compare with $\beta \equiv 2$ and interpret.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;">Eq. (7): $\beta_t = 10 + \frac{0.05}{\sqrt{0.05}}\sqrt{12 + 2\ln 100} = 10 + 0.2236\sqrt{21.21} = 10 + 0.2236\times 4.606 \approx 11.03$. Chowdhury&ndash;Gopalan with $\gamma = \tfrac12\cdot 12 = 6$: $10 + 0.05\sqrt{2(6 + 1 + 4.605)} = 10 + 0.05\times 4.817 \approx 10.24$ (formally it needs $\lambda = 1 + 2/T \ge 1$, not $\lambda = 0.05$). Srinivas-type: $\ln(t/\delta) = \ln 2000 = 7.60$, $\ln^3 = 439$, so $\sqrt{200 + 300\cdot 6\cdot 439} = \sqrt{790{,}400} \approx 889$.</p>
+            <p style="margin-bottom:0;"><em>Interpretation.</em> With low noise, both modern bounds are essentially $B$: the noise term contributes about 9% of eq. (7) and about 2% of the Chowdhury&ndash;Gopalan value. The heuristic $\beta = 2$ is therefore not "a bit optimistic": justifying it through eq. (7) would require $B + 1.03 \le 2$, i.e. a norm bound $\|f\|_k \lesssim 1$ (roughly $\lesssim 2$ in the limit of negligible noise, a sufficient condition from one theorem), while the function has norm 10, a factor of about 5.5 in the band width. The Srinivas constant explains why nobody ever used the theoretical value; the modern bounds explain why that is no longer an excuse. Whether $\beta \approx 11$ still explores is the "not started" row of Table 1.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <!-- ===== KEY PAPERS ===== -->
+    <h2 class="section-heading" id="papers">Key Papers</h2>
+
+    <table>
+      <thead><tr><th>Paper</th><th>Venue</th><th>Contribution</th><th>Why read it</th></tr></thead>
+      <tbody>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2403.12948" target="_blank" rel="noopener">Fiedler, Menn, Kreisk&ouml;ther, Trimpe &mdash; On Safety in Safe Bayesian Optimization</a></td><td>TMLR 2024</td><td>Documents the $\beta$ and RKHS-norm problems with experiments; proposes Real-$\beta$-SafeOpt, LoSBO and LoS-GP-UCB</td><td>The source of this module; read Sections 5&ndash;7 and Table 1 in full</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2105.02796" target="_blank" rel="noopener">Fiedler, Scherer, Trimpe &mdash; Practical and Rigorous Uncertainty Bounds for Gaussian Process Regression</a></td><td>AAAI 2021</td><td>Data-dependent frequentist $\beta_N$ (use the corrected arXiv v2 constant); log-det-free bound for independent noise; robustness to misspecification</td><td>The bound Real-$\beta$ evaluates; the Corrections section is a lesson in constants</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2501.12969" target="_blank" rel="noopener">Menn, Pelizzari, Fleps-Dezasse, Trimpe &mdash; Lipschitz Safe Bayesian Optimization for Automotive Control</a></td><td>IEEE CDC 2024</td><td>MCLoSBO: Lipschitz-only safe sets for several constraints; asynchronous batch variant; tuning on a test vehicle</td><td>First hardware demonstration of Lipschitz-only safety with multiple constraints</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2312.08058" target="_blank" rel="noopener">Holzapfel, Brunzema, Trimpe &mdash; Event-Triggered Safe Bayesian Optimization on Quadcopters</a></td><td>L4DC 2024</td><td>ETSO: GP-error-bound trigger detects change, resets data and safe set, reverts to a backup controller</td><td>Shows what "safe" means when the plant changes; note the heuristic threshold and $\beta = 2$</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2208.10790" target="_blank" rel="noopener">Brunzema, von Rohr, Solowjow, Trimpe &mdash; Event-Triggered Time-Varying Bayesian Optimization</a></td><td>TMLR 2025</td><td>ET-GP-UCB: reset on a uniform GP error bound; regret bounds for any reset strategy within a window; no rate of change needed</td><td>The trigger derivation (Lemmas 1&ndash;3) in this module</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2207.11120" target="_blank" rel="noopener">Brunzema, von Rohr, Trimpe &mdash; On Controller Tuning with Time-Varying Bayesian Optimization</a></td><td>IEEE CDC 2022</td><td>Uncertainty injection through a Wiener-process temporal kernel; convexity encouraged by second-derivative constraints at virtual points (constrained GPs)</td><td>The modelling alternative to resets for slow, lasting drift</td></tr>
+        <tr><td><a class="cite" href="https://proceedings.mlr.press/v37/sui15.html" target="_blank" rel="noopener">Sui, Gotovos, Burdick, Krause &mdash; Safe Exploration for Optimization with Gaussian Processes</a></td><td>ICML 2015</td><td>SafeOpt, Theorem 1 (safety and $\epsilon$-optimality with $\beta_t = 2B + 300\gamma_t\log^3(t/\delta)$, $\|f\|_k^2 \le B$)</td><td>The proof template whose exploration part LoSBO gives up</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1509.01066" target="_blank" rel="noopener">Berkenkamp, Schoellig, Krause &mdash; Safe Controller Optimization for Quadrotors with Gaussian Processes</a></td><td>ICRA 2016</td><td>Lipschitz-free practical SafeOpt with $\beta_n = 2$</td><td>The de facto implementation whose heuristics started the gap</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1602.04450" target="_blank" rel="noopener">Berkenkamp, Krause, Schoellig &mdash; Bayesian Optimization with Safety Constraints: Safe and Automatic Parameter Tuning in Robotics (SafeOpt-MC)</a></td><td>Machine Learning 2023 (online 2021)</td><td>Multiple constraints via an index-augmented GP; contextual safe BO; remarks on constant $\beta$</td><td>The multi-constraint machinery MCLoSBO reuses</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1704.00445" target="_blank" rel="noopener">Chowdhury, Gopalan &mdash; On Kernelized Multi-armed Bandits</a></td><td>ICML 2017</td><td>Self-normalized RKHS concentration; $\beta_t = B + R\sqrt{2(\gamma_{t-1}+1+\ln(1/\delta))}$ with $\lambda = 1+\eta$, $\eta = 2/T$</td><td>The default theoretical $\beta_t$ of the safe-BO literature and its $\lambda \ge 1$ restriction</td></tr>
+        <tr><td><a class="cite" href="https://proceedings.neurips.cc/paper/2011/hash/e1d5be1c7f2f456670de3d53c7b54f4a-Abstract.html" target="_blank" rel="noopener">Abbasi-Yadkori, P&aacute;l, Szepesv&aacute;ri &mdash; Improved Algorithms for Linear Stochastic Bandits</a></td><td>NeurIPS 2011</td><td>Self-normalized tail inequality by the method of mixtures; anytime confidence ellipsoids</td><td>The determinant term of eq. (7) comes from here (the RKHS version is in Abbasi-Yadkori's 2013 thesis)</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/0912.3995" target="_blank" rel="noopener">Srinivas, Krause, Kakade, Seeger &mdash; Gaussian Process Optimization in the Bandit Setting: No Regret and Experimental Design</a></td><td>ICML 2010 (extended version, retitled: IEEE TIT 2012)</td><td>GP-UCB, maximum information gain, the first RKHS $\beta_t$ (Theorem 6)</td><td>Explains why the theoretical constants were never used, and the $\|f\|_k^2 \le B$ convention</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2503.10352" target="_blank" rel="noopener">Tokmak, Krishnan, Sch&ouml;n, Baumann &mdash; Safe exploration in reproducing kernel Hilbert spaces</a></td><td>AISTATS 2025</td><td>Over-estimates $\|f\|_k$ from data by a sampling-and-discarding scenario approach; safety with confidence $1-\kappa$ and probability $(1-\gamma)(1-\delta)$</td><td>The direct answer to the RKHS-norm objection, and its i.i.d. assumption</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1904.03042" target="_blank" rel="noopener">Solowjow, Trimpe &mdash; Event-triggered Learning</a></td><td>Automatica 2020</td><td>Re-learn only when a statistical test says the model is wrong (Hoeffding/DKW triggers)</td><td>The principle behind ET-GP-UCB and ETSO</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="st-flashcards"></div>
+
+    <div class="page-nav">
+      <a href="safe-bo.html">&larr; 4. Safe Bayesian Optimization: SafeOpt &amp; Controller Tuning</a>
+      <a href="gosafe.html">6. Global Safe Exploration of Dynamical Systems: GoSafe &amp; GoSafeOpt &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('safe-bo-theory');
+    initCollapsibles();
+
+    initWalkthrough('st-walkthrough', [
+      {tab: '1. Claim', title: 'Step 1: Reduce safety of the queries to safety of the safe sets',
+       text: 'LoSBO queries $x_t \\in G_t \\cup M_t \\subseteq S_t$, whatever the GP band, the acquisition rule or $\\beta_t$ happen to be. So it is enough to prove the stronger, purely set-theoretic statement that every safe set contains only safe points. This is the induction claim; the rest of Algorithm 3 (confidence bounds, expanders, maximizers, acquisition) never enters again.',
+       visual: '<div class="math-block">$$\\text{Claim } P(t):\\quad f(x) \\ge h \\quad \\forall x \\in S_t, \\qquad t = 0, 1, 2, \\dots$$</div>',
+       insight: 'The structure is identical to SafeOpt\'s proof (walkthrough in Section 1). What differs is the ingredient that certifies a new point: a measurement plus two deterministic inequalities instead of a probabilistic band.'},
+      {tab: '2. Base', title: 'Step 2: Base case, the seed and the first round',
+       text: 'For $t = 0$ the claim is the seed assumption: $S_0 \\neq \\emptyset$ and $f(x) \\ge h$ for all $x \\in S_0$. For $t = 1$ nothing has been measured yet, so Algorithm 3 sets $S_1 = S_0$ and $P(1)$ is $P(0)$. Note that $S_0$ is the only place where the user supplies safety information that is not a measurement; it is also the only assumption shared with every other safe-BO method.',
+       visual: '<div class="math-block">$$P(0):\\ f|_{S_0} \\ge h \\ \\text{(assumption)}, \\qquad S_1 = S_0 \\Rightarrow P(1).$$</div>',
+       insight: 'If the seed is wrong, no algorithm can help: a controller believed to be stable that is not will be run at least once. This is why practical work (ETSO, MCLoSBO) starts from a manufacturer or conservatively tuned backup.'},
+      {tab: '3. Split', title: 'Step 3: Induction step, decompose the value at a newly certified point',
+       text: 'Assume $P(t-1)$ and take $x \\in S_t$. If $x \\in S_{t-1}$ we are done by the hypothesis. Otherwise $x$ was certified by the last measurement, $y_{t-1} - E - L\\,d(x_{t-1}, x) \\ge h$. Write $f(x)$ by adding and subtracting $f(x_{t-1})$ and the noise $\\epsilon_{t-1}$, so that the measurement $y_{t-1} = f(x_{t-1}) + \\epsilon_{t-1}$ appears explicitly.',
+       visual: '<div class="math-block">$$f(x) = \\underbrace{f(x_{t-1}) + \\epsilon_{t-1}}_{= \\, y_{t-1}} \\;-\\; \\epsilon_{t-1} \\;+\\; \\big(f(x) - f(x_{t-1})\\big).$$</div>',
+       insight: 'Everything unknown has been isolated into two terms: the noise realization $-\\epsilon_{t-1}$ and the increment of $f$ between the queried point and $x$. Each has its own assumption.'},
+      {tab: '4. Bound', title: 'Step 4: Bound the two unknown terms with the two assumptions',
+       text: 'Noise: $|\\epsilon_{t-1}| \\le E$ gives $-\\epsilon_{t-1} \\ge -E$; only the upper side of the noise bound is used, a negative error would merely make the certificate conservative. Lipschitz continuity: $|f(x) - f(x_{t-1})| \\le L\\,d(x_{t-1},x)$ gives $f(x) - f(x_{t-1}) \\ge -L\\,d(x_{t-1},x)$; again only one side is used. Insert both into the decomposition and then use the certification condition.',
+       visual: '<div class="math-block">$$f(x) \\;\\ge\\; y_{t-1} - E - L\\,d(x_{t-1},x) \\;\\ge\\; h.$$</div><p style="font-size:13px;color:#555;">First inequality: noise bound and Lipschitz bound. Second inequality: the definition of $S_t$ (eq. 11), i.e. the reason $x$ was added.</p>',
+       insight: 'The certificate is the classical set-membership lower bound of Milanese and Novara: the tightest lower bound on $f$ compatible with one measurement, a slope bound and a noise bound. It is deterministic because both assumptions are worst-case statements, not distributions.'},
+      {tab: '5. Audit', title: 'Step 5: Conclude, and audit what was never used',
+       text: 'Hence $P(t)$ holds, and by induction $f \\ge h$ on every $S_t$; since $x_t \\in S_t$, all queries are safe. Now list what the argument did not use: the scaling factors $\\beta_t$, the kernel $k$ and its hyperparameters, the assumption $f \\in \\mathcal{H}_k$, any bound on $\\|f\\|_k$, the distribution of the noise, and the number of iterations. That list is Proposition 1\'s "for any $\\beta_t \\gt 0$", and it is why hyperparameter optimization and over-optimistic $\\beta$ are allowed. What was lost is the coupling that SafeOpt\'s exploration theorem needs: the safe set no longer grows when the GP lower bound rises, so the last inequality of Sui et al.\'s Lemma 7 is not available.',
+       visual: '<div class="math-block">$$\\text{Safety needs: } L,\\ E,\\ S_0. \\qquad \\text{Exploration uses: } k,\\ \\lambda,\\ \\beta_t,\\ G_t,\\ M_t. \\qquad \\text{Never needed: } \\|f\\|_k,\\ \\gamma_t,\\ \\delta.$$</div>',
+       insight: 'Apart from an unsafe seed (Step 2), under-estimating $L$ or $E$ is the only way to break the proof, and it breaks it silently. Exercise 5.4(c) shows the mechanism; the explorer in Section 9 shows the statistics.'}
+    ]);
+
+    initWalkthrough('st-walkthrough-safeopt', [
+      {tab: '1. Event', title: 'Step 1: The good event and the only probabilistic statement',
+       text: 'Let $\\mathcal{E}_\\delta$ be the event that the confidence bounds hold uniformly in $x$ and $t$. A frequentist GP bound (Srinivas Thm 6, Chowdhury and Gopalan Thm 2, Abbasi-Yadkori) says $\\mathbb{P}[\\mathcal{E}_\\delta] \\ge 1-\\delta$ for its specific $\\beta_t$, under its assumptions on $\\|f\\|_k \\le B$, the noise and $\\lambda$. This is the only place where probability enters SafeOpt\'s Theorem 1.',
+       visual: '<div class="math-block">$$\\mathcal{E}_\\delta = \\{\\, \\mu_{t-1}(x) - \\beta_t\\sigma_{t-1}(x) \\le f(x) \\le \\mu_{t-1}(x) + \\beta_t\\sigma_{t-1}(x)\\ \\ \\forall x \\in D,\\ t \\ge 1 \\,\\}, \\qquad \\mathbb{P}[\\mathcal{E}_\\delta] \\ge 1-\\delta.$$</div>',
+       insight: 'Replace $\\beta_t$ by a constant and the left-hand side is the same event, but the right-hand side is gone: nobody has proven anything about $\\mathbb{P}[\\mathcal{E}]$ for $\\beta \\equiv 2$.'},
+      {tab: '2. Intersect', title: 'Step 2: On the good event, the intersected bounds stay valid',
+       text: 'SafeOpt uses $C_t(x) = C_{t-1}(x) \\cap Q_t(x)$ with $C_0 = [h,\\infty)$ on $S_0$. On $\\mathcal{E}_\\delta$ every $Q_t(x)$ contains $f(x)$, and $C_0(x)$ contains $f(x)$ by the seed assumption, so by induction $f(x) \\in C_t(x)$, i.e. $\\ell_t(x) \\le f(x) \\le u_t(x)$, and the intervals shrink monotonically. Off $\\mathcal{E}_\\delta$ one bad band contaminates $C_t$ forever, because intersections never forget.',
+       visual: '<div class="math-block">$$\\text{on } \\mathcal{E}_\\delta:\\quad \\ell_t(x) \\le f(x) \\le u_t(x),\\qquad \\ell_t \\uparrow,\\ u_t \\downarrow .$$</div>',
+       insight: 'Monotone intersection is what makes a heuristic $\\beta$ dangerous rather than merely inaccurate: an early overshoot of $\\ell_t$ near the boundary is locked in.'},
+      {tab: '3. Expand', title: 'Step 3: On the good event, the Lipschitz expansion only adds safe points',
+       text: 'Induction on $t$ for the claim $f \\ge h$ on $S_t$. A new point $x\'$ enters $S_t$ because some $x \\in S_{t-1}$ satisfies $\\ell_t(x) - L\\,d(x,x\') \\ge h$. Then Lipschitz continuity and Step 2 give the chain on the right. Compare with LoSBO: the role of $\\ell_t(x)$ is played there by $y_{t-1} - E$, which needs no event.',
+       visual: '<div class="math-block">$$f(x\') \\;\\ge\\; f(x) - L\\,d(x,x\') \\;\\ge\\; \\ell_t(x) - L\\,d(x,x\') \\;\\ge\\; h.$$</div>',
+       insight: 'The middle inequality is the only one that uses the GP, and it holds only on $\\mathcal{E}_\\delta$.'},
+      {tab: '4. Verdict', title: 'Step 4: What the theorem actually says, and what practice runs',
+       text: 'Since $x_t \\in G_t \\cup M_t \\subseteq S_t$, on $\\mathcal{E}_\\delta$ all queries are safe; therefore $\\mathbb{P}[\\text{all queries safe}] \\ge \\mathbb{P}[\\mathcal{E}_\\delta] \\ge 1-\\delta$. With $\\beta \\equiv 2$ the first inequality still holds but the second is unavailable: nothing bounds $\\mathbb{P}[\\mathcal{E}]$. Fiedler et al. measured a proxy that shows how far from $1-\\delta$ one can be: for norm-10 SE-RKHS functions and a single non-adaptive data set of 100 random inputs, the $\\beta = 2$ band missed $f$ somewhere on a fine grid in $2727 \\pm 3882$ of $10^4$ data sets per function. That is not $\\mathbb{P}[\\mathcal{E}]$ itself ($\\mathcal{E}$ needs coverage at every $t$ along an adaptive run), but it is a failure frequency of about 27% where a valid $\\beta_t$ with $\\delta = 0.01$ would allow at most 1%.',
+       visual: '<div class="math-block">$$\\mathbb{P}[\\text{unsafe query}] \\le 1 - \\mathbb{P}[\\mathcal{E}], \\qquad \\beta \\equiv 2:\\ \\ 1 - \\mathbb{P}[\\mathcal{E}] \\ \\text{unknown; one-data-set miss rate} \\approx 0.27 \\ \\ (\\text{not } 0.01).$$</div>',
+       insight: 'A violated tube does not always produce an unsafe query (the boundary must be reached in the wrong direction), which is one reason why Table 1 reports unsafe runs in 3.95% of SafeOpt runs, a different experiment from the 27% tube misses. But nothing bounds either number.'},
+      {tab: '5. LoSBO', title: 'Step 5: LoSBO\'s move, remove the event from the safety chain',
+       text: 'LoSBO keeps Steps 2 and 3 for exploration but replaces the certificate $\\ell_t(x) - L\\,d(x,x\') \\ge h$ by $y_{t-1} - E - L\\,d(x_{t-1},x\') \\ge h$. The chain of Step 3 then reads $f(x\') \\ge f(x_{t-1}) - L\\,d \\ge y_{t-1} - E - L\\,d \\ge h$ with no event at all: the middle inequality is the noise bound. The price is Theorem 1\'s exploration half, whose proof needs the safe set to grow exactly when $\\ell_t$ does.',
+       visual: '<div class="math-block">$$\\text{SafeOpt: } \\underbrace{\\ell_t(x)}_{\\text{needs } \\mathcal{E}_\\delta} - L\\,d \\ge h \\qquad\\longrightarrow\\qquad \\text{LoSBO: } \\underbrace{y_{t-1} - E}_{\\text{always}} - L\\,d \\ge h.$$</div>',
+       insight: 'Section 8 proves the LoSBO chain in full. The two walkthroughs differ in exactly one inequality; that inequality is the whole story of this module.'}
+    ]);
+
+    initFlashcards('st-flashcards', [
+      {q: 'What is the "$\\beta$ problem" of Fiedler et al. (2024)?', a: 'Implementations replace the theoretical $\\beta_t$ by constant multipliers of $\\sigma$ ($\\beta \\equiv 2$ in Berkenkamp 2016 and SafeMDP, 3 in Helwa 2019 and GoSafe, 4 in GoSafeOpt; SafeMDP and GoSafe print their bands as $\\mu \\pm \\beta^{1/2}\\sigma$, but the code they use multiplies $\\sigma$ by $\\beta$ directly). Then $\\mathbb{P}[\\ell_t \\le f \\le u_t\\ \\forall x,t] \\ge 1-\\delta$ is no longer known, so every safety guarantee is void; empirically 3.95% of runs (28.62% on the worst function) were unsafe with $\\beta \\equiv 2$.'},
+      {q: 'Write the Real-$\\beta$ scaling (eq. 7) and its ingredients.', a: '$\\beta_t = B + \\frac{R}{\\sqrt{\\lambda}}\\sqrt{2\\ln\\big(\\delta^{-1}\\det(I_t + \\lambda^{-1}K_t)^{1/2}\\big)}$ with $B \\ge \\|f\\|_k$, $R$ the conditional sub-Gaussian noise constant, $\\lambda$ the nominal GP noise variance and $K_t$ the kernel matrix of the data actually collected. Valid uniformly in $x$ and $t$ w.p. $\\ge 1-\\delta$.'},
+      {q: 'When does eq. (7) coincide with the corrected AAAI-2021 bound?', a: 'For $0 \\lt \\lambda \\lt 1$ and positive definite $k$: then $\\bar\\lambda = \\max\\{1,\\lambda\\} = 1$ and $\\tfrac{\\bar\\lambda}{\\lambda}K_t + \\bar\\lambda I_t = \\lambda^{-1}K_t + I_t$. For $\\lambda \\ge 1$ they differ by $t\\ln\\lambda$ inside the square root, eq. (7) being tighter.'},
+      {q: 'What is the conservatism trade-off of Real-$\\beta$-SafeOpt in Table 1?', a: 'With the true norm $B = 10$: zero violations but 30.40% of runs are "not started", i.e. (as we read the row) never leave their seed (68.34% for $B = 20$), final performance 82.45%. With an under-estimated $B = 2.5$: 0.859% violations on average and 13.38% on the worst function, invisible during the run.'},
+      {q: 'Why can an RKHS-norm bound not be obtained from engineering knowledge?', a: 'All characterizations (variational, Mercer weighted $\\ell^2$, Fourier energy) give intuition or lower bounds only; the RKHS itself depends on the hyperparameters (different SE length scales give different spaces); and estimating $\\|f\\|_k$ from data needs queries that must already be safe.'},
+      {q: 'State the LoSBO safe-set update.', a: '$S_t = S_{t-1} \\cup \\{x \\in D : y_{t-1} - E - L\\,d(x_{t-1},x) \\ge h\\}$, $S_1 = S_0$: lower the last measurement by the noise bound, hang a Lipschitz cone below it, certify where the cone is above $h$. Geometrically a closed ball of radius $(y_{t-1} - E - h)/L$ around $x_{t-1}$.'},
+      {q: 'State Proposition 1 and give its one-line proof.', a: 'If $f$ is $L$-Lipschitz, $|\\epsilon_t| \\le E$ and $f \\ge h$ on $S_0 \\ne \\emptyset$, then for any $\\beta_t \\gt 0$ all LoSBO queries satisfy $f(x_t) \\ge h$. Proof by induction: $f(x) = f(x_{t-1}) + \\epsilon_{t-1} - \\epsilon_{t-1} + f(x) - f(x_{t-1}) \\ge y_{t-1} - E - L\\,d(x_{t-1},x) \\ge h$.'},
+      {q: 'What role does the GP play in LoSBO, and what does that imply for $\\beta_t$?', a: 'Only expanders, maximizers and the acquisition $\\arg\\max w_t$ use the GP band. Safety is independent of the model, so $\\beta_t$ is a tuning knob (the paper uses $\\beta \\equiv 2$, deliberately over-optimistic), hyperparameters may be adapted online, and kernel misspecification cannot cause unsafe queries.'},
+      {q: 'Why do the LoSBO experiments use $E = 2B_\\epsilon$ (Remark 3)?', a: 'With a sharp bound $E = B_\\epsilon$, queries near the boundary where $f \\approx h$ can return $y_t \\lt h$ although $f(x_t) \\ge h$, an apparent violation that may trigger an emergency stop. Doubling $E$ avoids these false alarms at the cost of conservatism: cone-certified points then satisfy $f \\ge h + B_\\epsilon$, so measurements there never fall below $h$ (seed points need the same margin). It does not make unbounded (Gaussian) noise admissible.'},
+      {q: 'What does LoSBO lose relative to SafeOpt, and how honest is the paper about it?', a: 'SafeOpt\'s exploration guarantee (Theorem 1 of Sui et al.): its proof needs the safe set to grow with the GP lower bound, and the last inequality of Lemma 7 fails for LoSBO. The authors suspect pathological under-exploration is possible but never observed it; exploration guarantees are listed as open.'},
+      {q: 'How does LoS-GP-UCB avoid gridding the domain?', a: 'The LoSBO safe set is a union of closed balls $\\bigcup_j \\bar B_{r_j}(z_j)$ around queried points. Restricting GP-UCB to it means: maximize $a_t = \\mu_t + \\beta_t\\sigma_t$ over each ball separately (independent problems whose feasible set, the ball, is convex for a norm metric on a convex $D$; the acquisition $a_t$ is generally not concave, so each problem is still nonconvex and is solved approximately by parallel multi-start local optimization), then query the best of the $N_t$ ball maximizers. No expanders or maximizers are needed.'},
+      {q: 'Write the MCLoSBO safe set and its guarantee.', a: '$S_n = \\bigcap_{i \\in I_g} A_{i,n}$ with per-constraint LoSBO sets $A_{i,n} = A_{i,n-1} \\cup \\{\\theta\' : y_{i,n-1} - E_i - L_i\\|\\theta_{n-1} - \\theta\'\\| \\ge 0\\}$, $A_{i,0} = S_0$, a Lipschitz constant $L_i$ and noise bound $E_i$ per constraint: a parameter is safe once every constraint certifies it, possibly from different measurements. Proposition 3: for any $\\beta \\in \\mathbb{R}_+$, $g_i(\\theta_n) \\ge 0$ for all $i$ and $n$. Tested on an Opel Astra test vehicle without violations.'},
+      {q: 'State the ET-GP-UCB event trigger, and what ETSO does when it fires.', a: 'Reset iff $|y_t - \\mu_{D_t}(x_t)| \\gt \\sqrt{\\rho_{t_r}}\\,\\sigma_{D_t}(x_t) + \\bar w_{t_r}$ with $\\rho_{t_r} = 2\\ln(2\\pi_{t_r}/\\delta_B)$, $\\bar w_{t_r}^2 = 2\\sigma_n^2\\ln(2\\pi_{t_r}/\\delta_B)$, $\\sum \\pi_{t_r}^{-1} = 1$; if nothing changed ($\\varepsilon = 0$, $f \\sim \\mathcal{GP}$, Gaussian noise) it does not fire within one segment between resets w.p. $\\ge 1-\\delta_B$; every reset (forced ones included) restarts $t_r$ and the budget, so over $m$ segments the false-alarm probability is only bounded by $m\\delta_B$. ETSO then applies the backup controller $\\theta_B$, resets the data set to $\\{(\\theta_B,\\hat J_B),(\\theta_t,\\hat J_t)\\}$ (hence the safe set) and recomputes $J_{\\min,t}$. Caveats: the experiments scale the threshold heuristically to $\\tfrac34\\sqrt{\\rho}\\sigma + \\tfrac14\\bar w$, SafeOpt inside uses $\\beta = 2$, and Assumption 2 (relevant changes are detected) is unverifiable.'},
+      {q: 'Summarize the principle Fiedler et al. draw for control.', a: 'In hard-safety settings, safety should rest only on assumptions the user can check and interpret: Lipschitz constants and noise bounds are engineering quantities (sensitivity, sensor specs); RKHS norms, kernels and hyperparameters are not. What practice has been running with $\\beta \\equiv 2$ is cautious BO, not hard-constrained safe BO.'}
+    ]);
+
+    // ---- shared numerics: SE kernel, Cholesky, GP posterior on a grid, seeded PRNG ----
+    var STL = (function() {
+      function mulberry32(a) { return function() { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+      function chol(A) { var n = A.length, L = [], i, j, m, s; for (i = 0; i < n; i++) { L.push(new Array(n).fill(0)); }
+        for (i = 0; i < n; i++) { for (j = 0; j <= i; j++) { s = A[i][j]; for (m = 0; m < j; m++) s -= L[i][m] * L[j][m];
+          if (i === j) { L[i][i] = Math.sqrt(Math.max(s, 1e-12)); } else { L[i][j] = s / L[j][j]; } } } return L; }
+      function fwd(L, b) { var n = L.length, y = new Array(n), i, m, s; for (i = 0; i < n; i++) { s = b[i]; for (m = 0; m < i; m++) s -= L[i][m] * y[m]; y[i] = s / L[i][i]; } return y; }
+      function solve(L, b) { var n = L.length, y = fwd(L, b), x = new Array(n), i, m, s; for (i = n - 1; i >= 0; i--) { s = y[i]; for (m = i + 1; m < n; m++) s -= L[m][i] * x[m]; x[i] = s / L[i][i]; } return x; }
+      // posterior mean/sd on grid for data (X,Y), SE kernel with length scale ell, nominal noise lam; also log det(I + K/lam)
+      function posterior(grid, X, Y, ell, lam) {
+        var t = X.length, N = grid.length, mu = new Array(N).fill(0), sd = new Array(N).fill(1), i, j, g;
+        if (t === 0) return { mu: mu, sd: sd, logdet: 0 };
+        var k = function(a, b) { var d = (a - b) / ell; return Math.exp(-0.5 * d * d); };
+        var A = []; for (i = 0; i < t; i++) { A.push([]); for (j = 0; j < t; j++) A[i].push(k(X[i], X[j]) + (i === j ? lam : 0)); }
+        var L = chol(A), alpha = solve(L, Y), ld = 0;
+        for (i = 0; i < t; i++) ld += 2 * Math.log(L[i][i]); ld -= t * Math.log(lam);
+        for (g = 0; g < N; g++) { var kv = new Array(t), m = 0; for (i = 0; i < t; i++) { kv[i] = k(grid[g], X[i]); m += kv[i] * alpha[i]; }
+          var v = fwd(L, kv), q = 0; for (i = 0; i < t; i++) q += v[i] * v[i]; mu[g] = m; sd[g] = Math.sqrt(Math.max(1 - q, 1e-12)); }
+        return { mu: mu, sd: sd, logdet: ld };
+      }
+      return { rng: mulberry32, posterior: posterior };
+    })();
+
+    // ---- Explorer A: how large is a real beta_t? ----
+    (function() {
+      var NG = 200, grid = [], i; for (i = 0; i < NG; i++) grid.push(i / (NG - 1));
+      var T = 60, ids = ['B', 'R', 'lam', 'del', 'ell'], fmt = { B: 1, R: 2, lam: 2, del: 3, ell: 2 };
+      function val(id) { return parseFloat(document.getElementById('st-b-' + id).value); }
+      function compute(B, R, lam, del, ell) {
+        var X = [], out = [], gPrev = 0, t;
+        var post = STL.posterior(grid, X, [], ell, lam);
+        for (t = 1; t <= T; t++) {
+          var bi = 0, g; for (g = 1; g < NG; g++) if (post.sd[g] > post.sd[bi]) bi = g;
+          X.push(grid[bi]);
+          post = STL.posterior(grid, X, new Array(X.length).fill(0), ell, lam);
+          var gam = 0.5 * post.logdet;
+          out.push({ t: t, gamma: gam,
+            real: B + R / Math.sqrt(lam) * Math.sqrt(Math.max(post.logdet - 2 * Math.log(del), 0)),
+            cg: B + R * Math.sqrt(2 * (gPrev + 1 + Math.log(1 / del))),
+            srin: Math.sqrt(2 * B * B + 300 * gam * Math.pow(Math.log(t / del), 3)) });
+          gPrev = gam;
+        }
+        return out;
+      }
+      function draw() {
+        var B = val('B'), R = val('R'), lam = val('lam'), del = val('del'), ell = val('ell');
+        document.getElementById('st-b-B-val').textContent = B.toFixed(fmt.B);
+        document.getElementById('st-b-R-val').textContent = R.toFixed(fmt.R);
+        document.getElementById('st-b-lam-val').textContent = lam.toFixed(fmt.lam);
+        document.getElementById('st-b-del-val').textContent = del.toFixed(fmt.del);
+        document.getElementById('st-b-ell-val').textContent = ell.toFixed(fmt.ell);
+        var out = compute(B, R, lam, del, ell);
+        var W = 760, H = 320, ML = 56, MR = 16, MT = 18, MB = 40, PW = W - ML - MR, PH = H - MT - MB;
+        // log10 axis from the smallest plotted value (B, real, C&G are all > 0) up to the Srinivas curve; no clamping
+        var last = out[out.length - 1], vmin = B;
+        out.forEach(function(o) { vmin = Math.min(vmin, o.real, o.cg); });
+        var yMin = Math.min(0, Math.floor(Math.log10(vmin))), yMax = Math.max(2, Math.ceil(Math.log10(last.srin) + 0.2));
+        function sx(t) { return ML + (t - 1) / (T - 1) * PW; }
+        function sy(v) { return MT + PH - (Math.log10(v) - yMin) / (yMax - yMin) * PH; }
+        var s = '';
+        var dec; for (dec = yMin; dec <= yMax; dec++) { var y = sy(Math.pow(10, dec)); s += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (ML + PW) + '" y2="' + y.toFixed(1) + '" stroke="#eee"/><text x="' + (ML - 6) + '" y="' + (y + 4).toFixed(1) + '" font-size="11" fill="#888" text-anchor="end">' + (dec === 0 ? '1' : '10^' + dec) + '</text>'; }
+        [1, 10, 20, 30, 40, 50, 60].forEach(function(t) { s += '<text x="' + sx(t).toFixed(1) + '" y="' + (MT + PH + 16) + '" font-size="11" fill="#888" text-anchor="middle">' + t + '</text>'; });
+        s += '<line x1="' + ML + '" y1="' + MT + '" x2="' + ML + '" y2="' + (MT + PH) + '" stroke="#333" stroke-width="1.5"/><line x1="' + ML + '" y1="' + (MT + PH) + '" x2="' + (ML + PW) + '" y2="' + (MT + PH) + '" stroke="#333" stroke-width="1.5"/>';
+        s += '<text x="' + (ML + PW / 2) + '" y="' + (H - 6) + '" font-size="12" fill="#444" text-anchor="middle">iterations t (uncertainty-sampling design)</text>';
+        s += '<text x="14" y="' + (MT + PH / 2) + '" font-size="12" fill="#444" text-anchor="middle" transform="rotate(-90,14,' + (MT + PH / 2) + ')">scaling factor (log)</text>';
+        function path(key, color, dash) { var d = ''; out.forEach(function(o, j) { d += (j === 0 ? 'M' : 'L') + sx(o.t).toFixed(1) + ' ' + sy(o[key]).toFixed(1) + ' '; }); return '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>'; }
+        s += path('srin', '#888') + path('cg', '#e67e22') + path('real', '#1565c0');
+        [[2, '#c62828'], [3, '#c62828'], [4, '#c62828']].forEach(function(h) { var y = sy(h[0]); s += '<line x1="' + ML + '" y1="' + y.toFixed(1) + '" x2="' + (ML + PW) + '" y2="' + y.toFixed(1) + '" stroke="' + h[1] + '" stroke-width="1" stroke-dasharray="5,4"/>'; });
+        var yB = sy(B); s += '<line x1="' + ML + '" y1="' + yB.toFixed(1) + '" x2="' + (ML + PW) + '" y2="' + yB.toFixed(1) + '" stroke="#2e7d32" stroke-width="1" stroke-dasharray="2,3"/>';
+        var lx = ML + 10, ly = MT + 10;
+        [['#888', 'Srinivas-type sqrt(2B^2 + 300 gamma_t ln^3(t/delta))'], ['#e67e22', 'Chowdhury-Gopalan (gamma_{t-1} of this design)'], ['#1565c0', 'Real beta_t, eq. (7)'], ['#c62828', 'heuristics beta = 2, 3, 4'], ['#2e7d32', 'norm bound B']].forEach(function(l, j) {
+          s += '<line x1="' + lx + '" y1="' + (ly + 14 * j) + '" x2="' + (lx + 18) + '" y2="' + (ly + 14 * j) + '" stroke="' + l[0] + '" stroke-width="2"/><text x="' + (lx + 24) + '" y="' + (ly + 14 * j + 4) + '" font-size="11" fill="#333">' + l[1] + '</text>'; });
+        document.getElementById('st-b-svg').innerHTML = s;
+        var mid = out[19];
+        document.getElementById('st-b-info').innerHTML = '<strong>At t = 20</strong><br>information gain of the design: <b>' + mid.gamma.toFixed(2) + '</b> nats<br>Real &beta;<sub>t</sub> (eq. 7): <b>' + mid.real.toFixed(2) + '</b><br>Chowdhury&ndash;Gopalan: <b>' + mid.cg.toFixed(2) + '</b><br>Srinivas-type: <b>' + mid.srin.toFixed(0) + '</b><br><strong>At t = 60</strong><br>Real &beta;<sub>t</sub>: <b>' + last.real.toFixed(2) + '</b>, C&amp;G: <b>' + last.cg.toFixed(2) + '</b><br>ratio real / heuristic 2: <b>' + (last.real / 2).toFixed(1) + '&times;</b><br><em style="font-size:11px;">The real band is dominated by B whenever R/&radic;&lambda; is small; justifying the heuristic 2 through eq. (7) would need a norm bound B below 2.</em>';
+      }
+      ids.forEach(function(id) { document.getElementById('st-b-' + id).addEventListener('input', draw); });
+      draw();
+    })();
+
+    // ---- Explorer B: break SafeOpt, not LoSBO (Monte-Carlo, real GP) ----
+    (function() {
+      var N = 40, grid = [], i; for (i = 0; i < N; i++) grid.push(i / (N - 1));
+      var ELL = 0.2, M = 12, T = 25, DELTA = 0.01, seed = 11;
+      function k(x, y) { var d = (x - y) / ELL; return Math.exp(-0.5 * d * d); }
+      function kd(x, y) { return -(x - y) / (ELL * ELL) * k(x, y); }
+      function sampleRKHS(rng, B) { var xs = [], al = [], i, j, q = 0; for (i = 0; i < M; i++) { xs.push(rng()); al.push(rng() * 2 - 1); }
+        for (i = 0; i < M; i++) for (j = 0; j < M; j++) q += al[i] * al[j] * k(xs[i], xs[j]);
+        var sc = B / Math.sqrt(q); for (i = 0; i < M; i++) al[i] *= sc;
+        return { f: function(x) { var s = 0, i; for (i = 0; i < M; i++) s += al[i] * k(x, xs[i]); return s; },
+                 fp: function(x) { var s = 0, i; for (i = 0; i < M; i++) s += al[i] * kd(x, xs[i]); return s; } }; }
+      function runOne(fv, h, s0, o, rng) {
+        var X = [], Y = [], lo = new Array(N).fill(-Infinity), up = new Array(N).fill(Infinity), safe = new Array(N).fill(false);
+        safe[s0] = true; lo[s0] = h; var unsafe = 0, restarts = 0, lastX = null, lastY = null, beta = o.beta, t, g, g2, post = null, queries = [];
+        for (t = 1; t <= T; t++) {
+          post = STL.posterior(grid, X, Y, ELL, o.lam);
+          if (o.alg === 'realbeta') beta = o.B + o.R / Math.sqrt(o.lam) * Math.sqrt(Math.max(post.logdet - 2 * Math.log(DELTA), 0));
+          if (t > 1) {
+            // C_t = C_{t-1} intersected with the band Q. If the data contradict an earlier band, the intersection is empty
+            // (for a valid beta this happens with probability <= delta) and Algorithms 2-3 are undefined there: restart C_t(x)
+            // from the current band and count the event. This keeps l_t <= u_t at every point.
+            for (g = 0; g < N; g++) { var ql = post.mu[g] - beta * post.sd[g], qu = post.mu[g] + beta * post.sd[g], nl = Math.max(lo[g], ql), nu = Math.min(up[g], qu);
+              if (nl > nu) { nl = ql; nu = qu; restarts++; } lo[g] = nl; up[g] = nu; }
+            if (o.alg === 'losbo') { for (g = 0; g < N; g++) if (!safe[g] && lastY - o.E - o.L * Math.abs(grid[g] - lastX) >= h) safe[g] = true; }
+            else { var prev = safe.slice(); for (g = 0; g < N; g++) { if (!prev[g]) continue; for (g2 = 0; g2 < N; g2++) if (!safe[g2] && lo[g] - o.L * Math.abs(grid[g] - grid[g2]) >= h) safe[g2] = true; } }
+          }
+          var maxLo = -Infinity; for (g = 0; g < N; g++) if (safe[g]) maxLo = Math.max(maxLo, lo[g]);
+          var best = -1, bw = -Infinity;
+          for (g = 0; g < N; g++) { if (!safe[g]) continue; var isM = up[g] >= maxLo, isG = false;
+            if (!isM) for (g2 = 0; g2 < N; g2++) if (!safe[g2] && up[g] - o.L * Math.abs(grid[g] - grid[g2]) >= h) { isG = true; break; }
+            if (isM || isG) { var w = up[g] - lo[g]; if (w > bw) { bw = w; best = g; } } }
+          // no fallback is needed: since l_t <= u_t everywhere, the maximizer of l_t over S_t is in M_t, so G_t u M_t is never empty
+          var eps; if (o.noise === 'gauss') { var u1 = rng() || 1e-12, u2 = rng(); eps = o.Beps * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); } else { eps = (2 * rng() - 1) * o.Beps; }
+          var y = fv[best] + eps; if (fv[best] < h) unsafe++;
+          queries.push({ x: grid[best], y: y, bad: fv[best] < h }); X.push(grid[best]); Y.push(y); lastX = grid[best]; lastY = y;
+        }
+        post = STL.posterior(grid, X, Y, ELL, o.lam);
+        // beta_T after the last update (Algorithm 2, line 17), so the plotted band mu +- beta*sd is eq. (7) for the posterior it is drawn with
+        if (o.alg === 'realbeta') beta = o.B + o.R / Math.sqrt(o.lam) * Math.sqrt(Math.max(post.logdet - 2 * Math.log(DELTA), 0));
+        var bg = -1, bm = -Infinity, expanded = false, nSafe = 0, nCert = 0;
+        for (g = 0; g < N; g++) { if (fv[g] >= h) { nSafe++; if (safe[g]) nCert++; } if (safe[g] && g !== s0) expanded = true; if (safe[g] && post.mu[g] > bm) { bm = post.mu[g]; bg = g; } }
+        var fstar = Math.max.apply(null, fv);
+        return { unsafe: unsafe, restarts: restarts, expanded: expanded, cover: nSafe > 0 ? nCert / nSafe : 0, perf: (fv[bg] - h) / (fstar - h), beta: beta, safe: safe, mu: post.mu, sd: post.sd, queries: queries };
+      }
+      var cfgIds = ['norm', 'beta', 'bfac', 'lfac', 'efac', 'beps', 'K', 'show'], dec = { norm: 0, beta: 2, bfac: 2, lfac: 2, efac: 1, beps: 2, K: 0, show: 0 };
+      function v(id) { return parseFloat(document.getElementById('st-mc-' + id).value); }
+      var results = null;
+      function simulate() {
+        var B = v('norm'), K = v('K'), Beps = v('beps'), E = v('efac') * Beps, noise = document.getElementById('st-mc-noise').value;
+        var rng = STL.rng(seed), funcs = [], f;
+        results = { safeopt: [], realbeta: [], losbo: [], funcs: funcs };
+        for (f = 0; f < K; f++) {
+          var fn = sampleRKHS(rng, B), fv = grid.map(fn.f), mean = fv.reduce(function(a, b) { return a + b; }, 0) / N;
+          var sdv = Math.sqrt(fv.reduce(function(a, b) { return a + (b - mean) * (b - mean); }, 0) / N), h = mean - 0.2 * sdv, Lt = 0, i, j2;
+          var fine = []; for (i = 0; i <= 400; i++) { fine.push(fn.f(i / 400)); Lt = Math.max(Lt, Math.abs(fn.fp(i / 400))); }
+          // L_true: max |f'| on the fine grid, raised if needed to the exact Lipschitz constant of f on the 40 query points,
+          // so that factor >= 1 is a valid bound for every certificate the explorer can issue
+          for (i = 0; i < N; i++) for (j2 = i + 1; j2 < N; j2++) Lt = Math.max(Lt, Math.abs(fv[j2] - fv[i]) / (grid[j2] - grid[i]));
+          var am = 0, g; for (g = 1; g < N; g++) if (fv[g] > fv[am]) am = g;
+          var a = am, b = am; while (a > 0 && fv[a - 1] >= h + E) a--; while (b < N - 1 && fv[b + 1] >= h + E) b++;
+          var s0 = a + Math.floor(rng() * (b - a + 1));
+          var base = { lam: Beps, R: Beps, Beps: Beps, noise: noise, L: v('lfac') * Lt, E: E };
+          var rs = STL.rng(seed * 7919 + f), r1 = STL.rng(rs() * 1e9 | 0), r2 = STL.rng(rs() * 1e9 | 0), r3 = STL.rng(rs() * 1e9 | 0);
+          funcs.push({ fine: fine, fv: fv, h: h, s0: s0, Lt: Lt });
+          results.safeopt.push(runOne(fv, h, s0, Object.assign({ alg: 'safeopt', beta: v('beta') }, base), r1));
+          results.realbeta.push(runOne(fv, h, s0, Object.assign({ alg: 'realbeta', B: v('bfac') * B }, base), r2));
+          results.losbo.push(runOne(fv, h, s0, Object.assign({ alg: 'losbo', beta: v('beta') }, base), r3));
+        }
+      }
+      function stats(r) { var n = r.length; return { viol: 100 * r.filter(function(x) { return x.unsafe > 0; }).length / n, per: r.reduce(function(s, x) { return s + x.unsafe; }, 0) / n,
+        stuck: 100 * r.filter(function(x) { return !x.expanded; }).length / n, cover: 100 * r.reduce(function(s, x) { return s + x.cover; }, 0) / n,
+        perf: 100 * r.reduce(function(s, x) { return s + x.perf; }, 0) / n, beta: r.reduce(function(s, x) { return s + x.beta; }, 0) / n,
+        empty: 100 * r.filter(function(x) { return x.restarts > 0; }).length / n }; }
+      function readouts() { cfgIds.forEach(function(id) { document.getElementById('st-mc-' + id + '-val').textContent = v(id).toFixed(dec[id]); }); }
+      function draw(recompute) {
+        var showEl = document.getElementById('st-mc-show'); showEl.max = v('K'); if (v('show') > v('K')) showEl.value = v('K');
+        readouts();
+        if (recompute || !results) simulate();
+        var names = { safeopt: 'SafeOpt, heuristic &beta; = ' + v('beta').toFixed(2), realbeta: 'Real-&beta;-SafeOpt, B = ' + (v('bfac') * v('norm')).toFixed(1), losbo: 'LoSBO, L = ' + v('lfac').toFixed(2) + ' L<sub>true</sub>, E = ' + v('efac').toFixed(2) + ' B<sub>&epsilon;</sub>' };
+        var cols = { safeopt: '#1565c0', realbeta: '#7b1fa2', losbo: '#2e7d32' };
+        var tb = '<table style="font-size:12px;"><thead><tr><th>Algorithm</th><th>runs with &ge; 1 unsafe query</th><th>unsafe queries per run</th><th>never expanded</th><th>safe grid points certified</th><th>final performance</th><th>&beta; after t = 25 (mean over runs)</th><th>runs with an empty C<sub>t</sub> (restarted)</th></tr></thead><tbody>';
+        ['safeopt', 'realbeta', 'losbo'].forEach(function(a) { var s = stats(results[a]);
+          tb += '<tr><td style="color:' + cols[a] + ';font-weight:600;">' + names[a] + '</td><td style="font-weight:600;color:' + (s.viol > 0 ? '#c62828' : '#2e7d32') + ';">' + s.viol.toFixed(1) + '%</td><td>' + s.per.toFixed(2) + '</td><td>' + s.stuck.toFixed(1) + '%</td><td>' + s.cover.toFixed(1) + '%</td><td>' + s.perf.toFixed(1) + '%</td><td>' + s.beta.toFixed(2) + '</td><td>' + s.empty.toFixed(1) + '%</td></tr>'; });
+        document.getElementById('st-mc-table').innerHTML = tb + '</tbody></table>';
+        // plot the selected function
+        var fi = v('show') - 1, F = results.funcs[fi], model = document.getElementById('st-mc-model').value, R = results[model][fi];
+        var W = 760, H = 360, ML = 50, MR = 16, MT = 16, PH = 220, PW = W - ML - MR, yTop = MT, yBot = MT + PH;
+        var ymin = Infinity, ymax = -Infinity, g; F.fine.forEach(function(y) { ymin = Math.min(ymin, y); ymax = Math.max(ymax, y); });
+        for (g = 0; g < N; g++) { ymin = Math.min(ymin, R.mu[g] - R.beta * R.sd[g]); ymax = Math.max(ymax, R.mu[g] + R.beta * R.sd[g]); }
+        ymin = Math.min(ymin, F.h); var pad = 0.08 * (ymax - ymin); ymin -= pad; ymax += pad;
+        function sx(x) { return ML + x * PW; } function sy(y) { return yBot - (y - ymin) / (ymax - ymin) * PH; }
+        var s = '';
+        [0, 0.25, 0.5, 0.75, 1].forEach(function(x) { s += '<line x1="' + sx(x) + '" y1="' + yTop + '" x2="' + sx(x) + '" y2="' + yBot + '" stroke="#eee"/><text x="' + sx(x) + '" y="' + (yBot + 14) + '" font-size="11" fill="#888" text-anchor="middle">' + x + '</text>'; });
+        var yt, step = Math.pow(10, Math.floor(Math.log10(ymax - ymin))) / 2; for (yt = Math.ceil(ymin / step) * step; yt <= ymax; yt += step) { s += '<line x1="' + ML + '" y1="' + sy(yt).toFixed(1) + '" x2="' + (ML + PW) + '" y2="' + sy(yt).toFixed(1) + '" stroke="#eee"/><text x="' + (ML - 6) + '" y="' + (sy(yt) + 4).toFixed(1) + '" font-size="11" fill="#888" text-anchor="end">' + yt.toFixed(1) + '</text>'; }
+        // band of the selected model at the end of the run
+        var d = ''; for (g = 0; g < N; g++) d += (g === 0 ? 'M' : 'L') + sx(grid[g]).toFixed(1) + ' ' + sy(Math.min(R.mu[g] + R.beta * R.sd[g], ymax)).toFixed(1) + ' ';
+        for (g = N - 1; g >= 0; g--) d += 'L' + sx(grid[g]).toFixed(1) + ' ' + sy(Math.max(R.mu[g] - R.beta * R.sd[g], ymin)).toFixed(1) + ' ';
+        s += '<path d="' + d + 'Z" fill="' + cols[model] + '" opacity="0.13" stroke="none"/>';
+        d = ''; for (g = 0; g < N; g++) d += (g === 0 ? 'M' : 'L') + sx(grid[g]).toFixed(1) + ' ' + sy(R.mu[g]).toFixed(1) + ' ';
+        s += '<path d="' + d + '" fill="none" stroke="' + cols[model] + '" stroke-width="1.5" stroke-dasharray="4,3"/>';
+        d = ''; F.fine.forEach(function(y, j) { d += (j === 0 ? 'M' : 'L') + sx(j / 400).toFixed(1) + ' ' + sy(y).toFixed(1) + ' '; });
+        s += '<path d="' + d + '" fill="none" stroke="#222" stroke-width="2"/>';
+        s += '<line x1="' + ML + '" y1="' + sy(F.h).toFixed(1) + '" x2="' + (ML + PW) + '" y2="' + sy(F.h).toFixed(1) + '" stroke="#c62828" stroke-width="1.5" stroke-dasharray="6,4"/><text x="' + (ML + PW - 4) + '" y="' + (sy(F.h) - 5).toFixed(1) + '" font-size="11" fill="#c62828" text-anchor="end">threshold h</text>';
+        R.queries.forEach(function(q) { s += '<circle cx="' + sx(q.x).toFixed(1) + '" cy="' + sy(Math.min(Math.max(q.y, ymin), ymax)).toFixed(1) + '" r="4" fill="' + (q.bad ? '#c62828' : cols[model]) + '" stroke="#fff" stroke-width="1"/>'; });
+        s += '<circle cx="' + sx(grid[F.s0]).toFixed(1) + '" cy="' + sy(F.fv[F.s0]).toFixed(1) + '" r="6" fill="none" stroke="#e67e22" stroke-width="2"/>';
+        s += '<line x1="' + ML + '" y1="' + yTop + '" x2="' + ML + '" y2="' + yBot + '" stroke="#333" stroke-width="1.5"/><line x1="' + ML + '" y1="' + yBot + '" x2="' + (ML + PW) + '" y2="' + yBot + '" stroke="#333" stroke-width="1.5"/>';
+        // safe-set bars
+        var rows = [['safeopt', 'SafeOpt'], ['realbeta', 'Real-&beta;'], ['losbo', 'LoSBO']], cell = PW / N;
+        rows.forEach(function(r, j) { var y0 = yBot + 30 + j * 24, Rr = results[r[0]][fi];
+          s += '<text x="' + (ML - 6) + '" y="' + (y0 + 12) + '" font-size="11" fill="' + cols[r[0]] + '" text-anchor="end">' + r[1] + '</text>';
+          for (g = 0; g < N; g++) { var badPt = F.fv[g] < F.h; s += '<rect x="' + (ML + g * cell).toFixed(1) + '" y="' + y0 + '" width="' + (cell - 0.5).toFixed(1) + '" height="16" fill="' + (Rr.safe[g] ? (badPt ? '#c62828' : cols[r[0]]) : '#e6e6e6') + '"/>'; } });
+        s += '<text x="' + (ML + PW) + '" y="' + (yBot + 30 + 3 * 24 + 8) + '" font-size="11" fill="#666" text-anchor="end">final safe sets on the 40-point grid (red = certified but unsafe)</text>';
+        var lx = ML + 8, ly = yTop + 12;
+        s += '<line x1="' + lx + '" y1="' + ly + '" x2="' + (lx + 18) + '" y2="' + ly + '" stroke="#222" stroke-width="2"/><text x="' + (lx + 24) + '" y="' + (ly + 4) + '" font-size="11" fill="#333">true f</text>';
+        s += '<line x1="' + (lx + 70) + '" y1="' + ly + '" x2="' + (lx + 88) + '" y2="' + ly + '" stroke="' + cols[model] + '" stroke-width="1.5" stroke-dasharray="4,3"/><text x="' + (lx + 94) + '" y="' + (ly + 4) + '" font-size="11" fill="#333">GP mean and band at t = 25 (' + { safeopt: 'SafeOpt', realbeta: 'Real-&beta;', losbo: 'LoSBO' }[model] + ')</text>';
+        s += '<circle cx="' + (lx + 330) + '" cy="' + ly + '" r="4" fill="' + cols[model] + '"/><text x="' + (lx + 338) + '" y="' + (ly + 4) + '" font-size="11" fill="#333">query</text><circle cx="' + (lx + 385) + '" cy="' + ly + '" r="4" fill="#c62828"/><text x="' + (lx + 393) + '" y="' + (ly + 4) + '" font-size="11" fill="#333">unsafe query</text><circle cx="' + (lx + 485) + '" cy="' + ly + '" r="5" fill="none" stroke="#e67e22" stroke-width="2"/><text x="' + (lx + 494) + '" y="' + (ly + 4) + '" font-size="11" fill="#333">seed</text>';
+        document.getElementById('st-mc-svg').innerHTML = s;
+        var tot = 0; ['safeopt', 'realbeta', 'losbo'].forEach(function(a) { tot += results[a][fi].unsafe; });
+        document.getElementById('st-mc-note').innerHTML = 'Function ' + (fi + 1) + ' of ' + v('K') + ' (seed ' + seed + '): norm ' + v('norm').toFixed(0) + ', h = ' + F.h.toFixed(2) + ', L<sub>true</sub> = ' + F.Lt.toFixed(1) + ' (L used = ' + (v('lfac') * F.Lt).toFixed(1) + '), E = ' + (v('efac') * v('beps')).toFixed(3) + ', noise ' + (document.getElementById('st-mc-noise').value === 'gauss' ? 'Gaussian with sigma = B<sub>&epsilon;</sub>' : 'uniform on [-B<sub>&epsilon;</sub>, B<sub>&epsilon;</sub>]') + '. Unsafe queries on this function: SafeOpt ' + results.safeopt[fi].unsafe + ', Real-&beta; ' + results.realbeta[fi].unsafe + ', LoSBO ' + results.losbo[fi].unsafe + '. Real-&beta; ended with &beta; = ' + results.realbeta[fi].beta.toFixed(2) + '.';
+      }
+      // readouts follow the drag; the Monte-Carlo run starts when a slider is released ('change'); "function shown" and the band selector only redraw
+      cfgIds.forEach(function(id) { var el = document.getElementById('st-mc-' + id); el.addEventListener('input', readouts); el.addEventListener('change', function() { draw(id !== 'show'); }); });
+      document.getElementById('st-mc-noise').addEventListener('change', function() { draw(true); });
+      document.getElementById('st-mc-model').addEventListener('change', function() { draw(false); });
+      document.getElementById('st-mc-resample').addEventListener('click', function() { seed += 1; draw(true); });
+      draw(true);
+    })();
+  </script>
+</body>
+</html>

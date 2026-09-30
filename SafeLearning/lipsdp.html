@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>12. Lipschitz Bounds via SDP: LipSDP and Beyond — Safe Learning</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">12. Lipschitz Bounds via SDP: LipSDP and Beyond</h1>
+    <p class="page-subtitle">Certified radii, slope-restricted activations as quadratic constraints, the LipSDP LMI, Pauli's training and estimation extensions, and the limits of SDP certificates</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#lipschitz-robustness">1. Lipschitz Constants and Certified Robustness</a>
+      <a href="#naive-bound">2. The Product Bound and Why It Is Loose</a>
+      <a href="#slope-restriction-qc">3. Slope Restriction as an Incremental Quadratic Constraint</a>
+      <a href="#lipsdp-derivation">4. The LipSDP Derivation</a>
+      <a href="#lipsdp-network-error">5. What Went Wrong With Coupled Multipliers</a>
+      <a href="#training-with-lipsdp">6. Training Under Lipschitz Constraints: ADMM and Barriers (Pauli et al.)</a>
+      <a href="#cnn-state-space">7. CNNs as Dynamical Systems: 1-D, Roesser and GLipSDP</a>
+      <a href="#beyond-slope-restricted">8. Beyond Slope Restriction: GroupSort, MaxMin, Householder</a>
+      <a href="#scalability">9. Scalable Variants and Hardness Results</a>
+      <a class="toc-interactive" href="#lipsdp-walkthrough">Walkthrough: LipSDP for One Hidden Layer</a>
+      <a class="toc-interactive" href="#lipsdp-explorer">Interactive: Naive vs LipSDP vs Empirical</a>
+      <a href="#exercises">Exercises</a>
+      <a href="#papers">Key Papers</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <p>A Lipschitz bound is the simplest certificate a neural network can carry: one number $L$ with $\|f(x)-f(y)\|\le L\|x-y\|$ for all inputs. It turns a classifier's margin into a deterministic robustness radius, bounds the incremental gain of a neural controller in small-gain arguments (<a href="nn-in-the-loop.html#feedback-setup">Module 14</a>), and is the quantity that Lipschitz-by-design architectures enforce by construction (<a href="lipschitz-by-design.html#why-by-design">Module 13</a>). Computing the smallest such $L$ is NP-hard already for one hidden layer, while multiplying spectral norms is cheap and often very loose. LipSDP sits in between: it describes every activation by the chord-slope inequality it satisfies, writes the Lipschitz question as a quadratic form, and lets the S-procedure of <a href="toolkit-lmi.html#s-procedure">Module 2</a> turn it into a semidefinite program.</p>
+
+    <p>This page derives LipSDP line by line and then follows Patricia Pauli's work on it: the counterexample showing that only diagonal multipliers are valid, training under the LMI (ADMM, then log-det barriers), convolutions as 1-D and 2-D state-space systems (and the layer-wise GLipSDP), and quadratic constraints for activations that are not slope-restricted. It ends with the scalable reformulations and with what SDP certificates provably cannot do.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Notation on this page</div>
+      <div>
+        <ul>
+          <li><strong>Network.</strong> $z_0=x\in\mathbb R^{n_0}$, pre-activations $v_k=W_{k-1}z_{k-1}+b_{k-1}$, hidden states $z_k=\phi(v_k)\in\mathbb R^{n_k}$ for $k=1,\dots,l$, output $f(x)=W_lz_l+b_l$; $n=n_1+\dots+n_l$ hidden neurons. One hidden layer: $f(x)=W_1\phi(W_0x+b_0)+b_1$. Scalar activation $\varphi$, vector map $\phi(v)=[\varphi(v_1),\dots,\varphi(v_n)]^{\top}$. Here $f$ is a network, not the dynamics of the control modules.</li>
+          <li><strong>Increments.</strong> For two inputs $x,y$: $\Delta x=x-y$, $\Delta v=v(x)-v(y)$, $\Delta z=z(x)-z(y)$. Biases cancel in every increment.</li>
+          <li><strong>Slopes.</strong> $\varphi$ slope-restricted in $[\alpha,\beta]$, $0\le\alpha\lt\beta\lt\infty$. This $\beta$ has nothing to do with the GP scaling $\beta_t$ of Modules 3&ndash;6. A <em>slope pattern</em> is $D=\mathrm{diag}(d)$ with $d\in[\alpha,\beta]^n$; for ReLU, $d\in\{0,1\}^n$ is the activation pattern.</li>
+          <li><strong>Bounds.</strong> $L^\star(f)$ is the Lipschitz constant, $L$ any upper bound, $\rho=L^2$ in LipSDP. The 1-D CNN paper and GLipSDP write $\gamma$ for $L$ itself, LipKernel writes $\rho$ for $L$ itself, ECLipsE uses $F=1/L^2$: always check whether a paper's symbol is the bound or its square.</li>
+          <li><strong>Multipliers.</strong> $T=\mathrm{diag}(\lambda_1,\dots,\lambda_n)\succeq0$, one S-procedure multiplier per neuron (Pauli et al. write $\Lambda$). The $\lambda_i$ are Lagrange multipliers in the sense of Module 2, not the CMDP multiplier of Module 8. $M(\rho,T)\preceq0$ is the LipSDP matrix; the barrier paper and ECLipsE write the same certificate with the opposite sign and in strict form ($\succ0$).</li>
+          <li><strong>Other.</strong> $\|\cdot\|$ is the Euclidean norm on vectors and the spectral norm $\sigma_{\max}$ on matrices; $m_f(x)$ is a classification margin (not the matrix $M$); $e_i$ is the $i$-th unit vector and $\mathbf 1$ the all-ones vector.</li>
+        </ul>
+      </div>
+    </div>
+
+
+    <!-- ===== SECTION 1: LIPSCHITZ & ROBUSTNESS ===== -->
+    <h2 class="section-heading" id="lipschitz-robustness">1. Lipschitz Constants and Certified Robustness</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Lipschitz constant ($\ell_2$)</div>
+      <div>
+        A map $f:\mathbb R^{n_0}\to\mathbb R^{m}$ is <strong>$L$-Lipschitz</strong> if
+        <div class="math-block">$$\|f(x)-f(y)\|\ \le\ L\,\|x-y\|\qquad\forall\,x,y\in\mathbb R^{n_0}.$$</div>
+        The smallest such $L$ is the <strong>Lipschitz constant</strong> $L^\star(f)$. A Lipschitz map is differentiable almost everywhere (Rademacher), and
+        $$L^\star(f)=\sup_{x}\ \|J_f(x)\|,$$
+        the supremum of the spectral norm of the Jacobian over the points where it exists (<a class="cite" href="https://arxiv.org/abs/1805.10965" target="_blank" rel="noopener">Virmaux &amp; Scaman, NeurIPS 2018</a>, Theorem 1). A ReLU network is continuous and piecewise affine, so $J_f$ is constant on each linear region and $L^\star$ is the largest $\|J_f\|$ over the full-dimensional regions: along the segment from $x$ to $y$ the increment is a sum of pieces $J_k(\cdot)$, each bounded by $\max_k\|J_k\|$ times its length.
+      </div>
+    </div>
+
+    <p>Why this one number certifies a classifier: every logit moves by at most $L\|\delta\|$ when the input moves by $\delta$, and a logit <em>difference</em> by at most $\sqrt2\,L\|\delta\|$. As long as the winning logit is ahead by more than that, nothing can overtake it.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Certified radius from a Lipschitz bound (Tsuzuku, Sato &amp; Sugiyama 2018, Prop. 1)</div>
+      <div>
+        <em>Assumptions.</em> $f:\mathbb R^{n_0}\to\mathbb R^{K}$ is the logit map of the classifier $C(x)=\operatorname*{arg\,max}_if_i(x)$; $f$ is $L$-Lipschitz in $\ell_2$ with a <em>known upper bound</em> $L$; at the input $x$ the predicted class is $y=C(x)$ with margin
+        $$m_f(x)=f_y(x)-\max_{j\ne y}f_j(x)\ \gt\ 0 .$$
+        <em>Statement.</em>
+        <div class="math-block">$$C(x+\delta)=y\qquad\text{for all perturbations with}\qquad \|\delta\|\ \lt\ \frac{m_f(x)}{\sqrt2\,L}.$$</div>
+        <em>In words.</em> The certified radius is the margin divided by $\sqrt2$ times the Lipschitz bound. <a class="cite" href="https://arxiv.org/abs/1802.04034" target="_blank" rel="noopener">Tsuzuku et al., NeurIPS 2018</a> state it as $m_f(x)\ge\sqrt2L\|\delta\|\Rightarrow m_f(x+\delta)\ge0$ (a tie is allowed); the same rule is Proposition 1 in the appendix of <a class="cite" href="https://arxiv.org/abs/1906.04893" target="_blank" rel="noopener">Fazlyab et al., NeurIPS 2019</a>.<br>
+        <em>Why each assumption matters.</em> $L$ must be an <em>upper</em> bound: a constant estimated from sampled gradients is a lower bound and certifies nothing. The radius scales like $1/L$, so a bound twice too loose halves every certified radius; this is why the rest of the page cares about tightness. The norm is $\ell_2$; other norms follow by norm equivalence with dimension factors (LipSDP, Remark 1). The certificate is deterministic and global: it holds for every input and every perturbation, with no probability involved.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof sketch &mdash; where the $\sqrt2$ comes from</div>
+      <div class="collapsible-body">
+        <p>Fix $j\ne y$ and let $g_j(x)=f_y(x)-f_j(x)=(e_y-e_j)^{\top}f(x)$. By Cauchy&ndash;Schwarz and the Lipschitz bound,</p>
+        <div class="math-block">$$\begin{aligned}|g_j(x+\delta)-g_j(x)|&=\big|(e_y-e_j)^{\top}\big(f(x+\delta)-f(x)\big)\big|\\ &\le\|e_y-e_j\|\,\|f(x+\delta)-f(x)\|\le\sqrt2\,L\,\|\delta\| .\end{aligned}$$</div>
+        <p>Hence $g_j(x+\delta)\ge g_j(x)-\sqrt2L\|\delta\|\ge m_f(x)-\sqrt2L\|\delta\|\gt0$ for every $j\ne y$ when $\|\delta\|\lt m_f(x)/(\sqrt2L)$, so $y$ remains the unique arg max. $\blacksquare$ The factor $\|e_y-e_j\|=\sqrt2$ is attained by a perturbation that raises one logit and lowers the other by the same amount; it is lost if one bounds each difference $g_j$ directly (next box).</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; radius conventions differ between papers</div>
+      <div>
+        (i) <strong>Whole logit map</strong>: $m_f(x)/(\sqrt2L)$ with $L$ the Lipschitz bound of $f:\mathbb R^{n_0}\to\mathbb R^K$ (Tsuzuku et al., LipSDP). (ii) <strong>Pairwise margins</strong>: $\min_{j\ne y}g_j(x)/L_{yj}$ with $L_{yj}$ a Lipschitz bound of $f_y-f_j$; Tsuzuku et al.'s Proposition 2 uses $L_{yj}=L_{\rm sub}\|w_y-w_j\|$ with $w_i$ the rows of the last layer and $L_{\rm sub}$ a bound for the network before it, and GloRo networks (<a class="cite" href="https://arxiv.org/abs/2102.08452" target="_blank" rel="noopener">Leino, Wang &amp; Fredrikson, ICML 2021</a>) build this rule into training. (iii) <strong>One-vs-rest</strong>: LipNeXt (<a class="cite" href="https://arxiv.org/abs/2601.18513" target="_blank" rel="noopener">Hu, Hu &amp; Fredrikson, ICLR 2026</a>) splits a $K$-class problem into $K-1$ binary problems, certifies each binary logit $g$ with radius $|g(x)|/L_g$ ($L_g$ a Lipschitz bound of $g$) and takes the minimum, which is rule (ii). The best such $L_{yj}$ is at most $\sqrt2L$, so (ii) and (iii) are never worse than (i) when the constants are computed equally tightly. Radii are also scale-dependent: on CIFAR-10 with pixels in $[0,1]$ the standard $\ell_2$ radii are $36/255\approx0.141$, $72/255\approx0.282$ and $108/255\approx0.424$, while randomized-smoothing papers report radii from $0.25$ upwards, and those certify a different, smoothed classifier with a probability (<a href="verification.html#randomized-smoothing">Module 15</a>; <a class="cite" href="https://arxiv.org/abs/1902.02918" target="_blank" rel="noopener">Cohen, Rosenfeld &amp; Kolter, ICML 2019</a>). Compare certified accuracies only within one convention and one radius.
+      </div>
+    </div>
+
+    <p><strong>Lipschitz-margin training.</strong> To make the certificate hold at radius $c$ on the training data, Tsuzuku et al. add $\sqrt2\,c\,L_F$ to every non-target logit before the cross-entropy loss, where $L_F$ is a cheap, differentiable upper bound of the network's Lipschitz constant (their LMT). The network is thereby trained to have margins larger than $\sqrt2cL_F$, which is exactly the hypothesis of the theorem. For context on what this buys at scale: the 2026 state of the art among deterministic $\ell_2$ certificates on CIFAR-10 is LipNeXt with $85.0\%$ clean and $73.2\%$ certified accuracy at $36/255$ without extra data (<a href="lipschitz-by-design.html#certified-sota">Module 13</a>). Those networks are $1$-Lipschitz by construction, so they need no estimation at all; LipSDP and its descendants matter whenever the architecture does not come with a certificate, and for control, where the Lipschitz bound of a trained controller is an input to a stability test.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>There are two ways to enlarge certified radii: increase margins, or decrease $L$. Only a <em>certified</em> $L$ counts, and the gap between the certified bound and $L^\star$ is lost radius. A <strong>global</strong> bound certifies every input at once; a <strong>local</strong> constant, the Lipschitz constant restricted to a ball around $x$, can be much smaller but must be recomputed per input (<a href="verification.html#verification-problem">Module 15</a>). The explorer at the end of the page shows both: the exact global constant and what gradients sampled in a box find.</div>
+    </div>
+
+
+    <!-- ===== SECTION 2: PRODUCT BOUND ===== -->
+    <h2 class="section-heading" id="naive-bound">2. The Product Bound and Why It Is Loose</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Product of spectral norms</div>
+      <div>
+        <em>Assumptions.</em> $f$ is the $l$-hidden-layer network of the notation box and $\varphi$ is slope-restricted in $[\alpha,\beta]$ with $\alpha\ge0$, so $|\varphi(a)-\varphi(b)|\le\beta|a-b|$.<br>
+        <em>Statement.</em>
+        <div class="math-block">$$L^\star(f)\ \le\ \beta^{\,l}\,\prod_{k=0}^{l}\|W_k\|\qquad(\beta=1\text{ for ReLU and tanh}).$$</div>
+        <em>In words.</em> Each affine map stretches increments by at most its largest singular value, each activation layer by at most $\beta$; multiply. For multilayer perceptrons with $1$-Lipschitz activations this is exactly what the AutoLip algorithm returns (Virmaux &amp; Scaman, Proposition 1), and it is the quantity exact spectral normalisation keeps at $1$ by dividing every $W_k$ by $\|W_k\|$ (<a class="cite" href="https://arxiv.org/abs/1802.05957" target="_blank" rel="noopener">Miyato et al., ICLR 2018</a>). Their implementation estimates $\|W_k\|$ with one power-iteration step per update, $\tilde\sigma_k=\tilde u^{\top}W_k\tilde v$ with unit vectors $\tilde u,\tilde v$ (their Appendix A). Such an estimate never exceeds $\|W_k\|$, so each normalised norm $\|W_k\|/\tilde\sigma_k$ is at least $1$ and only approximately equal to it. A certificate needs exact norms or certified upper bounds on them (Section 9).
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof &mdash; induction over the layers</div>
+      <div class="collapsible-body">
+        <p>Take two inputs and write $\Delta_k=z_k(x)-z_k(y)$, so $\Delta_0=x-y$. The bias cancels in the pre-activation increment, $v_{k+1}(x)-v_{k+1}(y)=W_k\Delta_k$. Component $i$ of the next increment is a chord of $\varphi$:</p>
+        <div class="math-block">$$\begin{aligned}|\Delta_{k+1,i}|&=\big|\varphi(v_{k+1,i}(x))-\varphi(v_{k+1,i}(y))\big|\le\beta\,\big|(W_k\Delta_k)_i\big|\\ \Longrightarrow\quad\|\Delta_{k+1}\|&\le\beta\,\|W_k\Delta_k\|\le\beta\,\|W_k\|\,\|\Delta_k\| ,\end{aligned}$$</div>
+        <p>where the middle step squares and sums the componentwise inequality. Applying this for $k=0,\dots,l-1$ and then $\|f(x)-f(y)\|=\|W_l\Delta_l\|\le\|W_l\|\,\|\Delta_l\|$ gives $\|f(x)-f(y)\|\le\beta^l\prod_{k=0}^{l}\|W_k\|\,\|x-y\|$. $\blacksquare$</p>
+        <p><strong>Jacobian view.</strong> Where $f$ is differentiable, $J_f(x)=W_lD_l(x)W_{l-1}\cdots D_1(x)W_0$ with $D_k(x)=\mathrm{diag}\big(\varphi'(v_k(x))\big)$ and every derivative in $[\alpha,\beta]$. Hence</p>
+        <div class="math-block">$$L^\star=\sup_x\big\|W_lD_l(x)\cdots D_1(x)W_0\big\|\ \le\ \max_{D_k\in[\alpha,\beta]^{n_k}}\big\|W_lD_l\cdots D_1W_0\big\|\ \le\ \beta^l\prod_k\|W_k\| .$$</div>
+        <p>The middle quantity, the <strong>all-patterns bound</strong>, replaces the slopes that actually occur by every diagonal matrix with entries in $[\alpha,\beta]$. Keep it in mind: Section 4 shows it is exactly what LipSDP's constraints can see. Because $D\mapsto\|W_lD_l\cdots W_0\|$ is convex in each $D_k$, for one hidden layer the maximum over the box is attained at a vertex, i.e. at a $0/1$ pattern when $[\alpha,\beta]=[0,1]$.</p>
+      </div>
+    </div>
+
+    <p>The product bound pays for two things that never happen:</p>
+    <ul>
+      <li><strong>Misaligned singular vectors.</strong> $\|AB\|=\|A\|\|B\|$ only if $B$ maps its top right singular vector onto the top right singular vector of $A$. Diagonal slope matrices can rescale coordinates but not rotate. Example (the one worked in the walkthrough): $W_0=\begin{bmatrix}1& 2\\1& -2\end{bmatrix}$, $W_1=\begin{bmatrix}1& 1\end{bmatrix}$, ReLU. $W_0$ stretches $e_2$ most, into the direction $(1,-1)$, but $W_1$ only responds to $(1,1)$. The product is $2\sqrt2\cdot\sqrt2=4$, while the four regional Jacobians $W_1DW_0=(d_1+d_2,\,2d_1-2d_2)$ have norms $0,\sqrt5,\sqrt5,2$: $L^\star=\sqrt5\approx2.24$.</li>
+      <li><strong>Impossible activation patterns.</strong> $f(x)=\mathrm{ReLU}(x)-\mathrm{ReLU}(-x)=x$, i.e. $W_0=\begin{bmatrix}1\\-1\end{bmatrix}$, $W_1=\begin{bmatrix}1& -1\end{bmatrix}$. The product is $\sqrt2\cdot\sqrt2=2$ but $L^\star=1$. Only the patterns $D=\mathrm{diag}(1,0)$ and $\mathrm{diag}(0,1)$ occur; $D=I$ would give slope $W_1W_0=2$ but needs $x\gt0$ and $-x\gt0$ at once. Every method that treats neurons independently, LipSDP included, pays for $D=I$ here.</li>
+    </ul>
+
+    <p><strong>SeqLip as an intermediate.</strong> <a class="cite" href="https://arxiv.org/abs/1805.10965" target="_blank" rel="noopener">Virmaux &amp; Scaman</a> start from the all-patterns bound with $[\alpha,\beta]=[0,1]$ (their eq. 7), which is itself hard to evaluate, and split it layer by layer using SVDs $W=U\Sigma V^{\top}$: each factor $\max_{\sigma\in[0,1]^{n_i}}\|\tilde\Sigma_{i+1}V_{i+1}^{\top}\mathrm{diag}(\sigma)U_i\tilde\Sigma_i\|$ (with $\tilde\Sigma=\Sigma^{1/2}$ for inner layers) captures the misalignment between consecutive layers. For small layers ($\le20$ neurons) each maximum is found by enumerating $0/1$ patterns; otherwise a power-method heuristic ("Greedy SeqLip") is used, which is not guaranteed to be an upper bound, as Fazlyab et al. point out. For one hidden layer, exact SeqLip coincides with the all-patterns bound, at a cost exponential in the width.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Exact Lipschitz computation is NP-hard (Virmaux &amp; Scaman 2018, Theorem 2)</div>
+      <div>
+        Given $M_1\in\mathbb R^{p\times n}$, $M_2\in\mathbb R^{m\times p}$ and $\ell\ge0$, deciding whether $f=M_2\circ\mathrm{ReLU}\circ M_1$ (one hidden layer; their "2-layer MLP") satisfies $L^\star(f)\le\ell$ is NP-hard. The proof reduces concave quadratic minimisation over a hypercube to it.<br>
+        <em>Consequence.</em> Unless P = NP, every polynomial-time method returns a bound, not the value; the question is how conservative it is and where the conservatism comes from.
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The product bound pays for alignments and for activation patterns that never occur. LipSDP, derived next, removes most of the first cost and none of the second; Section 9 explains why the second one cannot be removed in polynomial time in general.</div>
+    </div>
+
+
+    <!-- ===== SECTION 3: SLOPE RESTRICTION AS QC ===== -->
+    <h2 class="section-heading" id="slope-restriction-qc">3. Slope Restriction as an Incremental Quadratic Constraint</h2>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Slope restriction (Fazlyab et al. 2019, Definition 1)</div>
+      <div>
+        $\varphi:\mathbb R\to\mathbb R$ is <strong>slope-restricted</strong> on $[\alpha,\beta]$, $0\le\alpha\lt\beta\lt\infty$, if every chord has slope in $[\alpha,\beta]$:
+        <div class="math-block">$$\alpha\ \le\ \frac{\varphi(a)-\varphi(b)}{a-b}\ \le\ \beta\qquad\forall\,a\ne b .$$</div>
+        Equivalently, the antiderivative $\int\varphi$ is $\alpha$-strongly convex and $\beta$-smooth: activations are gradients of convex potentials, which is the observation LipSDP is built on.
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Activation</th><th>$[\alpha,\beta]$</th><th>Remark</th></tr></thead>
+      <tbody>
+        <tr><td>ReLU, tanh, softplus</td><td>$[0,1]$</td><td>$\alpha=0$ is tight: slopes approach $0$</td></tr>
+        <tr><td>Leaky ReLU, slope $a\in(0,1)$ for negative inputs</td><td>$[a,1]$</td><td>the only common case with $\alpha\gt0$</td></tr>
+        <tr><td>Sigmoid</td><td>$[0,\tfrac14]$</td><td>$[0,1]$ is valid but loose; Pauli et al. use $\beta=\tfrac14$</td></tr>
+        <tr><td>MaxMin, GroupSort, Householder</td><td>&mdash;</td><td>not elementwise; Section 8</td></tr>
+      </tbody>
+    </table>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; from the chord inequality to a quadratic form</div>
+      <div class="collapsible-body">
+        <p>Fix $a,b\in\mathbb R$ and set $u=a-b$, $w=\varphi(a)-\varphi(b)$.</p>
+        <p><strong>Step 1 (one inequality instead of two).</strong> For $u\ne0$ the chord slope $s=w/u$ lies in $[\alpha,\beta]$ iff $(s-\alpha)(s-\beta)\le0$, because the product of the distances to the two endpoints is nonpositive exactly between them.</p>
+        <p><strong>Step 2 (clear the denominator).</strong> Multiply by $u^2\ge0$ and use $su=w$:</p>
+        <div class="math-block">$$(w-\alpha u)(w-\beta u)\ \le\ 0 .$$</div>
+        <p>For $u=0$ we have $w=0$ and the inequality holds with equality, so it is valid for all $a,b$.</p>
+        <p><strong>Step 3 (expand and flip).</strong> $w^2-(\alpha+\beta)uw+\alpha\beta u^2\le0$. Multiplying by $-2$ reverses the inequality and produces the symmetric form used by LipSDP:</p>
+        <div class="math-block">$$-2\alpha\beta\,u^2+2(\alpha+\beta)\,uw-2w^2\ \ge\ 0\qquad\Longleftrightarrow\qquad \begin{bmatrix}u\\ w\end{bmatrix}^{\top}\begin{bmatrix}-2\alpha\beta& \alpha+\beta\\ \alpha+\beta& -2\end{bmatrix}\begin{bmatrix}u\\ w\end{bmatrix}\ \ge\ 0 .$$</div>
+        <p>For $[0,1]$ this is $2w(u-w)\ge0$: the output increment has the same sign as the input increment and is no larger. The inequality involves the increments only; nothing refers to the points $a,b$ themselves. That is what makes it an <em>incremental</em> quadratic constraint (QC), and it is also, as Section 5 shows, what makes coupling two neurons dangerous.</p>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Lemma &mdash; Diagonal multipliers (Fazlyab et al. 2019, Lemma 1, current arXiv version)</div>
+      <div>
+        Let $\varphi$ be slope-restricted on $[\alpha,\beta]$ and $\phi(v)=[\varphi(v_1),\dots,\varphi(v_n)]^{\top}$. For every
+        $T\in\mathcal T_n=\big\{\sum_{i=1}^n\lambda_ie_ie_i^{\top}:\ \lambda_i\ge0\big\}$ (diagonal and positive semidefinite) and all $v,\bar v\in\mathbb R^n$,
+        <div class="math-block">$$\begin{bmatrix}v-\bar v\\ \phi(v)-\phi(\bar v)\end{bmatrix}^{\top}\underbrace{\begin{bmatrix}-2\alpha\beta T& (\alpha+\beta)T\\ (\alpha+\beta)T& -2T\end{bmatrix}}_{Q_T}\begin{bmatrix}v-\bar v\\ \phi(v)-\phi(\bar v)\end{bmatrix}\ \ge\ 0 .$$</div>
+        <em>Proof.</em> With $T$ diagonal the form splits into $\sum_i\lambda_i q_i$, where $q_i$ is the scalar QC of neuron $i$ from the derivation above; each $q_i\ge0$ and each $\lambda_i\ge0$. $\blacksquare$ (The same lemma, with the S-procedure reading of the $\lambda_i$, is in <a href="toolkit-lmi.html#quadratic-constraints">Module 2</a>.)
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Proposition &mdash; What the QC knows, and what it forgets</div>
+      <div>
+        A pair $(u,w)\in\mathbb R^n\times\mathbb R^n$ satisfies the QC of the lemma for <em>every</em> $T\in\mathcal T_n$ if and only if
+        $$w=Du\qquad\text{for some }D=\mathrm{diag}(d_1,\dots,d_n),\ d_i\in[\alpha,\beta].$$
+        <em>Proof.</em> ($\Leftarrow$) With $w_i=d_iu_i$, $q_i=-2u_i^2(d_i-\alpha)(d_i-\beta)\ge0$. ($\Rightarrow$) Take $T=e_ie_i^{\top}$: then $q_i\ge0$, i.e. $(w_i-\alpha u_i)(w_i-\beta u_i)\le0$, so $w_i/u_i\in[\alpha,\beta]$ if $u_i\ne0$, and $-2w_i^2\ge0$ forces $w_i=0$ if $u_i=0$. $\blacksquare$<br>
+        <em>In words.</em> The abstraction replaces the activation layer by the set-valued map $\Delta v\mapsto\{D\,\Delta v:\ D\in[\alpha,\beta]^n\}$: every neuron gets its own chord slope, chosen independently of the other neurons and of where the inputs are. It forgets which slope combinations occur together (the patterns of Section 2) and it forgets the base points. The first gap is the price LipSDP pays; the second is the reason coupled multipliers fail.
+      </div>
+    </div>
+
+    <p><strong>Incremental versus non-incremental.</strong> An incremental QC relates two arbitrary inputs; it is the right object for global Lipschitz bounds and contraction. A non-incremental QC relates $v$ and $\phi(v)$ at a single input (with $\phi(0)=0$, the classical <em>sector</em> condition), or $v-v_*$ and $\phi(v)-\phi(v_*)$ around a fixed point $v_*$. Those are what stability analysis of an equilibrium uses, often in a local, much tighter form (<a href="nn-in-the-loop.html#local-sector-qc">Module 14</a>; <a class="cite" href="https://arxiv.org/abs/2006.07579" target="_blank" rel="noopener">Yin, Seiler &amp; Arcak, TAC 2022</a>), and what the reachability and verification SDPs DeepSDP (<a class="cite" href="https://arxiv.org/abs/1903.01287" target="_blank" rel="noopener">Fazlyab, Morari &amp; Pappas, TAC 2022</a>) and Reach-SDP (<a class="cite" href="https://arxiv.org/abs/2004.07876" target="_blank" rel="noopener">Hu et al., CDC 2020</a>) use. The distinction decides which multipliers are admissible (Section 5).</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Going deeper &mdash; sectors, slopes and the loop transformation</div>
+      <div class="collapsible-body">
+        <p>In absolute-stability theory a static nonlinearity with $\varphi(0)=0$ lies in the <strong>sector</strong> $[\alpha,\beta]$ if $(\varphi(v)-\alpha v)(\beta v-\varphi(v))\ge0$ for all $v$, which is the $2\times2$ QC above applied to $(v,\varphi(v))$ instead of to increments. Slope restriction is therefore the incremental sector condition, and it implies the sector condition when $\varphi(0)=0$ (take $b=0$); the converse fails, because a sector-bounded function need not be monotone.</p>
+        <p>The <strong>loop transformation</strong> $\tilde\varphi(v)=\big(\varphi(v)-\alpha v\big)/(\beta-\alpha)$ maps slope$[\alpha,\beta]$ to slope$[0,1]$, and $\varphi(v)=\alpha v+(\beta-\alpha)\tilde\varphi(v)$. In a network this introduces a linear bypass path from each pre-activation to the next layer, i.e. it changes the architecture. That is why LipSDP keeps $\alpha$ and $\beta$ inside the multiplier matrix, while circle, Popov and Zames&ndash;Falb criteria for feedback loops (<a href="nn-in-the-loop.html#zames-falb">Module 14</a>) normalise the sector first. Both descend from the quadratic-constraint view of robust control (<a class="cite" href="https://doi.org/10.1109/9.587335" target="_blank" rel="noopener">Megretski &amp; Rantzer, TAC 1997</a>).</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 4: LIPSDP DERIVATION ===== -->
+    <h2 class="section-heading" id="lipsdp-derivation">4. The LipSDP Derivation</h2>
+
+    <p>The whole method fits in one sentence: the Lipschitz inequality is a quadratic inequality in the increments, every neuron contributes a quadratic inequality in the same increments, and the S-procedure turns "the neuron inequalities imply the Lipschitz inequality" into a linear matrix inequality (<a class="cite" href="https://arxiv.org/abs/1906.04893" target="_blank" rel="noopener">Fazlyab, Robey, Hassani, Morari &amp; Pappas, NeurIPS 2019</a>). We derive it for one hidden layer, $f(x)=W_1\phi(W_0x+b_0)+b_1$ with $W_0\in\mathbb R^{n\times n_0}$ and $W_1\in\mathbb R^{m\times n}$, and then read off the deep version.</p>
+
+    <p>Fix two inputs $x,y$ and write $\Delta x=x-y$, $\Delta v=W_0\Delta x$ (the bias cancels), $\Delta z=\phi(W_0x+b_0)-\phi(W_0y+b_0)$ and $\Delta f=f(x)-f(y)=W_1\Delta z$. Everything below is a statement about the stacked increment $\xi=(\Delta x,\Delta z)\in\mathbb R^{n_0+n}$.</p>
+
+    <p><strong>Step 1: the goal as a quadratic form.</strong> With $\rho=L^2$,</p>
+    <div class="math-block">$$\|\Delta f\|^2\le\rho\,\|\Delta x\|^2\quad\Longleftrightarrow\quad \xi^{\top}\begin{bmatrix}-\rho I_{n_0} & 0\\ 0 & W_1^{\top}W_1\end{bmatrix}\xi\ \le\ 0 ,$$</div>
+    <p>because $\|\Delta f\|^2=\Delta z^{\top}W_1^{\top}W_1\Delta z$. The output layer is linear, so it only contributes the block $W_1^{\top}W_1$.</p>
+
+    <p><strong>Step 2: what the activations guarantee.</strong> The lemma of Section 3 applies to the pair $(\Delta v,\Delta z)$. Since $(\Delta v,\Delta z)=\mathrm{blkdiag}(W_0,I)\,\xi$, a congruence moves the constraint onto $\xi$:</p>
+    <div class="math-block">$$\begin{aligned}&\xi^{\top}\begin{bmatrix}W_0 & 0\\ 0 & I\end{bmatrix}^{\top}\begin{bmatrix}-2\alpha\beta T & (\alpha+\beta)T\\ (\alpha+\beta)T & -2T\end{bmatrix}\begin{bmatrix}W_0 & 0\\ 0 & I\end{bmatrix}\xi\\ &\qquad=\xi^{\top}\begin{bmatrix}-2\alpha\beta\,W_0^{\top}TW_0 & (\alpha+\beta)W_0^{\top}T\\ (\alpha+\beta)TW_0 & -2T\end{bmatrix}\xi\ \ge\ 0\end{aligned}$$</div>
+    <p>for every $T\in\mathcal T_n$ and every pair of inputs.</p>
+
+    <p><strong>Step 3: the S-procedure.</strong> Call the two matrices $G(\rho)$ (goal) and $Q(T)$ (constraint). If $G(\rho)+Q(T)\preceq0$ for some $T\in\mathcal T_n$, then for every increment the network can produce,</p>
+    <div class="math-block">$$\xi^{\top}G(\rho)\,\xi\ =\ \underbrace{\xi^{\top}\big(G(\rho)+Q(T)\big)\xi}_{\le0}\ -\ \underbrace{\xi^{\top}Q(T)\,\xi}_{\ge0\ \text{(Step 2)}}\ \le\ 0 .$$</div>
+    <p>The multipliers $\lambda_i$ on the diagonal of $T$ are exactly the S-procedure multipliers of <a href="toolkit-lmi.html#s-procedure">Module 2</a>, one per neuron. The implication runs one way only: the S-procedure with $n\ge2$ constraints is sufficient, not necessary, and this is one of the places where conservatism enters.</p>
+
+    <p><strong>Step 4: assemble.</strong> Adding the blocks gives the LipSDP matrix</p>
+    <div class="math-block">$$M(\rho,T)=\begin{bmatrix}-2\alpha\beta\,W_0^{\top}TW_0-\rho I_{n_0} & (\alpha+\beta)W_0^{\top}T\\ (\alpha+\beta)TW_0 & -2T+W_1^{\top}W_1\end{bmatrix}\ \preceq\ 0 .$$</div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; LipSDP for one hidden layer (Fazlyab et al. 2019, Theorem 1, arXiv v2)</div>
+      <div>
+        <em>Assumptions.</em> (A1) $f(x)=W_1\phi(W_0x+b_0)+b_1$ with $\phi(v)=[\varphi(v_1),\dots,\varphi(v_n)]^{\top}$ applied elementwise; (A2) $\varphi$ is slope-restricted on $[\alpha,\beta]$; (A3) $T\in\mathcal T_n$, i.e. diagonal with nonnegative entries.<br>
+        <em>Statement.</em> If $M(\rho,T)\preceq0$ for some $\rho\gt0$ and $T\in\mathcal T_n$, then $\|f(x)-f(y)\|\le\sqrt\rho\,\|x-y\|$ for all $x,y\in\mathbb R^{n_0}$. The best bound is
+        <div class="math-block">$$\rho^\star=\min_{\rho\ge0,\ T\in\mathcal T_n}\ \rho\qquad\text{s.t.}\qquad M(\rho,T)\preceq0,$$</div>
+        a semidefinite program: $M$ is affine in $(\rho,T)$ and $\mathcal T_n$ is a convex cone, so any interior-point solver returns the global optimum.<br>
+        <em>In words.</em> Find the per-neuron weights for which "every neuron behaves like a chord of slope in $[\alpha,\beta]$" implies "the output moves by at most $\sqrt\rho$ times the input".<br>
+        <em>Why each assumption matters.</em> (A1) Elementwise application is what makes the QC a sum of scalar QCs; GroupSort-type activations violate it (Section 8). (A2) Slope restriction, not a sector bound, is needed because the certificate must hold for every <em>pair</em> of inputs. Each neuron may even use a different activation as long as all are slope-restricted on $[\alpha,\beta]$. (A3) Diagonality is essential: the NeurIPS version allowed coupled $T$ and was wrong (Section 5). The biases appear nowhere in $M$: the certificate holds for every bias vector at once. We come back to this below, because it explains what LipSDP cannot see.
+      </div>
+    </div>
+
+    <p><strong>The deep network.</strong> For $l$ hidden layers, stack $\xi=(\Delta z_0,\Delta z_1,\dots,\Delta z_l)\in\mathbb R^{n_0+n}$ with $\Delta z_0=\Delta x$. Two selection matrices produce the pre-activation and activation increments of all hidden layers at once:</p>
+    <div class="math-block">$$A\xi=\begin{bmatrix}W_0\Delta z_0\\ \vdots\\ W_{l-1}\Delta z_{l-1}\end{bmatrix}=\Delta v,\qquad B\xi=\begin{bmatrix}\Delta z_1\\ \vdots\\ \Delta z_l\end{bmatrix},$$</div>
+    <div class="math-block">$$A=\big[\,\mathrm{blkdiag}(W_0,\dots,W_{l-1})\ \ 0\,\big],\qquad B=\big[\,0\ \ I_n\,\big].$$</div>
+    <p>With $T=\mathrm{blkdiag}(T_1,\dots,T_l)$ diagonal, Steps 1&ndash;4 go through unchanged and give Theorem 2 of LipSDP:</p>
+    <div class="math-block">$$\begin{aligned}M(\rho,T)&=\begin{bmatrix}A\\ B\end{bmatrix}^{\top}\begin{bmatrix}-2\alpha\beta T & (\alpha+\beta)T\\ (\alpha+\beta)T & -2T\end{bmatrix}\begin{bmatrix}A\\ B\end{bmatrix}\\ &\qquad+\mathrm{blkdiag}\big(-\rho I_{n_0},0,\dots,0,W_l^{\top}W_l\big)\ \preceq\ 0\quad\Longrightarrow\quad L=\sqrt\rho .\end{aligned}$$</div>
+    <p>Written out for two hidden layers, the matrix is block tridiagonal, because each neuron's constraint couples only its own input and output increments, which live in consecutive layers:</p>
+    <div class="math-block">$$M=\begin{bmatrix}-\rho I-2\alpha\beta W_0^{\top}T_1W_0 & (\alpha+\beta)W_0^{\top}T_1 & 0\\ (\alpha+\beta)T_1W_0 & -2T_1-2\alpha\beta W_1^{\top}T_2W_1 & (\alpha+\beta)W_1^{\top}T_2\\ 0 & (\alpha+\beta)T_2W_1 & -2T_2+W_2^{\top}W_2\end{bmatrix}\preceq0 .$$</div>
+    <p>This banded structure is the single most important fact for everything that follows: Pauli et al. factor it layer by layer (Section 6), the dissipativity view reads it as a chain of layer-wise storage functions (Section 7), and chordal and compositional methods decompose it (Section 9).</p>
+
+    <table>
+      <thead><tr><th>Variant</th><th>Multiplier</th><th>Unknowns</th><th>Measured cost (Fazlyab et al., MOSEK)</th></tr></thead>
+      <tbody>
+        <tr><td>LipSDP-Neuron</td><td>$T=\mathrm{diag}(\lambda_1,\dots,\lambda_n)$</td><td>$n+1$</td><td>one hidden layer: $5.2$ s for $n=500$, $735$ s for $n=3000$</td></tr>
+        <tr><td>LipSDP-Layer</td><td>$T=\mathrm{blkdiag}(\lambda_1I_{n_1},\dots,\lambda_lI_{n_l})$</td><td>$l+1$</td><td>$2.9$ s and $473$ s for the same networks</td></tr>
+        <tr><td>Splitting</td><td>bound sub-networks separately, multiply</td><td>per block</td><td>up to $500$ hidden layers of $100$ neurons, cut into 5-layer blocks; the largest ($50{,}000$ neurons) took about $12$ min (Neuron) or $4$ min (Layer)</td></tr>
+      </tbody>
+    </table>
+
+    <p>Splitting is valid because the Lipschitz constant of a composition is at most the product of the constants of its parts, but it reintroduces a product bound at every cut. In their MNIST experiments (five hidden layers, test accuracy above $97\%$), LipSDP-Neuron was tighter than CPLip and SeqLip.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Proposition &mdash; Where LipSDP sits (slopes in $[0,1]$, e.g. ReLU and tanh)</div>
+      <div>
+        <div class="math-block">$$\underbrace{L^\star(f)}_{\text{true}}\ \le\ \underbrace{\max_{D_k\in[0,1]^{n_k}}\big\|W_lD_l\cdots D_1W_0\big\|}_{\text{all-patterns bound}}\ \le\ L_{\rm Neuron}\ \le\ L_{\rm Layer}\ \le\ \prod_{k=0}^{l}\|W_k\| .$$</div>
+        <em>Proof.</em> The first inequality is the Jacobian argument of Section 2. For the second, fix any slope pattern $D=(D_1,\dots,D_l)$ and consider the <em>linear</em> network $x\mapsto W_lD_l\cdots D_1W_0x$: its increments satisfy every neuron's QC (Proposition of Section 3), so a LipSDP certificate for $f$ is also a certificate for it and $\sqrt{\rho}\ge\|W_lD_l\cdots W_0\|$. The third holds because Layer restricts Neuron. For the fourth, exhibit a feasible point; for one hidden layer take $T=tI$ with $t=\|W_1\|^2$: then $2tI-W_1^{\top}W_1\succeq tI$, and the Schur complement (see the <a href="#lipsdp-walkthrough">walkthrough</a>) gives $\rho\ge t^2\lambda_{\max}\big(W_0^{\top}(2tI-W_1^{\top}W_1)^{-1}W_0\big)$, which is at most $t\,\|W_0\|^2=\|W_0\|^2\|W_1\|^2$. The multi-layer construction is in Section 7. $\blacksquare$<br>
+        <em>In words.</em> LipSDP is never worse than the product bound, and it can never be better than the all-patterns bound.
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; LipSDP does not look at the biases</div>
+      <div>Since $M(\rho,T)$ contains no bias, one certificate holds for $f_b$ with every bias vector $b$, so $\sqrt{\rho^\star}\ge\sup_bL^\star(f_b)$. For ReLU networks this supremum <em>is</em> the all-patterns bound: at any input $x_0$ one can choose the biases layer by layer so that every neuron has the sign prescribed by a given $0/1$ pattern, and the maximum of $\|W_lD_l\cdots W_0\|$ over the box is attained at a $0/1$ vertex, because the norm is convex in each $D_k$ separately. In the example $f(x)=\mathrm{ReLU}(x)-\mathrm{ReLU}(-x)$ of Section 2, the biases $(1,1)$ make both neurons active on $(-1,1)$, where the slope is $2$. LipSDP's answer $2$ is the correct answer to the question "how steep can a network with <em>these weights</em> be?". It is a loose answer to the question about <em>this</em> network. Closing that gap requires knowing which patterns the actual biases make reachable, which is where the hardness results of Section 9 bite.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Going deeper &mdash; LipSDP is the dual of a Shor relaxation</div>
+      <div class="collapsible-body">
+        <p>For a scalar output $f(x)=v^{\top}\phi(W_0x+b_0)$ with slopes in $[0,1]$, the neuron constraints say $\Delta z_i(\Delta z_i-w_i^{\top}\Delta x)\le0$ with $w_i^{\top}$ the $i$-th row of $W_0$, i.e. $\Delta z_i=d_i\,w_i^{\top}\Delta x$ for some $d_i\in[0,1]$. By homogeneity the Lipschitz question becomes the quadratically constrained quadratic program</p>
+        <div class="math-block">$$\max_{\Delta x,\Delta z}\ v^{\top}\Delta z\qquad\text{s.t.}\qquad \Delta z_i(\Delta z_i-w_i^{\top}\Delta x)\le0\ \ (i=1,\dots,n),\qquad \|\Delta x\|\le1,$$</div>
+        <p>whose optimum is exactly the all-patterns bound $\max_{d\in[0,1]^n}\|W_0^{\top}\mathrm{diag}(d)v\|$, a non-convex, max-cut-like problem. Lifting $(\Delta x,\Delta z)$ to a PSD matrix and dropping the rank-one constraint gives Shor's SDP relaxation, and its Lagrange dual is LipSDP up to a Schur complement and a rescaling (<a class="cite" href="https://openreview.net/forum?id=dwzLn78jq7" target="_blank" rel="noopener">Wang, Hu, Havens, Araujo, Zheng, Chen &amp; Jha, ICLR 2024</a>, Section 3). So the gap between the all-patterns bound and LipSDP-Neuron is a relaxation gap. It is often zero in small examples, but not always: the <a href="#lipsdp-walkthrough">walkthrough</a> network has all-patterns bound $\sqrt5\approx2.236$ and LipSDP value $4/\sqrt3\approx2.309$.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 5: THE LIPSDP-NETWORK ERROR ===== -->
+    <h2 class="section-heading" id="lipsdp-network-error">5. What Went Wrong With Coupled Multipliers</h2>
+
+    <p>The NeurIPS 2019 version of LipSDP (arXiv v1) stated its Lemma 1 for a larger multiplier class than the diagonal one,</p>
+    <div class="math-block">$$\mathcal T_n^{\rm v1}=\Big\{T=\sum_{i=1}^n\lambda_{ii}e_ie_i^{\top}+\sum_{1\le i\lt j\le n}\lambda_{ij}(e_i-e_j)(e_i-e_j)^{\top}:\ \lambda_{ij}\ge0\Big\},$$</div>
+    <p>on the grounds that all neurons apply the <em>same</em> function $\varphi$ ("repeated nonlinearities"). The resulting variant with $O(n^2)$ multipliers, LipSDP-Network, was presented as the most accurate one. It is wrong. <a class="cite" href="https://arxiv.org/abs/2005.02929" target="_blank" rel="noopener">Pauli, Koch, Berberich, Kohler &amp; Allgöwer (arXiv May 2020; IEEE L-CSS 2022 and ACC 2021)</a> gave two counterexamples, and the current arXiv version of LipSDP (v2, January 2023) states Lemma 1 and Theorems 1&ndash;2 for diagonal $T$ only and lists only LipSDP-Neuron and LipSDP-Layer.</p>
+
+    <p><strong>What a coupling term asserts.</strong> For $\alpha=0$, $\beta=1$ the term $\lambda_{12}(e_1-e_2)(e_1-e_2)^{\top}$ contributes</p>
+    <div class="math-block">$$2\lambda_{12}\Big[(\Delta v_1-\Delta v_2)(\Delta z_1-\Delta z_2)-(\Delta z_1-\Delta z_2)^2\Big]\ \ge\ 0 ,$$</div>
+    <p>i.e. it treats the pair $(\Delta v_1-\Delta v_2,\ \Delta z_1-\Delta z_2)$ as if it were a chord of $\varphi$ with slope in $[0,1]$. But</p>
+    <div class="math-block">$$\Delta z_1-\Delta z_2=\big[\varphi(v_1)-\varphi(\bar v_1)\big]-\big[\varphi(v_2)-\varphi(\bar v_2)\big]$$</div>
+    <p>is a difference of two chords taken at different places of the graph (between $\bar v_1,v_1$ and between $\bar v_2,v_2$), and nothing constrains its ratio to $\Delta v_1-\Delta v_2$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Counterexample 1 &mdash; the quadratic constraint itself fails (Pauli et al., Section II-C)</div>
+      <div>
+        Take ReLU ($[\alpha,\beta]=[0,1]$), $n=2$, $T=(e_1-e_2)(e_1-e_2)^{\top}=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}$ and the two pre-activation vectors $v=(0,1)$, $\bar v=(-1.5,0)$. Then
+        <div class="math-block">$$\Delta v=(1.5,\ 1),\qquad \Delta z=\mathrm{ReLU}(v)-\mathrm{ReLU}(\bar v)=(0,1)-(0,0)=(0,\ 1),$$</div>
+        so $\Delta v_1-\Delta v_2=0.5$ and $\Delta z_1-\Delta z_2=-1$, and the quadratic form of the lemma is
+        <div class="math-block">$$\begin{bmatrix}\Delta v\\ \Delta z\end{bmatrix}^{\top}\begin{bmatrix}0 & T\\ T & -2T\end{bmatrix}\begin{bmatrix}\Delta v\\ \Delta z\end{bmatrix}=2(0.5)(-1)-2(-1)^2=-3\ \lt\ 0 .$$</div>
+        The "chord" $(0.5,-1)$ has slope $-2$, impossible for a chord of the monotone ReLU. (The L-CSS paper prints the value $-2$; evaluating its stated numbers gives $-3$. The sign, and hence the conclusion, is the same.)
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Counterexample 2 &mdash; a network certified with an arbitrarily small constant</div>
+      <div>
+        One hidden layer, $n_0=m=1$, $n=2$, $\varphi=\tanh$ (slope-restricted on $[0,1]$), and
+        <div class="math-block">$$W_0=\begin{bmatrix}-1\\ -1\end{bmatrix},\quad b_0=\begin{bmatrix}-1\\ 1\end{bmatrix},\quad W_1=\begin{bmatrix}-1 & 1\end{bmatrix},\quad b_1=-0.5,$$</div>
+        <div class="math-block">$$\begin{aligned}f(x)&=-\tanh(-x-1)+\tanh(-x+1)-0.5\\ &=\tanh(x+1)-\tanh(x-1)-0.5\end{aligned}$$</div>
+        (using that $\tanh$ is odd). It fits $\cos x$ on $[-\pi/2,\pi/2]$ with maximum error $0.0843$. Its true constant is $L^\star=\max_x|\mathrm{sech}^2(x+1)-\mathrm{sech}^2(x-1)|\approx0.9335$, attained at $x\approx\pm1.061$; Pauli et al. argue $L^\star\approx1$ from the slope of the cosine it approximates. Now take $T=(e_1-e_2)(e_1-e_2)^{\top}$:
+        <div class="math-block">$$TW_0=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}\begin{bmatrix}-1\\ -1\end{bmatrix}=0,\qquad W_1^{\top}W_1=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}=T,$$</div>
+        <div class="math-block">$$\Longrightarrow\qquad M(\rho,T)=\begin{bmatrix}-\rho & 0\\ 0 & -2T+T\end{bmatrix}=\mathrm{blkdiag}(-\rho,\,-T)\ \preceq\ 0$$</div>
+        for <em>every</em> $\rho\gt0$ (its eigenvalues are $-\rho,-2,0$). The coupled LMI "certifies" $L=\sqrt\rho\to0$ for a cosine-shaped function. With diagonal multipliers, $T=I$ gives $M(1,I)=-\mathbf 1\mathbf 1^{\top}\preceq0$, so LipSDP-Neuron returns $L=1$; this matches the all-patterns bound $\max_{d\in[0,1]^2}|d_1-d_2|=1$ and is valid. The product bound is $2$.
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Intuition &mdash; same weights, different biases</div>
+      <div>Both neurons have the same weight $-1$ and differ only in their bias. Hence $\Delta v_1=\Delta v_2$ for every pair of inputs, the first term of the coupling constraint vanishes, and what is left is $-2\lambda_{12}(\Delta z_1-\Delta z_2)^2\ge0$, i.e. the claim $\Delta z_1=\Delta z_2$. That would be true if the biases were equal, since the two neurons would then be identical. With different biases the two tanh's are evaluated at different points and their increments differ, and the output increment is exactly $\Delta f=\Delta z_2-\Delta z_1$, the quantity the false constraint declares to be zero. The "certificate" proves that $f$ is constant.</div>
+    </div>
+
+    <p><strong>Where the proof broke.</strong> Version 1 proved the incremental lemma by fixing $x$ and applying a non-incremental repeated-nonlinearity lemma to the shifted map $\tilde\phi(x,\delta)=\phi(x+\delta)-\phi(x)$. Its $i$-th component is $\delta_i\mapsto\varphi(x_i+\delta_i)-\varphi(x_i)$. Each component is slope-restricted and vanishes at $\delta_i=0$, so the diagonal terms are fine. But component $i$ and component $j$ are <em>different functions</em> unless $x_i=x_j$, so the repeated-nonlinearity lemma does not apply to them. In the words of <a class="cite" href="https://arxiv.org/abs/2301.11526" target="_blank" rel="noopener">Wang &amp; Manchester (ICML 2023, Remark A.2)</a>, who credit the explanation to <a class="cite" href="https://arxiv.org/abs/2010.01732" target="_blank" rel="noopener">Revay, Wang &amp; Manchester (2020)</a>: the nonlinearities are repeated as functions of $v_i$, but their increments are not repeated as functions of $\Delta v_i$.</p>
+
+    <p><strong>What survives.</strong> Coupling is legitimate whenever the two compared quantities really are a chord of one function. At a <em>single</em> input, $\big(v_i-v_j,\ \varphi(v_i)-\varphi(v_j)\big)$ is a genuine chord of $\varphi$ between the points $v_i$ and $v_j$, so for ReLU</p>
+    <div class="math-block">$$2\lambda_{ij}\Big[(v_i-v_j)\big(\varphi(v_i)-\varphi(v_j)\big)-\big(\varphi(v_i)-\varphi(v_j)\big)^2\Big]\ \ge\ 0\qquad(\lambda_{ij}\ge0)$$</div>
+    <p>is valid. Such non-incremental repeated-nonlinearity terms are used, correctly, in DeepSDP (<a class="cite" href="https://arxiv.org/abs/1903.01287" target="_blank" rel="noopener">Fazlyab, Morari &amp; Pappas, TAC 2022</a>) and Reach-SDP (<a class="cite" href="https://arxiv.org/abs/2004.07876" target="_blank" rel="noopener">Hu, Fazlyab, Morari &amp; Pappas, CDC 2020</a>), where the input set is fixed and each constraint relates quantities at the same input, and in Appendix A.8 of LipSDP v2, which bounds $\|f(x)-f(y)\|\le\sqrt{\rho(y)}\|x-y\|$ for one <em>fixed</em> point $y$. Linear operations are also safe: in the 1-D CNN paper, average pooling admits full multiplier matrices while max pooling requires diagonal ones (Section 7).</p>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall &mdash; coupled multipliers in incremental constraints</div>
+      <div>
+        Never use a non-diagonal $T$ in an incremental QC for elementwise activations, i.e. in any global Lipschitz, incremental-gain or contraction certificate. Concretely:
+        <ul style="margin:6px 0 0 16px;">
+          <li>Cite LipSDP by its arXiv v2 statement (diagonal $T$, Neuron and Layer only). The proceedings version still contains LipSDP-Network, and its bounds are not certificates.</li>
+          <li>Chordal-LipSDP (<a class="cite" href="https://arxiv.org/abs/2204.00846" target="_blank" rel="noopener">Xue et al., CDC 2022</a>) has a sparsity parameter $\tau$ that adds exactly such couplings; its v2 footnote states that "only the ($\tau=0$) case will certify the Lipschitz constant".</li>
+          <li>Later papers restate the correction: SLL, ECLipsE (Remark 1), the ICLR 2024 GroupSort paper, GLipSDP and LipKernel all use diagonal multipliers for elementwise activations.</li>
+          <li>A tighter-looking number is not evidence. Here the invalid multiplier produced a bound below the true constant, and a sampled gradient norm ($\approx0.93$) exposes it immediately. Comparing every certified bound with a sampled lower bound is a cheap sanity check.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: TRAINING WITH LIPSDP ===== -->
+    <h2 class="section-heading" id="training-with-lipsdp">6. Training Under Lipschitz Constraints: ADMM and Barriers (Pauli et al.)</h2>
+
+    <p>Estimating $L$ after training is passive: if the bound is bad, one can only retrain and hope. Pauli and co-authors turned the certificate into a training constraint, $\min_W\ \mathcal L(W)$ subject to "the LMI holds". Two obstacles have to be removed first: $M(\rho,T)$ is not affine in the weights ($W_1^{\top}W_1$ is quadratic and $TW_0$ is bilinear), and stochastic gradient descent does not handle semidefinite constraints.</p>
+
+    <p><strong>Making the certificate convex in the weights.</strong> Following <a class="cite" href="https://arxiv.org/abs/2005.02929" target="_blank" rel="noopener">Pauli et al. (L-CSS 2022)</a>, fix $T$, set $\alpha=0$, and take a Schur complement to move the last layer out of the quadratic term. For one hidden layer (their Remark 4, with $L^2$ in place of $\rho$):</p>
+    <div class="math-block">$$M_{\rm tr}(L^2,W)=\begin{bmatrix}-L^2I & \beta W_0^{\top}T & 0\\ \beta TW_0 & -2T & W_1^{\top}\\ 0 & W_1 & -I\end{bmatrix}\ \preceq\ 0 .$$</div>
+    <p>Because the corner block $-I$ is negative definite, the Schur complement of <a href="toolkit-lmi.html#schur-complement">Module 2</a> gives</p>
+    <div class="math-block">$$\begin{aligned}M_{\rm tr}\preceq0\quad&\iff\quad\begin{bmatrix}-L^2I & \beta W_0^{\top}T\\ \beta TW_0 & -2T\end{bmatrix}-\begin{bmatrix}0\\ W_1^{\top}\end{bmatrix}(-I)^{-1}\begin{bmatrix}0 & W_1\end{bmatrix}\preceq0\\ &\iff\quad\begin{bmatrix}-L^2I & \beta W_0^{\top}T\\ \beta TW_0 & -2T+W_1^{\top}W_1\end{bmatrix}\preceq0,\end{aligned}$$</div>
+    <p>which is $M(L^2,T)$ with $\alpha=0$. Every entry of $M_{\rm tr}$ is affine in $(L^2,W_0,W_1)$, so for fixed $T$ the set of certified weights is convex. The multi-layer version (their eq. (7)) has the same form, with $[A;B]^{\top}\begin{bmatrix}0 & \beta T\\ \beta T & -2T\end{bmatrix}[A;B]$ in place of the first two block rows and the last layer moved into a $-I$ corner. Two choices make this work:</p>
+    <ul>
+      <li><strong>$\alpha=0$ (their Remark 3).</strong> With $\alpha\gt0$ the block $-2\alpha\beta W_0^{\top}TW_0$ is matrix-concave in $W_0$, and a Schur complement cannot remove it because it enters with the wrong sign. $\alpha=0$ is the tight value for ReLU, tanh and sigmoid (slopes $[0,1]$, $[0,1]$, $[0,\tfrac14]$). It costs something only for activations such as leaky ReLU.</li>
+      <li><strong>$T$ fixed.</strong> $TW_0$ is bilinear, so optimising $T$ and $W$ jointly gives a bilinear matrix inequality. Pauli et al. fix $T$, e.g. from a LipSDP run on a network trained without the constraint or with L2 regularisation, and accept the conservatism; their Remark 5 notes that $T$ could be updated in an additional ADMM block at extra cost. The CDC 2022 paper below instead trains $T$ together with the weights and lets the barrier handle the bilinear inequality directly; its Remark 9 adds that the substitution $\tilde W_{k-1}=T_kW_{k-1}$ would make the constraint linear in $(\tilde W,T)$, at the price of a nonlinear reparameterisation of the network.</li>
+    </ul>
+
+    <p><strong>ADMM (L-CSS 2022).</strong> Duplicate the weights, $W=\bar W$, so that the loss sees $W$ and the certificate sees $\bar W$:</p>
+    <div class="math-block">$$\min_{W,\bar W,L^2}\ \mathcal L(W)+\mu L^2+\iota\big(M_{\rm tr}(L^2,\bar W)\preceq0\big)\qquad\text{s.t.}\qquad W=\bar W,$$</div>
+    <p>where the indicator $\iota(\cdot)$ is $0$ when its condition holds and $+\infty$ otherwise, and $\mu\gt0$ trades accuracy against the bound. With the augmented Lagrangian $\mathcal L_\eta=\mathcal L(W)+\mu L^2+\iota(\cdot)+\mathrm{tr}\big(Y^{\top}(W-\bar W)\big)+\tfrac\eta2\|W-\bar W\|_F^2$ (the paper calls the penalty $\rho$; we write $\eta$ because $\rho=L^2$ here), ADMM alternates a loss step (backpropagation), a Lipschitz step (an SDP) and a dual update:</p>
+    <div class="math-block">$$\begin{aligned}
+    W_{k+1}&=\arg\min_W\ \mathcal L(W)+\mathrm{tr}(Y_k^{\top}W)+\tfrac\eta2\|W-\bar W_k\|_F^2,\\
+    (L^2_{k+1},\bar W_{k+1})&=\arg\min_{L^2,\bar W}\ \mu L^2+\tfrac\eta2\big\|\bar W-(W_{k+1}+Y_k/\eta)\big\|_F^2\quad\text{s.t.}\quad M_{\rm tr}(L^2,\bar W)\preceq0,\\
+    Y_{k+1}&=Y_k+\eta\,(W_{k+1}-\bar W_{k+1}).
+    \end{aligned}$$</div>
+    <p>The Lipschitz step follows from completing the square, $\mathrm{tr}(Y^{\top}(W-\bar W))+\tfrac\eta2\|W-\bar W\|_F^2=\tfrac\eta2\|\bar W-W-Y/\eta\|_F^2-\tfrac1{2\eta}\|Y\|_F^2$. It projects $W_{k+1}+Y_k/\eta$ onto the set of weights with a certified bound, traded against $\mu L^2$. That set is described by an LMI in $\bar W$, not by $\bar W\succeq0$, so there is no eigenvalue-clipping shortcut: every iteration calls an SDP solver. To <em>enforce</em> a prescribed bound, drop $\mu L^2$ and fix $L=L_{\rm des}$. Their Theorem 6 then guarantees that $L_{\rm des}$ bounds the network with weights $\bar W$ at every iteration, because every $\bar W$ is produced by a feasible SDP. The guarantee is about $\bar W$, so $\bar W$ is the network to deploy. Convergence of ADMM is not guaranteed for the non-convex loss; each subproblem is well behaved (SGD for the first, a convex SDP with a unique minimiser for the second).</p>
+
+    <table>
+      <thead><tr><th>MNIST, $14\times14$ input, 50 tanh neurons (L-CSS Table I)</th><th>Test accuracy</th><th>Certified $L$</th><th>Training time</th></tr></thead>
+      <tbody>
+        <tr><td>Nominal</td><td>$96.65\%$</td><td>$96.6$</td><td>$56.4$ s</td></tr>
+        <tr><td>L2-regularised</td><td>$90.58\%$</td><td>$9.49$</td><td>$57.4$ s</td></tr>
+        <tr><td>Lipschitz-regularised (ADMM)</td><td>$96.45\%$</td><td>$8.74$</td><td>$2566$ s</td></tr>
+      </tbody>
+    </table>
+    <p>An eleven times smaller certified bound for $0.2$ percentage points of accuracy; weight decay reaches a similar bound only by giving up six points. The price is a factor of about $45$ in training time, and the SDP step dominates as the network grows.</p>
+
+    <p><strong>Log-det barriers (CDC 2022).</strong> <a class="cite" href="https://arxiv.org/abs/2201.00632" target="_blank" rel="noopener">Pauli, Funcke, Gramlich, Msalmi &amp; Allgöwer (CDC 2022)</a> replace the SDP subproblem by an interior-point penalty that ordinary backpropagation can handle. They write the certificate in positive-definite form (the negative of $M_{\rm tr}$, with $\beta=1$ and $\Lambda$ for $T$). For one hidden layer:</p>
+    <div class="math-block">$$N(\theta)=\begin{bmatrix}L^2I & -W_0^{\top}\Lambda & 0\\ -\Lambda W_0 & 2\Lambda & -W_1^{\top}\\ 0 & -W_1 & I\end{bmatrix}\ \succ\ 0,\qquad \min_{\theta}\ \mathcal L(f_\theta)-\mu\log\det N(\theta),$$</div>
+    <p>with barrier weight $\mu\gt0$ (their $\rho_j$). As $\mu\to0$ the barrier approaches the indicator of the feasible set; as $N$ approaches singularity, $-\log\det N\to+\infty$ and pushes the iterate back.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; the gradient of the barrier</div>
+      <div class="collapsible-body">
+        <p><strong>Step 1 (directional derivative of log det).</strong> For $N\succ0$ and a symmetric perturbation $E$, $\det(N+\varepsilon E)=\det N\cdot\det(I+\varepsilon N^{-1}E)$, and $\det(I+\varepsilon X)=\prod_i(1+\varepsilon\,\omega_i)=1+\varepsilon\,\mathrm{tr}X+O(\varepsilon^2)$ with $\omega_i$ the eigenvalues of $X$. Taking logarithms,</p>
+        <div class="math-block">$$\log\det(N+\varepsilon E)=\log\det N+\varepsilon\,\mathrm{tr}(N^{-1}E)+O(\varepsilon^2)$$</div>
+        <div class="math-block">$$\Longrightarrow\qquad \frac{\partial}{\partial x_i}\log\det N(x)=\mathrm{tr}\Big(N^{-1}\frac{\partial N}{\partial x_i}\Big).$$</div>
+        <p><strong>Step 2 (apply to $W_0$).</strong> $W_0$ enters only the blocks $(2,1)$ and $(1,2)$: $dN_{21}=-\Lambda\,dW_0$ and $dN_{12}=-dW_0^{\top}\Lambda$. Writing $(N^{-1})_{ij}$ for the blocks of the inverse and using $(N^{-1})_{21}=(N^{-1})_{12}^{\top}$,</p>
+        <div class="math-block">$$d\log\det N=\mathrm{tr}\big((N^{-1})_{12}(-\Lambda\,dW_0)\big)+\mathrm{tr}\big((N^{-1})_{21}(-dW_0^{\top}\Lambda)\big)=-2\,\mathrm{tr}\big((N^{-1})_{12}\Lambda\,dW_0\big).$$</div>
+        <p>Since $d\,g=\mathrm{tr}(G^{\top}dW_0)$ identifies the gradient $G$,</p>
+        <div class="math-block">$$\begin{aligned}\nabla_{W_0}\log\det N&=-2\,\Lambda\,(N^{-1})_{21},\qquad \nabla_{W_1}\log\det N=-2\,(N^{-1})_{32},\\ \frac{\partial\log\det N}{\partial\lambda_i}&=2\big[(N^{-1})_{22}\big]_{ii}-2\big[W_0(N^{-1})_{12}\big]_{ii},\end{aligned}$$</div>
+        <p>the last two by the same computation. The training gradient is therefore $\nabla_{W_0}\mathcal L+2\mu\,\Lambda(N^{-1})_{21}$. All three formulas agree with finite differences to about $10^{-9}$ on random instances.</p>
+        <p><strong>Step 3 (only a band of $N^{-1}$ is needed).</strong> Each $\partial N/\partial x_i$ is nonzero only inside the block-tridiagonal band, so only the band of $N^{-1}$ enters. Pauli et al. compute a block-bidiagonal Cholesky factor by the recursion $D_0=\mathrm{chol}(L^2I)$, $D_k=\mathrm{chol}(2\Lambda_k-R_{k-1}R_{k-1}^{\top})$, $D_{l+1}=\mathrm{chol}(I-R_lR_l^{\top})$, with off-diagonal blocks $R_k=-\big(D_k^{-1}W_k^{\top}\Lambda_{k+1}\big)^{\top}$ ($\Lambda_{l+1}=I$), so each $R_k$ uses the factor $D_k$ just computed. The band of the inverse follows from a backward recursion. This costs $l+1$ layer-sized factorisations instead of one factorisation of the full matrix. The same Schur recursion reappears as ECLipsE in Section 9.</p>
+      </div>
+    </div>
+
+    <div class="algorithm">
+      <div class="algorithm-title">Algorithm 1: Lipschitz-constrained training with a log-det barrier (after Pauli et al., CDC 2022)</div>
+      <ol>
+        <li>Choose the bound $L$ and $\mu_0\gt0$; initialise with small weights, which are $L$-Lipschitz for any fixed $L\gt0$, so that $N(\theta_0)\succ0$.</li>
+        <li><strong>for</strong> each mini-batch <strong>do</strong></li>
+        <li><span class="indent"></span>block-Cholesky factorise $N(\theta)$; compute the band of $N^{-1}$</li>
+        <li><span class="indent"></span>$g\leftarrow\nabla_\theta\mathcal L-\mu\,\nabla_\theta\log\det N(\theta)$ <span class="comment">// Step 2 of the derivation</span></li>
+        <li><span class="indent"></span>take a step $\theta^+=\theta-\eta_k g$ (e.g. Adam) <span class="comment">// small, decreasing steps (Remark 8)</span></li>
+        <li><span class="indent"></span><strong>if</strong> the Cholesky factorisation of $N(\theta^+)$ fails <strong>then</strong> shrink the step and retry <span class="comment">// Cholesky exists iff $N\succ0$ (Lemma 7)</span></li>
+        <li><span class="indent"></span>periodically decrease $\mu$</li>
+        <li><strong>return</strong> $\theta$: every accepted iterate satisfies the certificate</li>
+      </ol>
+    </div>
+
+    <p>Treating $\Lambda$ as fixed gives the "linear" barrier method (convex constraint); training it as well gives the "bilinear" one. The template is not limited to Lipschitz bounds. Their Theorem 4 certifies any incremental property</p>
+    <div class="math-block">$$\begin{bmatrix}x_1-x_2\\ f_\theta(x_1)-f_\theta(x_2)\end{bmatrix}^{\top}\begin{bmatrix}Q & S\\ S^{\top} & R\end{bmatrix}\begin{bmatrix}x_1-x_2\\ f_\theta(x_1)-f_\theta(x_2)\end{bmatrix}\ge0\qquad\forall x_1,x_2$$</div>
+    <p>with an LMI of the same form. $Q=L^2I$, $S=0$, $R=-I$ is Lipschitz continuity; note that the vector is ordered (input, output) here, the reverse of the QSR convention in <a href="toolkit-lmi.html#dissipativity">Module 2</a>. Their Remark 5 points to closed-loop stability of feedback loops containing a network as another semidefinite constraint (<a href="nn-in-the-loop.html#synthesis">Module 14</a>).</p>
+
+    <table>
+      <thead><tr><th>CDC 2022, Table I (2-D example, $L\le50$)</th><th>mean certified $L$</th><th>test accuracy</th><th>normalised training time</th></tr></thead>
+      <tbody>
+        <tr><td>nominal (no constraint)</td><td>$10780$</td><td>$0.868$</td><td>$1$</td></tr>
+        <tr><td>projected gradient (SDP projection each step)</td><td>$48.25$</td><td>$0.902$</td><td>$7.35$</td></tr>
+        <tr><td>ADMM (L-CSS)</td><td>$46.08$</td><td>$0.851$</td><td>$78.72$</td></tr>
+        <tr><td>barrier, bilinear ($\Lambda$ trained)</td><td>$43.94$</td><td>$0.903$</td><td>$1.15$</td></tr>
+        <tr><td>barrier, linear ($\Lambda$ fixed)</td><td>$47.99$</td><td>$0.904$</td><td>$1.30$</td></tr>
+      </tbody>
+    </table>
+    <p>On MNIST ($14\times14$ inputs, hidden layers of $100$ and $30$ tanh neurons, $L\le20$) the bilinear barrier method reached $98.2\%$ with mean bound $16.7$ at $1.74$ times the nominal training time, where ADMM needed $104.4$ times (normalised to its own framework). The same machinery trains Wasserstein-GAN critics with a hard 1-Lipschitz constraint. There, weight clipping kept the bound far below $1$ (overly conservative), while with a gradient penalty the estimated bound was far above $1$, which suggests that the constraint was violated.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to Module 13</div>
+      <div>The barrier and the Cholesky test keep every accepted iterate strictly inside the certified set. That set is convex in the weights when $\Lambda$ is fixed (the linear variant) but not jointly convex in the weights and $\Lambda$ when $\Lambda$ is trained (the bilinear variant; CDC 2022, Remark 6). The loss is non-convex in either case, so the method returns a certified network with no guarantee of global optimality. It also pays for a factorisation and a feasibility check at every step. <a class="cite" href="https://arxiv.org/abs/2301.11526" target="_blank" rel="noopener">Wang &amp; Manchester (ICML 2023)</a> showed that the set of feedforward networks satisfying the LipSDP certificate is <em>exactly</em> the image of a smooth, unconstrained parameterisation (the Sandwich layer). Training then becomes plain SGD, and no certificate can be violated. That is the direct-parameterisation route of <a href="lipschitz-by-design.html#sll-sandwich">Module 13</a>, which Pauli followed with Cayley/Gramian layers for 1-D CNNs (<a class="cite" href="https://arxiv.org/abs/2303.11835" target="_blank" rel="noopener">Pauli, Wang, Manchester &amp; Allgöwer, CDC 2023</a>) and LipKernel for 2-D CNNs (<a class="cite" href="https://arxiv.org/abs/2410.22258" target="_blank" rel="noopener">Automatica 2026</a>).</div>
+    </div>
+
+    <!-- ===== SECTION 7: CNNS AS DYNAMICAL SYSTEMS ===== -->
+    <h2 class="section-heading" id="cnn-state-space">7. CNNs as Dynamical Systems: 1-D, Roesser and GLipSDP</h2>
+
+    <p>A convolutional layer acting on a signal of length $N$ can be unrolled into a Toeplitz matrix and handed to LipSDP; the CDC 2022 paper did exactly this for its WGAN critic. The unrolled matrix has $cN$ rows, most of its entries are zero, LipSDP needs one multiplier per channel <em>and</em> position, and the resulting bound is valid only for that one input size. Control theory offers a better description: a convolution is a shift-invariant linear system, so it has a state-space realisation whose size depends on the channels and the kernel, not on $N$. Lipschitz estimation then becomes a dissipativity problem with a storage function (<a href="toolkit-lmi.html#dissipativity">Module 2</a>; <a class="cite" href="https://doi.org/10.1007/BF00276493" target="_blank" rel="noopener">Willems 1972</a>).</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; A 1-D convolutional layer as an FIR system (Pauli, Gramlich &amp; Allgöwer, L4DC 2023)</div>
+      <div>
+        A layer with kernel $K_0,\dots,K_{\ell-1}\in\mathbb R^{c_{\rm out}\times c_{\rm in}}$ and zero padding maps $(u_k)_{k\ge0}$, $u_k\in\mathbb R^{c_{\rm in}}$, to
+        <div class="math-block">$$y_k=b+\sum_{j=0}^{\ell-1}K_j\,u_{k-j}\quad(u_{k-j}=0\text{ for }k-j\lt0),\qquad w_k=\phi(y_k).$$</div>
+        This is a causal finite-impulse-response filter; the usual centred convolution becomes causal after an index shift. Storing the last $\ell-1$ inputs in the state $x_k=(u_{k-1},\dots,u_{k-\ell+1})\in\mathbb R^{(\ell-1)c_{\rm in}}$ gives
+        <div class="math-block">$$x_{k+1}=Ax_k+Bu_k,\qquad y_k=Cx_k+Du_k+b,$$</div>
+        <div class="math-block">$$A=\begin{bmatrix}0 & & & \\ I & 0 & & \\ & \ddots & \ddots & \\ & & I & 0\end{bmatrix},\ \ B=\begin{bmatrix}I\\ 0\\ \vdots\\ 0\end{bmatrix},\ \ C=\begin{bmatrix}K_1 & \cdots & K_{\ell-1}\end{bmatrix},\ \ D=K_0 .$$</div>
+        $A$ shifts the stored inputs down by one slot and is nilpotent ($A^{\ell-1}=0$). The state dimension $n_x=(\ell-1)c_{\rm in}$ does not depend on the signal length. The paper stores the delayed inputs in the opposite order, which gives a similar realisation (a permutation of the state). A numerical check with random kernels confirms that this realisation reproduces the convolution exactly.
+      </div>
+    </div>
+
+    <p><strong>Layer-wise incremental dissipativity.</strong> Run the layer on two input signals and write $\Delta$ for the differences. Give the layer an input weight $X_{\rm in}\succeq0$, an output weight $X_{\rm out}\succeq0$, a storage matrix $P\succeq0$ and a diagonal $\Lambda\succeq0$ for the activation. The layer LMI of the 1-D CNN paper (Corollary 10 there, written with $X=-\tilde Q$ and slopes $[0,1]$) is</p>
+    <div class="math-block">$$\begin{bmatrix}P-A^{\top}PA & -A^{\top}PB & -C^{\top}\Lambda\\ -B^{\top}PA & X_{\rm in}-B^{\top}PB & -D^{\top}\Lambda\\ -\Lambda C & -\Lambda D & 2\Lambda-X_{\rm out}\end{bmatrix}\ \succeq\ 0 .$$</div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; why the layer LMI bounds the energy gain for every signal length</div>
+      <div class="collapsible-body">
+        <p><strong>Step 1.</strong> Multiply the LMI from both sides by $(\Delta x_k,\Delta u_k,\Delta w_k)$. With $V(\Delta x)=\Delta x^{\top}P\Delta x$, $\Delta x_{k+1}=A\Delta x_k+B\Delta u_k$ and $\Delta y_k=C\Delta x_k+D\Delta u_k$ (the bias cancels), the quadratic form is</p>
+        <div class="math-block">$$V(\Delta x_k)-V(\Delta x_{k+1})+\|\Delta u_k\|^2_{X_{\rm in}}-\|\Delta w_k\|^2_{X_{\rm out}}-\underbrace{\big(2\Delta w_k^{\top}\Lambda\Delta y_k-2\Delta w_k^{\top}\Lambda\Delta w_k\big)}_{\ge0\ \text{(slope QC of Section 3)}}\ \ge\ 0 .$$</div>
+        <p><strong>Step 2.</strong> Drop the nonnegative QC term to get the dissipation inequality $V(\Delta x_{k+1})-V(\Delta x_k)\le\|\Delta u_k\|^2_{X_{\rm in}}-\|\Delta w_k\|^2_{X_{\rm out}}$.</p>
+        <p><strong>Step 3.</strong> Sum over $k=0,\dots,N-1$. The left side telescopes to $V(\Delta x_N)-V(\Delta x_0)=V(\Delta x_N)\ge0$, because zero padding means $\Delta x_0=0$. Hence</p>
+        <div class="math-block">$$\sum_{k=0}^{N-1}\|\Delta w_k\|^2_{X_{\rm out}}\ \le\ \sum_{k=0}^{N-1}\|\Delta u_k\|^2_{X_{\rm in}}\qquad\text{for every }N .$$</div>
+        <p><strong>Step 4.</strong> Chain the layers. Setting $X_{\rm in}$ of the first layer to $\gamma^2I$, the $X_{\rm out}$ of each layer to the $X_{\rm in}$ of the next, and requiring $X\succeq W_l^{\top}W_l$ before the linear output layer, the sums telescope across layers exactly as in LipKernel's cascade theorem (Module 2): $\sum_k\|\Delta\,\text{output}_k\|^2\le\gamma^2\sum_k\|\Delta u_k\|^2$. A numerical check (random kernel, $c_{\rm in}=2$, $c_{\rm out}=3$, $\ell=4$, a feasible $(P,\Lambda,X_{\rm in},X_{\rm out})$, $200$ random signal pairs) found the ratio of the two sums always below $1$, as the derivation requires. $\blacksquare$</p>
+      </div>
+    </div>
+
+    <p>Fully connected layers use the same chain with $A=B=C=0$, $D=W$: $\begin{bmatrix}X_{k-1} & -W^{\top}\Lambda\\ -\Lambda W & 2\Lambda-X_k\end{bmatrix}\succeq0$. Pooling layers need their own incremental QCs. The paper takes the stride equal to the window length $\ell$, so the windows do not overlap. Averaging over one window is then $1/\sqrt\ell$-Lipschitz (Proposition 7), and so is the whole layer, which acts on disjoint windows. Being linear, average pooling admits full multiplier matrices; max pooling, $1$-Lipschitz under the same assumption, admits only diagonal ones, the same distinction as in Section 5. Overlapping windows need a bound on the whole pooling operator: averaging the adjacent pairs of $(u_1,u_2,u_3)$ is the matrix $\tfrac12\begin{bmatrix}1&1&0\\0&1&1\end{bmatrix}$, with norm $\sqrt3/2\gt1/\sqrt2$. For fully connected networks the layer-wise LMIs are equivalent to LipSDP (Remark 12, via chordal sparsity). For CNNs they are slightly more conservative than LipSDP on the unrolled network, but they hold for every input length and use multipliers of size $c$ instead of $cN$. In the experiments, LipSDP on the unrolled network was a little tighter for short signals, but its computation time grew quickly with the signal length, while the state-space SDP of a fully convolutional network does not grow at all. A fully connected head after flattening still sees all $c_pN_p$ features.</p>
+
+    <p><strong>Two-dimensional convolutions.</strong> Images are indexed by two coordinates, so the natural state space is two-dimensional. <a class="cite" href="https://arxiv.org/abs/2303.03042" target="_blank" rel="noopener">Gramlich, Pauli, Scherer &amp; Ebenbauer (Automatica 2026)</a> represent a 2-D convolutional layer as a Roesser model</p>
+    <div class="math-block">$$\begin{bmatrix}x_1(i_1{+}1,i_2)\\ x_2(i_1,i_2{+}1)\\ y(i_1,i_2)\end{bmatrix}=\begin{bmatrix}A_{11} & A_{12} & B_1\\ A_{21} & A_{22} & B_2\\ C_1 & C_2 & D\end{bmatrix}\begin{bmatrix}x_1(i_1,i_2)\\ x_2(i_1,i_2)\\ u(i_1,i_2)\end{bmatrix},$$</div>
+    <p>with a horizontal state $x_1$ and a vertical state $x_2$. A fully convolutional CNN is then a 2-D Lur'e system: a Roesser system in feedback with the activations. The dissipation inequality becomes $V_1(x_1(i_1{+}1,i_2))+V_2(x_2(i_1,i_2{+}1))\le V_1(x_1(i_1,i_2))+V_2(x_2(i_1,i_2))+s(u,y)$ with $V_j(x)=x^{\top}P_jx$. Summed over an image with zero initial states, the $V_1$ terms telescope along every row and the $V_2$ terms along every column; only nonnegative terms at the far edges remain, so the supply summed over the image is nonnegative. This yields an LMI in $(P_1,P_2)$ and a Lipschitz bound valid for images of <em>any</em> size. The arXiv version of the paper also lists Allgöwer as an author.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Roesser realisation of a 2-D convolution (Pauli, Gramlich &amp; Allgöwer, IFAC-PapersOnLine 2024, Theorems 1&ndash;2)</div>
+      <div>
+        <em>Setting.</em> $y[i_1,i_2]=b+\sum_{t_1=0}^{r_1}\sum_{t_2=0}^{r_2}K[t_1,t_2]\,u[i_1-t_1,i_2-t_2]$ with $K[t_1,t_2]\in\mathbb R^{c_{\rm out}\times c_{\rm in}}$ (a kernel of size $(r_1{+}1)\times(r_2{+}1)$) and zero padding.<br>
+        <em>Statement.</em> (Thm. 1) The layer has a Roesser realisation with $A_{21}=0$ and state dimensions $n_1=c_{\rm out}r_1$ and $n_2=c_{\rm in}r_2$; shift blocks $A_{11},A_{22}$ store delayed values and the kernel blocks fill $\begin{bmatrix}A_{12} & B_1\\ C_2 & D\end{bmatrix}$. (Thm. 2) If $c_{\rm in}=c_{\rm out}$ and $K[r_1,r_2]$ has full rank, then $n_1+n_2$ is the minimal state dimension among all realisations.<br>
+        <em>In words.</em> A $3\times3$ convolution with $64$ channels in and out needs $n_1=n_2=128$ states, whatever the image size. The paper also treats dilated, strided and N-D convolutions.<br>
+        <em>Why the assumptions matter.</em> Zero padding and the causal index convention are what make the realisation exact with zero initial states; a centred or circular convolution needs an index shift or a different boundary treatment. Equal channel numbers and a full-rank corner block $K[r_1,r_2]$ are what the minimality proof uses.<br>
+        <em>Caveat.</em> The abstract writes $c_{\rm in}r_1+c_{\rm out}r_2$ states, which equals the theorem's total $c_{\rm out}r_1+c_{\rm in}r_2$ only when $c_{\rm in}=c_{\rm out}$ or $r_1=r_2$; quote the theorem. For $c_{\rm in}\ne c_{\rm out}$ the paper notes that the realisation may not be minimal and leaves minimal realisations for general channel sizes to future work.
+      </div>
+    </div>
+
+    <p><strong>GLipSDP: one LMI per layer, any architecture.</strong> <a class="cite" href="https://arxiv.org/abs/2405.01125" target="_blank" rel="noopener">Pauli, Gramlich &amp; Allgöwer (arXiv 2405.01125, v2 2024; a preprint without a journal record so far)</a> read the network itself as a time-varying system whose "time" is the layer index, $u_{k+1}=y_k=\mathcal L_k(u_k)$. The exact Lipschitz constant then satisfies a dynamic-programming recursion on value functions:</p>
+    <div class="math-block">$$\begin{aligned}V_l(y^1,y^2)&=\|y^1-y^2\|^2,\qquad V_{k-1}(u^1,u^2)=V_k\big(\mathcal L_k(u^1),\mathcal L_k(u^2)\big),\\ L^{\star2}&=\min\big\{\gamma^2:\ V_0(u^1,u^2)\le\gamma^2\|u^1-u^2\|^2\ \ \forall u^1,u^2\big\}.\end{aligned}$$</div>
+    <p>Relaxing the equalities to inequalities $V_{k-1}\ge V_k\circ\mathcal L_k$ and the value functions to quadratics $V_k=\Delta^{\top}X_k\Delta$ turns the recursion into one LMI per layer, $G_k(X_k,X_{k-1},\nu_k)\succeq0$, and the SDP $\min\gamma^2$ s.t. $X_0=\gamma^2I$, $G_k\succeq0$, $X_l=I$. Lemmas supply $G_k$ for fully connected, 1-D/2-D/N-D convolutional (Roesser), state-space-model, residual, average and max pooling, slope-restricted and GroupSort layers. For GroupSort, $X_k$ is constrained to the group structure of Section 8 with $0\preceq X_k\preceq X_{k-1}$. Theorem 1 of the paper shows that for fully connected networks the layer-wise LMIs are equivalent to LipSDP, so the splitting adds no conservatism, and Remark 8 identifies them with LipSDP's chordal decomposition. The remaining sources of conservatism are the QCs themselves, structure restrictions on $X_k$, boundary effects of treating convolutions on infinite signals, and quadratic value functions. The authors report bounds tighter than LipLT and the weight-norm product on MNIST and CIFAR-10 CNNs and 18-layer ResNets, including networks for which LipSDP on the unrolled convolutions runs into memory issues.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; the layer-wise chain is LipSDP, and the product bound is one of its points</div>
+      <div class="collapsible-body">
+        <p>Fully connected network, slopes $[0,1]$, $T_k$ the multiplier of hidden layer $k$. The chain is</p>
+        <div class="math-block">$$X_0=\rho I,\qquad G_k=\begin{bmatrix}X_{k-1} & -W_{k-1}^{\top}T_k\\ -T_kW_{k-1} & 2T_k-X_k\end{bmatrix}\succeq0\ \ (k=1,\dots,l),\qquad X_l\succeq W_l^{\top}W_l .$$</div>
+        <p><strong>It certifies $L=\sqrt\rho$.</strong> Multiplying $G_k$ by $(\Delta z_{k-1},\Delta z_k)$ gives $\Delta z_{k-1}^{\top}X_{k-1}\Delta z_{k-1}-\Delta z_k^{\top}X_k\Delta z_k\ge2\Delta z_k^{\top}T_k\Delta v_k-2\Delta z_k^{\top}T_k\Delta z_k\ge0$, so the value $V_k=\Delta z_k^{\top}X_k\Delta z_k$ never increases through a layer. Then $\|\Delta f\|^2=\|W_l\Delta z_l\|^2\le V_l\le\dots\le V_0=\rho\|\Delta x\|^2$.</p>
+        <p><strong>It is LipSDP.</strong> Place each $G_k$ in block rows and columns $(k-1,k)$ of an $(n_0+n)$-square matrix, place $X_l-W_l^{\top}W_l$ in the last diagonal block, and add. Each $X_k$ appears once with a plus sign (in $G_{k+1}$) and once with a minus sign (in $G_k$), so it cancels, and what remains is $-M(\rho,T)$ from Section 4. A sum of PSD matrices is PSD, so the chain implies LipSDP. Conversely, if $-M(\rho,T)\succ0$, the block-tridiagonal Schur recursion $X_k=2T_k-T_kW_{k-1}X_{k-1}^{-1}W_{k-1}^{\top}T_k$ produces a feasible chain (GLipSDP Theorem 1; ECLipsE Theorem 3).</p>
+        <p><strong>The product bound is feasible.</strong> Take $T_k=t_kI$, $X_k=x_kI$ and $t_k=x_k=x_{k-1}/\|W_{k-1}\|^2$. By the Schur complement on the block $t_kI\succ0$, $G_k\succeq0\iff x_{k-1}I\succeq t_kW_{k-1}^{\top}W_{k-1}$, which holds with equality in the top eigen-direction. Hence $x_l=\rho/\prod_{k\lt l}\|W_k\|^2$, and the last condition $x_l\ge\|W_l\|^2$ reads $\rho\ge\prod_{k=0}^{l}\|W_k\|^2$. This completes the proof of the Proposition in Section 4. $\blacksquare$</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; is the symbol the bound or its square?</div>
+      <div>LipSDP, the ICLR 2024 GroupSort paper and the page you are reading use $\rho=L^2$; Pauli et al.'s training papers write $L^2$ explicitly. The 1-D CNN paper and GLipSDP call the bound itself $\gamma$ (and GLipSDP's SDP (16) writes $\rho^2$ with $\rho=L$); LipKernel writes $\rho$ for $L$. ECLipsE uses $F$ with $L^2=1/F$, and the eigenvalue form of EP-LipSDP (Section 9) optimises a quantity whose optimum is $2L$. Before comparing numbers across papers, check which one you are looking at.</div>
+    </div>
+
+    <!-- ===== SECTION 8: BEYOND SLOPE RESTRICTION ===== -->
+    <h2 class="section-heading" id="beyond-slope-restricted">8. Beyond Slope Restriction: GroupSort, MaxMin, Householder</h2>
+
+    <p>Many Lipschitz-by-design networks avoid elementwise activations. <a class="cite" href="https://arxiv.org/abs/1811.05381" target="_blank" rel="noopener">Anil, Lucas &amp; Grosse (ICML 2019)</a> showed that 2-norm-constrained networks with ReLU, tanh or sigmoid activations cannot even represent the absolute value function, because these activations cannot preserve the gradient norm. They proposed <strong>GroupSort</strong>: split the $n$ pre-activations into $N=n/n_g$ groups of size $n_g$ and sort each group. <strong>MaxMin</strong> is the case $n_g=2$, $(x_1,x_2)\mapsto(\max,\min)$. GroupSort is 1-Lipschitz, its Jacobian is a permutation matrix almost everywhere ("gradient norm preserving"), and with $\infty$-norm-constrained weights it gives universal approximators of Lipschitz functions; whether 2-norm-constrained GroupSort networks are universal was left open by Anil et al. (<a href="lipschitz-by-design.html#orthogonal-layers">Module 13</a>). The <strong>Householder</strong> activation applies, per group, $x\mapsto x$ if $v^{\top}x\gt0$ and $x\mapsto(I-2vv^{\top})x$ otherwise, with $\|v\|=1$ learnable; $v=(1,-1)/\sqrt2$ recovers MaxMin. None of these is elementwise, so assumption (A1) of LipSDP fails.</p>
+
+    <p><strong>Why the obvious workaround fails.</strong> MaxMin is a residual ReLU network,</p>
+    <div class="math-block">$$\mathrm{MaxMin}(x)=\begin{bmatrix}x_2+\mathrm{ReLU}(x_1-x_2)\\ x_2-\mathrm{ReLU}(x_2-x_1)\end{bmatrix}=Hx+G\,\mathrm{ReLU}(Wx),$$</div>
+    <div class="math-block">$$H=\begin{bmatrix}0 & 1\\ 0 & 1\end{bmatrix},\qquad G=\begin{bmatrix}1 & 0\\ 0 & -1\end{bmatrix},\qquad W=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix},$$</div>
+    <p>so LipSDP applies to it. <a class="cite" href="https://arxiv.org/abs/2401.14033" target="_blank" rel="noopener">Pauli, Havens, Araujo, Garg, Khorrami, Allgöwer &amp; Hu (ICLR 2024)</a> show that the resulting SDP returns $\rho=2$: it certifies $\sqrt2$ for a map that is exactly 1-Lipschitz. The reason is the impossible-pattern cost from Section 2 in its purest form. The two ReLUs receive $u$ and $-u$ and can never be active together, but the slope QC allows $D=I$, for which the Jacobian is $H+GW=\begin{bmatrix}1 & 0\\ 1 & 0\end{bmatrix}$ with norm $\sqrt2$. What is needed is a constraint that describes the group as a whole.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Lemma &mdash; A quadratic constraint for GroupSort (Pauli et al., ICLR 2024, Lemma 1)</div>
+      <div>
+        Let $\phi:\mathbb R^n\to\mathbb R^n$ be GroupSort with group size $n_g$ and $N=n/n_g$ groups. For all $\lambda\in\mathbb R^N_{+}$ and all $\gamma,\nu,\tau\in\mathbb R^N$ (no sign constraint), and all $x,y\in\mathbb R^n$,
+        <div class="math-block">$$\begin{bmatrix}x-y\\ \phi(x)-\phi(y)\end{bmatrix}^{\top}\begin{bmatrix}T-2S & P+S\\ P+S & -T-2P\end{bmatrix}\begin{bmatrix}x-y\\ \phi(x)-\phi(y)\end{bmatrix}\ \ge\ 0,$$</div>
+        <div class="math-block">$$\begin{aligned}T&=\mathrm{diag}(\lambda)\otimes I_{n_g}+\mathrm{diag}(\gamma)\otimes\mathbf 1\mathbf 1^{\top},\\ P&=\mathrm{diag}(\nu)\otimes\mathbf 1\mathbf 1^{\top},\qquad S=\mathrm{diag}(\tau)\otimes\mathbf 1\mathbf 1^{\top}.\end{aligned}$$</div>
+        Lemma 2 of the paper is the Householder analogue, with $\mathbf 1\mathbf 1^{\top}$ replaced by $I_{n_g}-vv^{\top}$. (Symbols as in the paper: this $T$ is block diagonal rather than diagonal, and $\gamma,\nu,\tau$ are multipliers, unrelated to GLipSDP's bound $\gamma$.)<br>
+        <em>In words.</em> Each group contributes two facts. It is 1-Lipschitz (multiplier $\lambda_i\ge0$), and it preserves the sum of its entries (multipliers $\gamma_i,\nu_i,\tau_i$ of either sign, because an equality can be added with any sign).<br>
+        <em>Why the assumptions matter.</em> $\lambda_i\ge0$ is needed because the norm fact is an inequality; a negative weight would flip it. The Kronecker structure must match the groups actually sorted: each group's sum is preserved, but a sum over entries that straddle a group boundary is not, and the norm fact holds group by group. The displayed block-diagonal family is sufficient, not the only valid choice. Because every group sum is preserved, $\Delta x^{\top}(\Gamma\otimes\mathbf 1\mathbf 1^{\top})\Delta x=\Delta\phi^{\top}(\Gamma\otimes\mathbf 1\mathbf 1^{\top})\Delta\phi$ for every symmetric $\Gamma\in\mathbb S^N$, so extra equality terms may couple the group <em>sums</em>. Arbitrary couplings of individual neurons in different groups are not justified by these two facts.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof sketch &mdash; sum preservation kills three of the four multipliers</div>
+      <div class="collapsible-body">
+        <p>Write $\Delta x=x-y$, $\Delta\phi=\phi(x)-\phi(y)$, $\Delta x_{(i)}$ for the entries of group $i$, and $E_i=(e_ie_i^{\top})\otimes\mathbf 1\mathbf 1^{\top}$, so $\xi^{\top}E_i\eta=(\mathbf 1^{\top}\xi_{(i)})(\mathbf 1^{\top}\eta_{(i)})$.</p>
+        <p><strong>Step 1 (sum preservation).</strong> Sorting permutes the entries of a group, so $\mathbf 1^{\top}\phi(x)_{(i)}=\mathbf 1^{\top}x_{(i)}$ and hence $\mathbf 1^{\top}\Delta\phi_{(i)}=\mathbf 1^{\top}\Delta x_{(i)}=:\sigma_i$. Therefore</p>
+        <div class="math-block">$$\Delta x^{\top}E_i\Delta x=\Delta\phi^{\top}E_i\Delta\phi=\Delta x^{\top}E_i\Delta\phi=\sigma_i^2 .$$</div>
+        <p><strong>Step 2 (expand the form).</strong> The form equals $\Delta x^{\top}(T-2S)\Delta x+2\Delta x^{\top}(P+S)\Delta\phi-\Delta\phi^{\top}(T+2P)\Delta\phi$. Collect terms per multiplier and use Step 1:</p>
+        <div class="math-block">$$\begin{aligned}
+        \gamma_i:&\quad \sigma_i^2-\sigma_i^2=0, &\qquad \nu_i:&\quad 2\sigma_i^2-2\sigma_i^2=0,\\
+        \tau_i:&\quad -2\sigma_i^2+2\sigma_i^2=0, &\qquad \lambda_i:&\quad \|\Delta x_{(i)}\|^2-\|\Delta\phi_{(i)}\|^2 .
+        \end{aligned}$$</div>
+        <p><strong>Step 3 (1-Lipschitz groups).</strong> The form reduces to $\sum_i\lambda_i\big(\|\Delta x_{(i)}\|^2-\|\Delta\phi_{(i)}\|^2\big)$, which is $\ge0$ because sorting is 1-Lipschitz. For $n_g=2$ this is a two-line check. If $a$ and $b$ are in the same order, sorting applies the same permutation to both and the distance is unchanged. If $a_1\ge a_2$ but $b_1\le b_2$, then $\|a-b\|^2-\|\phi(a)-\phi(b)\|^2=(a_1-b_1)^2+(a_2-b_2)^2-(a_1-b_2)^2-(a_2-b_1)^2=2(a_1-a_2)(b_2-b_1)\ge0$. $\blacksquare$</p>
+        <p>A numerical test with $n_g\in\{2,3,4\}$, $3000$ random pairs and random multipliers ($\gamma,\nu,\tau$ of both signs) gave a minimum value of $-3\cdot10^{-13}$, i.e. zero up to rounding.</p>
+      </div>
+    </div>
+
+    <p><strong>LipSDP-NSR.</strong> Replacing the slope multiplier $\begin{bmatrix}0 & T\\ T & -2T\end{bmatrix}$ by $\begin{bmatrix}T-2S & P+S\\ P+S & -T-2P\end{bmatrix}$ in the LipSDP matrix of Section 4 gives the paper's Theorem 1: if $M(\rho,P,S,T)\preceq0$, the GroupSort (or Householder) network is $\sqrt\rho$-Lipschitz. In practice the authors set $S=P=0$, which in their tests gave the same bounds. For one hidden layer, $f(x)=W_1\phi(W_0x+b_0)+b_1$, the matrix then becomes block diagonal,</p>
+    <div class="math-block">$$\begin{aligned}&\begin{bmatrix}W_0^{\top}TW_0-\rho I & 0\\ 0 & -T+W_1^{\top}W_1\end{bmatrix}\preceq0\\ \iff\ &W_1^{\top}W_1\preceq T\quad\text{and}\quad \rho\ge\lambda_{\max}\big(W_0^{\top}TW_0\big).\end{aligned}$$</div>
+    <p>This is a <em>weighted</em> product bound: $T=\|W_1\|^2I$ recovers $\|W_0\|^2\|W_1\|^2$, and a better $T$ within the group structure gives less. For MaxMin alone ($W_0=W_1=I$), $T=I$ gives $\rho=1$, the correct constant that the residual-ReLU route missed. The multipliers $\gamma_i$ are a free adjustment along $\mathbf 1$ inside each group: sum preservation makes input and output agree in that direction, so weight placed there costs nothing.</p>
+
+    <table>
+      <thead><tr><th>MaxMin MLP on MNIST (ICLR 2024, Table 1)</th><th>sampled (lower)</th><th>all permutations (FGL)</th><th>LipSDP-NSR</th><th>LipSDP on residual ReLU</th><th>weight product</th></tr></thead>
+      <tbody>
+        <tr><td>2 layers, 16 units</td><td>$20.98$</td><td>$22.02$</td><td>$22.59$</td><td>$23.92$</td><td>$23.46$</td></tr>
+        <tr><td>5 layers, 32 units</td><td>$106.35$</td><td>&mdash;</td><td>$224.53$</td><td>$388.0$</td><td>$298.41$</td></tr>
+        <tr><td>8 layers, 32 units</td><td>$113.34$</td><td>&mdash;</td><td>$401.03$</td><td>$1078.5$</td><td>$780$</td></tr>
+        <tr><td>18 layers, 32 units</td><td>$267.32$</td><td>&mdash;</td><td>$17432$</td><td>&mdash;</td><td>$73405$</td></tr>
+      </tbody>
+    </table>
+    <p>These networks were trained with $\ell_2$ adversarial training and reach more than $96\%$ accuracy. Three observations. The residual-ReLU route can be <em>worse</em> than the naive product: the both-active pattern it cannot exclude costs up to a factor $\sqrt2$ at each MaxMin. The group-level constraint beats the product at every depth. And the gap between certified upper bounds and the sampled lower bound grows with depth, to a factor of about $65$ at 18 layers; Section 9 explains why no polynomial-time method can be expected to close it in general. The paper also extends the constraint to residual networks (generalising the residual LipSDP condition behind SLL layers; <a class="cite" href="https://arxiv.org/abs/2303.03169" target="_blank" rel="noopener">Araujo et al., ICLR 2023</a>), to implicit models, to $\ell_\infty\to\ell_1$ bounds and, via the state-space view, to CNNs. GLipSDP uses the same structure: for a GroupSort layer it restricts $X_k$ to the group form and requires $0\preceq X_k\preceq X_{k-1}$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters</div>
+      <div>If the weights of a GroupSort network are orthogonal, the network is exactly 1-Lipschitz and there is nothing to estimate. Estimation matters for the many MaxMin networks trained <em>without</em> weight constraints, and for mixed architectures. The general lesson carries over to any structured activation: write down every input&ndash;output fact it satisfies (norm bounds as inequalities, conservation laws as equalities with free-sign multipliers) and let the SDP combine them.</div>
+    </div>
+
+    <!-- ===== SECTION 9: SCALABILITY AND HARDNESS ===== -->
+    <h2 class="section-heading" id="scalability">9. Scalable Variants and Hardness Results</h2>
+
+    <p>A generic SDP solver treats $M(\rho,T)$ as a dense matrix. That is what limits the plain method to a few thousand neurons (Section 4). Every scalable variant exploits the block-tridiagonal structure, and each one is exact in a precise sense or loses something identifiable.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Going deeper &mdash; what an SDP costs, and why LipSDP is well posed</div>
+      <div class="collapsible-body">
+        <p>A semidefinite program in LMI form, $\min_y c^{\top}y$ s.t. $F_0+\sum_{i=1}^my_iF_i\preceq0$ with $N\times N$ matrices, has the conic dual $\max_{Z\succeq0}\ \langle F_0,Z\rangle$ s.t. $\langle F_i,Z\rangle=-c_i$. Weak duality always holds. Strong duality holds, with the dual optimum attained, under Slater's condition, i.e. a strictly feasible point (<a href="toolkit-lmi.html#lmis-sdp">Module 2</a>). LipSDP has one: the product-bound construction of Section 7 with every $t_k$ shrunk by a factor $1/c$, $c\gt1$, satisfies each layer LMI strictly, and then $M(\rho,T)\prec0$ for every $\rho\gt c^{\,l}\prod_k\|W_k\|^2$. So solvers return a primal certificate $(\rho,T)$ together with a dual matrix $Z$, the Shor lifting of Section 4. By the self-concordance theory of Nesterov and Nemirovskii, interior-point methods need a number of Newton iterations that grows at most like $\sqrt N\log(1/\varepsilon)$, and in practice a few tens (surveyed, together with how solvers exploit problem structure, in <a class="cite" href="https://web.stanford.edu/~boyd/lmibook/" target="_blank" rel="noopener">Boyd, El Ghaoui, Feron &amp; Balakrishnan 1994</a>, Ch. 2). Each iteration, however, forms and factors an $m\times m$ Newton system; the standard dense count is about $O(mN^3+m^2N^2+m^3)$ operations and $O(m^2+N^2)$ memory. For LipSDP-Neuron $N=n_0+n$ and $m=n+1$, so a dense Newton step grows like the fourth power of the number of neurons. The measured times grow more slowly but still steeply: from $5.2$ s at $500$ neurons to $735$ s at $3000$, a factor of about $140$ for six times the width (a dense fourth-power law would predict about $1300$; presumably the solver exploits the sparse constraint data when it forms the Newton system, even though its matrix variables stay dense).</p>
+      </div>
+    </div>
+
+    <p><strong>Chordal decomposition.</strong> <a class="cite" href="https://arxiv.org/abs/2204.00846" target="_blank" rel="noopener">Xue, Lindemann, Robey, Hassani, Pappas &amp; Alur (CDC 2022)</a> observe that the sparsity graph of $M(\rho,T)$ is chordal, with maximal cliques given by pairs of consecutive layers. For a chordal pattern, $M\preceq0$ holds if and only if $M=\sum_kE_{\mathcal C_k}^{\top}Z_kE_{\mathcal C_k}$ with small blocks $Z_k\preceq0$, one per clique. Chordal-LipSDP replaces one large LMI by several small ones and is equivalent to LipSDP; on deep networks it is much faster. Its tunable sparsity parameter $\tau\gt0$ adds neuron couplings and is invalid after Section 5; only $\tau=0$ certifies. The layer-wise chain of Section 7 (1-D CNN paper, Remark 12; GLipSDP, Remark 8) is exactly this decomposition, with the clique blocks written as value functions $X_k$.</p>
+
+    <p><strong>ECLipsE: eliminate the value functions in closed form.</strong> In the chain of Section 7, the largest admissible $X_k$ for given multipliers is the Schur complement $X_k=2T_k-T_kW_{k-1}X_{k-1}^{-1}W_{k-1}^{\top}T_k$, and a larger $X_k$ only makes the next layer's LMI easier. <a class="cite" href="https://arxiv.org/abs/2404.04375" target="_blank" rel="noopener">Xu &amp; Sivaranjani (NeurIPS 2024)</a> run this recursion forward. Normalising $X_k=\rho M_k$ and $T_k=\rho\Lambda_k/2$ turns it into their recursion, in our indexing</p>
+    <div class="math-block">$$\begin{aligned}M_0&=I,\qquad M_k=\Lambda_k-\tfrac14\Lambda_kW_{k-1}M_{k-1}^{-1}W_{k-1}^{\top}\Lambda_k\ \ (k=1,\dots,l),\\ L^2&=\frac1F=\lambda_{\max}\big(W_l^{\top}W_lM_l^{-1}\big).\end{aligned}$$</div>
+    <p>Their Theorem 3 states that, for slopes in $[0,1]$ and given diagonal $\Lambda_k$, the strict LipSDP certificate holds if and only if every $M_k\succ0$ and $M_l-FW_l^{\top}W_l\succ0$. So the decomposition itself is exact, and the only approximation is how the $\Lambda_k$ are chosen: one layer at a time instead of jointly. ECLipsE picks $\Lambda_k$ by a small SDP of layer size that looks one layer ahead. ECLipsE-Fast uses $\Lambda_k=\lambda_kI$ with the closed form $\lambda_k=2/\lambda_{\max}\big(W_{k-1}M_{k-1}^{-1}W_{k-1}^{\top}\big)$ and needs no SDP at all. The authors report speed-ups of up to several thousand times on deep networks with estimates comparable to LipSDP; ECLipsE-Fast is a feasible point of LipSDP-Layer, hence never below it. On the walkthrough network, ECLipsE-Fast gives $\lambda_1=1/4$ and $L\approx3.02$, between LipSDP ($2.31$) and the product ($4$). The same Schur recursion is the block Cholesky factorisation of Pauli et al.'s barrier method (Section 6).</p>
+
+    <p><strong>EP-LipSDP: an eigenvalue problem for first-order methods.</strong> <a class="cite" href="https://openreview.net/forum?id=dwzLn78jq7" target="_blank" rel="noopener">Wang, Hu, Havens, Araujo, Zheng, Chen &amp; Jha (ICLR 2024)</a> move the LMI into the objective. The naive penalty $\zeta+c\,\lambda_{\max}^+(\cdot)$ is exact only if $c$ is large enough, and for LipSDP it was not known how large. Their trick is a redundant constraint. Slope restriction and $\|\Delta x\|\le1$ imply $\Delta z_i^2\le\|w_i\|^2=:a_i$ ($w_i^{\top}$ the $i$-th row of $W_0$), which gives the Shor relaxation an explicit trace bound $1+\|\Delta x\|^2+\|\Delta z\|^2\le2+\sum_ja_j$. With a trace bound, the penalty weight equal to that bound is exact. For a scalar-output one-hidden-layer network $f(x)=v^{\top}\phi(W_0x+b_0)+b_1$ with slopes in $[0,1]$:</p>
+    <div class="math-block">$$C(\zeta,\lambda,\tau,\gamma)=\begin{bmatrix}\sum_ja_j\lambda_j+\gamma-\zeta & 0 & v^{\top}\\ 0 & -\gamma I & W_0^{\top}\mathrm{diag}(\tau)\\ v & \mathrm{diag}(\tau)W_0 & -2\,\mathrm{diag}(\tau)-\mathrm{diag}(\lambda)\end{bmatrix},$$</div>
+    <div class="math-block">$$\min_{\zeta,\lambda,\tau,\gamma\ge0}\ \zeta+\Big(2+\sum_{j=1}^na_j\Big)\,\lambda^+_{\max}\big(C(\zeta,\lambda,\tau,\gamma)\big),\qquad\lambda^+_{\max}=\max(0,\lambda_{\max}).$$</div>
+    <p>The letters are the paper's: $\mathrm{diag}(\tau)$ is the slope multiplier ($T$ of Section 4), $\lambda$ multiplies the redundant constraints $\Delta z_i^2\le a_i$ and $\gamma$ the constraint $\|\Delta x\|^2\le1$; neither is the $\lambda_i$ of $T$ or GLipSDP's bound $\gamma$. Their Theorem 1: the optimal value equals that of the SDP with the redundant constraints and equals $2\sqrt{\rho^\star}$, twice the LipSDP bound. The problem has only sign constraints, so subgradient or bundle methods with autodiff and a Lanczos routine for $\lambda_{\max}$ apply. The implementation, LipDiff, scaled SDP-based Lipschitz estimation to networks on ImageNet, far beyond the memory limits of interior-point solvers. Theorem 2 of the paper covers multi-layer networks.</p>
+
+    <p><strong>Cheaper ingredients.</strong> The product bound itself can be improved per layer: for convolutions, Gram iteration gives fast, differentiable and certified upper bounds on the spectral norm (<a class="cite" href="https://proceedings.mlr.press/v202/delattre23a.html" target="_blank" rel="noopener">Delattre, Barthélemy, Araujo &amp; Allauzen, ICML 2023</a>). For <em>local</em> certificates around one input, SDP-CROWN imports SDP-style coupling between neurons into bound propagation (<a class="cite" href="https://arxiv.org/abs/2506.06665" target="_blank" rel="noopener">Chiu, Chen, Zhang &amp; Zhang, ICML 2025</a>; <a href="verification.html#sdp-relaxation">Module 15</a>).</p>
+
+    <table>
+      <thead><tr><th>Method</th><th>What is solved</th><th>Relation to LipSDP-Neuron</th><th>Reach</th></tr></thead>
+      <tbody>
+        <tr><td>Product $\prod_k\|W_k\|$</td><td>exact spectral norms, or certified upper bounds on them (e.g. Gram iteration); a finite power iteration only underestimates each norm</td><td>upper bound, never tighter</td><td>any size</td></tr>
+        <tr><td>SeqLip</td><td>SVD blocks, pattern enumeration</td><td>exact version $\ge$ all-patterns value (equal for one hidden layer, then never looser than LipSDP, at exponential cost); greedy version not certified</td><td>small layers</td></tr>
+        <tr><td>LipSDP-Neuron / -Layer</td><td>dense SDP</td><td>reference / looser</td><td>thousands of neurons</td></tr>
+        <tr><td>Chordal-LipSDP ($\tau=0$)</td><td>clique LMIs</td><td>equivalent</td><td>deep networks</td></tr>
+        <tr><td>1-D CNN SDP, GLipSDP</td><td>layer-wise value functions</td><td>equivalent for fully connected; conv via state space</td><td>CNNs, ResNets, any input size</td></tr>
+        <tr><td>ECLipsE / ECLipsE-Fast</td><td>Schur recursion; layer SDPs / closed form</td><td>exact for given $\Lambda$; greedy $\Lambda$ (Fast: $\ge$ Layer)</td><td>very deep</td></tr>
+        <tr><td>EP-LipSDP (LipDiff)</td><td>exact-penalty eigenvalue problem</td><td>same optimum, first-order solver</td><td>ImageNet-scale</td></tr>
+        <tr><td>LipSDP-NSR</td><td>GroupSort / Householder QCs</td><td>replaces the slope QC</td><td>as LipSDP</td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>What no polynomial-time method can do.</strong> Exact computation of $L^\star$ is NP-hard already for one hidden layer (Section 2). <a class="cite" href="https://arxiv.org/abs/2603.28113" target="_blank" rel="noopener">Kuang, Xu, Sivaranjani &amp; Lin (arXiv 2603.28113, v2 May 2026)</a> locate the difficulty. Estimating a network's Lipschitz constant requires knowing which hidden states are <em>reachable</em>, and reachability is NP-hard. Through explicit constructions they show that this blindness can force SDP-based bounds to inherit the qualitative failures of the product bound, including polynomial conservatism per layer. They argue that the difficulty afflicts every instance of the verification problem, not only worst-case reductions, so SDP is not sufficient. They also argue it is not necessary: several failures of the product bound come from removable parameterisation pathologies, which optimising or regularising the product bound itself can mitigate. Combined with bias-free trigonometric layers, they make the trivial bound provably tight. This page has shown the mechanism several times: the slope QC forgets which patterns occur together (Section 3); the certificate ignores the biases that decide reachability (Section 4); MaxMin's $u$ and $-u$ pair (Section 8); and the growing gap in the 18-layer table.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; reading the hardness results correctly</div>
+      <div>NP-hardness is a worst-case statement about exact computation, or about reachability, under P $\ne$ NP. It does not say that LipSDP is loose on the networks you train: on small networks it is often within a few percent of the exact value (the walkthrough network: $3\%$), and in Table 1 of the ICLR paper LipSDP-NSR is only $2$&ndash;$3\%$ above FGL for the two 2-layer networks (16 and 32 units) where FGL was computed. FGL enumerates all permutation patterns, infeasible ones included, so it is itself an upper bound; the exact constant lies between the sampled value and FGL. What hardness does say is that no polynomial-time relaxation can be tight on all networks. It does not say where a particular gap comes from, and LipSDP loses tightness in two identifiable ways. It discards reachability information (the biases, and which patterns can occur together), and its S-procedure step, the Shor relaxation of Section 4, can be loose even when every pattern is reachable. The walkthrough network shows the second: all four patterns occur, yet LipSDP gives $4/\sqrt3\approx2.309$ against $L^\star=\sqrt5\approx2.236$. Kuang et al. is a preprint whose v2 changed scope ("reduced scope, new theorems on NP-hardness"); check the version before quoting a specific theorem. Finally, a sampled gradient norm is only a lower bound. The explorer below shows how sampling can miss a thin region where the network is steepest.</div>
+    </div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <h2 class="section-heading" id="lipsdp-walkthrough">Walkthrough: LipSDP for One Hidden Layer</h2>
+
+    <p>The derivation of Section 4, carried out by hand for the network $f(x)=W_1\mathrm{ReLU}(W_0x+b_0)+b_1$ with $W_0=\begin{bmatrix}1 & 2\\ 1 & -2\end{bmatrix}$ and $W_1=\begin{bmatrix}1 & 1\end{bmatrix}$ (any biases), from the neuron constraints to the optimal multiplier and a comparison with the product bound and the true constant.</p>
+
+    <div class="interactive-container" id="lp-walkthrough" data-title="Derivation: LipSDP for a 2-2-1 ReLU network"></div>
+
+    <!-- ===== EXPLORER ===== -->
+    <h2 class="section-heading" id="lipsdp-explorer">Interactive: Naive vs LipSDP vs Empirical</h2>
+
+    <p>A 2-3-1 ReLU network with Gaussian weights and biases from a seeded generator. For the same network the explorer computes six numbers. The <strong>product bound</strong> uses spectral norms from a Jacobi eigen-solver. <strong>LipSDP-Layer</strong> and <strong>LipSDP-Neuron</strong> are solved exactly on the $5\times5$ LMI by an interior-point method: the log-det barrier of Section 6, minimised by Newton steps while $\mu\to0$ (Section 6 uses gradient steps because it trains the weights). The certified value is a point where $-M(\rho,T)\succ0$ passes a Cholesky test. The <strong>all-patterns bound</strong> is the largest $\|W_1DW_0\|$ over all eight $0/1$ patterns. The <strong>exact constant</strong> $L^\star$ is the largest gradient over the patterns that some input realises, found by solving one small linear program per pattern. The <strong>sampled</strong> lower bound is the largest gradient norm at $4000$ random inputs in the square $[-3,3]^2$. The slider $\kappa$ blends neuron 3 into the negative of neuron 1 (weights, bias and output weight); at $\kappa=1$ the pair computes a linear function, like $\mathrm{ReLU}(u)-\mathrm{ReLU}(-u)$ in Section 2.</p>
+
+    <div class="interactive-container">
+      <div class="interactive-label">Naive vs LipSDP vs Empirical</div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Weight scale s (both layers) <span id="lp-s-val">1.00</span></label><input type="range" id="lp-s" min="0.25" max="3" step="0.05" value="1"></div>
+        <div class="slider-control"><label>Cancelling pair κ <span id="lp-k-val">0.00</span></label><input type="range" id="lp-k" min="0" max="1" step="0.01" value="0"></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
+        <button id="lp-rand" style="padding:5px 12px;font-size:13px;border:1px solid #1565c0;color:#fff;background:#1565c0;border-radius:4px;cursor:pointer;">Randomise weights</button>
+        <button id="lp-walk" style="padding:5px 12px;font-size:13px;border:1px solid #1565c0;color:#1565c0;background:#fff;border-radius:4px;cursor:pointer;">Walkthrough network</button>
+        <span id="lp-seed" style="font-size:12px;color:#666;"></span>
+      </div>
+      <div id="lp-info" style="background:#f0f4ff;border:1px solid #c5d0e6;border-radius:6px;padding:10px 14px;font-size:13px;margin-bottom:12px;line-height:1.6;"></div>
+      <svg id="lp-svg" viewBox="0 0 720 390" style="display:block;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fff;"></svg>
+      <p style="font-size:12px;color:#666;margin-top:8px;">Left: $\|\nabla f(x)\|$ on $[-3,3]^2$. Each region between the neuron boundaries $w_i^{\top}x+b_i=0$ (coloured lines) has one activation pattern and one constant gradient, printed in the region; darker is steeper. Right: the six numbers. Certified upper bounds are drawn solid, the exact value green, the sampled lower bound orange.</p>
+    </div>
+
+    <p><strong>What to look for.</strong> (1) With $\kappa=0$ LipSDP-Neuron equals the all-patterns bound for $280$ of the first $300$ seeds, and the largest relaxation gap among the rest is $3.4\%$. The product bound is typically $24$&ndash;$86\%$ above $L^\star$ (quartiles over the same seeds; median $45\%$): LipSDP removes the alignment cost. (2) "Walkthrough network" loads the example above: product $4$, LipSDP $2.309$, $L^\star=\sqrt5\approx2.236$. The small gap between LipSDP and the all-patterns bound is the relaxation gap of the S-procedure step, and LipSDP-Layer equals LipSDP-Neuron by the symmetry argument of Step 6, to the digits shown. The explorer pads the network with a third neuron that has output weight $0$ and input row $(0.01,0)$. LipSDP-Neuron gives it multiplier $0$, but the shared Layer multiplier cannot, which raises LipSDP-Layer by about $5\cdot10^{-6}$. (3) Move $\kappa$ to $1$. At exactly $\kappa=1$ neurons 1 and 3 can no longer be active together; for $80\%$ of the seeds $L^\star$ drops by more than $10\%$ between $\kappa=0.99$ and $\kappa=1$ (median drop $34\%$), while the all-patterns bound and both LipSDP bounds, which depend continuously on the weights, change much less: the median change is below $0.7\%$, all three stay within $1\%$ for $191$ of the $300$ seeds, and the largest change is $6.5\%$. This is the impossible-pattern cost that no bias-independent certificate can avoid (Section 4). For $\kappa$ slightly below $1$ the both-active region still exists as a thin wedge. The exact value counts it, and sampling often misses it: at $\kappa=0.99$ the sampled value reaches $L^\star$ for only $64\%$ of the seeds. (4) Lower the scale $s$. The product, both LipSDP bounds, the all-patterns bound and $L^\star$ scale like $s^2$, so their ratios do not change: the biases are not scaled, so $f_s(x)=s\,f_1(sx)$ and $\nabla f_s(x)=s^2\nabla f_1(sx)$. The sampled value does not scale like $s^2$, because the square stays fixed while the boundaries move away from the origin relative to it, so sampling sees fewer regions: at $s=0.4$ it reaches $L^\star$ for $68\%$ of the seeds, against $85\%$ at $s=1$.</p>
+
+    <!-- ===== EXERCISES ===== -->
+    <h2 class="section-heading" id="exercises">Exercises</h2>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 12.1 &mdash; The product bound, and why LipSDP never does worse
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $f(x)=W_1\phi(W_0x+b_0)+b_1$ with $\varphi$ slope-restricted on $[0,1]$. (a) Prove $\|f(x)-f(y)\|\le\|W_1\|\,\|W_0\|\,\|x-y\|$. (b) Show that $T=tI$ with $t=\|W_1\|^2$ makes $\rho=\|W_0\|^2\|W_1\|^2$ feasible for LipSDP. (c) Conclude $L_{\rm Layer}\le\|W_0\|\,\|W_1\|$ and evaluate the feasible point of (b) for the walkthrough network.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) Each neuron is a chord of slope in $[0,1]$: $|\Delta z_i|\le|\Delta v_i|$. Squaring and summing gives $\|\Delta z\|\le\|\Delta v\|=\|W_0\Delta x\|\le\|W_0\|\,\|\Delta x\|$, and $\|\Delta f\|=\|W_1\Delta z\|\le\|W_1\|\,\|\Delta z\|$.</p>
+            <p>(b) With $\alpha=0,\beta=1$, $M(\rho,tI)=\begin{bmatrix}-\rho I & tW_0^{\top}\\ tW_0 & -C\end{bmatrix}$ with $C=2tI-W_1^{\top}W_1$. Since $W_1^{\top}W_1\preceq\|W_1\|^2I=tI$, we get $C\succeq tI\succ0$ and $C^{-1}\preceq\tfrac1tI$. By the Schur complement, $M\preceq0\iff\rho I\succeq t^2W_0^{\top}C^{-1}W_0$, and $t^2W_0^{\top}C^{-1}W_0\preceq t\,W_0^{\top}W_0\preceq t\|W_0\|^2I=\|W_1\|^2\|W_0\|^2I$. So $\rho=\|W_0\|^2\|W_1\|^2$ is feasible.</p>
+            <p>(c) LipSDP minimises over a set containing this point, so $L_{\rm Layer}=\sqrt{\rho^\star}\le\|W_0\|\,\|W_1\|$. For the walkthrough network $t=\|W_1\|^2=2$ and Step 5 gives $\rho(2I)=\max\{t^2/(t-1),4t\}=\max\{4,8\}=8$, so this point already certifies $2\sqrt2\approx2.83\lt4$. Optimising $t$ gives $2.31$.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 12.2 &mdash; Derive the incremental QC for leaky ReLU
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $\varphi_a(u)=\max(u,au)$ with $0\lt a\lt1$. (a) Show that $\varphi_a$ is slope-restricted on $[a,1]$. (b) Derive the scalar incremental QC in matrix form from the chord inequality. (c) Evaluate it for $a=0.1$ and the pair $u=2$, $\bar u=-1$; when does it hold with equality? (d) Why do Pauli et al. nevertheless use $\alpha=0$ when <em>training</em> with such an activation?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $\varphi_a$ is continuous and piecewise linear with slopes $a$ (for $u\lt0$) and $1$ (for $u\gt0$). A chord slope $(\varphi_a(u)-\varphi_a(\bar u))/(u-\bar u)$ is the average of $\varphi_a'$ over the interval between the points, hence lies in $[a,1]$.</p>
+            <p>(b) With $s$ the chord slope, $s\in[a,1]\iff(s-a)(s-1)\le0$. Multiply by $(\Delta u)^2\ge0$ and use $s\Delta u=\Delta\varphi$: $(\Delta\varphi-a\Delta u)(\Delta\varphi-\Delta u)\le0$. Expanding and multiplying by $-2$ gives</p>
+            <div class="math-block">$$\begin{bmatrix}\Delta u\\ \Delta\varphi\end{bmatrix}^{\top}\begin{bmatrix}-2a & 1+a\\ 1+a & -2\end{bmatrix}\begin{bmatrix}\Delta u\\ \Delta\varphi\end{bmatrix}\ge0 .$$</div>
+            <p>(c) $\Delta u=3$ and $\Delta\varphi=2-(-0.1)=2.1$, a chord slope of $0.7$. The form is $-2(0.1)(9)+2(1.1)(3)(2.1)-2(2.1)^2=-1.8+13.86-8.82=3.24\ge0$, which agrees with $-2(\Delta\varphi-a\Delta u)(\Delta\varphi-\Delta u)=-2(1.8)(-0.9)=3.24$. Equality holds iff the chord slope is exactly $a$ or $1$ (both points on the same side of $0$) or $\Delta u=0$.</p>
+            <p>(d) With $\alpha=a\gt0$ the training LMI contains $-2\alpha\beta W_0^{\top}TW_0$, which is matrix-concave in the weights, so the set of certified weights is no longer convex (Section 6). $\alpha=0$ is still valid, because every slope $\ge a\gt0$ is also $\ge0$, but it is conservative for leaky ReLU.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 12.3 &mdash; Reproduce the coupled-multiplier counterexamples
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">(a) For ReLU and $T=(e_1-e_2)(e_1-e_2)^{\top}$, evaluate the incremental QC with slopes $[0,1]$ at $v=(0,1)$, $\bar v=(-1.5,0)$. (b) For the tanh network of Section 5 ($W_0=[-1;-1]$, $b_0=[-1;1]$, $W_1=[-1\ \ 1]$), compute $TW_0$, $W_1^{\top}W_1$ and the eigenvalues of $M(\rho,T)$. What does the coupled "certificate" claim? (c) Compute the true Lipschitz constant and the valid LipSDP-Neuron value.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $\Delta v=(1.5,1)$ and $\Delta z=(0,1)$. For $T=(e_1-e_2)(e_1-e_2)^{\top}$ the form is $2(\Delta v_1-\Delta v_2)(\Delta z_1-\Delta z_2)-2(\Delta z_1-\Delta z_2)^2=2(0.5)(-1)-2(1)=-3\lt0$. The QC is violated; the paper prints $-2$ for the same evaluation.</p>
+            <p>(b) $TW_0=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}\begin{bmatrix}-1\\ -1\end{bmatrix}=0$ and $W_1^{\top}W_1=\begin{bmatrix}1 & -1\\ -1 & 1\end{bmatrix}=T$, so $M(\rho,T)=\mathrm{blkdiag}(-\rho,-2T+T)=\mathrm{blkdiag}(-\rho,-T)$ with eigenvalues $-\rho$, $-2$, $0$. It is $\preceq0$ for every $\rho\gt0$, so the certificate claims $L=\sqrt\rho$ for arbitrarily small $\rho$, i.e. that $f$ is constant.</p>
+            <p>(c) $f(x)=\tanh(x+1)-\tanh(x-1)-0.5$, so $f'(x)=\mathrm{sech}^2(x+1)-\mathrm{sech}^2(x-1)$, an odd function. Maximising $|f'|$ numerically gives $L^\star\approx0.9335$ at $x\approx\pm1.061$; for example $\mathrm{sech}^2(-0.061)\approx0.996$ and $\mathrm{sech}^2(-2.061)\approx0.063$. With diagonal multipliers, the all-patterns bound $\max_{d\in[0,1]^2}|W_1\mathrm{diag}(d)W_0|=\max|d_1-d_2|=1$ is a lower bound for LipSDP, and $T=I$ gives $M(1,I)=-\mathbf 1\mathbf 1^{\top}\preceq0$. Hence LipSDP-Neuron returns exactly $L=1\ge0.9335$: valid, and $7\%$ above the true value.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 12.4 &mdash; Derive the gradient of the log-det barrier
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For the one-hidden-layer certificate $N(\theta)=\begin{bmatrix}L^2I & -W_0^{\top}\Lambda & 0\\ -\Lambda W_0 & 2\Lambda & -W_1^{\top}\\ 0 & -W_1 & I\end{bmatrix}\succ0$: (a) show $\partial_x\log\det N(x)=\mathrm{tr}(N^{-1}\partial_xN)$; (b) derive $\nabla_{W_0}\log\det N$; (c) give the gradient of $\mathcal L(\theta)-\mu\log\det N(\theta)$ with respect to $W_0$ and describe what happens near the boundary of the feasible set; (d) explain why a failed Cholesky factorisation proves that a step left the feasible set.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $\det(N+\varepsilon E)=\det N\,\det(I+\varepsilon N^{-1}E)$, and $\det(I+\varepsilon X)=1+\varepsilon\,\mathrm{tr}X+O(\varepsilon^2)$ (product of $1+\varepsilon\omega_i$ over the eigenvalues $\omega_i$ of $X$). Take logarithms and let $\varepsilon\to0$ with $E=\partial_xN$.</p>
+            <p>(b) Only blocks $(2,1)$ and $(1,2)$ contain $W_0$: $dN_{21}=-\Lambda\,dW_0$ and $dN_{12}=-dW_0^{\top}\Lambda$. Then $d\log\det N=\mathrm{tr}\big((N^{-1})_{12}dN_{21}\big)+\mathrm{tr}\big((N^{-1})_{21}dN_{12}\big)=-2\,\mathrm{tr}\big((N^{-1})_{12}\Lambda\,dW_0\big)$, using the symmetry of $N^{-1}$ and the cyclic property of the trace. Matching $d\,g=\mathrm{tr}(G^{\top}dW_0)$ gives $\nabla_{W_0}\log\det N=-2\Lambda(N^{-1})_{21}$. A finite-difference check on random instances agrees to about $10^{-9}$.</p>
+            <p>(c) $\nabla_{W_0}\big[\mathcal L-\mu\log\det N\big]=\nabla_{W_0}\mathcal L+2\mu\,\Lambda(N^{-1})_{21}$. As $\lambda_{\min}(N)\to0$, $\|N^{-1}\|$ blows up like $1/\lambda_{\min}(N)$, so the barrier term dominates and a descent step increases $\log\det N$, i.e. moves back into the interior. As $\mu\to0$ this repulsion acts only ever closer to the boundary, so the iterates may approach the boundary of the certified set, where a constrained optimum may lie. Nothing guarantees that they reach the constrained global optimum: the training loss is non-convex, and with $\Lambda$ trained the certified set is not convex either. The method is a local search in which every accepted iterate is certified.</p>
+            <p>(d) A symmetric matrix has a Cholesky factorisation $N=GG^{\top}$, $G$ lower triangular with positive diagonal, iff it is positive definite (all leading principal minors positive). ($G$ rather than the usual $L$, which is the Lipschitz bound here.) If the factorisation of $N(\theta^+)$ breaks down, $N(\theta^+)\not\succ0$ and the certificate fails for $\theta^+$, so the step is rejected. The same factor is reused for the gradient, so the test costs nothing extra.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 12.5 &mdash; LipSDP by hand for a one-neuron network
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $f(x)=w_1\varphi(w_0x+b)+c$ with scalars $w_0,w_1\ne0$ and $\varphi$ slope-restricted on $[\alpha,\beta]$, $0\le\alpha\lt\beta$. (a) Write $M(\rho,t)$. (b) For fixed $t\gt w_1^2/2$, find the smallest feasible $\rho(t)$. (c) Minimise over $t$ and show $\rho^\star=\beta^2w_0^2w_1^2$ at $t^\star=\beta w_1^2/(\beta-\alpha)$. (d) Is LipSDP tight here? (e) Evaluate for ReLU with $w_0=1.3$, $w_1=-0.7$.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $M(\rho,t)=\begin{bmatrix}-2\alpha\beta w_0^2t-\rho & (\alpha+\beta)w_0t\\ (\alpha+\beta)w_0t & -2t+w_1^2\end{bmatrix}\preceq0$.</p>
+            <p>(b) For $2t\gt w_1^2$ the lower-right entry is negative, and the Schur complement gives $\rho\ge\rho(t)=w_0^2\,g(t)$ with $g(t)=\dfrac{(\alpha+\beta)^2t^2}{2t-w_1^2}-2\alpha\beta t$.</p>
+            <p>(c) $g'(t)=\dfrac{2(\alpha+\beta)^2t(t-w_1^2)}{(2t-w_1^2)^2}-2\alpha\beta$. Setting $g'=0$ and writing $s=t/w_1^2$: $(\alpha+\beta)^2(s^2-s)=\alpha\beta(2s-1)^2$, i.e. $(\beta-\alpha)^2(s^2-s)=\alpha\beta$, whose root above $\tfrac12$ is $s=\tfrac12\big(1+\tfrac{\alpha+\beta}{\beta-\alpha}\big)=\tfrac{\beta}{\beta-\alpha}$. At this point $2s-1=\tfrac{\alpha+\beta}{\beta-\alpha}$, so $\dfrac{(\alpha+\beta)^2t^2}{2t-w_1^2}=w_1^2\dfrac{(\alpha+\beta)\beta^2}{\beta-\alpha}$ and $2\alpha\beta t=w_1^2\dfrac{2\alpha\beta^2}{\beta-\alpha}$. Hence $g(t^\star)=w_1^2\beta^2\dfrac{(\alpha+\beta)-2\alpha}{\beta-\alpha}=\beta^2w_1^2$ and $\rho^\star=\beta^2w_0^2w_1^2$. $g$ is convex on $t\gt w_1^2/2$ (the partial minimum of an SDP), so this stationary point is the minimum.</p>
+            <p>(d) $L=\beta|w_0w_1|$, which is the true constant whenever $\varphi$ attains slope $\beta$ somewhere (ReLU, and tanh at $0$). With one neuron there is nothing to align and no impossible pattern, so LipSDP, the product bound and $L^\star$ coincide.</p>
+            <p>(e) $\alpha=0$, $\beta=1$: $t^\star=w_1^2=0.49$, $\rho^\star=1.69\cdot0.49=0.8281$, $L=0.91=|1.3\cdot0.7|$. A grid search over $t$ reproduces $\rho^\star=0.8281$ at $t=0.49$, and $M(\rho^\star,t^\star)$ has eigenvalues $-1.318$ and $0$.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise 12.6 &mdash; State-space realisation of a 1-D convolution with kernel size 3
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">A 1-D convolutional layer with zero padding computes $y_k=b+K_0u_k+K_1u_{k-1}+K_2u_{k-2}$, $K_j\in\mathbb R^{c_{\rm out}\times c_{\rm in}}$. (a) Give $(A,B,C,D)$ for the state $x_k=(u_{k-1},u_{k-2})$. (b) Verify that it reproduces the convolution. (c) Show $A^2=0$ and compute the transfer function. (d) What is the size of the layer LMI of Section 7, and why does it not grow with the signal length? (e) For a $3\times3$ 2-D convolution with $c_{\rm in}=16$, $c_{\rm out}=32$, how many states does the Roesser realisation of Pauli, Gramlich &amp; Allgöwer use, and is minimality guaranteed?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $A=\begin{bmatrix}0 & 0\\ I & 0\end{bmatrix}$, $B=\begin{bmatrix}I\\ 0\end{bmatrix}$, $C=\begin{bmatrix}K_1 & K_2\end{bmatrix}$, $D=K_0$, with $c_{\rm in}\times c_{\rm in}$ identity blocks, and $y_k=Cx_k+Du_k+b$.</p>
+            <p>(b) $Ax_k+Bu_k=(u_k,u_{k-1})=x_{k+1}$, and $Cx_k+Du_k=K_1u_{k-1}+K_2u_{k-2}+K_0u_k$. The initial state $x_0=0$ is exactly zero padding. A random-kernel simulation confirms equality for all $k$.</p>
+            <p>(c) $A^2=\begin{bmatrix}0 & 0\\ I & 0\end{bmatrix}\begin{bmatrix}0 & 0\\ I & 0\end{bmatrix}=0$. Hence $(zI-A)^{-1}=z^{-1}(I-A/z)^{-1}=z^{-1}I+z^{-2}A$, and $C(zI-A)^{-1}B+D=K_0+K_1z^{-1}+K_2z^{-2}$, the kernel itself: an FIR filter.</p>
+            <p>(d) $n_x=2c_{\rm in}$; the LMI has blocks for $\Delta x$ ($2c_{\rm in}$), $\Delta u$ ($c_{\rm in}$) and $\Delta w$ ($c_{\rm out}$), size $3c_{\rm in}+c_{\rm out}$, with unknowns $P$, a diagonal $\Lambda$ of size $c_{\rm out}$, and the weights $X_{\rm in},X_{\rm out}$. The dissipation inequality holds step by step and telescopes over any number of steps, so the same LMI certifies every signal length.</p>
+            <p>(e) The kernel is $(r_1{+}1)\times(r_2{+}1)$ with $r_1=r_2=2$, so $n_1=c_{\rm out}r_1=64$ and $n_2=c_{\rm in}r_2=32$: $96$ states. Minimality is proven only for $c_{\rm in}=c_{\rm out}$ (with $K[r_1,r_2]$ of full rank), so it is not guaranteed here. The abstract's count $c_{\rm in}r_1+c_{\rm out}r_2$ also gives $96$, but only because $r_1=r_2$; for a $3\times5$ kernel ($r_1=2$, $r_2=4$) the theorem gives $64+64=128$ states and the abstract's formula $32+128=160$.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <!-- ===== KEY PAPERS ===== -->
+    <h2 class="section-heading" id="papers">Key Papers</h2>
+
+    <table>
+      <thead><tr><th>Paper</th><th>Venue</th><th>Contribution</th><th>Why read it</th></tr></thead>
+      <tbody>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1906.04893" target="_blank" rel="noopener">Efficient and Accurate Estimation of Lipschitz Constants for Deep Neural Networks</a> (Fazlyab, Robey, Hassani, Morari, Pappas)</td><td>NeurIPS 2019; arXiv v2 2023</td><td>LipSDP: slope-restricted activations as incremental QCs, the Lipschitz SDP, Neuron and Layer variants, splitting</td><td>The reference method. Read arXiv v2, which keeps only diagonal multipliers.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2005.02929" target="_blank" rel="noopener">Training Robust Neural Networks Using Lipschitz Bounds</a> (Pauli, Koch, Berberich, Kohler, Allgöwer)</td><td>IEEE L-CSS 2022; ACC 2021</td><td>ADMM training with the LMI ($\alpha=0$, fixed $T$); two counterexamples to coupled multipliers</td><td>The source of the diagonal-only correction, and the starting point of Pauli's line of LMI-constrained training (Section 6).</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2201.00632" target="_blank" rel="noopener">Neural network training under semidefinite constraints</a> (Pauli, Funcke, Gramlich, Msalmi, Allgöwer)</td><td>CDC 2022</td><td>Log-det barrier training, block Cholesky of the banded LMI, bilinear multipliers, WGAN critics</td><td>Makes SDP-constrained training cost about the same as nominal training (normalised time $1.15$ vs ADMM $78.7$).</td></tr>
+        <tr><td><a class="cite" href="https://proceedings.mlr.press/v211/pauli23a.html" target="_blank" rel="noopener">Lipschitz constant estimation for 1D convolutional neural networks</a> (Pauli, Gramlich, Allgöwer)</td><td>L4DC 2023, PMLR 211</td><td>Convolutions as FIR state-space systems; layer-wise incremental dissipativity; pooling QCs</td><td>The start of the "layers as dynamical systems" programme: LMI size independent of signal length.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2303.03042" target="_blank" rel="noopener">Convolutional neural networks as 2-D systems</a> (Gramlich, Pauli, Scherer, Ebenbauer)</td><td>Automatica 2026</td><td>Roesser realisations; CNNs as 2-D Lur'e systems; 2-D dissipativity and IQC analysis</td><td>Lipschitz bounds valid for images of any size; the 2-D systems view behind LipKernel.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2403.11938" target="_blank" rel="noopener">State space representations of the Roesser type for convolutional layers</a> (Pauli, Gramlich, Allgöwer)</td><td>IFAC-PapersOnLine 2024</td><td>Explicit realisation with $c_{\rm out}r_1+c_{\rm in}r_2$ states; minimal for $c_{\rm in}=c_{\rm out}$; dilated, strided, N-D</td><td>The realisation used by GLipSDP and LipKernel.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2405.01125" target="_blank" rel="noopener">Lipschitz constant estimation for general neural network architectures using control tools</a> (Pauli, Gramlich, Allgöwer)</td><td>arXiv 2024 (preprint)</td><td>GLipSDP: dynamic programming over layers with quadratic value functions; one LMI per layer for conv, SSM, residual, pooling, GroupSort</td><td>Proves that layer-wise splitting of LipSDP loses nothing for fully connected networks.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2401.14033" target="_blank" rel="noopener">Novel Quadratic Constraints for Extending LipSDP beyond Slope-Restricted Activations</a> (Pauli, Havens, Araujo, Garg, Khorrami, Allgöwer, Hu)</td><td>ICLR 2024</td><td>QCs for GroupSort, MaxMin and Householder from 1-Lipschitzness and sum preservation; $\ell_2$ and $\ell_\infty\to\ell_1$ SDPs</td><td>Shows how to build QCs for structured activations; LipSDP on the residual-ReLU form of MaxMin only gives $\sqrt2$.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1805.10965" target="_blank" rel="noopener">Lipschitz regularity of deep neural networks: analysis and efficient estimation</a> (Virmaux, Scaman)</td><td>NeurIPS 2018</td><td>NP-hardness of exact computation; AutoLip; SeqLip via SVD alignment</td><td>The hardness baseline and the first attack on the product bound's misalignment cost.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2204.00846" target="_blank" rel="noopener">Chordal Sparsity for Lipschitz Constant Estimation of Deep Neural Networks</a> (Xue, Lindemann, Robey, Hassani, Pappas, Alur)</td><td>CDC 2022</td><td>Chordal decomposition of the LipSDP LMI into clique LMIs</td><td>Exact and much faster for deep networks. Only $\tau=0$ certifies (v2 footnote).</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2404.04375" target="_blank" rel="noopener">ECLipsE: Efficient Compositional Lipschitz Constant Estimation for Deep Neural Networks</a> (Xu, Sivaranjani)</td><td>NeurIPS 2024</td><td>Exact Schur decomposition of the certificate; layer-wise SDPs (ECLipsE) or closed form (ECLipsE-Fast)</td><td>Current fast baseline, up to several thousand times faster than LipSDP.</td></tr>
+        <tr><td><a class="cite" href="https://openreview.net/forum?id=dwzLn78jq7" target="_blank" rel="noopener">On the Scalability and Memory Efficiency of Semidefinite Programs for Lipschitz Constant Estimation of Neural Networks: Scaling the Computation for ImageNet</a> (Wang, Hu, Havens, Araujo, Zheng, Chen, Jha)</td><td>ICLR 2024</td><td>EP-LipSDP: exact-penalty eigenvalue form via redundant trace constraints; first-order solver LipDiff</td><td>Takes SDP-based estimation to ImageNet-scale networks.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2603.28113" target="_blank" rel="noopener">Demystifying Lipschitz verification: positive matrices, negative results</a> (Kuang, Xu, Sivaranjani, Lin)</td><td>arXiv 2026 (preprint)</td><td>Hidden-state reachability is the source of hardness; SDP bounds can inherit the product bound's failures</td><td>The sharpest statement of what LipSDP-type certificates cannot do.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2301.11526" target="_blank" rel="noopener">Direct Parameterization of Lipschitz-Bounded Deep Networks</a> (Wang, Manchester)</td><td>ICML 2023</td><td>Sandwich layers: a complete, unconstrained parameterisation of all networks satisfying the LipSDP certificate</td><td>Where Section 6 leads (Module 13); Remark A.2 explains the LipSDP-Network proof error.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1802.04034" target="_blank" rel="noopener">Lipschitz-Margin Training: Scalable Certification of Perturbation Invariance for Deep Neural Networks</a> (Tsuzuku, Sato, Sugiyama)</td><td>NeurIPS 2018</td><td>Certified radius $m_f(x)/(\sqrt2L)$; Lipschitz-margin training</td><td>Why a Lipschitz bound is a robustness certificate in the first place.</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="lp-flashcards"></div>
+
+    <div class="page-nav">
+      <a href="lyapunov-mpc.html">&larr; 11. Lyapunov Certificates, Safe Model-Based RL &amp; Learning-Based MPC</a>
+      <a href="lipschitz-by-design.html">13. Lipschitz-by-Design Networks &amp; Direct Parameterizations &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('lipsdp');
+    initCollapsibles();
+
+    initWalkthrough('lp-walkthrough', [
+      {tab: '1. QC', title: 'Step 1: One quadratic constraint per neuron',
+       text: 'The network is $f(x)=W_1\\mathrm{ReLU}(W_0x+b_0)+b_1$ with $W_0=\\begin{bmatrix}1 & 2\\\\ 1 & -2\\end{bmatrix}$ and $W_1=\\begin{bmatrix}1 & 1\\end{bmatrix}$. For two inputs, $\\Delta v=W_0\\Delta x$ (the biases cancel) and $\\Delta z_i=\\mathrm{ReLU}(v_i(x))-\\mathrm{ReLU}(v_i(y))$. ReLU is slope-restricted on $[0,1]$, so every chord satisfies $\\Delta z_i(\\Delta z_i-\\Delta v_i)\\le0$. Weight neuron $i$ by $\\lambda_i\\ge0$ and add the two constraints:',
+       visual: '<div class="math-block">$$\\sum_{i=1}^{2}2\\lambda_i\\,\\Delta z_i(\\Delta v_i-\\Delta z_i)=\\begin{bmatrix}\\Delta v\\\\ \\Delta z\\end{bmatrix}^{\\top}\\begin{bmatrix}0 & T\\\\ T & -2T\\end{bmatrix}\\begin{bmatrix}\\Delta v\\\\ \\Delta z\\end{bmatrix}\\ \\ge\\ 0,\\quad T=\\mathrm{diag}(\\lambda_1,\\lambda_2).$$</div>',
+       insight: 'The constraint involves increments only: each neuron passes between $0\\%$ and $100\\%$ of its input change, with the same sign. It knows nothing about where the two inputs are.'},
+      {tab: '2. Goal', title: 'Step 2: The Lipschitz inequality as a quadratic form',
+       text: 'Stack $\\xi=(\\Delta x,\\Delta z)\\in\\mathbb R^4$. The goal $\\|W_1\\Delta z\\|^2\\le\\rho\\|\\Delta x\\|^2$ and the constraint of Step 1 (with $\\Delta v=W_0\\Delta x$) are both quadratic forms in $\\xi$:',
+       visual: '<div class="math-block">$$\\xi^{\\top}\\underbrace{\\begin{bmatrix}-\\rho I & 0\\\\ 0 & W_1^{\\top}W_1\\end{bmatrix}}_{G(\\rho)}\\xi\\le0,\\qquad \\xi^{\\top}\\underbrace{\\begin{bmatrix}0 & W_0^{\\top}T\\\\ TW_0 & -2T\\end{bmatrix}}_{Q(T)}\\xi\\ge0,$$</div><div class="math-block">$$W_1^{\\top}W_1=\\begin{bmatrix}1 & 1\\\\ 1 & 1\\end{bmatrix},\\qquad W_0^{\\top}T=\\begin{bmatrix}\\lambda_1 & \\lambda_2\\\\ 2\\lambda_1 & -2\\lambda_2\\end{bmatrix}.$$</div>',
+       insight: 'The output layer is linear, so it contributes only the block $W_1^{\\top}W_1$. All the nonlinearity sits in the constraint $Q(T)$.'},
+      {tab: '3. S-procedure', title: 'Step 3: Let the constraint pay for the goal',
+       text: 'If $G(\\rho)+Q(T)\\preceq0$ for some $\\lambda_1,\\lambda_2\\ge0$, then the goal holds for every increment the network can produce, because the constraint term is nonnegative (<a href="toolkit-lmi.html#s-procedure">Module 2</a>):',
+       visual: '<div class="math-block">$$\\xi^{\\top}G(\\rho)\\,\\xi=\\underbrace{\\xi^{\\top}\\big(G(\\rho)+Q(T)\\big)\\xi}_{\\le0}-\\underbrace{\\xi^{\\top}Q(T)\\,\\xi}_{\\ge0}\\ \\le\\ 0 .$$</div>',
+       insight: 'With two constraints the S-procedure is sufficient but not necessary. This is exactly where the small gap in Step 7 comes from.'},
+      {tab: '4. Assemble', title: 'Step 4: The LipSDP matrix',
+       text: 'Adding the two matrices gives $M(\\rho,T)=\\begin{bmatrix}-\\rho I & W_0^{\\top}T\\\\ TW_0 & -2T+W_1^{\\top}W_1\\end{bmatrix}$, here a $4\\times4$ LMI in three unknowns:',
+       visual: '<div class="math-block">$$M(\\rho,\\lambda_1,\\lambda_2)=\\begin{bmatrix}-\\rho & 0 & \\lambda_1 & \\lambda_2\\\\ 0 & -\\rho & 2\\lambda_1 & -2\\lambda_2\\\\ \\lambda_1 & 2\\lambda_1 & 1-2\\lambda_1 & 1\\\\ \\lambda_2 & -2\\lambda_2 & 1 & 1-2\\lambda_2\\end{bmatrix}\\ \\preceq\\ 0 .$$</div>',
+       insight: 'Every entry is affine in $(\\rho,\\lambda_1,\\lambda_2)$, so minimising $\\rho$ is a semidefinite program with a global optimum.'},
+      {tab: '5. Schur', title: 'Step 5: Eliminate the hidden block',
+       text: 'The lower-right block $-C$ of $M\\preceq0$ must be negative semidefinite, and here even definite: a null vector $u\\ne0$ of $C$ would force $W_0^{\\top}Tu=0$ (otherwise a small $\\Delta x$ makes the form positive), impossible because $W_0$ is invertible and so is $T$ (the diagonal of $C$ forces $2\\lambda_i-1\\ge0$). So $C=2T-W_1^{\\top}W_1\\succ0$; for this $W_1$ that means $\\tfrac1{2\\lambda_1}+\\tfrac1{2\\lambda_2}\\lt1$. Then, by the Schur complement, $M\\preceq0$ iff $\\rho I\\succeq W_0^{\\top}TC^{-1}TW_0$. For $T=tI$ ($t\\gt1$), $C$ has eigenvalue $2t-2$ on $(1,1)/\\sqrt2$ and $2t$ on $(1,-1)/\\sqrt2$. The columns of $W_0$ are $\\sqrt2\\,(1,1)/\\sqrt2$ and $2\\sqrt2\\,(1,-1)/\\sqrt2$, so everything is diagonal:',
+       visual: '<div class="math-block">$$\\rho(t)=\\lambda_{\\max}\\big(t^2\\,W_0^{\\top}C^{-1}W_0\\big)=\\lambda_{\\max}\\begin{bmatrix}t^2\\cdot\\frac{2}{2t-2} & 0\\\\ 0 & t^2\\cdot\\frac{8}{2t}\\end{bmatrix}=\\max\\Big\\{\\frac{t^2}{t-1},\\ 4t\\Big\\}.$$</div>',
+       insight: 'For fixed multipliers LipSDP is an eigenvalue computation. Only the choice of $T$ needs optimisation, which the explorer below does with a barrier method.'},
+      {tab: '6. Optimise T', title: 'Step 6: Choose the multipliers (diagonal only)',
+       text: 'Reflecting the input, $x_2\\mapsto-x_2$, turns $W_0$ into $W_0$ with its rows swapped, and $W_1$ is invariant under the swap. A congruence of $M$ therefore maps a feasible $\\mathrm{diag}(\\lambda_1,\\lambda_2)$ to a feasible $\\mathrm{diag}(\\lambda_2,\\lambda_1)$, and by convexity their average is feasible: $T=tI$ loses nothing. Now $t^2/(t-1)$ decreases on $(1,2)$ while $4t$ increases, so their maximum is smallest where they cross, $t^2=4t(t-1)$:',
+       visual: '<div class="math-block">$$t^\\star=\\tfrac43,\\qquad \\rho^\\star=4t^\\star=\\tfrac{16}3,\\qquad L_{\\rm LipSDP}=\\tfrac{4}{\\sqrt3}\\approx2.309 .$$</div><p style="font-size:13px;color:#444;margin:6px 0 0;">Only diagonal $T$ is allowed. The coupled multiplier $T=(e_1-e_2)(e_1-e_2)^{\\top}$ would "certify" the tanh network of Section 5 with $L\\to0$, although its true constant is $0.93$.</p>',
+       insight: 'The optimum sits where two eigenvalues cross, a kink of the convex function $\\rho(t)$. Such kinks are typical of SDP optima.'},
+      {tab: '7. Compare', title: 'Step 7: Product bound, LipSDP and the true constant',
+       text: 'The product bound is $\\|W_0\\|\\,\\|W_1\\|=2\\sqrt2\\cdot\\sqrt2=4$. The true constant is the largest regional gradient $W_1DW_0=(d_1+d_2,\\ 2d_1-2d_2)$. All four patterns occur for any biases, because two non-parallel lines cut the plane into four regions:',
+       visual: '<table><thead><tr><th>pattern $(d_1,d_2)$</th><th>$(0,0)$</th><th>$(1,0)$</th><th>$(0,1)$</th><th>$(1,1)$</th></tr></thead><tbody><tr><td>gradient</td><td>$(0,0)$</td><td>$(1,2)$</td><td>$(1,-2)$</td><td>$(2,0)$</td></tr><tr><td>norm</td><td>$0$</td><td>$\\sqrt5$</td><td>$\\sqrt5$</td><td>$2$</td></tr></tbody></table><div class="math-block">$$L^\\star=\\sqrt5\\approx2.236\\ \\lt\\ L_{\\rm LipSDP}=\\tfrac4{\\sqrt3}\\approx2.309\\ \\lt\\ \\|W_0\\|\\,\\|W_1\\|=4 .$$</div>',
+       insight: 'LipSDP is $3\\%$ above $L^\\star$, the product bound $79\\%$. The product bound pays for misalignment: $W_0$ stretches $(0,1)$ into $(2,-2)$, a direction that $W_1$ does not see. The remaining $3\\%$ is the relaxation gap of Step 3. Load this network in the explorer below with "Walkthrough network".'}
+    ]);
+
+    initFlashcards('lp-flashcards', [
+      {q: 'What does LipSDP certify, and what is $\\rho$?', a: 'That $\\|f(x)-f(y)\\|\\le\\sqrt\\rho\\,\\|x-y\\|$ for all inputs. $\\rho=L^2$ is the <em>squared</em> bound, minimised over $\\rho$ and a diagonal $T\\succeq0$ subject to $M(\\rho,T)\\preceq0$.'},
+      {q: 'Write the incremental QC of a slope-restricted activation.', a: '<span class="math-scroll">$\\begin{bmatrix}x-y\\\\ \\phi(x)-\\phi(y)\\end{bmatrix}^{\\top}\\begin{bmatrix}-2\\alpha\\beta T & (\\alpha+\\beta)T\\\\ (\\alpha+\\beta)T & -2T\\end{bmatrix}\\begin{bmatrix}x-y\\\\ \\phi(x)-\\phi(y)\\end{bmatrix}\\ge0$</span> for every diagonal $T\\succeq0$. It is the sum over neurons of $-2\\lambda_i(\\Delta\\varphi-\\alpha\\Delta v)(\\Delta\\varphi-\\beta\\Delta v)\\ge0$.'},
+      {q: 'Write the LipSDP matrix for one hidden layer.', a: '<span class="math-scroll">$M(\\rho,T)=\\begin{bmatrix}-2\\alpha\\beta W_0^{\\top}TW_0-\\rho I & (\\alpha+\\beta)W_0^{\\top}T\\\\ (\\alpha+\\beta)TW_0 & -2T+W_1^{\\top}W_1\\end{bmatrix}\\preceq0$</span>: goal matrix plus S-procedure multipliers times the neuron constraints.'},
+      {q: 'For fixed $T$ and slopes $[0,1]$, what is the smallest feasible $\\rho$?', a: '$\\rho(T)=\\lambda_{\\max}\\big(W_0^{\\top}T(2T-W_1^{\\top}W_1)^{-1}TW_0\\big)$, valid when $2T-W_1^{\\top}W_1\\succ0$ (Schur complement).'},
+      {q: 'Why can LipSDP never beat the all-patterns bound $\\max_D\\|W_lD_l\\cdots D_1W_0\\|$?', a: 'The QC holds for $\\Delta z=D\\Delta v$ with any diagonal $D$ in $[\\alpha,\\beta]$, so a certificate also covers every such linear network. LipSDP also ignores the biases: it bounds $\\sup_bL^\\star(f_b)$, which for ReLU equals the all-patterns bound.'},
+      {q: 'What was wrong with LipSDP-Network?', a: 'A coupling term $\\lambda_{ij}(e_i-e_j)(e_i-e_j)^{\\top}$ treats $(\\Delta v_i-\\Delta v_j,\\Delta z_i-\\Delta z_j)$ as a chord of $\\varphi$, but increments taken at different base points are not repeated nonlinearities. Pauli et al.: a tanh network with $TW_0=0$ and $W_1^{\\top}W_1=T$ is "certified" with $L\\to0$, although $L^\\star\\approx0.93$.'},
+      {q: 'Where are coupled (repeated-nonlinearity) multipliers still valid?', a: 'In non-incremental QCs relating quantities at a single input, where $(v_i-v_j,\\varphi(v_i)-\\varphi(v_j))$ is a true chord (DeepSDP, Reach-SDP, LipSDP v2 App. A.8 with one point fixed), and for linear operations such as average pooling.'},
+      {q: 'Why do Pauli et al. set $\\alpha=0$ and fix $T$ when training?', a: '$\\alpha\\gt0$ adds $-2\\alpha\\beta W_0^{\\top}TW_0$, which is matrix-concave in the weights; $TW$ is bilinear. With $\\alpha=0$ and fixed $T$, a Schur complement on the last layer gives an LMI that is affine in the weights.'},
+      {q: 'Gradient of the log-det barrier?', a: '$\\partial_x\\log\\det N=\\mathrm{tr}(N^{-1}\\partial_xN)$. For the one-layer certificate $\\nabla_{W_0}\\log\\det N=-2\\Lambda(N^{-1})_{21}$. Feasibility after a step is checked by attempting a Cholesky factorisation.'},
+      {q: 'Why does the SDP for a 1-D CNN not grow with the signal length?', a: 'A convolution is an FIR filter with $(\\ell-1)c_{\\rm in}$ states. Incremental dissipativity with storage $\\Delta x^{\\top}P\\Delta x$ holds step by step and telescopes over any number of steps, so the layer LMI involves only channel and kernel sizes.'},
+      {q: 'State dimensions of the Roesser realisation of a 2-D convolution?', a: '$n_1=c_{\\rm out}r_1$ and $n_2=c_{\\rm in}r_2$ for a kernel of size $(r_1{+}1)\\times(r_2{+}1)$; minimal when $c_{\\rm in}=c_{\\rm out}$ and $K[r_1,r_2]$ has full rank.'},
+      {q: 'Why does LipSDP give $\\sqrt2$ for MaxMin, and how is it fixed?', a: 'Written as $Hx+G\\,\\mathrm{ReLU}(Wx)$, the two ReLUs get $u$ and $-u$; the slope QC allows both to be active, with Jacobian norm $\\sqrt2$. The ICLR 2024 QC uses group-wise 1-Lipschitzness ($\\lambda\\ge0$) and sum preservation (free-sign $\\gamma,\\nu,\\tau$) and certifies $1$.'},
+      {q: 'How is ECLipsE related to LipSDP?', a: 'It runs the exact block-tridiagonal Schur recursion $M_k=\\Lambda_k-\\tfrac14\\Lambda_kW_{k-1}M_{k-1}^{-1}W_{k-1}^{\\top}\\Lambda_k$, $L^2=\\lambda_{\\max}(W_l^{\\top}W_lM_l^{-1})$. For given $\\Lambda_k$ this is equivalent to LipSDP; only the greedy layer-by-layer choice of $\\Lambda_k$ loses accuracy.'},
+      {q: 'What do the hardness results say about SDP certificates?', a: 'Exact $L^\\star$ is NP-hard even for one hidden layer (Virmaux &amp; Scaman). Kuang et al. (2026): estimation needs hidden-state reachability, which is NP-hard, and SDP bounds can inherit the product bound\'s failures. Unless P = NP, no polynomial relaxation is tight on all networks.'}
+    ]);
+
+    //=====Explorer:Naive vs LipSDP vs Empirical(2-3-1 ReLU network)=====
+    //Numerical core:Jacobi eigen-solver,log-det barrier(interior-point)LipSDP solver,
+    //exact pattern-realisability LPs. Tested in node against an independent Nelder-Mead implementation.
+    (function(){
+    function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+    function gauss(r){var u=1-r(),v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+    function symEig(M){var n=M.length,a=M.map(function(r){return r.slice();}),i,j,k,p,q;
+    for(var sw=0;sw<60;sw++){var off=0;for(i=0;i<n;i++)for(j=i+1;j<n;j++)off+=a[i][j]*a[i][j];if(off<1e-30)break;
+    for(p=0;p<n;p++)for(q=p+1;q<n;q++){if(a[p][q]===0)continue;
+    var th=(a[q][q]-a[p][p])/(2*a[p][q]),t=(th>=0?1:-1)/(Math.abs(th)+Math.sqrt(th*th+1)),c=1/Math.sqrt(t*t+1),s=t*c;
+    for(k=0;k<n;k++){var x=a[k][p],y=a[k][q];a[k][p]=c*x-s*y;a[k][q]=s*x+c*y;}
+    for(k=0;k<n;k++){var u=a[p][k],v=a[q][k];a[p][k]=c*u-s*v;a[q][k]=s*u+c*v;}}}
+    var ev=[];for(i=0;i<n;i++)ev.push(a[i][i]);return ev;}
+    function lmax(M){return Math.max.apply(null,symEig(M));}
+    function gram(W){var m=W.length,n=W[0].length,G=[],i,j,k;for(i=0;i<n;i++){G.push([]);for(j=0;j<n;j++){var s=0;for(k=0;k<m;k++)s+=W[k][i]*W[k][j];G[i].push(s);}}return G;}
+    function specNorm(W){return Math.sqrt(Math.max(0,lmax(gram(W))));}
+    function chol(A){var n=A.length,L=[],i,j,k;for(i=0;i<n;i++){L.push([]);for(j=0;j<n;j++)L[i].push(0);}
+    for(j=0;j<n;j++){var d=A[j][j];for(k=0;k<j;k++)d-=L[j][k]*L[j][k];if(!(d>0))return null;L[j][j]=Math.sqrt(d);
+    for(i=j+1;i<n;i++){var s=A[i][j];for(k=0;k<j;k++)s-=L[i][k]*L[j][k];L[i][j]=s/L[j][j];}}return L;}
+    function cholInv(L){var n=L.length,X=[],i,j,k;for(i=0;i<n;i++){X.push([]);for(j=0;j<n;j++)X[i].push(0);}
+    for(j=0;j<n;j++){var y=[];for(i=0;i<n;i++){var s=(i===j)?1:0;for(k=0;k<i;k++)s-=L[i][k]*y[k];y.push(s/L[i][i]);}
+    for(i=n-1;i>=0;i--){var s2=y[i];for(k=i+1;k<n;k++)s2-=L[k][i]*X[k][j];X[i][j]=s2/L[i][i];}}return X;}
+    function solveSym(H,g){var n=g.length,A=H.map(function(r,i){return r.concat([g[i]]);}),i,j,k,x=[];
+    for(i=0;i<n;i++){var p=i;for(k=i+1;k<n;k++)if(Math.abs(A[k][i])>Math.abs(A[p][i]))p=k;var tmp=A[i];A[i]=A[p];A[p]=tmp;
+    for(k=i+1;k<n;k++){var f=A[k][i]/A[i][i];for(j=i;j<=n;j++)A[k][j]-=f*A[i][j];}}
+    for(i=0;i<n;i++)x.push(0);
+    for(i=n-1;i>=0;i--){var s=A[i][n];for(j=i+1;j<n;j++)s-=A[i][j]*x[j];x[i]=s/A[i][i];}
+    return x;}
+    function buildNet(base,s,kappa){
+    var A=base.A.map(function(r){return r.slice();}),b=base.b.slice(),w=base.w.slice();
+    A[2]=[(1-kappa)*A[2][0]-kappa*A[0][0],(1-kappa)*A[2][1]-kappa*A[0][1]];b[2]=(1-kappa)*b[2]-kappa*b[0];w[2]=(1-kappa)*w[2]-kappa*w[0];
+    for(var i=0;i<3;i++){A[i]=[s*A[i][0],s*A[i][1]];w[i]=s*w[i];}
+    return{A:A,b:b,w:w};}
+    function randomBase(seed){var r=mulberry32(seed>>>0),A=[],b=[],w=[],i;
+    for(i=0;i<3;i++)A.push([gauss(r),gauss(r)]);for(i=0;i<3;i++)b.push(gauss(r));for(i=0;i<3;i++)w.push(gauss(r));return{A:A,b:b,w:w};}
+    function rhoSchur(t,net){var A=net.A,w=net.w,C=[],i,j;
+    for(i=0;i<3;i++){C.push([]);for(j=0;j<3;j++)C[i].push((i===j?2*t[i]:0)-w[i]*w[j]);}
+    var L=chol(C);if(!L)return Infinity;var Ci=cholInv(L),S=[[0,0],[0,0]],p,q;
+    for(p=0;p<2;p++)for(q=0;q<2;q++){var s=0;for(i=0;i<3;i++)for(j=0;j<3;j++)s+=t[i]*A[i][p]*Ci[i][j]*t[j]*A[j][q];S[p][q]=s;}
+    return lmax(S);}
+    function buildN(x,groups,net){var N=[],i,j,A=net.A,w=net.w,t=[0,0,0];
+    groups.forEach(function(g,gi){g.forEach(function(k){t[k]=x[1+gi];});});
+    for(i=0;i<5;i++){N.push([]);for(j=0;j<5;j++)N[i].push(0);}
+    N[0][0]=x[0];N[1][1]=x[0];
+    for(i=0;i<3;i++){for(j=0;j<2;j++){N[j][2+i]=-A[i][j]*t[i];N[2+i][j]=-A[i][j]*t[i];}
+    for(j=0;j<3;j++)N[2+i][2+j]=(i===j?2*t[i]:0)-w[i]*w[j];}
+    return{N:N,t:t};}
+    function basisN(groups,net){var B=[],A=net.A,i,j;
+    var Nr=[];for(i=0;i<5;i++){Nr.push([0,0,0,0,0]);}Nr[0][0]=1;Nr[1][1]=1;B.push(Nr);
+    groups.forEach(function(g){var M=[];for(i=0;i<5;i++)M.push([0,0,0,0,0]);
+    g.forEach(function(k){for(j=0;j<2;j++){M[j][2+k]=-A[k][j];M[2+k][j]=-A[k][j];}M[2+k][2+k]=2;});B.push(M);});
+    return B;}
+    function matMul(X,Y){var n=X.length,m=Y[0].length,K=Y.length,Z=[],i,j,k;for(i=0;i<n;i++){Z.push([]);for(j=0;j<m;j++){var s=0;for(k=0;k<K;k++)s+=X[i][k]*Y[k][j];Z[i].push(s);}}return Z;}
+    function trProd(X,Y){var s=0,i,j;for(i=0;i<X.length;i++)for(j=0;j<X.length;j++)s+=X[i][j]*Y[j][i];return s;}
+    function lipsdpBarrier(net,groups){
+    var w2=net.w[0]*net.w[0]+net.w[1]*net.w[1]+net.w[2]*net.w[2];
+    if(w2<1e-300)return{rho:0,t:[0,0,0],ok:true,newton:0};
+    var p=groups.length,t0=w2,x=[0],i,j,it=0;for(i=0;i<p;i++)x.push(t0);
+    var r0=rhoSchur([t0,t0,t0],net);x[0]=2*r0+1e-9*(1+r0)+1e-12;
+    var B=basisN(groups,net),mu=x[0]/5,nv=p+1;
+    function F(xx){var L=chol(buildN(xx,groups,net).N);if(!L)return{ok:false};var ld=0;for(var k=0;k<5;k++)ld+=2*Math.log(L[k][k]);return{ok:true,f:xx[0]-mu*ld,L:L};}
+    var cur=F(x);
+    for(var outer=0;outer<80;outer++){
+    for(var inner=0;inner<80;inner++){
+    it++;var Ni=cholInv(cur.L),g=[],H=[],P=B.map(function(Bk){return matMul(Ni,Bk);});
+    for(i=0;i<nv;i++){g.push((i===0?1:0)-mu*trProd(Ni,B[i]));H.push([]);for(j=0;j<nv;j++)H[i].push(mu*trProd(P[i],P[j]));}
+    var d=solveSym(H,g.map(function(v){return-v;})),dec=0;for(i=0;i<nv;i++)dec-=g[i]*d[i];
+    if(dec<1e-14*Math.max(1,Math.abs(cur.f)))break;
+    var st=1,nx,cand;
+    for(var ls=0;ls<60;ls++){nx=x.map(function(v,k){return v+st*d[k];});cand=F(nx);if(cand.ok&&cand.f<=cur.f-0.25*st*dec)break;st*=0.5;cand=null;}
+    if(!cand)break;x=nx;cur=cand;
+    }
+    if(5*mu<=1e-11*Math.max(1e-12,x[0]))break;
+    mu*=0.2;cur=F(x);
+    }
+    var bn=buildN(x,groups,net);
+    return{rho:x[0],t:bn.t,ok:!!chol(bn.N),newton:it,rhoSchur:rhoSchur(bn.t,net)};}
+    function gradAt(d,net){var g0=0,g1=0,i;for(i=0;i<3;i++)if(d[i]){g0+=net.w[i]*net.A[i][0];g1+=net.w[i]*net.A[i][1];}return[g0,g1];}
+    function gradNorm(d,net){var g=gradAt(d,net);return Math.sqrt(g[0]*g[0]+g[1]*g[1]);}
+    function preact(x,net,i){return net.A[i][0]*x[0]+net.A[i][1]*x[1]+net.b[i];}
+    function patternAt(x,net){return[preact(x,net,0)>0?1:0,preact(x,net,1)>0?1:0,preact(x,net,2)>0?1:0];}
+    function solve3(M,v){var d=M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])-M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])+M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+    if(Math.abs(d)<1e-14)return null;var r=[],c;for(c=0;c<3;c++){var Mc=M.map(function(row,i){var rr=row.slice();rr[c]=v[i];return rr;});
+    r.push((Mc[0][0]*(Mc[1][1]*Mc[2][2]-Mc[1][2]*Mc[2][1])-Mc[0][1]*(Mc[1][0]*Mc[2][2]-Mc[1][2]*Mc[2][0])+Mc[0][2]*(Mc[1][0]*Mc[2][1]-Mc[1][1]*Mc[2][0]))/d);}return r;}
+    function patternRealised(d,net){
+    var lines=[],i,j,sc=1e-300;
+    for(i=0;i<3;i++){var an=Math.hypot(net.A[i][0],net.A[i][1]);
+    if(an<1e-12*(1+Math.abs(net.b[i]))){if((net.b[i]>0?1:0)!==d[i])return false;continue;}
+    lines.push({n:[net.A[i][0]/an,net.A[i][1]/an],o:net.b[i]/an,s:d[i]?1:-1});sc=Math.max(sc,Math.abs(net.b[i]/an));}
+    if(lines.length===0)return true;
+    sc=Math.max(sc,1e-12);var Rv=1;
+    lines.forEach(function(L){L.o/=sc;});
+    for(i=0;i<lines.length;i++)for(j=i+1;j<lines.length;j++){var P=lines[i],Q=lines[j],det=P.n[0]*Q.n[1]-P.n[1]*Q.n[0];
+    if(Math.abs(det)>1e-9){var px=(-P.o*Q.n[1]+Q.o*P.n[1])/det,py=(-P.n[0]*Q.o+Q.n[0]*P.o)/det;Rv=Math.max(Rv,Math.hypot(px,py));}}
+    var R=10*(1+Rv),cons=[];
+    lines.forEach(function(L){cons.push([L.s*L.n[0],L.s*L.n[1],-1,-L.s*L.o]);});//s(n.x+o)-r>=0
+    cons.push([1,0,0,-R]);cons.push([-1,0,0,-R]);cons.push([0,1,0,-R]);cons.push([0,-1,0,-R]);cons.push([0,0,-1,-1]);
+    var best=-Infinity,m=cons.length,a,b,c,k,tol=1e-10*(1+R);
+    for(a=0;a<m;a++)for(b=a+1;b<m;b++)for(c=b+1;c<m;c++){
+    var sol=solve3([cons[a].slice(0,3),cons[b].slice(0,3),cons[c].slice(0,3)],[cons[a][3],cons[b][3],cons[c][3]]);if(!sol)continue;
+    var ok=true;for(k=0;k<m;k++){if(cons[k][0]*sol[0]+cons[k][1]*sol[1]+cons[k][2]*sol[2]<cons[k][3]-tol){ok=false;break;}}
+    if(ok&&sol[2]>best)best=sol[2];}
+    return best>1e3*tol;}
+    function allPatterns(){var out=[],m;for(m=0;m<8;m++)out.push([(m>>2)&1,(m>>1)&1,m&1]);return out;}
+    function analyse(net,box,nSamples,seed){
+    var res={net:net};
+    res.nW0=specNorm(net.A);res.nW1=Math.sqrt(net.w[0]*net.w[0]+net.w[1]*net.w[1]+net.w[2]*net.w[2]);res.product=res.nW0*res.nW1;
+    var lay=lipsdpBarrier(net,[[0,1,2]]),neu=lipsdpBarrier(net,[[0],[1],[2]]);
+    res.layer=Math.sqrt(lay.rho);res.tLayer=lay.t;res.neuron=Math.sqrt(neu.rho);res.tNeuron=neu.t;res.neuOk=neu.ok&&lay.ok;res.newton=neu.newton+lay.newton;
+    res.neuronSchur=Math.sqrt(neu.rhoSchur);res.layerSchur=Math.sqrt(lay.rhoSchur);
+    var best=-1,bp=null,be=-1,bpe=null,real=[];
+    allPatterns().forEach(function(d){var g=gradNorm(d,net);if(g>best){best=g;bp=d;}
+    if(patternRealised(d,net)){real.push(d.join(''));if(g>be){be=g;bpe=d;}}});
+    res.allPat=best;res.allPatArg=bp;res.exact=be;res.exactArg=bpe;res.realizable=real;
+    var r=mulberry32((seed*2654435761+17)>>>0),mx=0,k,found={};
+    for(k=0;k<nSamples;k++){var x=[(2*r()-1)*box,(2*r()-1)*box],d=patternAt(x,net),g=gradNorm(d,net);found[d.join('')]=1;if(g>mx)mx=g;}
+    res.sampled=mx;res.foundPatterns=Object.keys(found);
+    return res;}
+    var sEl=document.getElementById('lp-s'),kEl=document.getElementById('lp-k');
+    var svg=document.getElementById('lp-svg'),info=document.getElementById('lp-info');
+    if(!sEl||!kEl||!svg||!info)return;
+    var BOX=3,NS=4000,seed=1,base=randomBase(seed),preset=false;
+    var PRESET={A:[[1,2],[1,-2],[0.01,0]],b:[0.3,-0.2,-1],w:[1,1,0]};
+    var NCOL=['#e67e22','#00838f','#7b1fa2'];
+    var X0=45,Y0=40,S=300;
+    function px(x){return X0+(x+BOX)/(2*BOX)*S;}
+    function py(y){return Y0+(BOX-y)/(2*BOX)*S;}
+    function fx(v,d){return(Math.abs(v)<1e-12?0:v).toFixed(d);}
+    function vec(v){return '('+v.map(function(x){return fx(x,2);}).join(', ')+')';}
+    function clipPoly(poly,a,b,s){
+    var out=[],n=poly.length,i;
+    for(i=0;i<n;i++){
+    var P=poly[i],Q=poly[(i+1)% n];
+    var fp=s*(a[0]*P[0]+a[1]*P[1]+b),fq=s*(a[0]*Q[0]+a[1]*Q[1]+b);
+    if(fp>=0)out.push(P);
+    if((fp>=0)!==(fq>=0)){var t=fp/(fp-fq);out.push([P[0]+t*(Q[0]-P[0]),P[1]+t*(Q[1]-P[1])]);}
+    }
+    return out;
+    }
+    function area(p){var s=0,i;for(i=0;i<p.length;i++){var j=(i+1)% p.length;s+=p[i][0]*p[j][1]-p[j][0]*p[i][1];}return s/2;}
+    function centroid(p){
+    var A=area(p),cx=0,cy=0,i;
+    if(Math.abs(A)<1e-12){p.forEach(function(q){cx+=q[0];cy+=q[1];});return[cx/p.length,cy/p.length];}
+    for(i=0;i<p.length;i++){var j=(i+1)% p.length,c=p[i][0]*p[j][1]-p[j][0]*p[i][1];cx+=(p[i][0]+p[j][0])*c;cy+=(p[i][1]+p[j][1])*c;}
+    return[cx/(6*A),cy/(6*A)];
+    }
+    var STOPS=[[247,251,255],[198,219,239],[107,174,214],[33,113,181],[8,48,107]];
+    function shade(v){
+    v=Math.max(0,Math.min(1,v));var x=v*(STOPS.length-1),i=Math.min(STOPS.length-2,Math.floor(x)),f=x-i;
+    var c=STOPS[i].map(function(a,k){return Math.round(a+f*(STOPS[i+1][k]-a));});
+    return 'rgb('+c.join(',')+')';
+    }
+    function lineInBox(a,b){//segment of{a.x+b=0}inside the square
+    var pts=[],R=BOX,k;
+    if(Math.abs(a[1])>1e-12){[-R,R].forEach(function(x){var y=-(b+a[0]*x)/a[1];if(y>=-R-1e-9&&y<=R+1e-9)pts.push([x,y]);});}
+    if(Math.abs(a[0])>1e-12){[-R,R].forEach(function(y){var x=-(b+a[1]*y)/a[0];if(x>=-R-1e-9&&x<=R+1e-9)pts.push([x,y]);});}
+    if(pts.length<2)return null;
+    var best=[pts[0],pts[1]],dm=-1,i,j;
+    for(i=0;i<pts.length;i++)for(j=i+1;j<pts.length;j++){k=Math.hypot(pts[i][0]-pts[j][0],pts[i][1]-pts[j][1]);if(k>dm){dm=k;best=[pts[i],pts[j]];}}
+    return dm>1e-9?best:null;
+    }
+    function render(){
+    var s=parseFloat(sEl.value),kappa=parseFloat(kEl.value);
+    document.getElementById('lp-s-val').textContent=s.toFixed(2);
+    document.getElementById('lp-k-val').textContent=kappa.toFixed(2);
+    document.getElementById('lp-seed').textContent=preset?'network: walkthrough example':'network: seed '+seed;
+    var net=buildNet(preset?PRESET:base,s,kappa);
+    var r=analyse(net,BOX,NS,seed);
+    var Lx=r.exact>0?r.exact:1;
+    var o='<defs><linearGradient id="lp-cbar" x1="0" y1="1" x2="0" y2="0">';
+    [0,0.25,0.5,0.75,1].forEach(function(v){o+='<stop offset="'+v+'" stop-color="'+shade(v)+'"/>';});
+    o+='</linearGradient><clipPath id="lp-clip"><rect x="'+X0+'" y="'+Y0+'" width="'+S+'" height="'+S+'"/></clipPath></defs>';
+    o+='<text x="'+X0+'" y="24" font-size="13" fill="#333" font-weight="600">‖∇f(x)‖ on [−3, 3]² and the neuron boundaries</text>';
+    var sq=[[-BOX,-BOX],[BOX,-BOX],[BOX,BOX],[-BOX,BOX]],labels='';
+    r.realizable.forEach(function(key){
+    var d=key.split('').map(Number),poly=sq,i;
+    for(i=0;i<3&&poly.length;i++){
+    if(Math.hypot(net.A[i][0],net.A[i][1])<1e-12)continue;
+    poly=clipPoly(poly,net.A[i],net.b[i],d[i]?1:-1);
+    }
+    if(poly.length<3||Math.abs(area(poly))<1e-9)return;
+    var g=gradNorm(d,net),v=g/Lx;
+    o+='<polygon points="'+poly.map(function(q){return px(q[0]).toFixed(1)+','+py(q[1]).toFixed(1);}).join(' ')+'" fill="'+shade(v)+'" stroke="none"/>';
+    var areaPx=Math.abs(area(poly))*(S/(2*BOX))*(S/(2*BOX));
+    if(areaPx>900){
+    var c=centroid(poly);
+    labels+='<text x="'+px(c[0]).toFixed(1)+'" y="'+(py(c[1])+4).toFixed(1)+'" font-size="11" text-anchor="middle" fill="'+(v>0.55?'#fff':'#1a1a1a')+'">'+fx(g,2)+'</text>';
+    }
+    });
+    o+='<rect x="'+X0+'" y="'+Y0+'" width="'+S+'" height="'+S+'" fill="none" stroke="#888"/>';
+    for(var i=0;i<3;i++){
+    var seg=lineInBox(net.A[i],net.b[i]);
+    if(!seg)continue;
+    o+='<line x1="'+px(seg[0][0]).toFixed(1)+'" y1="'+py(seg[0][1]).toFixed(1)+'" x2="'+px(seg[1][0]).toFixed(1)+'" y2="'+py(seg[1][1]).toFixed(1)+'" stroke="'+NCOL[i]+'" stroke-width="2.2" clip-path="url(#lp-clip)"/>';
+    var fr=0.07+0.1*i,mx=seg[0][0]+fr*(seg[1][0]-seg[0][0]),my=seg[0][1]+fr*(seg[1][1]-seg[0][1]);
+    o+='<circle cx="'+px(mx).toFixed(1)+'" cy="'+py(my).toFixed(1)+'" r="8" fill="#fff" stroke="'+NCOL[i]+'"/><text x="'+px(mx).toFixed(1)+'" y="'+(py(my)+4).toFixed(1)+'" font-size="11" text-anchor="middle" fill="'+NCOL[i]+'" font-weight="700">'+(i+1)+'</text>';
+    }
+    o+=labels;
+    [-3,0,3].forEach(function(t){
+    o+='<text x="'+px(t).toFixed(1)+'" y="'+(Y0+S+15)+'" font-size="11" text-anchor="middle" fill="#555">'+(t<0?'−'+(-t):t)+'</text>';
+    o+='<text x="'+(X0-6)+'" y="'+(py(t)+4).toFixed(1)+'" font-size="11" text-anchor="end" fill="#555">'+(t<0?'−'+(-t):t)+'</text>';
+    });
+    o+='<text x="'+(X0+S/2)+'" y="'+(Y0+S+32)+'" font-size="12" text-anchor="middle" fill="#333">x₁</text>';
+    o+='<text x="'+(X0-26)+'" y="'+(Y0+S/2)+'" font-size="12" text-anchor="middle" fill="#333">x₂</text>';
+    o+='<rect x="352" y="'+Y0+'" width="11" height="'+S+'" fill="url(#lp-cbar)" stroke="#aaa"/>';
+    o+='<text x="357" y="'+(Y0-5)+'" font-size="10" text-anchor="middle" fill="#555">L*</text>';
+    o+='<text x="357" y="'+(Y0+S+13)+'" font-size="10" text-anchor="middle" fill="#555">0</text>';
+    var rows=[
+    ['product ‖W₀‖·‖W₁‖',r.product,'#c62828'],
+    ['LipSDP-Layer',r.layer,'#7b1fa2'],
+    ['LipSDP-Neuron',r.neuron,'#1565c0'],
+    ['all-patterns bound',r.allPat,'#00838f'],
+    ['exact L*',r.exact,'#2e7d32'],
+    ['sampled (4000 inputs)',r.sampled,'#e67e22']
+    ];
+    var vmax=Math.max(r.product,r.layer,r.neuron,r.allPat,r.exact,r.sampled,1e-12),BX=392,BW=250;
+    o+='<text x="'+BX+'" y="24" font-size="13" fill="#333" font-weight="600">Lipschitz numbers, same network</text>';
+    rows.forEach(function(row,k){
+    var y=44+k*50,w=Math.max(1,row[1]/vmax*BW);
+    o+='<text x="'+BX+'" y="'+(y+10)+'" font-size="12" fill="#333">'+row[0]+'</text>';
+    o+='<rect x="'+BX+'" y="'+(y+16)+'" width="'+w.toFixed(1)+'" height="16" rx="2" fill="'+row[2]+'"/>';
+    o+='<text x="'+(BX+w+6).toFixed(1)+'" y="'+(y+29)+'" font-size="12" fill="#333">'+fx(row[1],3)+'</text>';
+    });
+    var xl=BX+r.exact/vmax*BW;
+    o+='<line x1="'+xl.toFixed(1)+'" y1="54" x2="'+xl.toFixed(1)+'" y2="'+(44+6*50-2)+'" stroke="#2e7d32" stroke-width="1.2" stroke-dasharray="4,3"/>';
+    o+='<text x="'+BX+'" y="'+(44+6*50+22)+'" font-size="11" fill="#666">dashed: exact L*; bars to its right are certified overestimates</text>';
+    svg.innerHTML=o;
+    var pat=function(d){return d?d.join(''):'–';};
+    var h='<b>Weights.</b> W<sub>0</sub> rows '+net.A.map(vec).join(', ')+'; b<sub>0</sub> = '+vec(net.b)+'; W<sub>1</sub> = '+vec(net.w)+'.<br>';
+    h+='<b>Product</b> '+fx(r.nW0,3)+' × '+fx(r.nW1,3)+' = '+fx(r.product,3)+'. <b>LipSDP-Layer</b> '+fx(r.layer,4)+' (T = '+fx(r.tLayer[0],3)+'·I). ';
+    h+='<b>LipSDP-Neuron</b> '+fx(r.neuron,4)+' (T = diag'+vec(r.tNeuron.map(function(t){return t;}))+'; '+r.newton+' Newton steps'+(r.neuOk?', certificate passes the Cholesky test':', CERTIFICATE CHECK FAILED')+').<br>';
+    h+='<b>All-patterns</b> '+fx(r.allPat,4)+' (pattern '+pat(r.allPatArg)+'). <b>Exact L*</b> '+fx(r.exact,4)+' (pattern '+pat(r.exactArg)+'; '+r.realizable.length+' of 8 patterns occur). <b>Sampled</b> '+fx(r.sampled,4)+' ('+r.foundPatterns.length+' patterns seen in the square).<br>';
+    var notes=[];
+    if(r.exact>0)notes.push('LipSDP-Neuron / L* = '+fx(r.neuron/r.exact,3)+', product / L* = '+fx(r.product/r.exact,3)+'.');
+    if(r.neuron>r.allPat*(1+1e-6))notes.push('Relaxation gap: LipSDP-Neuron exceeds the all-patterns bound by '+fx(100*(r.neuron/r.allPat-1),2)+'%.');
+    if(r.allPat>r.exact*(1+1e-9))notes.push('Impossible pattern: the all-patterns maximiser '+pat(r.allPatArg)+' is realised by no input, yet every bias-independent certificate must pay for it.');
+    if(r.sampled<r.exact*(1-1e-9))notes.push('Sampling missed the steepest region (outside the square or too thin): a sampled gradient is only a lower bound.');
+    h+=notes.join(' ');
+    info.innerHTML=h;
+    }
+    sEl.addEventListener('input',render);
+    kEl.addEventListener('input',render);
+    document.getElementById('lp-rand').addEventListener('click',function(){preset=false;seed+=1;base=randomBase(seed);render();});
+    document.getElementById('lp-walk').addEventListener('click',function(){preset=true;sEl.value=1;kEl.value=0;render();});
+    render();
+    })();
+  </script>
+</body>
+</html>

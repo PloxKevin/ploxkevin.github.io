@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>7. Viability &amp; Safe Value Functions — Safe Learning</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">7. Viability &amp; Safe Value Functions</h1>
+    <p class="page-subtitle">Viability kernels, learnable safety measures, the penalty threshold theorem, entropy regularisation and uncertainty-aware safe RL</p>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#viability-kernel">1. Failure Sets, Viable Sets and the Viability Kernel</a>
+      <a href="#safety-measure">2. A Learnable Safety Measure</a>
+      <a href="#penalty-formulation">3. Penalising Failure: The Setup</a>
+      <a href="#safe-value-functions">4. Safe Value Functions: The Theorems</a>
+      <a href="#entropy-robustness">5. Viability of Future Actions and Entropy Regularisation</a>
+      <a href="#uncertainty-aware">6. Uncertainty-Aware Safe RL at DSME (UPSi, Dyna-SAuR, CHEQ)</a>
+      <a href="#connections">7. Connections: Lagrangians, Reachability, Shields</a>
+      <a class="toc-interactive" href="#threshold-walkthrough">Walkthrough: Deriving the Penalty Threshold p*</a>
+      <a class="toc-interactive" href="#penalty-explorer">Interactive: Penalty vs Safety on a Cliff Gridworld</a>
+      <a href="#exercises">Exercises</a>
+      <a href="#papers">Key Papers</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <p>Modules 4&ndash;6 kept a learner safe by never evaluating a <em>parameter</em> whose safety was not certified. This module changes the object of study: which <em>states</em> are safe, and what it takes for an optimal controller to respect that. The central question, posed by Massiani, Heim, Solowjow and Trimpe, is one every RL practitioner answers by reflex when writing a reward function: how large must the failure penalty be? The answer is a theorem with an exponential in it.</p>
+
+    <!-- ===== SECTION 1: VIABILITY ===== -->
+    <h2 class="section-heading" id="viability-kernel">1. Failure Sets, Viable Sets and the Viability Kernel</h2>
+
+    <p>Safety in this module is a <strong>state constraint</strong>: there is a set of failure states that the system must never visit. The difficulty is that "not failed yet" is not the same as "safe". A car sliding on ice towards a wall has not crashed, but no input can prevent the crash any more. Viability theory (<a class="cite" href="https://doi.org/10.1007/978-0-8176-4910-4" target="_blank" rel="noopener">Aubin, Viability Theory, 1991/2009</a>) names the states from which failure <em>can</em> still be avoided forever; that set, and not the complement of the failure set, is the right notion of a safe set.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Notation for this module</div>
+      <div>Sections 1, 3 and 4 follow <a class="cite" href="https://arxiv.org/abs/2105.12204" target="_blank" rel="noopener">Massiani, Heim, Solowjow &amp; Trimpe, TAC 2023</a>: state $x \in X$, input $u \in U$, and a feedback controller is also written $u : X \to U$ (the paper overloads the symbol; the argument makes it clear which is meant). Trajectories are $\varphi^u_x(t)$, the failure set is $X_F$, the reward $r$, the discount rate $\tau$ in continuous time or the factor $\gamma = e^{-1/\tau}$ in discrete time, and $p$ is the penalty. Sections 2 and 5 keep the notation of the papers they present: $s \in S$, $a \in A$, transition map $T$, viable set $Q_V$ (Heim et al.), or $x$, $a$ with a stochastic policy $\pi(a \mid x)$ and failure set $X_C$, the 2025 paper's name for $X_F$. Throughout, $\gamma$ is the discount factor, never the information gain of the GP modules; $\Lambda$ (capital lambda) is the safety measure, not a multiplier. $\lambda$ is the Lagrange multiplier of Section 7, but inside Sections 2 and 6 it keeps the meaning of the paper being presented (Heim et al.'s level $\lambda$ of the safety measure, an eigenvalue $\lambda_{\max}$, Dyna-SAuR's entropy threshold $\lambda_1$, CHEQ's blending weight $\lambda^{\mathrm{RL}}_t$). $\alpha$ is the thresholding level of Proposition 2 (with $\alpha_{\inf}$, $\alpha_{\sup}$) and, in Section 5, the entropy temperature; the class-$\mathcal{K}$ function of CBFs appears only once, in the table of Section 7. $\rho$ is the paper's discounted risk, not the occupancy measure $\rho_\pi$ of Module 8; $\eta$ is the risk threshold of bounded-risk CMDPs, so the dual step size (Module 8's $\eta$) is written $\eta_\lambda$ here; $G$ is the return, except for UPSi's gain matrix in Section 6. And $h$, the SafeOpt threshold in Modules 4&ndash;6, appears here only as a barrier function (Proposition 3) and as Dyna-SAuR's hyperplane map. Finally, $c$ is the living cost of the explorer and the exercises, the cost of a dynamic indicator in Section 5 and Dyna-SAuR's regulariser weight in Section 6, and $\mu$ is the initial-state distribution in Sections 3 and 7 but UPSi's nominal dynamics and Dyna-SAuR's filter policy in Section 6; each use is local.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Setting &mdash; deterministic dynamics and trajectories</div>
+      <div>Continuous time, $\mathbb{T} = \mathbb{R}_+$: $\dot x(t) = f(x(t), u(x(t)))$ with $x \in X \subset \mathbb{R}^n$, $u(x) \in U \subset \mathbb{R}^m$ and $f : X \times U \to \mathbb{R}^n$. Discrete time, $\mathbb{T} = \mathbb{N}$: $x_{t+1} = f(x_t, u(x_t))$, where $f$ may be discontinuous and $X$, $U$ may be finite sets. In both cases $u : X \to U$ is a measurable feedback controller, $\mathcal{U}$ is the set of all such controllers and $\varphi^u_x : \mathbb{T} \to X$ is the trajectory from $x$ under $u$, assumed well defined (and, in continuous time, continuous) for all time. Integrals over $\mathbb{T}$ use the Lebesgue measure in continuous time and the counting measure in discrete time, so that one formula covers both cases.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Failure set and the sink convention</div>
+      <div>The failure set $X_F \subset X$ is closed and <strong>absorbing</strong>: once the state enters $X_F$ the experiment is over (the robot is broken, the episode is reset). To reconcile this with an infinite time horizon, Massiani et al. (Remark 1) let the system jump instantly to an invariant <em>sink state</em> $\sigma$ with zero reward when it reaches $X_F$, so a trajectory occupies $X_F$ at a single instant and collects nothing afterwards. The paper deliberately does not introduce the sink formally: it is bookkeeping that ends the return (and the risk), not a point of $X$, so it does not enter $X_V$, $X_U$ or the suprema and infima below. (Counting it in $X_U$ would break the theory: its penalised value is $0$ for every $p$, so $\sup_{X_U} V_p$ could never be pushed below $0$.) The failure states themselves do belong to $X_U$, and in every example of this module they carry zero reward; Section 4 explains why that matters.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Viability kernel, unviability kernel (Massiani et al., Def. 1)</div>
+      <div>
+        $$X_V = \{\,x \in X : \exists u \in \mathcal{U},\ \forall t \in \mathbb{T},\ \varphi^u_x(t) \notin X_F\,\}, \qquad X_U = X \setminus X_V .$$
+        In words: $x$ is <strong>viable</strong> if <em>some</em> controller keeps the trajectory out of the failure set for all time. Trajectories can stay in $X_V$ arbitrarily long, but as soon as they leave it they fail within finite time, which is why the complement $X_U$ is called the unviability kernel. $X_V$ is the largest set that can be made invariant while avoiding $X_F$, i.e. the maximal controlled-invariant subset of $X \setminus X_F$ in the language of set-invariance theory (<a class="cite" href="https://doi.org/10.1016/S0005-1098(99)00113-2" target="_blank" rel="noopener">Blanchini, Automatica 1999</a>), hence the largest possible safe set.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Safe controller and viable set</div>
+      <div>A controller $u$ is <strong>safe for the point</strong> $x$ if $\varphi^u_x(t) \notin X_F$ for all $t \in \mathbb{T}$; equivalently, by the definition of $X_V$, if $\varphi^u_x(t) \in X_V$ for all $t$. $\mathcal{U}_{\mathrm{safe}}(x)$ is the set of such controllers, and $\mathcal{U}_{\mathrm{safe}} = \bigcap_{x \in X_V} \mathcal{U}_{\mathrm{safe}}(x)$ is the set of controllers that are safe from every viable state. In discrete time the same idea lives in state-input space: the <strong>viable set</strong>
+        $$Q_V = f^{-1}(X_V) = \{(x,u) : f(x,u) \in X_V\} \subset X_V \times U, \qquad Q_U = (X \times U) \setminus Q_V,$$
+        is the set of pairs that transition <em>into</em> the kernel (Heim et al. call it the maximal set with this property), and $Q_V[x] = \{u : (x,u) \in Q_V\}$ is its slice at $x$. The kernel is the projection of $Q_V$ onto the state space, and $Q_V[x] \neq \emptyset$ exactly when $x \in X_V$.
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight</div>
+      <div>The viability kernel replaces a <em>dynamic</em> question ("will this trajectory ever fail?") by a <em>static</em> one ("is $(x,u)$ in $Q_V$?"). A policy is safe from every viable state if and only if it maps viable states into $Q_V$: necessary because any pair outside $Q_V$ lands outside $X_V$ and therefore fails in finite time, sufficient because every state in $X_V$ has a pair in $Q_V$ available, so the choice can be repeated forever (<a class="cite" href="https://arxiv.org/abs/2105.08143" target="_blank" rel="noopener">Massiani, Heim &amp; Trimpe, L4DC 2021</a>). Every safety filter, shield and safe value function in this section is, at bottom, a way of never leaving $Q_V$.</div>
+    </div>
+
+    <h3 class="subsection-heading">Computing the kernel on a finite space</h3>
+    <p>On a finite state-input space the kernel is a greatest fixed point and can be computed by a decreasing iteration. This is what the explorer below runs, and it is also the algorithm behind shield synthesis (Section 7).</p>
+
+    <div class="algorithm">
+      <div class="algorithm-title">Algorithm 1: Viability iteration (finite $X \times U$, deterministic $f$)</div>
+      <ol>
+        <li>$X^0 \leftarrow X \setminus X_F$ <span class="comment">// optimistic start: every state that has not failed yet</span></li>
+        <li><strong>repeat</strong></li>
+        <li><span class="indent"></span>$X^{k+1} \leftarrow \{x \in X^k : \exists u \in U,\ f(x,u) \in X^k\}$ <span class="comment">// keep the states that can stay one more step</span></li>
+        <li><strong>until</strong> $X^{k+1} = X^k$</li>
+        <li>return $X_V = X^k$ and $Q_V = \{(x,u) : x \in X_V,\ f(x,u) \in X_V\}$</li>
+      </ol>
+    </div>
+
+    <p><em>Why it works.</em> By induction, $X^k$ is the set of states from which failure can be avoided for $k$ steps. The sequence is decreasing, so on a finite space it stabilises after at most $|X|$ iterations, and the limit is the largest set $Y \subseteq X \setminus X_F$ with the invariance property $\forall x \in Y\ \exists u : f(x,u) \in Y$, which is precisely $X_V$. On a continuous state space the same object is computed on a grid by Hamilton&ndash;Jacobi reachability: $X_U$ is the backward-reachable tube of $X_F$, and $X_V$ is its complement (<a class="cite" href="https://arxiv.org/abs/1709.07523" target="_blank" rel="noopener">Bansal, Chen, Herbert &amp; Tomlin, CDC 2017</a>; <a href="barriers.html#hj-reachability">Module 10</a>).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to Module 10 &mdash; reachability values are not Lagrange values</div>
+      <div>HJ reachability also encodes $X_V$ in a value function, but one of a different type: $V_{\mathrm{BRT}}(x) = \sup_{u} \inf_{t \ge 0} \ell(\varphi^u_x(t))$ with $\ell$ a signed distance to $X_F$, so that $X_V = \{V_{\mathrm{BRT}} \ge 0\}$ (up to the boundary convention). This is a minimum over time along the trajectory, not a discounted integral, so it is not a Lagrange-type value function and does not come with the usual RL machinery. <a class="cite" href="https://doi.org/10.1109/ICRA.2019.8794107" target="_blank" rel="noopener">Fisac et al., ICRA 2019</a> showed that its discounted version $V(s) = (1-\gamma)\ell(s) + \gamma \min\{\ell(s), \max_a V(s^+_a)\}$ is a contraction and can be learned by Q-learning. Safe value functions, by contrast, keep the standard discounted return and ask when it <em>already</em> encodes the kernel.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; The shelf: a one-dimensional kernel with a known time-to-failure</div>
+      <div class="collapsible-body">
+        <p>Massiani et al. (Section VI-A) use a piecewise-affine model that we will reuse for the threshold theorem. A robot drives on a shelf of length $L$ at speed $\pm v$ or stands still: $X = [-L, L]$, $U = \{-v, 0, v\}$,</p>
+        <div class="math-block">
+          $$\dot x = \begin{cases} u(x), & x \in [0, L), \\ -L/T_f, & x \in (-L, 0), \\ 0, & \text{otherwise}, \end{cases} \qquad X_F = \{-L\}.$$
+        </div>
+        <p>On $[0, L)$ the robot controls its motion. If it crosses the ledge at $x = 0$ it falls at constant speed $L/T_f$ and breaks on the ground at $x = -L$, where the trajectory stops. Hence $X_V = [0, L]$ (the robot can stand still anywhere on the shelf, and at the wall $x = L$ it is stuck, $\dot x = 0$) and $X_U = [-L, 0)$: the paper writes $(-L, 0)$ for the doomed but not yet failed part, and the failure state $-L$ belongs to $X_U$ as well. Every unviable trajectory reaches $X_F$ within time $T_f$, exactly the uniform time-to-failure bound that Assumption 1 in Section 4 asks for. Note the discontinuity of $f$ at $x = 0$: the fall is not a Lipschitz continuation of the driving dynamics. Section 4 explains why this is not an accident.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; The hovership toy model of Heim et al.</div>
+      <div class="collapsible-body">
+        <p>The CoRL 2019 paper introduces its objects on a five-state grid world: a hovering spaceship pulled towards the ground by a gravity that is stronger near the ground; it can fire two levels of thrust or let itself fall. With failure set $S_F = \{5\}$ (the crash), the viability kernel is $S_V = \{1, 2, 3\}$. Two details are worth remembering. State $3$ is viable but can no longer reach the other viable states: avoiding failure does not require ergodicity. State $4$ is neither in $S_V$ nor in $S_F$: it has not failed yet but cannot avoid failing, the "sliding on ice" situation. Finally, from state $3$ exactly one action keeps the ship alive, which is what the safety measure of the next section quantifies as $\Lambda(3) = 1$.</p>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 2: SAFETY MEASURE ===== -->
+    <h2 class="section-heading" id="safety-measure">2. A Learnable Safety Measure</h2>
+
+    <p>A binary label "viable / unviable" hides how <em>close</em> to failure a state is. <a class="cite" href="https://arxiv.org/abs/1910.02835" target="_blank" rel="noopener">Heim, von Rohr, Trimpe &amp; Badri-Spr&ouml;witz, CoRL 2019</a> propose a graded notion: count the viable actions. This section uses their notation, $s' = T(s, a)$ with $q = (s, a) \in Q = S \times A$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Safety measure, Q-safety measure, safe level sets (Heim et al., Defs. 3&ndash;5)</div>
+      <div>
+        The <strong>safety measure</strong> $\Lambda(s) \in \mathbb{R}_{\ge 0}$ is the volume of the slice of the viable set at $s$,
+        $$\Lambda(s) = \operatorname{vol}\{a \in A : (s,a) \in Q_V\},$$
+        with the Lebesgue measure on continuous action spaces (assuming measurability) and the counting measure on discrete ones. The <strong>Q-safety measure</strong> transports it to state-action space through the dynamics, $\Lambda_Q(q) = \Lambda(T(q))$. For a level $\lambda \ge 0$ the safe level sets are $S_\lambda = \{s : \Lambda(s) \gt \lambda\}$ and $Q_\lambda = \{q : \Lambda_Q(q) \gt \lambda\}$. With the counting measure viability means $\Lambda(s) \gt 0$ (a viable state has at least one viable action), so the viable set is recovered as $Q_V = Q_{\lambda = 0}$. With the Lebesgue measure this needs every nonempty slice $\{a : (s,a) \in Q_V\}$ to have positive volume, which the paper assumes tacitly: a viable state whose only viable input is a single point has $\Lambda(s) = 0$.
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Intuition</div>
+      <div>A high $\Lambda(s)$ means many viability-maintaining actions are available: the agent can be sloppy. A low value means the agent must be precise and deliberate, because few actions avoid failure now and in the future. Sampling from $Q_\lambda$ moves the system to a state $s'$ with $\Lambda(s') \gt \lambda$, i.e. with more than $\lambda$ viable actions to choose from, which is useful when disturbances are expected. The paper adds that the margin can then be kept indefinitely; that does not follow from the definitions alone, because a state with $\Lambda(s') \gt \lambda$ need not have any successor with $\Lambda \gt \lambda$ (two viable actions that both lead to a state with a single viable action). An indefinite margin needs the viability kernel of $S_\lambda$, computed like $X_V$ with $S_\lambda$ in place of $X \setminus X_F$. The measure implicitly encodes both the dynamics and the failure set; nothing else about the system needs to be known. Section 5 will show that maximum-entropy RL is drawn to high-$\Lambda$ states on its own.</div>
+    </div>
+
+    <h3 class="subsection-heading">Learning the measure from samples, and why failures are informative</h3>
+    <p>The goal is a large, <em>conservative</em> estimate $\hat Q_V \subseteq Q_V$ obtained model-free. The agent picks an action $a$ in state $s$ and receives the tuple $(s', \mathrm{failed})$. Two kinds of samples arrive: a failure is the only direct observation of the ground truth, $\Lambda_Q(q) = 0$; a success only yields the current <em>estimate</em> $\hat\Lambda(s')$ of the next state's measure, which is itself computed from $\hat\Lambda_Q$. The learning signal therefore flows from failures outwards.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Convergence on the unviable set (Heim et al., Thm. 1)</div>
+      <div>For discrete time and finite state-action spaces, with the tabular update $\hat\Lambda_Q(q) \leftarrow 0$ after a failure and $\hat\Lambda_Q(q) \leftarrow \hat\Lambda(s')$ otherwise (the setting of the paper's Appendix A, not the GP of the practical algorithm): under infinite random sampling over $Q$, the estimate $\hat\Lambda_Q$ converges to the correct value $0$ for all $q \in Q_V^c$ (the unviable and failed pairs). Once this has happened, $\hat Q_V$ is tightly bounded from above and $\hat\Lambda \le \Lambda$; if the estimate was initialised <em>optimistically on the viable pairs</em>, $Q_V \subseteq \hat Q_V$ (i.e. $\hat\Lambda_Q \gt 0$ on $Q_V$, implied by the pointwise $\hat\Lambda_Q \ge \Lambda_Q$), it converges to the true measure. The paper phrases the optimism state-wise, "initially $\hat\Lambda \ge \Lambda$", which is not enough (counterexample below).</div>
+    </div>
+
+    <p><em>Why the two conditions.</em> Non-failure samples only ever copy estimates and failures only ever lower them, so a viable pair that is wrongly assigned $0$ can be repaired only through a successor state whose estimate is still positive; once the zeros close a loop they are permanent. Optimism is needed so that errors are only ever in the direction that failures can fix, and it has to hold pair by pair: the invariant $Q_V \subseteq \hat Q_V$ survives every update (a viable pair's successor $s' \in S_V$ keeps at least its $\Lambda(s') \ge 1$ viable actions positive), and together with the theorem it forces $\hat Q_V = Q_V$, hence $\hat\Lambda = \Lambda$. The state-wise $\hat\Lambda \ge \Lambda$ does not suffice: take one viable state $s$ with a safe self-loop $a_1$ and a failing action $a_2$, initialised $\hat\Lambda_Q(s,a_1) = 0$, $\hat\Lambda_Q(s,a_2) = 1$, so that $\hat\Lambda(s) = 1 = \Lambda(s)$; if $a_2$ is sampled first, $\hat\Lambda(s)$ drops to $0$ and the self-loop copies $0$ forever. Infinite sampling is what lets every unviable pair eventually be observed as a failure, directly or through the chain $\hat\Lambda_Q(q) = \hat\Lambda(T(q))$. Both are the usual conditions of model-free learning and both are impractical, since optimistic starts encourage visits to the failure set. The practical algorithm trades the guarantee for confidence bounds.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Algorithm idea &mdash; A GP over $\Lambda_Q$ with an optimistic and a cautious set</div>
+      <div>Model $\hat\Lambda_Q(q) \mid \mathcal{D} \sim \mathcal{N}(\mu(q), \sigma^2(q))$ with a Gaussian process on $\mathcal{D} = \{(q_i, \hat\Lambda_i(s'_i))\}$ (a practical approximation: the mass below zero is read as the probability of the point being unviable). Then $P[\hat\Lambda_Q \gt \lambda \mid \mathcal{D}] \approx 1 - F_{\hat\Lambda_Q}(\lambda)$ with $F$ the normal CDF, and two thresholded sets drive learning:
+        $$\begin{aligned} \hat Q_{\mathrm{opt}}(\gamma_{\mathrm{opt}}) &= \{q : P[\hat\Lambda_Q \gt 0] \gt \gamma_{\mathrm{opt}}\}, \\ \hat Q_{\mathrm{caut}}(\gamma_{\mathrm{caut}}, \lambda_{\mathrm{caut}}) &= \{q : P[\hat\Lambda_Q \gt \lambda_{\mathrm{caut}}] \gt \gamma_{\mathrm{caut}}\}. \end{aligned}$$
+        $\hat Q_{\mathrm{opt}}$ is used to compute $\hat\Lambda$ (optimism, needed for convergence); $\hat Q_{\mathrm{caut}}$ is used for active sampling (caution, needed to avoid failures). Choosing $\gamma_{\mathrm{caut}} \ge \gamma_{\mathrm{opt}}$ gives $\hat Q_{\mathrm{caut}} \subseteq \hat Q_{\mathrm{opt}}$, so the agent never purposefully explores outside its current estimate of the viable set. (Here $\gamma_{\mathrm{opt}}$, $\gamma_{\mathrm{caut}} \in [0,1]$ are confidence levels, not discount factors.)</div>
+    </div>
+
+    <div class="algorithm">
+      <div class="algorithm-title">Algorithm 2: Learning the safety measure (Heim et al., Alg. 1)</div>
+      <ol>
+        <li>Input: initial GP estimate $\hat\Lambda_Q$, thresholds $\gamma_{\mathrm{caut}}, \gamma_{\mathrm{opt}}, \lambda_{\mathrm{caut}}$, initial state $s_0$, budget $n$</li>
+        <li><strong>while</strong> $i \lt n$:</li>
+        <li><span class="indent"></span>compute $\hat\Lambda$, $\hat Q_{\mathrm{opt}}$, $\hat Q_{\mathrm{caut}}$ from $\hat\Lambda_Q$; $A_{\mathrm{caut}} \leftarrow \{a : (s_i, a) \in \hat Q_{\mathrm{caut}}\}$</li>
+        <li><span class="indent"></span><strong>if</strong> $A_{\mathrm{caut}} = \emptyset$: $a_i \leftarrow \arg\max_a P[\hat\Lambda_Q(s_i,a) \gt 0 \mid \mathcal{D}]$ <span class="comment">// take the safest action: the most probably viable one. The paper writes $P[(s_i,a) \in \hat Q_{\mathrm{caut}}]$, which is $0$ for every $a$ once the set is thresholded; the authors' code (vibly) maximises this unthresholded probability, plus a little noise to break ties</span></li>
+        <li><span class="indent"></span><strong>else</strong>: $a_i \leftarrow \arg\max_{a \in A_{\mathrm{caut}}} \sigma^2(s_i, a)$ <span class="comment">// explore where the GP is most uncertain</span></li>
+        <li><span class="indent"></span>$(s_{i+1}, \mathrm{failed}) \leftarrow T(s_i, a_i)$</li>
+        <li><span class="indent"></span><strong>if</strong> failed: add $((s_i, a_i), 0)$ to $\mathcal{D}$, refit, reset $s_{i+1}$ to a random state of $\hat Q_{\mathrm{caut}}$</li>
+        <li><span class="indent"></span><strong>else</strong>: compute $\hat\Lambda(s_{i+1})$ from $\hat Q_{\mathrm{opt}}$, add $((s_i, a_i), \hat\Lambda(s_{i+1}))$ to $\mathcal{D}$, refit</li>
+      </ol>
+    </div>
+
+    <p><em>Results reported.</em> On a continuous version of the hovership with a deliberately poor prior mean, the estimate is close to the ground truth after 250 samples with an 8% failure rate; the confidence thresholds are raised linearly over the run as a heuristic. On a spring-loaded inverted pendulum (SLIP) running model, controlled once per step at the apex, a conservative prior converges to a nearly maximal conservative approximation of $Q_V$ with an 8% failure rate after 500 samples. Where the measure has a non-smooth edge (an infeasibility constraint) the GP's smoothness assumption is violated and more failures are sampled; at smooth borders the shrinking measure lets the border be inferred with few or no failures.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat</div>
+      <div>The Gaussian likelihood is a modelling convenience: $\Lambda_Q$ is non-negative and has an atom at zero, which a normal distribution cannot represent. Once confidence thresholds replace the optimistic-and-exhaustive sampling of Theorem 1, the convergence guarantee is lost; the paper states this explicitly and shows convergence to conservative subsets empirically. The "8% failure rate" is a training statistic, not a bound. Compare with the GP bounds of <a href="toolkit-gp.html#practical-bounds">Module 3</a>, which are rigorous but need an RKHS-norm bound on the target function.</div>
+    </div>
+
+    <h3 class="subsection-heading">Exploration requirements: constraints need not be accurate everywhere</h3>
+    <p>If the goal is not to know $Q_V$ but to make a given nominal policy $\pi$ safe, much less has to be learned. <a class="cite" href="https://arxiv.org/abs/2105.08143" target="_blank" rel="noopener">Massiani, Heim &amp; Trimpe, L4DC 2021</a> define the constrained policy as the projection of $\pi$ onto a constraint set $K \subset Q$,</p>
+    <div class="math-block">
+      $$\mathrm{OPT}(K) : s \mapsto \operatorname*{arg\,min}_{a \in A}\ J(s,a) \quad \text{s.t. } (s,a) \in K,$$
+    </div>
+    <p>with the paper's default cost $J(s,a) = \|a - \pi(s)\|_2^2$, where $\mathrm{OPT}(K)(s)$ denotes the set of minimisers, and ask which closed sets $K$ produce the same policy as the true viable set, $\mathrm{OPT}(K) = \mathrm{OPT}(Q_V)$ on $S_V$. Closedness guarantees that the minimum is attained; for $\mathrm{OPT}(Q_V)$ itself the paper assumes that the dynamics generate a closed viable set.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &amp; Theorem &mdash; Critical set and admissible constraints (L4DC 2021, Def. 5 and Thm. 6)</div>
+      <div>The <strong>critical set</strong> is the set of unviable pairs at viable states that the projection would prefer over the optimal viable action:
+        $$Q_{\mathrm{crit}} = \{(s,a) \in Q \setminus Q_V : s \in S_V,\ J(s,a) \le J(s, \mathrm{OPT}(Q_V)(s))\}.$$
+        <strong>Theorem 6.</strong> Assume $Q_V$ is closed, and let $K$ be closed with $\mathrm{OPT}(Q_V) \subseteq K$ (as a set of state-action pairs). Then $\mathrm{OPT}(K)(s) = \mathrm{OPT}(Q_V)(s)$ for all $s \in S_V$ if, and only if, $K \cap Q_{\mathrm{crit}} = \emptyset$. Such a $K$ is called <em>admissible</em>.</div>
+    </div>
+
+    <p>In words: an admissible constraint must contain the optimal viable policy and exclude the critical set, and may otherwise contain unviable pairs that are never tempting. Two consequences follow. First, <em>greed is good</em>: following $\pi_{\hat K}(s) = \mathrm{OPT}(\hat K)(s)$ when feasible (and $\pi$ otherwise) aims exploration at $Q_{\mathrm{crit}}$ by itself, and the paper concludes that it keeps visiting $Q_{\mathrm{crit}}$ until the learner has excluded it, so the exploration requirement is fulfilled by the greedy on-policy strategy, with no off-policy exploration. That is an argument, not a theorem (Theorem 6 is a static statement about sets): the greedy policy only probes the critical pairs at states its trajectories actually reach, so a viable region they never enter is never explored, and each probed pair must then really be removed by the learner's update. In the experiments the coverage comes from starting every episode (at most 10 steps) in a random state of the projection of $\hat K$. Second, this is why failures are informative here too: as long as $\hat K$ contains $\mathrm{OPT}(Q_V)$, an unviable action that the greedy policy picks at a viable state costs at most $J(s, \mathrm{OPT}(Q_V)(s))$, so it is by definition a critical pair, and the failures it causes teach exactly what must be excluded. In their experiment with the affine nominal policy $a = 0.7 - 0.3 s$ on the hovership and the GP learner of Heim et al., 20 episodes (196 samples) gave a safe policy $\pi_{\hat K}$ over nearly the whole viability kernel.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall &mdash; two critical sets</div>
+      <div>The 2025 entropy paper (Section 5) reuses the name $Q_{\mathrm{crit}}$ for the larger set $Q_U \cap (X_V \times A)$, all unviable actions at viable states, with no reference to a nominal policy. The L4DC critical set is the subset of those that beat $\mathrm{OPT}(Q_V)$ for the cost $J$. Both are "the pairs that must be excluded"; only the reference policy differs.</div>
+    </div>
+
+    <!-- ===== SECTION 3: PENALTY SETUP ===== -->
+    <h2 class="section-heading" id="penalty-formulation">3. Penalising Failure: The Setup</h2>
+
+    <p>Back to control notation. The reward $r : X \times U \to \mathbb{R}$ is measurable and bounded. For a controller $u$ and initial state $x$ the <strong>return</strong> is</p>
+    <div class="math-block">
+      $$G(x,u) = \int_{\mathbb{T}} e^{-t/\tau}\, r\big(\varphi^u_x(t), \hat u_x(t)\big)\, dt, \qquad \hat u_x(t) = u(\varphi^u_x(t)),$$
+    </div>
+    <p>with the discount rate $\tau \gt 0$; in discrete time the integral is a sum and $e^{-t/\tau} = \gamma^t$ with $\gamma = e^{-1/\tau}$. The smaller $\tau$, the shorter the agent's inner time horizon, although large delayed rewards can still matter. Because $r$ is bounded the return is finite for every $u$ and $x$. The (unconstrained) value function is $v(x) = \sup_{u \in \mathcal{U}} G(x,u)$ and satisfies the dynamic-programming identity, for all $t$,</p>
+    <div class="math-block">
+      $$\begin{gathered} v(x) = \sup_{u \in \mathcal{U}} \left[ \int_0^{t} e^{-s/\tau} r\big(\varphi^u_x(s), \hat u_x(s)\big)\, ds + e^{-(t + \delta t)/\tau}\, v\big(\varphi^u_x(t + \delta t)\big) \right], \\ \delta t = \begin{cases} 1 & \mathbb{T} = \mathbb{N} \\ 0 & \mathbb{T} = \mathbb{R}_+ \end{cases} \end{gathered}$$
+    </div>
+    <p>The $\delta t$ bookkeeping is what produces the extra term in the discrete-time theorems: in discrete time the "rest of the trajectory" starts one step later than the split point.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Lemma &mdash; The discounted risk (Massiani et al., Lemma 1)</div>
+      <div>For $x \in X$ and $u \in \mathcal{U}$ define
+        $$\rho(x,u) = \int_{\mathbb{T}} e^{-t/\tau}\, \delta_{X_F}\big(\varphi^u_x(t)\big)\, dt,$$
+        where $\delta_{X_F}$ is the indicator function of $X_F$ in discrete time and, in the paper's words, "the Dirac distribution" in continuous time. The continuous-time case is a convention about <em>events in time</em>: $\delta_{X_F}(\varphi^u_x(t))\,dt$ stands for the unit point mass $\delta_{t_f}(dt)$ at the failure instant. A spatial Dirac composed with the trajectory would not give this: for a scalar crossing of $x_F$ at speed $\dot x(t_f) \ne 0$, $\int \delta(x(t) - x_F)\,dt = 1/|\dot x(t_f)|$, and a general closed set $X_F$ has no canonical Dirac distribution at all. Then $u$ is safe for $x$ if, and only if, $\rho(x,u) = 0$.
+        <p style="margin:8px 0 0;"><em>Proof.</em> With the sink convention the trajectory is in $X_F$ at exactly one instant, its time-to-failure $t_f \in \mathbb{T} \cup \{\infty\}$, so with this convention the integral evaluates to $\rho(x,u) = e^{-t_f/\tau}$ (and to $0$ if $t_f = \infty$). By definition $u$ is safe for $x$ iff the trajectory never enters $X_F$, i.e. iff $t_f = \infty$. $\square$</p>
+        The discount inside $\rho$ is not needed for the lemma; it is there so that $\rho$ can be combined linearly with the return $G$, which has the same discount.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; The constrained problem (C) and the penalised problem (P)</div>
+      <div>
+        The task is to maximise the expected return over safe controllers, for an initial distribution $\mu$ supported in $X_V$:
+        $$\text{(C)} \qquad \sup_{u \in \mathcal{U}_{\mathrm{safe}}} \mathbb{E}_{x \sim \mu}\big[G(x,u)\big], \qquad\qquad V : x \in X_V \mapsto \sup_{u \in \mathcal{U}_{\mathrm{safe}}} G(x,u),$$
+        where $V$ is the <strong>constrained value function</strong>, defined on the kernel only. Since constrained optimal control is hard, common practice relaxes the constraint and penalises failure by replacing $r$ with $r - p\,\delta_{X_F}$ for a constant designer-chosen penalty $p \in \mathbb{R}_+$:
+        $$\text{(P)} \qquad V_p : x \in X \mapsto \sup_{u \in \mathcal{U}} \big[G(x,u) - p\,\rho(x,u)\big].$$
+        The supremum in (P) is assumed to be attained; its maximisers are the <em>optimal controllers of $V_p$</em>. Attainment is meant uniformly: there is a feedback controller that attains $V_p(x)$ at every $x$ at once (the paper's proof starts from "any controller that achieves $V_p$ for all $x$"; on finite deterministic problems dynamic programming supplies a stationary one). <strong>Problem 1:</strong> under what conditions on $p$ are the solutions of (P) both safe and optimal for (C)?
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Safe value function (Massiani et al., Def. 3) and Proposition 1</div>
+      <div>$V_p$ is a <strong>safe value function</strong> (SVF) if <em>all</em> of its optimal controllers are both safe and optimal with respect to (C). Every SVF is a value function in the classical RL sense, so it can be learned with standard algorithms.
+        <p style="margin:8px 0 0;"><strong>Proposition 1.</strong> If $V_p$ is an SVF, then $V_p(x) = V(x)$ for all $x \in X_V$.</p>
+        <p style="margin:6px 0 0;"><em>Proof.</em> Let $u^\star$ be an optimal controller of $V_p$ at $x \in X_V$. It is safe, so $\rho(x,u^\star) = 0$ and $V_p(x) = G(x,u^\star)$. Because it is also optimal for (C) among safe controllers, $G(x,u^\star) = \sup_{\mathcal{U}_{\mathrm{safe}}} G(x,\cdot) = V(x)$. $\square$</p></div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Key insight &mdash; optimality is decoupled from safety</div>
+      <div>For an SVF, optimal trajectories that start inside $X_V$ never leave it, so the values on $X_V$ are unaffected by whatever the reward does outside. As long as the reward on $X_V$ is the one of (C), <em>all</em> SVFs coincide on $X_V$ and do not depend on $p$. Modifying the reward only where it affects $X_U$ is therefore a free degree of freedom for enforcing safety. The catch is that $X_V$ is rarely known, so we want conditions under which a plain failure penalty, which the designer can always write down, has this property.</div>
+    </div>
+
+    <p>Three reward constants will control everything that follows. For discrete time, with $Q_V$ and $Q_U$ from Section 1,</p>
+    <div class="math-block">
+      $$R_{Q_U} = \sup_{Q_U} r, \qquad R_{Q_V} = \inf_{Q_V} r, \qquad R_{X_U} = \sup_{X_U \times U} r .$$
+    </div>
+    <p>$R_{Q_U}$ is the best one-step reward obtainable on a transition that leaves the kernel (or happens outside it), $R_{Q_V}$ the worst one-step reward of a viable transition, and $R_{X_U}$ the best reward rate available while doomed. In every example of this module the failure states carry zero reward; since $X_F \subset X_U$, this makes both suprema at least $0$. Only the sign of $R_{X_U}$ matters for the theory (Section 4).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to Module 8 &mdash; the 0-risk CMDP</div>
+      <div>(C) is a constrained MDP (<a href="cmdp.html#cmdp-definition">Module 8</a>) whose running cost is $\delta_{X_F}$ and whose threshold is exactly $0$: Massiani et al. call it the <em>0-risk CMDP</em>, as opposed to bounded-risk CMDPs with $\rho \le \eta$, $\eta \gt 0$. The constraint $\rho = 0$ can be rewritten as a trajectory constraint, "stay in $X_V$", so (C) is an <strong>unconstrained MDP on the state space $X_V$ with state-dependent action set $Q_V[x]$</strong> (Section V-B of the paper). That is why, unlike general CMDPs, it has deterministic optimal controllers that do not depend on $\mu$ (Remark 5), and why value-function tools apply to it at all. The same fact will explain, in Section 4, why penalties work for $\eta = 0$ but not for $\eta \gt 0$.</div>
+    </div>
+
+    <!-- ===== SECTION 4: THE THEOREMS ===== -->
+    <h2 class="section-heading" id="safe-value-functions">4. Safe Value Functions: The Theorems</h2>
+
+    <p>The main result has two layers. First, a condition on the value function itself that guarantees safety: unviable states must look worse than every viable state. Second, a guarantee that a large enough failure penalty always enforces that condition, with an explicit (if conservative) formula for "large enough".</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Zeroth-order condition for safety (Massiani et al., Thm. 1)</div>
+      <div>Consider $V_p$ from (P) and assume the <strong>zeroth-order condition</strong> holds:
+        $$\text{(Za)} \qquad \sup_{X_U} V_p \ \lt\ \inf_{X_V} V \qquad\qquad \text{if } \mathbb{T} = \mathbb{R}_+,$$
+        $$\text{(Zb)} \qquad R_{Q_U} + \gamma \sup_{X_U} V_p \ \lt\ R_{Q_V} + \gamma \inf_{X_V} V \qquad \text{if } \mathbb{T} = \mathbb{N}.$$
+        Then $V_p$ is a safe value function: all of its optimal controllers are safe and optimal for (C).
+      </div>
+    </div>
+
+    <p><em>In words.</em> No state outside the kernel may be worth more than the worst state inside it. In discrete time the transition that leaves the kernel earns a one-step reward of at most $R_{Q_U}$, while the safe alternative at the same state earns at least $R_{Q_V}$; these two one-step rewards are collected <em>before</em> the discounted continuation, hence the extra terms and the factor $\gamma$ in (Zb). The condition is called "zeroth-order" because it compares values, not derivatives, of $V_p$ at different states.</p>
+
+    <p><em>Why each ingredient matters.</em> The supremum on the left ranges over the whole unviability kernel, failure states included (but not the post-failure sink, which is bookkeeping and not a state of $X$), because an unsafe controller can wander anywhere in $X_U$ before failing. The infimum on the right is over the <em>constrained</em> value $V$, not $V_p$: the safe alternative we compare against must itself be safe. The inequality is strict so that unsafe actions are strictly suboptimal, which is what "all maximisers are safe" needs; with equality some optimal controller could be indifferent and fail.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof sketch &mdash; Theorem 1: splitting the return at the exit time</div>
+      <div class="collapsible-body">
+        <p><strong>Step 1 (Lemma 3 of the paper).</strong> The following are equivalent: (i) for every $x \in X_V$, every maximiser of $u \mapsto (G - p\rho)(x,u)$ lies in $\mathcal{U}_{\mathrm{safe}}(x)$; (ii) for every $x \in X_V$ and every unsafe $u_F \notin \mathcal{U}_{\mathrm{safe}}(x)$, $V(x) \gt (G - p\rho)(x, u_F)$. Indeed, (i) implies that the maximum of $G - p\rho$ is attained on safe controllers, where $\rho = 0$, so it equals $\max_{\mathcal{U}_{\mathrm{safe}}} G = V(x)$, and any unsafe $u_F$ is strictly below it. Conversely, weak duality gives $\max_{\mathcal{U}} (G - p\rho) \ge \max_{\mathcal{U}_{\mathrm{safe}}} G = V(x)$, so under (ii) no unsafe controller can be a maximiser. Statement (i) is exactly "$V_p$ is safe" together with Proposition 1's optimality, so it suffices to show that (Z) implies (ii).</p>
+        <p><strong>Step 2 (exit time).</strong> Fix $x \in X_V$ and an unsafe $u_F$. Let $T = \sup\{t : \varphi^{u_F}_x(t) \in X_V\}$, the last time the unsafe trajectory is still viable; $T$ is finite because $u_F$ fails from $x$, and it can be $0$ (on the shelf, start at the ledge $x = 0$ and drive left). Write the return of $u_F$ with the dynamic-programming identity split at $T + \epsilon$, for a small $\epsilon \gt 0$, and share the prefix only up to $s_\epsilon = \max\{0, T - \epsilon\}$ so that no negative times appear (continuous time; the discrete case is written out separately in Step 4, with $\epsilon = 0$):</p>
+        <div class="math-block">
+          $$\begin{aligned} (G - p\rho)(x,u_F) &= \underbrace{\int_0^{s_\epsilon} e^{-t/\tau} r\, dt}_{\text{shared part}} + \int_{s_\epsilon}^{T+\epsilon} e^{-t/\tau} r\, dt + e^{-(T+\epsilon+\delta t)/\tau}\,(G - p\rho)(y_\epsilon, u_F), \\ y_\epsilon &= \varphi^{u_F}_x(T + \delta t + \epsilon) \in X_U . \end{aligned}$$
+        </div>
+        <p>Since $y_\epsilon$ is unviable, $(G - p\rho)(y_\epsilon, u_F) \le \sup_{X_U} V_p$. This is where $\sup_{X_U} V_p$ enters.</p>
+        <p><strong>Step 3 (a safe competitor).</strong> Build the feedback controller $u$ that copies $u_F$ on the states visited before $s_\epsilon$ and switches to any safe backup $b \in \mathcal{U}_{\mathrm{safe}}$ elsewhere (if $T \lt \epsilon$ the prefix is empty and $u = b$). It is a feedback controller (two feedback laws on disjoint domains) and it is safe, because it only ever hands over states of $X_V$ to $b$. Therefore
+          $$V(x) \ \ge\ \int_0^{s_\epsilon} e^{-t/\tau} r\, dt + \int_{s_\epsilon}^{T+\epsilon} e^{-t/\tau} r\big(\varphi^{u}_x, \hat u_x\big)\, dt + e^{-(T+\epsilon+\delta t)/\tau}\, \inf_{X_V} V,$$
+          because the state handed to the backup at time $T + \epsilon + \delta t$ is viable. The shared part is identical in both expressions and cancels.</p>
+        <p><strong>Step 4 (let $\epsilon \to 0$).</strong> In continuous time the middle integrals, over intervals of length at most $2\epsilon$ with a bounded integrand, vanish (for $T = 0$ the shared part is empty and $I_0 = 0$) and, after multiplying by $e^{T/\tau}$, we are left with $e^{T/\tau} V(x) \ge \inf_{X_V} V + I_0$ and $e^{T/\tau}(G - p\rho)(x,u_F) \le \sup_{X_U} V_p + I_0$ with the same $I_0$. Condition (Za) then gives $V(x) \gt (G - p\rho)(x,u_F)$; if the trajectory jumps from $X_V$ directly into $X_F$, split at $T$ instead of $T + \epsilon$, with the same inequalities. In discrete time take $\epsilon = 0$, $\delta t = 1$, and split the sums without overlap. With the shared part $A = \sum_{t=0}^{T-1} \gamma^t r(x_t, u_F(x_t))$, the unsafe return is $A + \gamma^T r(x_T, u_F(x_T)) + \gamma^{T+1} (G - p\rho)(x_{T+1}, u_F) \le A + \gamma^T R_{Q_U} + \gamma^{T+1} \sup_{X_U} V_p$, because the exit pair lies in $Q_U$ and $x_{T+1} \in X_U$ (possibly a failure state). The safe competitor switches to $b$ already at $x_T$, so $(x_T, b(x_T)) \in Q_V$ and $V(x) \ge A + \gamma^T R_{Q_V} + \gamma^{T+1} \inf_{X_V} V$. After dividing by $\gamma^T$, (Zb) says precisely that the second bound exceeds the first. $\square$</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; (Z) forces a discontinuous value function</div>
+      <div>Condition (Z) makes $V_p$ jump across the boundary of $X_V$, so it can only hold for discontinuous value functions. The paper's Remark 3 states that both (Z) and Assumption 1 below "require non-Lipschitz dynamics", citing Bardi and Capuzzo-Dolcetta's result that Lipschitz dynamics with uniformly continuous running costs give continuous value functions. Read this as a warning about the typical case, not as a theorem: the failure penalty is a Dirac cost, which that continuity result does not cover, and Exercise 7.1 shows a linear system (a double integrator with a wall and bounded velocity) that satisfies Assumption 1. The mechanism behind the warning is continuous dependence on initial conditions. A doomed state just outside $X_V$ follows the trajectory of a nearby viable state for a long time, so if viable trajectories near $\partial X_V$ stay away from $X_F$ for long, as near a saddle-type boundary, the time-to-failure is unbounded. In the double integrator the viable neighbours brake to rest just short of the wall after a bounded time, which is why $T_f$ stays bounded. The authors argue that such unbounded predicted times-to-failure are a feature of models rather than of reality: a Lipschitz model often predicts an unbounded time-to-failure near $\partial X_V$ that is not observed. Their Appendix B gives two examples. For the linear inverted pendulum model of walking, the border of the $N$-step capture region is $d_N = \ell_{\max} \sum_{i=1}^N (e^{-\Delta t'_s})^i$, with limit $d_\infty = \ell_{\max} e^{-\Delta t'_s}/(1 - e^{-\Delta t'_s})$; the model implies states from which stopping, and conversely falling, takes infinitely many steps, whereas numerical studies of such models, real robots and human walkers indicate that whenever falling can be avoided, a stop is possible within two steps. For landing honeybees, the measured exponential approach implies an infinite time-to-touchdown, yet bees land because they extend their legs. A model that is excellent for control can be poor at bounding the time-to-failure, and Assumption 1 is a statement about the latter.</div>
+    </div>
+
+    <h3 class="subsection-heading">The penalty should be big enough</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Assumption 1 &mdash; Uniformly bounded time-to-failure</div>
+      <div>The time-to-failure in $X_U$ is uniformly upper bounded by some $T_f \in \mathbb{T}$: for every $x \in X_U$ and every controller $u$, the trajectory $\varphi^u_x$ enters $X_F$ at a time $t_f(x,u) \le T_f$. $T_f$ is the time-scale of failure of the system; viability theory only says $t_f$ is finite, the assumption asks for a common bound.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Lemma &mdash; Influence of the penalty (Massiani et al., Lemma 2)</div>
+      <div>Under Assumption 1: (i) for every $x \in X$ the map $p \mapsto V_p(x)$ is nonincreasing; (ii) the value function is uniformly upper bounded on $X_U$,
+        $$\begin{aligned} \sup_{X_U} V_p &\le R_{X_U}\, \tau \big(1 - e^{-T_f/\tau}\big) - p\, e^{-T_f/\tau} && (\mathbb{T} = \mathbb{R}_+), \\ \sup_{X_U} V_p &\le R_{X_U}\, \frac{1 - \gamma^{T_f + 1}}{1 - \gamma} - p\, \gamma^{T_f} && (\mathbb{T} = \mathbb{N}), \end{aligned}$$
+        with $R_{X_U} = \sup_{X_U \times U} r$.
+        <p style="margin:8px 0 0;"><em>Proof.</em> (i): the supremum over $\mathcal{U}$ preserves the pointwise inequality $G - p_2 \rho \le G - p_1 \rho$ for $p_2 \ge p_1$, since $\rho \ge 0$. (ii): for $x \in X_U$, $V_p(x) \le \sup_u G(x,u) - p \inf_u \rho(x,u)$ because the supremum of a difference is at most the difference of supremum and infimum. Every trajectory from $x$ fails by time $T_f$ and collects nothing afterwards, so $G(x,u) \le R_{X_U} \int_0^{T_f} e^{-t/\tau} dt = R_{X_U}\tau(1 - e^{-T_f/\tau})$ (continuous) or $R_{X_U} \sum_{t=0}^{T_f} \gamma^t$ (discrete, reward collected at times $0, \dots, T_f$); and $\rho(x,u) = e^{-t_f/\tau} \ge e^{-T_f/\tau}$. The walkthrough below goes through every step. $\square$</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Common mistake &mdash; $R_{X_U}$ is never negative</div>
+      <div>The bound on the reward part uses $R_{X_U} \ge 0$: it upper-bounds $\sum_{t \le t_f} \gamma^t r_t$ by $R_{X_U} \sum_{t \le T_f} \gamma^t$, which only holds if adding the terms between $t_f$ and $T_f$ cannot decrease the right-hand side. The paper does not state this sign condition; it holds in its examples because the failure states themselves carry zero reward ($r(-L) = 0$ on the shelf) and $X_F \subset X_U$. With a living cost $r = -c$ on the whole unviable region, failure states included, it is tempting to plug in $R_{X_U} = -c$; that gives a bound that is <em>false</em> (the agent can fail early and stop paying). Use $R_{X_U} = \max\{0, \sup_{X_U \times U} r\}$. No sign condition is needed for $R_{Q_U}$ and $R_{Q_V}$, which enter (Zb) through a single transition. In the explorer the cliff cells have zero reward, so its $R_{X_U}$ is automatically non-negative.</div>
+    </div>
+
+    <p>The point of Lemma 2 is (ii): the supremum of $V_p$ on the unviability kernel can be pushed arbitrarily low by increasing $p$, while $\inf_{X_V} V$ does not depend on $p$ at all. So (Z) can always be enforced.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; A finite penalty threshold (Massiani et al., Thm. 2)</div>
+      <div>Under Assumption 1 there exists a finite threshold $p^\star \in \mathbb{R}$ such that for all penalties $p \ge 0$ with $p \gt p^\star$ the penalised value function $V_p$ is safe and the zeroth-order condition (Z) holds, with
+        $$p^\star = \Big(R_{X_U}\,\tau - \inf_{X_V} V\Big)\, e^{T_f/\tau} - R_{X_U}\,\tau \qquad (\mathbb{T} = \mathbb{R}_+),$$
+        $$p^\star = \frac{1}{\gamma^{T_f}} \left[ R_{X_U}\, \frac{1 - \gamma^{T_f+1}}{1 - \gamma} + \frac{R_{Q_U} - R_{Q_V}}{\gamma} - \inf_{X_V} V \right] \qquad (\mathbb{T} = \mathbb{N}).$$
+        <em>Proof.</em> Insert the upper bound of Lemma 2(ii) into the left-hand side of (Za) or (Zb) and solve for $p$; the bound then guarantees (Z), and Theorem 1 gives safety. Since $p \mapsto \sup_{X_U} V_p$ is nonincreasing, every $p \gt p^\star$ works as well. $\square$
+        <p style="margin:8px 0 0;">The paper writes $p^\star \in \mathbb{R}_+$, but the two expressions can be negative (Exercise 7.4(c), and the explorer with a large goal reward). Then every $p \ge 0$ is certified, $p = 0$ included; if a nonnegative threshold is wanted, take $\max\{0, p^\star\}$.</p></div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; quoting (18b)</div>
+      <div>The paper prints (18b) with square brackets around the whole sum, all of it multiplied by $1/\gamma^{T_f}$, which is the form above (and (18a) likewise brackets $R_{X_U}\tau - \inf_{X_V} V$). Plain-text copies of the formula (PDF text extraction, some summaries) lose the brackets and seem to attach $\gamma^{-T_f}$ to $\inf_{X_V} V$ only, $R_{X_U}\frac{1-\gamma^{T_f+1}}{1-\gamma} + \frac{R_{Q_U}-R_{Q_V}}{\gamma} - \inf_{X_V} V \cdot \frac{1}{\gamma^{T_f}}$; that reading does not follow from Lemma 2(ii) and (Zb); the two agree when $T_f = 0$ but differ in general. The derivation is three lines, so when in doubt re-derive rather than quote:</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; The discrete-time threshold from Lemma 2(ii) and (Zb)</div>
+      <div class="collapsible-body">
+        <p>(Zb) reads $R_{Q_U} + \gamma \sup_{X_U} V_p \lt R_{Q_V} + \gamma \inf_{X_V} V$. A sufficient condition is obtained by replacing $\sup_{X_U} V_p$ with its upper bound from Lemma 2(ii):</p>
+        <div class="math-block">
+          $$R_{Q_U} + \gamma \left[ R_{X_U}\frac{1 - \gamma^{T_f+1}}{1 - \gamma} - p\,\gamma^{T_f} \right] \ \lt\ R_{Q_V} + \gamma \inf_{X_V} V .$$
+        </div>
+        <p>Collect the $p$ term on the right (it appears as $-\gamma^{T_f+1} p$ on the left):</p>
+        <div class="math-block">
+          $$\gamma^{T_f+1}\, p \ \gt\ R_{Q_U} - R_{Q_V} + \gamma R_{X_U}\frac{1 - \gamma^{T_f+1}}{1 - \gamma} - \gamma \inf_{X_V} V .$$
+        </div>
+        <p>Divide by $\gamma^{T_f+1} \gt 0$ and factor $\gamma^{-T_f}$:</p>
+        <div class="math-block">
+          $$p \ \gt\ \frac{1}{\gamma^{T_f}} \left[ \frac{R_{Q_U} - R_{Q_V}}{\gamma} + R_{X_U}\frac{1 - \gamma^{T_f+1}}{1 - \gamma} - \inf_{X_V} V \right] = p^\star .$$
+        </div>
+        <p>Sanity check at $T_f = 0$ (failure immediately after leaving the kernel, as in the paper's Fig. 1): $p^\star = R_{X_U} + (R_{Q_U} - R_{Q_V})/\gamma - \inf_{X_V} V$, which both readings of (18b) give. Sanity check against continuous time: with $\gamma = e^{-1/\tau}$, $\gamma^{-T_f} = e^{T_f/\tau}$ is the same exponential factor as in (18a).</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Reading the formula</h3>
+    <p>Four things are now established: the threshold is finite; all maximisers of (P) for $p \gt p^\star$ are safe; they are also optimal for (C); and $p^\star$ depends explicitly on the time-to-failure, the reward and the discount. For $p \gt p^\star$ the penalised and the constrained problem are <em>equivalent</em>. The dependence has two parts.</p>
+    <ul style="margin-left:22px;">
+      <li><strong>The exponential.</strong> $e^{T_f/\tau} = \gamma^{-T_f}$ is the inverse of the discount that the penalty suffers before it arrives: a penalty paid $T_f$ steps after the mistake is only worth $\gamma^{T_f} p$ at the moment the decision is made, so it must be inflated by $\gamma^{-T_f}$ to have any effect. If the agent is short-sighted, $\tau \ll T_f$, the required penalty is astronomically large. The paper's phrase: the ratio $T_f/\tau$ measures how the time-scale of failure compares to the agent's inner horizon.</li>
+      <li><strong>The bracket.</strong> $R_{X_U}\tau - \inf_{X_V} V$ (continuous time) is how attractive the doomed region can look: the best reward rate available while failing, integrated over the horizon $\tau$, minus the worst value that safety can guarantee. Positive rewards outside $X_V$ raise $R_{X_U}$ and $R_{Q_U}$; negative rewards inside $X_V$ lower $\inf_{X_V} V$ and $R_{Q_V}$; both raise $p^\star$.</li>
+    </ul>
+
+    <div class="insight-box">
+      <div class="box-label">Why it matters &mdash; "large penalty" is not a free lunch</div>
+      <div>In theory larger penalties never hurt: the value on $X_V$ is unchanged for $p \gt p^\star$ and the values on $X_U$ just go to $-\infty$. In practice values and policies are approximated numerically, and an arbitrarily large penalty produces an ill-conditioned problem and poor exploration, the same issue as in classical penalty methods; augmented-Lagrangian schemes exist precisely to keep the penalty small but sufficient. Two theory-guided remedies follow from the formula. <em>Fail fast:</em> if two unviable states are causally related, penalise the one that occurs first, which shortens $T_f$. <em>Tune the discount with care:</em> a larger $\tau$ propagates the penalty further up a failed trajectory and shrinks $e^{T_f/\tau}$, but if the reward is negative inside $X_V$ a larger $\tau$ also lowers $\inf_{X_V} V$ and can raise $p^\star$ again; on the shelf example $p^\star(\tau)$ is non-monotone (Fig. 2 of the paper). And choose $p$ relative to the reward scale: every term in the bracket is a reward, so doubling all rewards doubles $p^\star$.</div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; The shelf solved analytically: the bound is tight</div>
+      <div class="collapsible-body">
+        <p>Take the shelf of Section 1 with the reward $r(x) = -1$ on $[0, L)$, $+1$ on $(-L, 0)$ (falling feels great) and $0$ at $\pm L$, plus the penalty $p$ at $x = -L$. At the wall $x = L$ the robot cannot move, so $V_p(L) = 0$. From $x \in [0, L)$ the optimal control is either to drive to $x = L$ and rest there, or to drive to the ledge and fall. Driving right from $x$ takes time $(L-x)/v$ at reward $-1$, so the value of the safe option is $\tau\big(e^{(x-L)/(v\tau)} - 1\big)$. Driving left takes time $x/v$ at reward $-1$, then the fall lasts $T_f$ at reward $+1$, then the penalty arrives, discounted by $e^{-(T_f + x/v)/\tau}$:</p>
+        <div class="math-block">
+          $$V_p(x) = \max\left\{ \tau\Big(e^{\frac{x-L}{v\tau}} - 1\Big),\ \ \tau\Big[\big(2 - e^{-T_f/\tau}\big)e^{-\frac{x}{v\tau}} - 1\Big] - p\, e^{-\frac{1}{\tau}\left(T_f + \frac{x}{v}\right)} \right\}, \qquad 0 \le x \lt L .$$
+        </div>
+        <p>(Taken literally at $x = L$ the second argument would describe an impossible manoeuvre, which is why the wall is treated separately.) On $X_U = [-L, 0)$ the robot is falling: $V_p(x) = \tau\big(1 - e^{-\frac{T_f}{\tau}(1 + \frac{x}{L})}\big) - p\, e^{-\frac{T_f}{\tau}(1 + \frac{x}{L})}$, which equals $-p$ at the failure state $x = -L$. <em>Every</em> optimal controller stays on the shelf forever iff the first argument of the max strictly wins at $x = 0$ (with a tie, a falling controller is optimal too), i.e.</p>
+        <div class="math-block">
+          $$\tau\big(e^{-L/(v\tau)} - 1\big) \ \gt\ \tau\big(1 - e^{-T_f/\tau}\big) - p\, e^{-T_f/\tau} \quad\Longleftrightarrow\quad p \ \gt\ \tau\big(2 - e^{-L/(v\tau)}\big)\, e^{T_f/\tau} - \tau ,$$
+        </div>
+        <p>Now evaluate Theorem 2: $R_{X_U} = \sup_{[-L,0)} r = 1$ and $\inf_{X_V} V = V(0) = -\tau\big(1 - e^{-L/(v\tau)}\big)$ (the constrained optimum from the ledge is to drive all the way to $L$), so $p^\star = \big(\tau + \tau(1 - e^{-L/(v\tau)})\big)e^{T_f/\tau} - \tau$, which is exactly the threshold just derived (the paper's eq. (29)). On this example the bound of Theorem 2 is <em>tight</em>; in general it is only an upper bound on the minimum penalty, which is the point the explorer makes. With $L = 1$, $v = 0.2$, $\tau = 1$, $T_f = 1$: $p^\star = (2 - e^{-5})\,e - 1 \approx 4.42$; with $T_f = 2$ it is already $\approx 13.7$.</p>
+      </div>
+    </div>
+
+    <h3 class="subsection-heading">Recovering the kernel and a barrier function from an SVF</h3>
+
+    <div class="definition-box">
+      <div class="box-label">Proposition &mdash; Thresholding and a CBF (Massiani et al., Props. 2 and 3)</div>
+      <div>Let $V_p$ be an SVF for which (Z) holds, and let $\alpha_{\inf}$, $\alpha_{\sup}$ be the left- and right-hand sides of (Z) for the relevant $\mathbb{T}$. For every $\alpha \in (\alpha_{\inf}, \alpha_{\sup}]$,
+        $$\begin{aligned} X_V &= \{x : V_p(x) \ge \alpha\} && (\mathbb{T} = \mathbb{R}_+), \\ X_V &= \{x : \exists u \in Q_V[x],\ r(x,u) + \gamma V_p(x) \ge \alpha\} && (\mathbb{T} = \mathbb{N}). \end{aligned}$$
+        (Read literally, the discrete version is satisfied by every $x$ with $Q_V[x] \neq \emptyset$ and presupposes the viable set. The informative reading, which follows from (Zb) by the same argument, thresholds the one-step look-ahead over all inputs: $X_V = \{x : \exists u \in U,\ r(x,u) + \gamma V_p(f(x,u)) \ge \alpha\}$, because on $X_U$ every input gives at most $R_{Q_U} + \gamma \sup_{X_U} V_p = \alpha_{\inf}$ and on $X_V$ some input gives at least $R_{Q_V} + \gamma \inf_{X_V} V = \alpha_{\sup}$. The paper's Remark 4 adds that if moreover $\inf_{X_V} V \gt \sup_{X_U} V_p$, the continuous-time form holds in discrete time too.)
+        If moreover $\mathbb{T} = \mathbb{R}_+$, $V_p|_{X_V}$ is continuously differentiable, $X_V$ is compact and $\partial V_p / \partial x \neq 0$ on $\partial X_V$, the paper concludes (Prop. 3) that $h = V_p|_{X_V} - \alpha$ is a control barrier function of $X_V$ (<a href="barriers.html#cbf">Module 10</a>). This holds only in a restricted-domain sense that certifies nothing: for $\alpha \lt \alpha_{\sup}$, $h \ge \inf_{X_V} V - \alpha \gt 0$ on all of $X_V$, boundary included (see below).</div>
+    </div>
+
+    <p>The CBF statement uses Theorem 3 of <a class="cite" href="https://arxiv.org/abs/1903.11199" target="_blank" rel="noopener">Ames et al., ECC 2019</a>. Take a compact set $C$ that is the 0-superlevel set of a $C^1$ function $h : D \to \mathbb{R}$ in the sense of their eq. (5), $C = \{h \ge 0\}$ with $\partial C = \{h = 0\}$ and $\mathrm{Int}\,C = \{h \gt 0\}$, and with $\partial h / \partial x \neq 0$ on $\partial C$. If some control law renders $C$ forward invariant (control-affine dynamics with locally Lipschitz closed loop), then $h|_C$ is a CBF on $C$. The definition of $X_V$ supplies the invariance, but the SVF does not supply the defining function. For $\alpha \lt \alpha_{\sup}$ the function $h = V_p|_{X_V} - \alpha$ is strictly positive on $\partial X_V$, so $\{h = 0\} \neq \partial X_V$, and every continuous extension of $h$ stays positive just outside $X_V$. The identity $X_V = \{h \ge 0\}$ holds only because $h$ is defined on $X_V$ alone. There, the CBF inequality $\sup_u [L_f h + L_g h\,u] \ge -\kappa(h)$ holds trivially, because $h$ is bounded away from $0$ on the compact $X_V$ and a steep extended class-$\mathcal{K}_\infty$ function $\kappa$ absorbs any decrease; it constrains no input at the boundary, so the resulting filter need not keep the state in $X_V$. The natural extension $V_p - \alpha$ does have $X_V$ as its 0-superlevel set on all of $X$ (Proposition 2), but it jumps across $\partial X_V$ (see the caveat on (Z)) and is not $C^1$. A CBF that represents the whole kernel therefore needs more than the listed assumptions: a $C^1$ function on a neighbourhood of $X_V$ with $X_V = \{h \ge 0\}$ and $h = 0$ exactly on $\partial X_V$ (for $h = V_p|_{X_V} - \alpha$ this forces $\alpha = \alpha_{\sup}$, with $V$ equal to its minimum on all of $\partial X_V$ and larger inside), plus the regularity of the dynamics that the CBF theorems assume. When such an $h$ exists, note the asymmetry with usual CBF practice: CBFs certify a conservative subset of $X_V$ chosen a priori, whereas here the level set is the <em>whole</em> kernel. Choosing $\alpha \gt \alpha_{\sup}$ selects a strict subset that need not be controlled invariant at all (the paper's Fig. 6 shows such a conservative subset, for which no CBF is guaranteed).</p>
+
+    <h3 class="subsection-heading">What the numerical examples teach about reward shaping</h3>
+    <p>The paper's second example is a "satellite" $\dot x_1 = x_2$, $\dot x_2 = -g/x_1^2 + \omega^2 x_1 + u$ with $u \in [-1, 1]$, $g = 10$, $\omega = 0.1$, failure set $\{x_1 \le 1\} \cup \{x_1 \ge 15\}$, discretised on a $401 \times 301$ grid with a one-second zero-order hold (so Assumption 1 holds trivially on the finite grid) and solved by value iteration with $\gamma = 0.6$. Three reward functions for the task "reach the equilibrium $(10, 0)$" illustrate the three ways a reward can interact with $p^\star$.</p>
+
+    <table>
+      <thead><tr><th>Reward design</th><th>Effect on (Z) and $p^\star$</th><th>Satellite example</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Parsimonious</strong>: $+1$ at task success (inside $X_V$), $0$ elsewhere</td><td>Without penalty the value is $\ge 0$ inside $X_V$ and $0$ outside; any $p \gt 0$ gives an SVF, so the <em>minimum</em> penalty is $0$ (the paper's figure labels it $p^\star = 0$) and $\alpha = 0$ works. The conservative formula (18b) can still be positive, e.g. when a success state has an input that leaves $X_V$, which makes $R_{Q_U} = 1$. Success and failure are conceptually independent.</td><td>$p = 1$ is an SVF; threshold range $\alpha \in [-0.0054, 0]$</td></tr>
+        <tr><td><strong>Degenerate</strong>: $r \equiv 0$</td><td>All terms of $p^\star$ vanish; any $p \gt 0$ works and $X_V = \{V_p \ge 0\}$. Value iteration with zero reward and a failure penalty <em>computes the viability kernel</em>: the goal of RL-based reachability (Fisac et al.), reached here with an ordinary discounted, Lagrange-type value.</td><td>SVF strictly negative outside $X_V$, kernel recovered with $\alpha = 0$</td></tr>
+        <tr><td><strong>Benign</strong>: positive rewards inside $X_V$ or negative rewards outside</td><td>Continuous time: they only raise the right-hand side or lower the left-hand side of (Za), so (18a) never increases and may decrease. Discrete time: the same holds for negative rewards outside $X_V$ and positive rewards on viable <em>pairs</em>, but a positive <em>state</em> reward at a viable state that also has an exit input raises $R_{Q_U}$ too, so (Zb) and the bound (18b) can get worse. Example: $A \to B$ or $F$, $B \to B$, reward $M$ at $A$ and $0$ elsewhere; then $T_f = 0$, $R_{X_U} = R_{Q_V} = \inf_{X_V} V = 0$, $R_{Q_U} = M$, and (18b) gives $p^\star = M/\gamma$, although every $p \gt 0$ is safe. What is preserved is actual safety: adding state-only rewards $\ge 0$ on $X_V$ keeps an SVF an SVF, because at the exit state the safe alternative collects the same bonus.</td><td>&mdash;</td></tr>
+        <tr><td><strong>Positive rewards outside $X_V$</strong>: e.g. $+1$ when $|x_1 - 10| \le 1$ regardless of velocity</td><td>Raise $R_{Q_U}$ and $\alpha_{\inf}$; $p^\star$ grows and thresholding gets harder, but with only positive rewards $\alpha = 0$ still recovers $X_V$ for some $p \gt p^\star$.</td><td>with $p = 1$ some regions outside $X_V$ still have a higher value than parts of $X_V$ (not an SVF); $p = 111$, two orders of magnitude above the reward, is needed (figure label $p^\star = 110$); threshold range $\alpha \in [-0.004, 0]$</td></tr>
+        <tr><td><strong>Negative rewards inside $X_V$</strong>: e.g. $-1 - u^2$ when $|x_2| \ge 2$, $-u^2$ otherwise</td><td>Lower $\inf_{X_V} V$ and $R_{Q_V}$; $p^\star$ grows, and the admissible threshold interval shrinks to a sliver, so $\alpha = 0$ recovers only a conservative subset.</td><td>$p = 136$ needed (figure label $p^\star = 135$); threshold range $\alpha \in [-4.54, -4.53]$, and $\alpha = 0$ recovers only a conservative subset of $X_V$</td></tr>
+      </tbody>
+    </table>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall &mdash; penalties do not solve bounded-risk problems</div>
+      <div>The equivalence of (P) and (C) is specific to the 0-risk constraint. For a bounded-risk CMDP, $\rho \le \eta$ with $\eta \gt 0$, strong duality still holds (<a class="cite" href="https://arxiv.org/abs/1910.13393" target="_blank" rel="noopener">Paternain et al., NeurIPS 2019</a>; <a class="cite" href="https://doi.org/10.1201/9781315140223" target="_blank" rel="noopener">Altman, 1999</a>), so a penalty $p^\star$ exists for which <em>some</em> maximiser of the penalised problem is feasible and optimal, but not all maximisers are. The paper's Example 1: two states, $X_V = \{x_1\}$, $X_F = \{x_2\}$; $u_1$ stays at $x_1$ with reward $0$; $u_2$ moves to $x_2$, where reward $1$ and cost $1$ are collected at time $1$, and the system then moves to the sink, which pays $-p$ at time $2$; $\gamma = 0.1$, $\eta = 0.01$, stochastic controllers that use $u_2$ with probability $\theta$. Read $\theta$ as a one-shot randomisation (use $u_2$ at time $0$ with probability $\theta$, otherwise $u_1$ forever); that is the reading under which the paper's scalar reduction is exact. The bounded-risk problem is $\max_\theta \gamma\theta$ s.t. $\gamma\theta \le \eta$, solved by $\theta^\star = 0.1$, a <em>stochastic</em> controller. The penalised problem is $\max_\theta \gamma\theta(1 - \gamma p)$: for $p \lt 10$ it always fails, for $p \gt 10$ it never risks anything (suboptimal), and at $p = p^\star = 10$ every $\theta \in [0,1]$ is optimal, so an RL algorithm may return an infeasible or a suboptimal solution. (With a stationary per-step randomisation the returns to $x_1$ add a geometric series, which changes the numbers, $\theta^\star = \eta(1-\gamma)/(\gamma(1-\eta)) = 1/11$, but not the conclusion: the penalised objective is still proportional to $1 - \gamma p$.) Optimal controllers of CMDPs are stochastic in general; unconstrained MDPs only produce stochastic optima through ties. For $\eta \gt 0$ you need the primal-dual machinery of <a href="cmdp.html#primal-dual">Module 8</a>, or state augmentation (<a href="cmdp.html#state-augmentation">Module 8</a>).</div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; what the theory does not cover</div>
+      <div>The results assume deterministic dynamics (the authors expect an extension through the <em>invariance</em> or <em>discriminating kernel</em>, the robust version of $X_V$; when that kernel is empty, penalising failure is expected to harm optimality and bounded-risk constraints are the right tool), an attained supremum, and exact dynamic programming. With function approximation the values inside and outside $X_V$ are coupled by the approximator, the optimal DP identity no longer holds, and whether a finite penalty still guarantees safety and constrained optimality is stated as an open question. The inputs of the formula, $T_f$ and $\inf_{X_V} V$, are rarely available; the formula is meant as structure, not as a number to look up.</div>
+    </div>
+
+    <!-- ===== SECTION 5: ENTROPY ===== -->
+    <h2 class="section-heading" id="entropy-robustness">5. Viability of Future Actions and Entropy Regularisation</h2>
+
+    <p>Practitioners train constrained tasks with SAC, whose target policy is a Boltzmann (softmax) distribution over soft Q-values with full support: no action ever gets zero probability. That breaks the SVF story in an obvious way: a stochastic policy that sometimes picks an unviable action cannot be safe. <a class="cite" href="https://arxiv.org/abs/2506.10871" target="_blank" rel="noopener">Massiani, von Rohr, Haverbeck &amp; Trimpe, ECML-PKDD 2025</a> ask two questions about the entropy-regularised constrained problem: in what sense is it a <em>robust</em> control problem, and can penalties still make it amenable to unconstrained algorithms? The theory is for discrete-time deterministic dynamics $x' = f(x,a)$ on finite state and action spaces, with stochastic policies $\pi(a \mid x)$ and discount $\gamma \in (0,1)$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Setting &mdash; Maximum-entropy RL in one box</div>
+      <div>Return $G(x,\pi) = \sum_t \gamma^t r(X_t, A_t)$ with expectation $\bar G$; discounted cumulative entropy $S(x,\pi) = \sum_t \gamma^t H(\pi(\cdot \mid X_t))$ with expectation $\bar S$. The entropy-regularised objective with temperature $\alpha \ge 0$ is $\max_\pi \bar G(x,\pi) + \alpha \bar S(x,\pi)$ for all $x$. For $\alpha \gt 0$ its optimal <strong>soft Q-function</strong> $q$ satisfies
+        $$q(x,a) = r(x,a) + \gamma \alpha \ln \sum_{b \in A} \exp\Big(\tfrac{1}{\alpha} q(x', b)\Big), \qquad x' = f(x,a),$$
+        equivalently $q(x,a) = \max_\pi\big[r(x,a) + \gamma \bar G(x',\pi) + \alpha\gamma \bar S(x',\pi)\big]$, and the optimal policy is the softmax $\pi_{\mathrm{opt}}(a \mid x) = \operatorname{softmax}\big(q(x,\cdot)/\alpha\big)(a)$. Both formulas divide by $\alpha$; at $\alpha = 0$ (their zero-temperature limit) they become the ordinary Bellman equation $q(x,a) = r(x,a) + \gamma \max_b q(x',b)$, and the optimal policies are those supported on $\arg\max_b q(x,b)$. The <strong>mode</strong> of a policy is the uniform distribution on $\arg\max_a \pi(a \mid x)$. Failure set $X_C$; kernel $X_V = \{x : \exists\pi,\ \forall t \gt 0,\ \Pr[X_t \notin X_C] = 1\}$; viable set $Q_V = \{(x,a) : x \in X_V,\ f(x,a) \in X_V\}$; $Q_U = Q \setminus Q_V$ and $Q_{\mathrm{crit}} = Q_U \cap (X_V \times A)$. $\Pi_V(x)$ are the policies safe from $x$ and $\Pi_V = \bigcap_{x \in X_V} \Pi_V(x)$.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; $\delta$-safety and dynamic indicators (Defs. 2 and 3)</div>
+      <div>A policy is <strong>safe</strong> if it is safe from every $x \in X_V$. For $\delta \gt 0$ it is <strong>$\delta$-safe</strong> if $\max_{Q_{\mathrm{crit}}} \pi \le \delta$: no critical action gets more than $\delta$ probability at any viable state (Remark 1: bounding the total mass on critical actions by $\delta$ instead is equivalent up to the factor $|Q_{\mathrm{crit}}[x]|$). A cost $c : Q \to \mathbb{R}_{\ge 0}$ with discounted risk $\rho(x,\pi) = \sum_t \gamma^t c(X_t, A_t)$ (a random variable) and expected risk $\bar\rho = \mathbb{E}[\rho]$ is a <strong>dynamic indicator</strong> of $X_C$ if, for all $x \in X_V$, $\bar\rho(x,\pi) \gt 0$ iff $\pi \notin \Pi_V(x)$. The indicator of $X_C$ composed with the dynamics is one (that is Lemma 1 of Section 3); an indicator that fires earlier on doomed trajectories lowers the required penalty.</div>
+    </div>
+
+    <h3 class="subsection-heading">Why entropy prefers states with many viable actions</h3>
+    <p>The whole mechanism rests on one elementary inequality. A safe policy at $x \in X_V$ can only put mass on viable actions, and the entropy of a distribution supported on $|Q_V[x]|$ points is at most $\ln|Q_V[x]|$:</p>
+    <div class="math-block">
+      $$\forall \pi \in \Pi_V, \ \forall x \in X_V: \qquad H\big(\pi(\cdot \mid x)\big) \ \le\ \ln |Q_V[x]| \ =\ \ln \Lambda(x),$$
+    </div>
+    <p>where the last equality is the counting-measure safety measure of Section 2. $\bar S$ is the discounted sum of these entropies along trajectories, so an entropy-regularised safe optimiser is drawn away from states with few viable actions. It does not forbid the actions leading there, because a hard exclusion would propagate the same cap backwards to earlier states and cost immediate entropy; it merely lowers their probability, the more so the sooner the constrained states would be reached. The paper's interpretation: the <em>mode</em> of such a policy tends to minimise the long-term proportion of actions that are unavailable because of constraints, and therefore the chance that <em>action noise</em> picks one of them. This is offered as an empirical explanation of the robustness of SAC-style agents; a precise formalisation is explicitly left to future work.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Temperature controls robustness (Def. 4, Thm. 1, Cor. 1)</div>
+      <div>Call $\pi_1 \in \Pi_V$ <strong>less $S$-robust</strong> than $\pi_2 \in \Pi_V$, written $\pi_1 \preceq \pi_2$, if $\bar S(x,\pi_1) \le \bar S(x,\pi_2)$ for all $x \in X_V$. Let $\pi^\star_\alpha$ solve the constrained problem $\max_{\pi \in \Pi_V} \bar G + \alpha \bar S$ (for $\alpha = 0$ this is the unregularised constrained problem) and $\pi^\star_{\mathrm{ent}} = \arg\max_{\pi \in \Pi_V} \bar S$ the maximum-entropy safe policy, with soft Q-functions $Q_\alpha$ and $Q_{\mathrm{ent}}$. <strong>Theorem 1:</strong> $\max_{Q_V} |\tfrac{1}{\alpha} Q_\alpha - Q_{\mathrm{ent}}| \to 0$ as $\alpha \to \infty$. <strong>Corollary 1:</strong> the map $\alpha \mapsto \pi^\star_\alpha$ is monotone for $\preceq$ and $\max_{Q_V}|\pi^\star_\alpha - \pi^\star_{\mathrm{ent}}| \to 0$ as $\alpha \to \infty$. In words: raising the temperature makes the safe optimum monotonically more robust and drives it to the policy that maximises future viable options, at the price of task performance.</div>
+    </div>
+
+    <h3 class="subsection-heading">Penalties again, but only $\delta$-safety</h3>
+    <p>The constrained problem involves $Q_V$, which is unknown in a model-free setting. The Lagrangian relaxation of $\pi \in \Pi_V$ is the penalised problem</p>
+    <div class="math-block">
+      $$\pi^\star_{\alpha,p} = \operatorname*{arg\,max}_{\pi \in \Pi} \ \bar G(x,\pi) + \alpha \bar S(x,\pi) - p\,\bar\rho(x,\pi),$$
+    </div>
+    <p>with $c$ a dynamic indicator and $p \ge 0$. For $\alpha = 0$ this is (P) and Theorem 2 of Section 4 applies. For $\alpha \gt 0$ the softmax gives $\pi^\star_{\alpha,p}(a \mid x) \gt 0$ for every pair, so, as soon as $Q_{\mathrm{crit}} \neq \emptyset$, $\pi^\star_{\alpha,p} \notin \Pi_V$ <em>for every finite penalty</em>. (If $Q_{\mathrm{crit}} = \emptyset$, every action at every viable state is viable and every policy is safe, so there is nothing to enforce.) What survives is approximate safety.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; $\delta$-safety and closeness for large penalties (Massiani et al. 2025, Thm. 2 and Cor. 2)</div>
+      <div>For any $\delta \gt 0$, $\epsilon \gt 0$ and $\alpha \gt 0$ there exists $p^\star \ge 0$ such that for all $p \gt p^\star$ the optimal policy $\pi^\star_{\alpha,p}$ of the penalised problem is $\delta$-safe and
+        $$\max_{Q_V} \big|\pi^\star_{\alpha,p} - \pi^\star_\alpha\big| \ \lt\ \epsilon .$$
+        <strong>Corollary 2:</strong> there is $\bar\delta \in (0,1)$ such that for $\delta \in (0, \bar\delta)$ the policy that follows the mode of $\pi^\star_{\alpha,p}$ is safe. So a sufficiently penalised, entropy-regularised, unconstrained problem, which SAC can attack directly, yields a policy whose mode is exactly safe and whose stochastic version is as close as desired to the robust constrained optimum.</div>
+    </div>
+
+    <p>The proof is short enough to be worth doing in full, and it shows where the temperature enters the required penalty. The core is a two-sided bound on the soft Q-function (Lemma 2 of the paper, a generalisation of Lemma 2 in Section 4).</p>
+
+    <div class="interactive-container" id="vb-entropy-walkthrough" data-title="Derivation: The δ-safety threshold under entropy regularisation"></div>
+
+    <h3 class="subsection-heading">What the experiments show</h3>
+    <p>On a cliff-walking grid with three cliff cells (failure set), a target column with invariant states, and reward $-1$ for every action outside cliff and target, the constrained "fenced" version offers only three actions next to the cliff, so the entropy cap bites there. Maximising entropy alone drives the mode away from the cliff towards the top corners, even giving up the target when it starts on the left; finite temperatures trade this robustness against reaching the target. With penalties, sufficient $p$ recovers the constrained solution, consistent with Theorem 2, but <em>entropy and penalty compete</em>: for any fixed $p$ a high enough $\alpha$ degrades safety, so the penalty must scale with the temperature (Fig. 3 of the paper: the minimum penalty for a safe mode increases with $\alpha$, from about $9$ at $\alpha = 1$ to about $17$ at $\alpha = 32$; the achievable $\delta$ decreases in $p$, and beyond $p \approx 15$ it is larger at higher $\alpha$, while at small penalties the order is reversed). On two benchmarks (a modified Pendulum-v1 and Hopper-v4, trained with SAC and penalties) the paper evaluates the <em>mode</em> of the learned policy under injected uniform action noise and reports that modes trained at higher temperature avoid failure under larger noise, which is the claimed robustness; it is an empirical finding, not a theorem. Two remarks from the paper are worth keeping: with the plain indicator as dynamic indicator, the minimum penalty scales exponentially with the longest trajectory in $X \setminus (X_V \cup X_C)$, the discrete cousin of $e^{T_f/\tau}$; and while theory says "as high as possible", very large penalties cause numerical instabilities with function approximators.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat &mdash; finite spaces, continuous practice</div>
+      <div>Lemma 2 of the paper uses $|A| \lt \infty$ and the finiteness of $Q_{\mathrm{crit}}$ (to get a positive minimum $u_3$), and the whole analysis is for deterministic dynamics. SAC on continuous action spaces is the practical algorithm of the experiments, not an instance of the theorem. The $\delta$-safety notion is per action ($\max_{Q_{\mathrm{crit}}} \pi \le \delta$); the total mass on critical actions can be up to $\delta |Q_{\mathrm{crit}}[x]|$. Finally, the paper formally treats a <em>non-terminal</em> failure set (the agent keeps acting after visiting $X_C$) and states that the results also hold when failure ends the episode (its Remark 2); the entropy sum is why the sink bookkeeping of Section 1 is not used there.</div>
+    </div>
+
+    <!-- ===== SECTION 6: UNCERTAINTY-AWARE ===== -->
+    <h2 class="section-heading" id="uncertainty-aware">6. Uncertainty-Aware Safe RL at DSME (UPSi, Dyna-SAuR, CHEQ)</h2>
+
+    <p>The theory above assumes the dynamics are known and deterministic. The group's recent algorithmic work keeps the viability idea but replaces the model by a learned, uncertainty-aware one, and replaces "stay in $Q_V$" by "stay in the part of $Q_V$ where the model can be trusted". This section is a factual summary; the filter mechanics are treated in <a href="barriers.html#learned-filters">Module 10</a>.</p>
+
+    <h3 class="subsection-heading">UPSi: a predictive safety filter on a probabilistic ensemble</h3>
+    <p><a class="cite" href="https://arxiv.org/abs/2604.26836" target="_blank" rel="noopener">Frauenknecht, Kesper, Mayfrank, Hose &amp; Trimpe, RLC 2026</a> build a predictive safety filter (<a href="barriers.html#predictive-safety-filter">Wabersich &amp; Zeilinger</a>) on the probabilistic-ensemble (PE) neural dynamics model used by Dyna-style MBRL, for dynamics $s_{t+1} = \mu(s_t,a_t) + L(s_t,a_t)w_t$ with bounded process noise $w_t \in W$. The filter solves, at every step,</p>
+    <div class="math-block">
+      $$\begin{aligned} \min_{u_{0|t},\dots,u_{N-1|t}}\ & \|a_t - u_{0|t}\|_2^2 \\ \text{s.t.}\quad & R_{n|t} \times v_{n|t} \subseteq (\mathbb{S} \times \mathbb{A}) \cap C_j \quad (n = 0,\dots,N-1), \qquad R_{N|t} \subseteq T_j, \end{aligned}$$
+    </div>
+    <p>where $R_{n|t}$ is the robust reachable set of the plan ($R_{0|t} = \{s_t\}$), $v_{n|t} = u_{n|t} + K_{n|t}(s - z_{n|t})$ the input with ancillary feedback around the nominal state $z_{n|t}$ ($v_{0|t} = u_{0|t}$), $T_j$ a robustly positive invariant terminal set (for some control law $\kappa$, every $s \in T_j$ satisfies $\mu(s,\kappa(s)) + L(s,\kappa(s))W \subseteq T_j$, the paper's Definition 2: the robust counterpart of controlled invariance, so the tube can end there and stay safe forever), and the only non-standard ingredient is the <strong>certainty constraint</strong> $C_j$. (The paper's compact statement (4) indexes the stage constraints from $n = 1$; its full formulation (11) enforces them from $n = 0$, which in particular requires the applied pair $(s_t, u_{0|t})$ to be admissible and certain.) The ensemble members $e = 1, \dots, E$ predict means $\mu_{\theta_e}$ and covariances $\Sigma_{\theta_e}$; following the group's earlier work these are fused into an aleatoric variance $\bar\Sigma = \big(\tfrac{1}{E}\sum_e \Sigma_{\theta_e}^{-1}\big)^{-1}$, a nominal model $\bar\mu$ and an epistemic variance $\hat\Sigma = \tfrac{1}{E}\sum_e (\mu_{\theta_e} - \bar\mu)(\mu_{\theta_e} - \bar\mu)^\top$ (the spread of the members). The Kalman-gain-like matrix $G = \bar\Sigma(\bar\Sigma + \hat\Sigma)^{-1}$ (a gain matrix, not the return $G$ of Section 3) is the ratio of aleatoric to total predictive variance, and the <strong>certain set</strong> is</p>
+    <div class="math-block">
+      $$C = \Big\{(s,a) \in \mathbb{S} \times \mathbb{A} : \tfrac{1}{n_S}\operatorname{tr} G(s,a) \ge \xi\Big\}, \qquad \tfrac{1}{n_S}\operatorname{tr} G \in [0,1],$$
+    </div>
+    <p>which approaches $1$ where epistemic uncertainty is negligible and $0$ under high model uncertainty (eq. 5 of the paper). Reachable sets are over-approximated by ellipsoidal tubes $\mathcal{P}_{n|t} = \{s : (s - z_{n|t})^\top P_{n|t}^{-1}(s - z_{n|t}) \le 1\}$: the centre follows $\bar\mu$, the shape is propagated through the averaged Jacobians with an ancillary feedback $K_{n|t}$, an outer ellipsoid of the Minkowski sum ($A \oplus B = \{a + b : a \in A,\ b \in B\}$) with the truncated noise ellipsoid $\epsilon\bar\Sigma$, and an explicit inflation by a Lipschitz bound on the linearisation error. <strong>Theorem 1</strong> of the paper: under Assumptions 2, 3 and 5, $R_{n|t} \subseteq \mathcal{P}_{n|t}$ for all $n$. Assumption 2 (consistent estimator: $\Sigma_{\theta_e} \succeq \Sigma$ inside $C_j$) and Assumption 3 (unbiased inside $C_j$) only hold inside the certain set, which is why certainty must be enforced along the whole predicted tube; this is done by tightening $C_j$ with a Lipschitz margin $g_{n|t} = \ell_G\sqrt{\lambda_{\max}(P_{n|t}) + \lambda_{\max}(K_{n|t}P_{n|t}K_{n|t}^\top)}$. Assumption 4 (the noise estimate improves monotonically and $C_j \subseteq C_{j+1}$) makes the sampled terminal-set expansion valid across episodes; Assumption 5 asks for twice-differentiable nominal dynamics with Lipschitz gradient, noise scale and certainty measure.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Caveat</div>
+      <div>The formal guarantee is for the full formulation; the reported evaluation inside MBPO uses practical simplifications that, as the paper says, break the formal guarantees: a naive Gaussian tube propagation clipped at a probability level, $\ell_G = 0$ (no certainty tightening along the tube), no ancillary controller ($K = 0$), soft constraints with a backup scheme for infeasibility, and a sampled convex approximation of the terminal set. The result there is a substantial reduction of constraint violations compared with an earlier PE-based filter, at return comparable to unfiltered MBPO. As with every learned filter, the guarantee is conditional on the model assumptions inside $C_j$; nothing certifies those assumptions themselves.</div>
+    </div>
+
+    <h3 class="subsection-heading">Dyna-SAuR: a hyperplane safety filter learned inside a Dyna loop</h3>
+    <p><a class="cite" href="https://arxiv.org/abs/2604.25508" target="_blank" rel="noopener">Eisele, Frauenknecht, Solowjow &amp; Trimpe, 2026</a> learn both a control policy and a scalable safety filter from an uncertainty-aware model, with minimal domain knowledge. Their viability notion is finite-horizon and probabilistic: $S_V = \{s : \exists\pi,\ \Pr_\pi[\forall t \le T,\ S_t \in S_S \mid S_0 = s] \ge 1 - \delta\}$ with $S_S$ the non-failure states (unbounded process noise rules out infinite-horizon statements), and it is intersected with a certain set $E = \{(s,a) : H(\hat S_{t+1}) \le \lambda_1\}$ defined by the entropy of the model's predictive distribution, giving a <em>certain</em> viability kernel $S_V(E)$ and the certain viable policies $\Pi_V(E)$. The filter is the projection onto a state-dependent half-space of actions,</p>
+    <div class="math-block">
+      $$a_t = \operatorname*{arg\,min}_{a \in A} \|a - \pi(s_t)\|^2 \quad \text{s.t.}\quad w_t^\top a \ge b_t, \qquad (w_t, b_t) = h(\mu(s_t)),$$
+    </div>
+    <p>with $A = [-1,1]^{n_A}$, a filter policy $\mu$ with values in the punctured unit ball $\mathcal{U}_h = \{u \in \mathbb{R}^{n_A} : 0 \lt \|u\|_2 \le 1\}$ (the paper's $\mathcal{U}$; renamed here to avoid a clash with the controller set $\mathcal{U}$ of Sections 1&ndash;4), and the map $h(u) = (w, b)$, $w = u/\|u\|_2$, $b = (2\|u\|_2 - 1)\|w\|_1$. Theorem 5.1 calls $h$ a bijection onto the hyperplanes that intersect $A$. Precisely, $h$ is a bijection from $\mathcal{U}_h$ onto the <em>oriented</em> pairs $\{(w, b) : \|w\|_2 = 1,\ -\|w\|_1 \lt b \le \|w\|_1\}$, i.e. onto half-spaces $w^\top a \ge b$; the pairs $(w, b)$ and $(-w, -b)$ give the same hyperplane but opposite half-spaces. The endpoint $b = -\|w\|_1$ is missing. Its half-space contains all of $A$ (no filtering), and it would need $u = 0$, which the paper's definition (13) excludes and where $h$ is undefined; the appendix proof uses the closed ball, and puncturing it removes the division by zero at the cost of this endpoint. $\|u\|_2$ near $0$ classifies almost all actions as viable and near $1$ almost none, a minimal search space for $\mu$. The paper motivates the half-space by saying that for control-affine dynamics a state-dependent hyperplane discriminates viable from unviable actions (citing Lavanakul et al.). What Lavanakul et al. show is weaker. For continuous-time control-affine dynamics and a control-invariant set with $C^1$ boundary, the tangency (Nagumo/CBF) condition is affine in the input, so a state-dependent half-space can serve as a <em>sufficient</em>, possibly conservative, safety constraint that separates certified from uncertified inputs. The exact set of viable actions need not be a half-space, least of all in the discrete-time setting used here: for $x' = 2a$ with $A = [-1, 1]$ and safe states $[-1, 1]$, the viable actions are $[-\tfrac12, \tfrac12]$, which no single half-space intersected with $A$ represents. The hyperplane filter is therefore in general an approximation of the viable actions, at best a conservative (inner) one. The filter policy is trained purely on model rollouts in a "safety filter MDP" with reward $+1$ per step inside the certain safe set, $-1/(1-\gamma_{\mathrm{SF}})$ and termination when leaving it, and a regulariser $c\|\mu(s)\|_2$ in its objective that pushes towards the least restrictive hyperplane; both $\mu$ and $\pi$ are retrained from scratch in each Dyna iteration, and a better model enlarges $E$ and hence makes the filter less conservative. Reported results: control performance matching or exceeding safe-RL baselines on goal-reaching CartPole (constraints on pole angle and cart position) and on par with PPO-Lagrangian on MuJoCo Walker, with accumulated training failures reduced by at least two orders of magnitude compared with the other methods.</p>
+
+    <h3 class="subsection-heading">CHEQ on hardware, and safe RL in uncertain contexts</h3>
+    <p><a class="cite" href="https://arxiv.org/abs/2501.07985" target="_blank" rel="noopener">Cramer, J&auml;schke &amp; Trimpe, IFAC-PapersOnLine 2025</a> give the first hardware evaluation of CHEQ, an adaptive hybrid RL method that blends a control prior with an RL action, $a^{\mathrm{ref}}_t = (1 - \lambda^{\mathrm{RL}}_t)a^{\mathrm{prior}}_t + \lambda^{\mathrm{RL}}_t a^{\mathrm{RL}}_t$, where the weight $\lambda^{\mathrm{RL}}_t$ is a clipped linear map of the parametric uncertainty of a critic ensemble (the standard deviation of the ensemble's Q-estimates): the agent is trusted where its critics agree. Applied to robotic polishing with variable impedance, a task requiring precise force and velocity tracking, CHEQ learned effective polishing directly on hardware in eight hours of training with only five failures. The paper stresses that CHEQ gives no formal safety guarantee: the control prior shapes exploration, and hard limits truncate episodes. (This $\lambda$ is a blending weight, not a Lagrange multiplier.) Finally, <a class="cite" href="https://arxiv.org/abs/2401.05876" target="_blank" rel="noopener">Baumann &amp; Sch&ouml;n, T-RO 2024</a>, by a Trimpe alumnus and <em>not</em> co-authored by Trimpe, extend SafeOpt-style safe learning to discrete environmental contexts that cannot be measured (payloads, surfaces): contexts are identified through MMD-based tests on dedicated identification experiments when they cannot be inferred from measurements, and estimated online with frequentist multi-class classification bounds built on conditional mean embeddings, validated on a Furuta pendulum whose weights are classified from camera images.</p>
+
+    <!-- ===== SECTION 7: CONNECTIONS ===== -->
+    <h2 class="section-heading" id="connections">7. Connections: Lagrangians, Reachability, Shields</h2>
+
+    <h3 class="subsection-heading">The penalty is a Lagrange multiplier</h3>
+    <p>Write (C) as the CMDP "maximise $\mathbb{E}_\mu G$ subject to $\mathbb{E}_\mu \rho \le 0$". Because $\rho \ge 0$, this averaged constraint demands safety only from $\mu$-almost every initial state; the paper's constraint "$\rho(x,u) = 0$ for all $x \in X_V$" (its $(C_\eta)$ with $\eta = 0$) is the pointwise version, and it is the one the SVF theorem speaks about. Form the Lagrangian with multiplier $\lambda \ge 0$:</p>
+    <div class="math-block">
+      $$\mathcal{L}(u, \lambda) = \mathbb{E}_{x \sim \mu}\big[G(x,u) - \lambda\,\rho(x,u)\big], \qquad d(\lambda) = \sup_{u \in \mathcal{U}} \mathcal{L}(u,\lambda) = \mathbb{E}_{x \sim \mu}\big[V_\lambda(x)\big].$$
+    </div>
+    <p>The penalised problem (P) with $p = \lambda$ <em>is</em> the inner maximisation of the Lagrangian for a fixed multiplier, and the dual function is the expected penalised value (the supremum can be taken inside the expectation because the penalised problem has a controller that is optimal from every initial state at once, as assumed in Section 3). Weak duality, $d(\lambda) \ge$ the constrained optimum, is Lemma 3's inequality (34). Now compare the two theories. Strong duality for CMDPs (<a class="cite" href="https://arxiv.org/abs/1910.13393" target="_blank" rel="noopener">Paternain et al., NeurIPS 2019</a>; <a href="cmdp.html#duality">Module 8</a>) says $\min_\lambda d(\lambda)$ equals the primal optimum and that some maximiser of $\mathcal{L}(\cdot, \lambda^\star)$ is feasible and optimal; it says nothing about the other maximisers, which is the <em>primal recovery</em> problem that motivates state augmentation (<a class="cite" href="https://arxiv.org/abs/2102.11941" target="_blank" rel="noopener">Calvo-Fullana et al., TAC 2024</a>; <a href="cmdp.html#state-augmentation">Module 8</a>). The SVF theorem is stronger and narrower: for the 0-risk constraint and <em>every</em> fixed $\lambda \gt p^\star$, <em>every</em> optimal controller of $V_\lambda$ is safe from every viable state and optimal for (C), and every maximiser of the averaged Lagrangian $\mathcal{L}(\cdot,\lambda)$ is safe from $\mu$-almost every initial state and optimal. The dual optimal set therefore <em>contains</em> the whole ray $(p^\star, \infty)$; it can be larger, since $p^\star$ is only sufficient. This is the mechanism behind a familiar observation: the same fixed penalty that works on one task fails on another. In the exact, deterministic setting a fixed multiplier works once it exceeds the task's minimal penalty, which Theorem 2 bounds through the time-to-failure, the reward scale and the discount; for PPO or SAC with function approximation, and with entropy regularisation (Section 5), this is a heuristic reading rather than a guarantee. Dual ascent on the multiplier, $\lambda \leftarrow [\lambda + \eta_\lambda\,\mathbb{E}_\mu\rho]_+$ with step size $\eta_\lambda$ (RCPO, PPO-Lagrangian, <a href="cmdp.html#primal-dual">Module 8</a>), can be read as a search for a sufficient penalty: with threshold $0$ and $\rho \ge 0$ the multiplier never decreases and stops moving as soon as the current maximiser is safe from $\mu$-almost every initial state, and a PID-controlled multiplier (<a href="cmdp.html#pid-lagrangian">Module 8</a>) damps the overshoot of that search. For a risk budget $\eta \gt 0$ the SVF equivalence fails (Example 1) and the multiplier genuinely has to be found.</p>
+
+    <h3 class="subsection-heading">Viability is reachability is invariance</h3>
+    <p>Three communities compute the same set. The unviability kernel $X_U$ is the backward-reachable tube of $X_F$ in HJ reachability (<a href="barriers.html#hj-reachability">Module 10</a>), obtained from the min-over-time value $V_{\mathrm{BRT}}$ and used as a least-restrictive safety filter that intervenes only at $\partial X_V$; SVFs put the same set into a Lagrange-type value via Proposition 2. $X_V$ is the largest controlled-invariant subset of $X \setminus X_F$; CBFs (<a href="barriers.html#invariance-nagumo">Module 10</a>) certify invariance of a chosen subset $\{h \ge 0\}$, and Proposition 3 claims that an SVF furnishes a CBF for the whole kernel under regularity, which in fact also needs a $C^1$ defining function vanishing exactly on $\partial X_V$ (Section 4). And a <strong>shield</strong> (<a class="cite" href="https://arxiv.org/abs/1708.08611" target="_blank" rel="noopener">Alshiekh et al., AAAI 2018</a>; <a href="barriers.html#shielding-unified">Module 10</a>) is synthesised from the winning region $W \subseteq F^g$ of a safety game on a finite abstraction ($F^g$ the safe game states). The paper computes $W$ by standard safety-game solving, i.e. as the greatest fixed point $W = \nu X.\,F^g \cap \mathrm{CPre}(X)$ with $\mathrm{CPre}(X)$ the states from which the system player can force the next state into $X$, which is exactly the iteration of Algorithm 1: $W$ is the viability kernel of the abstraction, a preemptive shield restricts the learner to $Q_V[x]$, and a post-posed shield substitutes an action from $Q_V[x]$ when the learner leaves it. Shielded RL is therefore the "unconstrained MDP on $X_V$ with action set $Q_V[x]$" of Section 3, enforced online rather than through the reward. The HJ, CBF and predictive safety filters surveyed by <a class="cite" href="https://doi.org/10.1109/MCS.2023.3291885" target="_blank" rel="noopener">Wabersich et al., CSM 2023</a> all override the learner's action so that it stays in (an inner approximation of) $Q_V[x]$, CBF and predictive filters by a minimal projection, HJ filters typically by switching to a safe action at the boundary; Dyna-SAuR's half-space is a learned such approximation.</p>
+
+    <table>
+      <thead><tr><th>Concept</th><th>Safe value functions</th><th>HJ reachability</th><th>Barrier functions</th><th>Shields / filters</th><th>CMDPs</th></tr></thead>
+      <tbody>
+        <tr><td>Safe set</td><td>$X_V = \{V_p \ge \alpha\}$ (Prop. 2)</td><td>complement of the BRT of $X_F$, $\{V_{\mathrm{BRT}} \ge 0\}$</td><td>$\{h \ge 0\}$, a chosen invariant subset</td><td>winning region $W$ of the safety game</td><td>states where $\rho = 0$ is feasible</td></tr>
+        <tr><td>Safe actions</td><td>maximisers of $V_p$, $p \gt p^\star$</td><td>$\arg\max_u \min_d \nabla V \cdot f$ at the boundary</td><td>$K_{\mathrm{cbf}}(x) = \{u : L_fh + L_gh\,u \ge -\alpha(h)\}$</td><td>$Q_V[x]$ (preemptive) or a substitute (post-posed)</td><td>support of the optimal occupancy measure</td></tr>
+        <tr><td>Where the task enters</td><td>same value function</td><td>separate task controller, filtered</td><td>QP objective $\|u - u_{\mathrm{des}}\|^2$</td><td>learner's action, overridden</td><td>reward, with the multiplier</td></tr>
+        <tr><td>Type of guarantee</td><td>exact, all maximisers, deterministic dynamics</td><td>exact / robust to $d \in D$</td><td>exact given a valid $h$</td><td>exact on the abstraction</td><td>in expectation, $\rho \le \eta$</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight-box">
+      <div class="box-label">Connection to Modules 4&ndash;6</div>
+      <div>SafeOpt's safe set is a set of <em>controller parameters</em> whose static performance constraint (the threshold condition of Module 4) is certified; viability is a constraint on <em>states along trajectories</em>. GoSafe and GoSafeOpt (<a href="gosafe.html#dynamical-setting">Module 6</a>) already bridge the two: a backup policy that is known, under the GP assumptions, to keep the system safe from a visited state is a certified viable controller for that state, and the boundary condition that triggers it acts as a learned shield. Learning the safety measure of Section 2 is the model-free counterpart of GoSafe's learning of "which (parameter, state) pairs are safe".</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Open problems</div>
+      <div>Disturbances (the invariance/discriminating kernel replaces $X_V$; the 0-risk constraint may then be infeasible and bounded risk is the right notion); function approximation (the DP identity behind Proposition 1 no longer holds); estimating $T_f$ and $\inf_{X_V} V$ from data; continuous-time value functions with Lipschitz dynamics, for which higher-order safety conditions would be needed; and the interplay of penalty and temperature in continuous-action maximum-entropy RL, where the finite-space theory of Section 5 does not formally apply.</div>
+    </div>
+
+    <!-- ===== WALKTHROUGH ===== -->
+    <h2 class="section-heading" id="threshold-walkthrough">Walkthrough: Deriving the Penalty Threshold p*</h2>
+    <p>The derivation of the continuous-time threshold (18a) in six steps, with the reason for each step. It reproduces Lemma 2(ii) and Theorem 2 of Massiani et al. Keep the shelf example in mind: there the bound turns out to be exact.</p>
+    <div class="interactive-container" id="vb-walkthrough" data-title="Derivation: The continuous-time penalty threshold p* (Massiani et al., Lemma 2 and Theorem 2)"></div>
+
+    <!-- ===== EXPLORER ===== -->
+    <h2 class="section-heading" id="penalty-explorer">Interactive: Penalty vs Safety on a Cliff Gridworld</h2>
+    <p>An $8 \times 5$ cliff world. The bottom row is the cliff (failure set, absorbing, penalty $p$ on entry, then nothing; a cliff cell is itself a state of $X_U$ with value $-p$). Six shaded "slope" cells are unviable: on a slope the agent cannot climb and slides one row down after every move, so from the four slope cells next to the cliff every action fails in one step, and from the two slope cells above them every action fails within two steps (moving down falls at once, any other move slides onto the lower slope), so $T_f = 2$. All other cells are viable; the number in the corner is the safety measure $\Lambda$, the count of viable actions among up, down, left, right, stay. The agent pays a living cost $c$ per step away from the goal G and earns $R_g$ per step at the goal (it can stay there). The explorer runs exact value iteration for the penalised problem, draws the greedy policy, flags every viable state from which some optimal action leaves the kernel, rolls out the greedy policy from S, and compares three thresholds: the empirical minimum penalty $p_{\min}$, the smallest penalty at which the zeroth-order condition (Zb) holds, and the formula $p^\star$ of Theorem 2.</p>
+
+    <div class="interactive-container">
+      <div class="interactive-label">Penalty vs safety on a cliff gridworld</div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Penalty p (log scale) <span id="vb-p-val">1.00</span></label><input type="range" id="vb-p" min="-2" max="3" step="0.05" value="0"></div>
+        <div class="slider-control"><label>Discount &gamma; <span id="vb-g-val">0.90</span></label><input type="range" id="vb-g" min="0.50" max="0.98" step="0.01" value="0.90"></div>
+        <div class="slider-control"><label>Slip probability &epsilon; <span id="vb-e-val">0.00</span></label><input type="range" id="vb-e" min="0" max="0.30" step="0.01" value="0"></div>
+      </div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Living cost c (reward &minus;c per step off the goal) <span id="vb-c-val">1.0</span></label><input type="range" id="vb-c" min="0" max="3" step="0.1" value="1"></div>
+        <div class="slider-control"><label><span style="font-weight:400;color:#555;">Goal reward R<sub>g</sub> (per step at the goal)</span> <span id="vb-r-val">1.0</span></label><input type="range" id="vb-r" min="0" max="5" step="0.1" value="1"></div>
+        <div class="slider-control" style="display:flex;align-items:flex-end;"><button id="vb-reset" style="padding:6px 14px;border:1px solid #bbb;border-radius:5px;background:#fff;cursor:pointer;font-size:13px;">Reset</button></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;">
+        <div style="flex:1 1 320px;min-width:0;">
+          <svg id="vb-grid" viewBox="0 0 364 318" style="display:block;width:100%;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fff;"></svg>
+        </div>
+        <div style="flex:1 1 320px;min-width:0;">
+          <svg id="vb-chart" viewBox="0 0 440 318" style="display:block;width:100%;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fff;"></svg>
+        </div>
+      </div>
+      <div id="vb-status" style="margin-top:12px;padding:10px 14px;border-radius:4px;background:#f5f8ff;border-left:3px solid #1565c0;font-size:13.5px;"></div>
+      <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 16px;font-size:13px;color:#444;">
+        <div>$T_f$ = <strong id="vb-Tf">2</strong></div>
+        <div>$R_{X_U}$ = <strong id="vb-RXU">0</strong></div>
+        <div>$R_{Q_U}$ = <strong id="vb-RQU">0</strong></div>
+        <div>$R_{Q_V}$ = <strong id="vb-RQV">0</strong></div>
+        <div>$\inf_{X_V} V$ = <strong id="vb-infV">0</strong></div>
+        <div>$\sup_{X_U} V_p$ (slip 0) = <strong id="vb-supU">0</strong></div>
+        <div>$p^\star$ (Theorem 2) = <strong id="vb-pstar" style="color:#7b1fa2;">0</strong></div>
+        <div>$p_Z$ (first $p$ with (Zb), slip 0) = <strong id="vb-pZ" style="color:#1565c0;">0</strong></div>
+        <div>$p_{\min}$ (empirical; nominal if slip) = <strong id="vb-pmin" style="color:#e67e22;">0</strong></div>
+        <div>$V_p$ at S = <strong id="vb-vstart">0</strong></div>
+      </div>
+      <p style="font-size:12.5px;color:#666;margin:12px 0 0;">Theory quantities ($p^\star$, $p_Z$, $\sup_{X_U} V_p$, the last including the cliff cells' value $-p$) are computed on the deterministic world, which is the setting of the theorem; the empirical threshold and the policy use the slip probability you set. A state counts as unsafe if <em>any</em> optimal action at it leaves the kernel, matching Definition 3 ("all optimal controllers"). With slip no policy avoids the cliff forever (random moves reach it eventually with probability one), so for $\varepsilon \gt 0$ the empirical threshold only asks that every optimal <em>intended</em> action keep its nominal successor in the deterministic kernel. Try: raise $c$ to see the "suicide" failure mode (dying stops the living cost); lower $\gamma$ to watch $p^\star$ grow through $\gamma^{-T_f}$; set $c = 0$ (with $R_g \gt 0$) to see the parsimonious case where any $p \ge 0$ is safe, even though the conservative formula $p^\star$ may stay positive; add slip to see the penalty push the policy away from the edge, a purely robustness-driven effect outside the theorem.</p>
+    </div>
+
+    <!-- ===== EXERCISES ===== -->
+    <h2 class="section-heading" id="exercises">Exercises</h2>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 7.1 &mdash; The viability kernel of a double integrator with a wall</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">A cart on a rail: $\dot x_1 = x_2$, $\dot x_2 = u$ with $|u| \le u_{\max}$, and a wall at $x_1 = L$, so $X_F = \{x_1 \ge L\}$ (closed). (a) Compute $X_V$ and $X_U$ analytically. (b) Show that Assumption 1 holds with $T_f = v_{\max}/u_{\max}$ if the state space is restricted to $|x_2| \le v_{\max}$, and that it fails without a velocity bound although every unviable state still fails in finite time. (c) Apply inputs with a zero-order hold of duration $\Delta \gt 0$, so that a state-action pair is a state and a constant input. How does the safety measure $\Lambda$ (Lebesgue measure on $u \in [-u_{\max}, u_{\max}]$) behave as a state approaches $\partial X_V$ from inside?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> If $x_2 \le 0$ and $x_1 \lt L$, the input $u = 0$ keeps $x_1$ non-increasing, so the state is viable. If $x_2 \gt 0$, the position under any admissible input satisfies $\ddot x_1 = u \ge -u_{\max}$, hence $x_1(t) \ge x_1 + x_2 t - \tfrac12 u_{\max} t^2$ for all $t$ up to the first zero of the velocity. The right-hand side is the maximal-braking trajectory; it reaches its maximum $x_1 + x_2^2/(2u_{\max})$ at $t = x_2/u_{\max}$ (where the braked velocity is zero). Case 1: $x_1 + x_2^2/(2u_{\max}) \lt L$. Then maximal braking until rest followed by $u = 0$ never reaches the wall: viable. Case 2: $x_1 + x_2^2/(2u_{\max}) \ge L$. Then every input gives $x_1(x_2/u_{\max}) \ge L$: the state fails by time $x_2/u_{\max}$. Therefore
+              $$\begin{aligned} X_V &= \{x_1 \lt L,\ x_2 \le 0\} \cup \{x_2 \gt 0,\ x_1 + x_2^2/(2u_{\max}) \lt L\}, \\ X_U &= \{x_2 \gt 0,\ x_1 + x_2^2/(2u_{\max}) \ge L\} \cup X_F . \end{aligned}$$
+              The boundary parabola belongs to $X_U$ because the braked trajectory touches $x_1 = L$ and $X_F$ is closed.</p>
+            <p><strong>(b)</strong> Let $x \in X_U \setminus X_F$, so $x_1 \lt L$, $v = x_2 \gt 0$ and $x_1 + v^2/(2u_{\max}) \ge L$. Every input satisfies $x_1(t) \ge x_1 + vt - \tfrac12 u_{\max}t^2$, so every trajectory reaches the wall no later than the maximal-braking one, which does so at the smaller root $t_{\max} = \big(v - \sqrt{v^2 - 2u_{\max}(L - x_1)}\big)/u_{\max} \le v/u_{\max}$, with equality exactly on the boundary parabola. With $|x_2| \le v_{\max}$ this gives the uniform bound $T_f = v_{\max}/u_{\max}$. Without a velocity bound, $\sup_{X_U} x_2/u_{\max} = \infty$: each unviable state fails in finite time, but there is no common bound, so Assumption 1 fails and Theorem 2 gives no finite $p^\star$; indeed, the reward that a doomed but very fast cart can collect while decelerating is unbounded in duration. This is the mildest way Assumption 1 can fail; the paper's Appendix B describes the more insidious case of Lipschitz models that predict arbitrarily long failures near $\partial X_V$ (infinitely many steps to fall in the linear inverted pendulum model, an infinite time-to-touchdown for landing bees).</p>
+            <p><strong>(c)</strong> It depends on which part of $\partial X_V$ is approached; there is no single boundary limit. The boundary consists of the braking parabola $\{x_2 \gt 0,\ x_1 + x_2^2/(2u_{\max}) = L\}$ and the wall segment $\{x_1 = L,\ x_2 \le 0\}$. <em>Braking parabola.</em> At a state with fixed velocity $x_2 = v \gt 0$ and $x_1 + v^2/(2u_{\max}) = L - \epsilon$, an input $u$ held for $\Delta$ must not push the braked stopping point past $L$. Since the stopping point moves at rate $\partial_t[x_1 + x_2^2/(2u_{\max})] = x_2(1 + u/u_{\max})$, only inputs with $u \le -u_{\max} + O(\epsilon)$ keep the state viable: the set of viable inputs shrinks to the single point $\{-u_{\max}\}$ as $\epsilon \to 0$ and $\Lambda \to 0$. <em>Wall.</em> At rest at $x_1 = L - \epsilon$, every $u \in [-u_{\max}, 0]$ is safe under the hold, and a positive $u$ is safe iff the successor $(L - \epsilon + u\Delta^2/2,\ u\Delta)$ can still brake in time, i.e. iff $u + u^2/u_{\max} \lt 2\epsilon/\Delta^2$. So $\Lambda \to u_{\max}$, not $0$. Moving away from the wall ($x_2 \lt 0$) even more inputs are admissible (with $u_{\max} = 1$, $\Delta = 0.5$, $x_2 = -0.3$: all of them). At rest far from the wall, $\Lambda = 2u_{\max}$. The measure is a graded margin that tells the agent how precise it has to be. It vanishes where staying viable requires the extreme input (full braking), not merely where the state is close to the failure set.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 7.2 &mdash; Prove Lemma 2(ii) in discrete time</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Under Assumption 1 with $\mathbb{T} = \mathbb{N}$, prove that $\sup_{X_U} V_p \le R_{X_U}\frac{1 - \gamma^{T_f+1}}{1-\gamma} - p\,\gamma^{T_f}$, and state precisely where $R_{X_U} \ge 0$ is used. Then verify the bound on an upper slope cell of the explorer (row 2, zero slip), where $r = -c$ until the fall.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;">Fix $x \in X_U$ and a controller $u$. Let $t_f \le T_f$ be the time at which the trajectory enters $X_F$; the state at time $t_f$ is a failure state (part of $X_U$), and from $t_f + 1$ on the system sits in the zero-reward sink. With the counting measure,
+              $$G(x,u) = \sum_{t=0}^{t_f} \gamma^t r(x_t, u_t) \ \le\ R_{X_U}\sum_{t=0}^{t_f}\gamma^t \ \le\ R_{X_U}\sum_{t=0}^{T_f}\gamma^t = R_{X_U}\,\frac{1 - \gamma^{T_f+1}}{1-\gamma},$$
+              where the first inequality uses $r \le R_{X_U}$ on $X_U \times U$ (every visited state is unviable) and the second uses $R_{X_U} \ge 0$: extending the sum from $t_f$ to $T_f$ adds terms $\gamma^t R_{X_U} \ge 0$. If $R_{X_U}$ were negative the second inequality would reverse. Next, $\rho(x,u) = \sum_t \gamma^t \mathbf{1}_{X_F}(x_t) = \gamma^{t_f} \ge \gamma^{T_f}$ since $\gamma \lt 1$ and $t_f \le T_f$. Hence $G(x,u) - p\rho(x,u) \le R_{X_U}\frac{1-\gamma^{T_f+1}}{1-\gamma} - p\gamma^{T_f}$ for every $u$, and taking the supremum over $u$ and then over $x \in X_U$ gives the claim. $\square$</p>
+            <p>Check on the explorer's upper slope cell $(2,3)$ with zero slip. Moving down falls at once (the move and the slide add up to two rows), which is worth $-c - \gamma p$; any other move slides onto a lower slope cell, from which every action falls in one step, which is worth $-c + \gamma(-c - \gamma p) = -c - \gamma c - \gamma^2 p$. Hence $V_p(2,3) = \max\{-c - \gamma p,\ -c - \gamma c - \gamma^2 p\}$, and the slow fall wins iff $c \lt p(1 - \gamma)$. The bound with $T_f = 2$ and $R_{X_U} = \max\{0, -c\} = 0$ reads $V_p \le -p\gamma^2$, and both candidates satisfy it: $-c - \gamma p \le -\gamma^2 p$ because $-c \le 0 \le \gamma p (1 - \gamma)$, and $-c(1+\gamma) - \gamma^2 p \le -\gamma^2 p$. Had we used $R_{X_U} = -c$, the "bound" $-c(1 + \gamma + \gamma^2) - p\gamma^2$ would lie $\gamma^2 c$ below the slow-fall value, hence below $V_p(2,3)$ whenever $c \gt 0$: false.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 7.3 &mdash; Numbers for the shelf: $p^\star$ as a function of $\tau$ and $T_f$</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For the shelf example with $L = 1$ and $v = 0.2$ (the values of the paper's Fig. 2), compute $p^\star = \tau(2 - e^{-L/(v\tau)})e^{T_f/\tau} - \tau$ for (a) $\tau = 1$, $T_f = 1$; (b) $\tau = 1$, $T_f = 2$; (c) $T_f = 1$ and $\tau \in \{0.5, 2, 5, 20\}$. Explain the shape of $p^\star(\tau)$.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> $e^{-5} \approx 0.0067$, so $p^\star = (2 - 0.0067)\,e - 1 \approx 5.418 - 1 = 4.42$. <strong>(b)</strong> $p^\star = 1.9933 \cdot e^2 - 1 \approx 14.73 - 1 = 13.73$: one extra second of falling roughly triples the required penalty. The exact scaling is $p^\star + \tau \propto e^{T_f/\tau}$, so it is $p^\star + \tau$ that is multiplied by $e^{\Delta T_f/\tau} = e$ ($5.418 \to 14.73$); $p^\star$ itself grows by a factor $3.1$. <strong>(c)</strong> $\tau = 0.5$: $L/(v\tau) = 10$, $p^\star = 0.5(2 - e^{-10})e^{2} - 0.5 \approx 7.389 - 0.5 = 6.89$. $\tau = 2$: $e^{-2.5} \approx 0.082$, $p^\star = 2(1.918)e^{0.5} - 2 \approx 6.32 - 2 = 4.32$. $\tau = 5$: $e^{-1} \approx 0.368$, $p^\star = 5(1.632)e^{0.2} - 5 \approx 9.97 - 5 = 4.97$. $\tau = 20$: $e^{-0.25} \approx 0.779$, $p^\star = 20(1.221)e^{0.05} - 20 \approx 25.68 - 20 = 5.68$.</p>
+            <p>So $p^\star(\tau)$ decreases from $6.89$ at $\tau = 0.5$ to a minimum of about $4.24$ near $\tau \approx 1.45$ and then rises again, which is the non-monotone curve of the paper's Fig. 2 (middle). Two effects compete. For small $\tau$ the factor $e^{T_f/\tau}$ dominates: the penalty is discounted away before it reaches the ledge. For large $\tau$ the constrained value at the ledge, $\inf_{X_V} V = -\tau(1 - e^{-L/(v\tau)}) \to -L/v = -5$, keeps decreasing because the reward inside $X_V$ is negative and a far-sighted agent accounts for the whole drive to $x = L$. The rise does not continue forever, though: the bracket $R_{X_U}\tau - \inf_{X_V} V$ grows like $\tau$, but the final $-R_{X_U}\tau$ cancels the linear term. With $a = L/v$ and $b = T_f$, expanding $e^{-a/\tau}$ and $e^{b/\tau}$ gives $p^\star(\tau) = \tau\big[(2 - e^{-a/\tau})e^{b/\tau} - 1\big] = a + b + \big(ab + \tfrac{b^2}{2} - \tfrac{a^2}{2}\big)/\tau + O(\tau^{-2})$, so $p^\star(\tau) \to L/v + T_f = 6$ from below ($5.93$ at $\tau = 100$). The discount rate cannot be chosen to fight the exponential alone; it is also a task parameter.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 7.4 &mdash; A too-small penalty makes cutting the corner optimal</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">A one-dimensional chain of cells $0, 1, \dots, 6$. Cell $0$ is the cliff ($X_F$, absorbing). Cell $1$ is a slope: every action from it leads to cell $0$. From cells $2$&ndash;$5$ the actions L, R, S move left, right or stay. Cell $6$ is the goal, where S stays. Reward: $-c = -1$ per step in cells $1$&ndash;$5$, $+1$ per step in cell $6$, penalty $p$ on entering cell $0$ (then zero forever), discount $\gamma = 0.5$. (a) Compute the constrained value $V(2)$ and the value of "jumping" from cell $2$ (L, then fall). For which $p$ is jumping optimal? (b) Compute $p^\star$ from Theorem 2 and compare. (c) Repeat (a) with $\gamma = 0.9$.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> The safe optimum from cell $2$ walks to the goal: four steps of $-1$ (at times $0$&ndash;$3$, in cells $2, 3, 4, 5$), then $+1$ forever from time $4$: $V(2) = -(1 + \gamma + \gamma^2 + \gamma^3) + \gamma^4/(1-\gamma) = -1.875 + 0.125 = -1.75$. Jumping: $-1$ in cell $2$ at time $0$, $-1$ in cell $1$ at time $1$, the penalty at time $2$: $-1 - \gamma - \gamma^2 p = -1.5 - 0.25p$. Jumping is strictly better than walking iff $-1.5 - 0.25p \gt -1.75$, i.e. iff $p \lt 1$, and at $p = 1$ the two tie, so jumping is optimal for all $p \le 1$. All optimal controllers are safe exactly for $p \gt 1$: the true minimum penalty is the infimum $p_{\min} = 1$, which is not itself safe. (From cell $3$ the jump is worth $-1 + \gamma(-1.5 - 0.25p) = -1.75 - 0.125p \lt V(3) = -1.5$ for every $p \ge 0$; only cell $2$ is tempted.) The failure mode is "suicide": dying stops the living cost, which an agent with a short horizon prefers to a long walk.</p>
+            <p><strong>(b)</strong> $T_f = 1$. $X_U = \{0, 1\}$ and the failure cell $0$ has reward $0$, so $R_{X_U} = \max\{0, \sup_{X_U \times U} r\} = 0$. $R_{Q_U} = 0$ for the same reason (the unsafe pair $(2, \mathrm{L})$ and the pairs at cell $1$ have reward $-1$, the pairs at the failure cell $0$ have reward $0$). $R_{Q_V} = -1$. $\inf_{X_V} V = V(2) = -1.75$ (the farthest viable cell). Then
+              $$p^\star = \gamma^{-T_f}\Big[R_{X_U}\tfrac{1-\gamma^{2}}{1-\gamma} + \tfrac{R_{Q_U} - R_{Q_V}}{\gamma} - \inf_{X_V} V\Big] = 2\,[0 + 2 + 1.75] = 7.5 .$$
+              Sufficient (any $p \gt 7.5$ is safe, indeed any $p \gt 1$ is) but conservative by a factor $7.5$. The slack is transparent: the bound credits the doomed agent with a reward of $0$ instead of the $-1$ it actually collects in cell $1$ ($R_{X_U}$), and the exit transition with $0$ instead of the $-1$ that $(2, \mathrm{L})$ actually earns ($R_{Q_U}$, taken over all of $Q_U$); both gaps are then amplified by the inverse discount factors in (18b). Using the true $\sup_{X_U} V_p = \max\{-p, -1 - p/2\}$ in (Zb) instead of Lemma 2's bound gives the intermediate threshold $p_Z = 5.5$.</p>
+            <p><strong>(c)</strong> With $\gamma = 0.9$: $V(2) = -(1 + 0.9 + 0.81 + 0.729) + 0.9^4/0.1 = -3.439 + 6.561 = 3.12$, while jumping is worth $-1 - 0.9 - 0.81p \lt 0$. No penalty is needed ($p_{\min} = 0$), and the formula agrees: $p^\star = \tfrac{1}{0.9}[0 + \tfrac{1}{0.9} - 3.12] \approx -2.2 \lt 0$, so every $p \ge 0$ is above the threshold. A far-sighted agent sees the goal; a myopic one needs to be threatened.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 7.5 &mdash; The penalty as a Lagrange multiplier</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Write (C) as the CMDP $\max_u \mathbb{E}_\mu G(x,u)$ s.t. $\mathbb{E}_\mu \rho(x,u) \le 0$. (a) Show that its dual function is $d(\lambda) = \mathbb{E}_\mu[V_\lambda(x)]$ and that weak duality holds. (b) Using Proposition 1 and Theorem 2, show that $d(\lambda) = P^\star$ (the constrained optimum) for every $\lambda \gt p^\star$, so the duality gap is zero and the dual optimal set contains $(p^\star, \infty)$. (c) Explain what standard strong duality guarantees for $\lambda = \lambda^\star$ that the SVF result does not need, and vice versa. (d) What does the dual-ascent update $\lambda \leftarrow [\lambda + \eta_\lambda\,\mathbb{E}_\mu\rho(x, u_\lambda)]_+$ with step size $\eta_\lambda \gt 0$ do on this problem if $u_\lambda$ is an exact maximiser of the Lagrangian at each step? Does it terminate?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> $\mathcal{L}(u,\lambda) = \mathbb{E}_\mu[G - \lambda\rho]$ with $\lambda \ge 0$. Always $\sup_u \mathbb{E}_\mu[G - \lambda\rho] \le \mathbb{E}_\mu[\sup_u (G - \lambda\rho)] = \mathbb{E}_\mu[V_\lambda]$. Equality holds because (P) has a controller that attains $V_\lambda(x)$ at every $x$ simultaneously (the attainment assumption of Section 3; on finite deterministic problems dynamic programming provides a stationary one), and using it from every initial state achieves the right-hand side. So $d(\lambda) = \mathbb{E}_\mu[V_\lambda]$. For any safe $u$, $\rho = 0$ and $\mathcal{L}(u,\lambda) = \mathbb{E}_\mu G$, so $d(\lambda) \ge \sup_{\mathcal{U}_{\mathrm{safe}}} \mathbb{E}_\mu G = P^\star$: weak duality, which is inequality (34) of the paper averaged over $\mu$.</p>
+            <p><strong>(b)</strong> For $\lambda \gt p^\star$, Theorem 2 says $V_\lambda$ is an SVF, and Proposition 1 says $V_\lambda = V$ on $X_V \supseteq \operatorname{supp}\mu$. Hence $d(\lambda) = \mathbb{E}_\mu V = P^\star$. (Here $P^\star = \mathbb{E}_\mu V$ is attained by a controller optimal for (C) from every viable state, Remark 5; a controller that is safe only from $\mu$-almost every initial state cannot do better, since from each state it is safe from its return is at most $V(x)$.) Combined with (a), $\min_\lambda d(\lambda) = P^\star$ and every $\lambda \gt p^\star$ attains it. Since $d$ is nonincreasing in $\lambda$ (Lemma 2(i)), convex, and bounded below by $P^\star$, the dual optimal set is a ray $[\lambda_0, \infty)$ that contains $(p^\star, \infty)$, but $\lambda_0$ can lie far below $p^\star$: in Exercise 7.4 with $\mu = \delta_2$, $d(\lambda) = \max\{-1.75, -1.5 - 0.25\lambda\}$, so $\lambda_0 = 1$ while $p^\star = 7.5$.</p>
+            <p><strong>(c)</strong> Strong duality for bounded-risk CMDPs gives a multiplier $\lambda^\star$ and a saddle point: <em>some</em> maximiser of $\mathcal{L}(\cdot,\lambda^\star)$ is primal feasible and optimal, but other maximisers may be infeasible or suboptimal, so the maximiser an RL algorithm returns need not be safe (Example 1: at $p^\star = 10$ every $\theta$ is a maximiser). Paternain et al. prove the zero duality gap under bounded rewards and Slater's condition; Slater is sufficient, not necessary (for finite CMDPs the linear-programming formulation gives strong duality from feasibility alone; Altman, 1999). Slater in fact fails here: $\rho \ge 0$, so the 0-risk constraint has no strictly feasible point. The SVF result does not rest on it; it needs Assumption 1 and $\eta = 0$ instead, and in exchange it gives that <em>all</em> maximisers are feasible and optimal, for all multipliers above $p^\star$, not just at one value.</p>
+            <p><strong>(d)</strong> With threshold $0$ the constraint slack is $\mathbb{E}_\mu\rho \ge 0$, so the update never decreases $\lambda$. It increases $\lambda$ by $\eta_\lambda \mathbb{E}_\mu\rho(x, u_\lambda)$ exactly while the current maximiser fails from a $\mu$-positive set of initial states, and stops as soon as $u_\lambda$ is safe $\mu$-almost surely, which may happen far below $p^\star$ (in Exercise 7.4 with $\mu = \delta_2$: at the first iterate above $1$, or at $1$ itself if ties are broken towards safety, rather than above $7.5$). Dual ascent is a search for a sufficient penalty, but Theorem 2 only guarantees that a finite stopping point exists, not that the iteration reaches it: an unsafe maximiser can delay leaving $X_V$ (Assumption 1 bounds the time-to-failure only after the exit), so its risk can be arbitrarily small and the increments can shrink without $\lambda$ ever crossing the threshold. On a finite deterministic MDP with $\mu$ of finite support this cannot happen: an unsafe feedback controller fails within $|X|$ steps from any state it fails from (otherwise its trajectory would cycle), so $\mathbb{E}_\mu\rho \ge \gamma^{|X|}\min_{\operatorname{supp}\mu}\mu \gt 0$ while $u_\lambda$ is unsafe, and the search stops after finitely many steps, at the latest once $\lambda \gt p^\star$. The exponential in $p^\star$ still warns that with small step sizes and myopic agents it can take very long. With a positive threshold and sampled, inexact maximisers (any deep RL algorithm) the multiplier and the cost oscillate around the constraint boundary, which is the motivation for the PID multiplier of Module 8.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 7.6 &mdash; The entropy cap and the price of a decade of safety</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">(a) Prove that for every safe policy $\pi \in \Pi_V$ and every $x \in X_V$, $H(\pi(\cdot \mid x)) \le \ln|Q_V[x]|$. (b) In the notation of the $\delta$-safety walkthrough, take $u_1 - v_1 = 10$, $u_2 = 2$, $u_3 = 1$. Compute the penalty $p_1$ that guarantees $\delta$-safety with $\delta = 10^{-2}$ for $\alpha = 0.5$ and for $\alpha = 2$, and the extra penalty needed to go from $\delta = 10^{-2}$ to $\delta = 10^{-3}$ at each temperature.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p style="margin-top:0;"><strong>(a)</strong> Let $\pi$ be safe from $x \in X_V$, i.e. $\Pr[X_t \notin X_C] = 1$ for all $t \gt 0$. If $\pi(a \mid x) \gt 0$ for some $a$ with $f(x,a) \notin X_V$, then with probability $\pi(a \mid x) \gt 0$ the next state is unviable and, by definition of $X_V$, reaches $X_C$ in finite time under every policy, contradicting safety. So $\operatorname{supp}\pi(\cdot \mid x) \subseteq Q_V[x]$, and the entropy of a distribution supported on $n$ points is at most $\ln n$ (attained by the uniform distribution, by concavity of $H$ or by Gibbs' inequality against the uniform). Hence $H(\pi(\cdot \mid x)) \le \ln|Q_V[x]|$. $\square$</p>
+            <p><strong>(b)</strong> $p_1 = \frac{u_1 - v_1}{u_3} + \frac{u_2 - \ln\delta}{u_3}\alpha$ with $-\ln 10^{-2} = 4.605$. For $\alpha = 0.5$: $p_1 = 10 + 0.5(2 + 4.605) = 13.30$. For $\alpha = 2$: $p_1 = 10 + 2(6.605) = 23.21$. Going to $\delta = 10^{-3}$ adds $\alpha\ln 10/u_3$: $1.15$ at $\alpha = 0.5$ and $4.61$ at $\alpha = 2$. Each decade of safety costs a penalty increment proportional to the temperature, which is why a fixed penalty is eventually overcome by a high temperature and why the paper recommends scaling $p$ with $\alpha$. Note that these are illustrative constants of a sufficient bound, not values from the paper; on a concrete problem the minimum penalty is typically smaller. The paper's Fig. 3 measures, on its cliff world, the smallest penalty that makes the mode safe, and it too grows with $\alpha$.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <!-- ===== KEY PAPERS ===== -->
+    <h2 class="section-heading" id="papers">Key Papers</h2>
+    <table>
+      <thead><tr><th>Paper</th><th>Venue</th><th>Contribution</th><th>Why read it</th></tr></thead>
+      <tbody>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2105.12204" target="_blank" rel="noopener">Massiani, Heim, Solowjow, Trimpe &mdash; Safe Value Functions</a></td><td>IEEE TAC 68(5), 2023</td><td>Zeroth-order condition; finite penalty threshold $p^\star$ with its $e^{T_f/\tau}$ scaling; thresholding recovers $X_V$; penalties do not solve bounded-risk CMDPs</td><td>The theory behind the "large failure penalty" heuristic. Read Sections II&ndash;IV and Appendix A in full.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1910.02835" target="_blank" rel="noopener">Heim, von Rohr, Trimpe, Badri-Spr&ouml;witz &mdash; A Learnable Safety Measure</a></td><td>CoRL 2019, PMLR 100</td><td>Safety measure $\Lambda$ = volume of viable actions; $Q_V = \{\Lambda_Q \gt 0\}$ (counting measure); model-free GP learning with optimistic and cautious sets</td><td>Introduced the state-action, graded view of viability that the later papers build on.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2105.08143" target="_blank" rel="noopener">Massiani, Heim, Trimpe &mdash; On exploration requirements for learning safety constraints</a></td><td>L4DC 2021, PMLR 144</td><td>Admissible constraints must contain $\mathrm{OPT}(Q_V)$ and exclude the critical set; greedy on-policy exploration targets that set (given state coverage, e.g. random episode starts)</td><td>Explains why constraints need not be accurate everywhere and why failures are informative.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2506.10871" target="_blank" rel="noopener">Massiani, von Rohr, Haverbeck, Trimpe &mdash; Viability of Future Actions: Robust Safety in Reinforcement Learning via Entropy Regularization</a></td><td>ECML-PKDD 2025 (LNCS)</td><td>Entropy cap $H \le \ln|Q_V[x]|$; temperature controls $S$-robustness; penalties give $\delta$-safety and a safe mode</td><td>Extends SVFs to maximum-entropy RL and explains SAC's robustness to action noise.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2604.26836" target="_blank" rel="noopener">Frauenknecht, Kesper, Mayfrank, Hose, Trimpe &mdash; Uncertainty-Aware Predictive Safety Filters for Probabilistic Neural Network Dynamics (UPSi)</a></td><td>RLC 2026 / RLJ</td><td>Predictive safety filter on a probabilistic ensemble with ellipsoidal tubes and a certainty constraint (eq. 5); reachable-set over-approximation under Assumptions 2, 3, 5</td><td>Predictive safety filtering with neural models while keeping reachable-set reasoning.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2604.25508" target="_blank" rel="noopener">Eisele, Frauenknecht, Solowjow, Trimpe &mdash; Dyna-Style Safety Augmented Reinforcement Learning: Staying Safe in the Face of Uncertainty (Dyna-SAuR)</a></td><td>arXiv, 2026</td><td>Learned hyperplane safety filter and control policy in a Dyna loop; finite-horizon probabilistic viability intersected with a certain set</td><td>About two orders of magnitude fewer training failures on CartPole and Walker.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2501.07985" target="_blank" rel="noopener">Cramer, J&auml;schke, Trimpe &mdash; CHEQ-ing the Box: Safe Variable Impedance Learning for Robotic Polishing</a></td><td>IFAC-PapersOnLine 59(18):325&ndash;330, 2025</td><td>Hardware evaluation of uncertainty-weighted hybrid RL for polishing with variable impedance</td><td>A data point for safe exploration on hardware: eight hours, five failures.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2401.05876" target="_blank" rel="noopener">Baumann, Sch&ouml;n &mdash; Safe reinforcement learning in uncertain contexts</a></td><td>IEEE T-RO 40, 2024</td><td>Safe learning with unmeasured discrete contexts via MMD tests and frequentist multi-class classification bounds</td><td>Not co-authored by Trimpe; extends SafeOpt-style safe BO guarantees to unmeasured, discrete environment contexts.</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1109/ICRA.2019.8794107" target="_blank" rel="noopener">Fisac, Lugovoy, Rubies-Royo, Ghosh, Tomlin &mdash; Bridging Hamilton-Jacobi Safety Analysis and Reinforcement Learning</a></td><td>ICRA 2019</td><td>Discounted min-over-time Bellman backup is a contraction; safe sets learned by Q-learning</td><td>The other way to put the viability kernel into a value function; contrast with Lagrange-type SVFs.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1709.07523" target="_blank" rel="noopener">Bansal, Chen, Herbert, Tomlin &mdash; Hamilton-Jacobi Reachability: A Brief Overview and Recent Advances</a></td><td>CDC 2017</td><td>Backward reachable sets and tubes, differential-game formulation, numerical tools</td><td>The unviability kernel is the BRT of the failure set.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1708.08611" target="_blank" rel="noopener">Alshiekh, Bloem, Ehlers, K&ouml;nighofer, Niekum, Topcu &mdash; Safe Reinforcement Learning via Shielding</a></td><td>AAAI 2018</td><td>Shields synthesised from the winning region of a safety game; preemptive and post-posed shields</td><td>The winning region is the viability kernel of the abstraction, computed by the same fixed-point iteration.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1910.13393" target="_blank" rel="noopener">Paternain, Chamon, Calvo-Fullana, Ribeiro &mdash; Constrained Reinforcement Learning Has Zero Duality Gap</a></td><td>NeurIPS 2019</td><td>Zero duality gap for CMDPs under Slater's condition</td><td>What strong duality gives and does not give; the contrast that makes the SVF theorem interesting.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/2102.11941" target="_blank" rel="noopener">Calvo-Fullana, Paternain, Chamon, Ribeiro &mdash; State Augmented Constrained Reinforcement Learning: Overcoming the Limitations of Learning with Rewards</a></td><td>IEEE TAC 69(7), 2024</td><td>Some constrained problems are unsolvable by any weighted reward; multiplier-augmented states fix primal recovery</td><td>The bounded-risk side of the story: when a fixed penalty cannot work.</td></tr>
+        <tr><td><a class="cite" href="https://doi.org/10.1109/MCS.2023.3291885" target="_blank" rel="noopener">Wabersich, Taylor, Choi, Sreenath, Tomlin, Ames, Zeilinger &mdash; Data-Driven Safety Filters: Hamilton-Jacobi Reachability, Control Barrier Functions, and Predictive Methods for Uncertain Systems</a></td><td>IEEE CSM 43(5), 2023</td><td>HJ, CBF and predictive filters as approximations of an ideal minimally invasive filter</td><td>The filter view of "stay in $Q_V$" that UPSi and Dyna-SAuR instantiate.</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="vb-flashcards"></div>
+
+    <div class="page-nav">
+      <a href="gosafe.html">&larr; 6. Global Safe Exploration of Dynamical Systems: GoSafe &amp; GoSafeOpt</a>
+      <a href="cmdp.html">8. CMDPs, Duality &amp; Lagrangian Methods &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('viability');
+    initCollapsibles();
+
+    initWalkthrough('vb-walkthrough', [
+      {
+        tab: '1. Setup',
+        title: 'Step 1: What must be bounded, and the sup-of-a-difference trick',
+        text: 'Take any unviable state $x \\in X_U$. Under Assumption 1 every controller $u$ drives it into $X_F$ at some time $t_f(x,u) \\le T_f$, after which the sink collects nothing. We want an upper bound on $V_p(x) = \\sup_u [G(x,u) - p\\,\\rho(x,u)]$ that decreases in $p$. The supremum of a difference is at most the supremum of the first term minus the infimum of the second, because each term can be bounded on its own:',
+        visual: '<div class="math-block">$$V_p(x) \\;\\le\\; \\sup_{u \\in \\mathcal{U}} G(x,u) \\;-\\; p \\inf_{u \\in \\mathcal{U}} \\rho(x,u) .$$</div>',
+        insight: 'This is eq. (14) of the paper. It decouples the reward a doomed agent can still collect from the penalty it cannot avoid. Both pieces will be bounded using only $T_f$, a reward bound and the discount.'
+      },
+      {
+        tab: '2. Reward part',
+        title: 'Step 2: The most a doomed agent can earn',
+        text: 'Let $R_{X_U} = \\sup_{X_U \\times U} r$. It is at least $0$ in every example of this module because the failure states belong to $X_U$ and carry zero reward; in general, replace it by $\\max\\{0, \\sup_{X_U \\times U} r\\}$ (the post-failure sink is bookkeeping, not a state of $X_U$). Along any trajectory from $x \\in X_U$ every visited state is unviable, so the reward is at most $R_{X_U}$ until failure at $t_f \\le T_f$ and exactly $0$ afterwards. The return is therefore bounded by the discounted integral of a constant, and the only computation is the integral of the discount kernel, $\\int_0^{T} e^{-t/\\tau} dt = \\tau(1 - e^{-T/\\tau})$:',
+        visual: '<div class="math-block">$$G(x,u) \\;\\le\\; R_{X_U}\\int_0^{t_f} e^{-t/\\tau}\\,dt \\;=\\; R_{X_U}\\,\\tau\\big(1 - e^{-t_f/\\tau}\\big) \\;\\le\\; R_{X_U}\\,\\tau\\big(1 - e^{-T_f/\\tau}\\big).$$</div>',
+        insight: 'The last inequality uses $R_{X_U} \\ge 0$: living longer can only add non-negative terms. This is eq. (15). With a living cost and $R_{X_U}$ wrongly taken negative the step would be false, the common mistake flagged in Section 4.'
+      },
+      {
+        tab: '3. Penalty part',
+        title: 'Step 3: The least penalty a doomed agent can pay',
+        text: 'By Lemma 1 the discounted risk of a trajectory that fails at time $t_f$ is $\\rho(x,u) = e^{-t_f/\\tau}$: a unit Dirac mass <em>in time</em> at the failure instant, $\\delta_{t_f}(dt)$, weighted by the discount. The penalty is smallest when failure is delayed as long as possible, but Assumption 1 caps the delay at $T_f$, and $e^{-t/\\tau}$ is decreasing in $t$:',
+        visual: '<div class="math-block">$$\\begin{aligned} \\rho(x,u) &= \\int_{\\mathbb{T}} e^{-t/\\tau}\\,\\delta_{t_f}(dt) = e^{-t_f/\\tau} \\;\\ge\\; e^{-T_f/\\tau}, \\\\ \\text{hence}\\quad \\inf_{u} \\rho(x,u) &\\ge e^{-T_f/\\tau}. \\end{aligned}$$</div>',
+        insight: 'This is eq. (17). Discounting is what makes the penalty weak: by the time it arrives it has been multiplied by $e^{-T_f/\\tau}$. A short-sighted agent (small $\\tau$) barely feels a penalty that lies $T_f$ into the future.'
+      },
+      {
+        tab: '4. Lemma 2(ii)',
+        title: 'Step 4: Combine into a uniform bound on the unviability kernel',
+        text: 'Insert Steps 2 and 3 into Step 1. The right-hand side no longer depends on $x$, so it bounds the supremum over the whole unviability kernel:',
+        visual: '<div class="math-block">$$\\sup_{X_U} V_p \\;\\le\\; R_{X_U}\\,\\tau\\big(1 - e^{-T_f/\\tau}\\big) \\;-\\; p\\,e^{-T_f/\\tau} .$$</div>',
+        insight: 'This is Lemma 2(ii), eq. (12a): an affine, decreasing function of $p$ with slope $-e^{-T_f/\\tau}$. The slope is the leverage the designer has over the value of unviable states. Meanwhile $\\inf_{X_V} V$, the worst safe value, does not depend on $p$ at all, so the two sides of (Z) can always be separated.'
+      },
+      {
+        tab: '5. Solve for p',
+        title: 'Step 5: Impose the zeroth-order condition and solve',
+        text: 'Theorem 1 needs (Za): $\\sup_{X_U} V_p \\lt \\inf_{X_V} V$. It suffices that the bound of Step 4 lies below $\\inf_{X_V} V$. Move the penalty term to the other side and multiply by $e^{T_f/\\tau} \\gt 0$:',
+        visual: '<div class="math-block">$$\\begin{aligned} & R_{X_U}\\tau\\big(1 - e^{-T_f/\\tau}\\big) - p\\,e^{-T_f/\\tau} \\lt \\inf_{X_V} V \\\\ \\Longleftrightarrow\\quad & p \\gt \\Big(R_{X_U}\\tau - \\inf_{X_V} V\\Big)e^{T_f/\\tau} - R_{X_U}\\tau \\;=:\\; p^\\star . \\end{aligned}$$</div>',
+        insight: 'This is eq. (18a). For every $p \\gt p^\\star$ condition (Z) holds, Theorem 1 makes $V_p$ a safe value function, and Lemma 2(i) shows the property is kept for all larger $p$: the set of good penalties <em>contains</em> the ray $(p^\\star, \\infty)$. It can be larger, because $p^\\star$ comes from an upper bound and is only sufficient (on the shelf it happens to be exact).'
+      },
+      {
+        tab: '6. Interpret',
+        title: 'Step 6: Read the exponential',
+        text: 'Write $p^\\star = e^{T_f/\\tau}\\,[R_{X_U}\\tau - \\inf_{X_V} V] - R_{X_U}\\tau$. The bracket is the attractiveness of the doomed region: reward rate $R_{X_U}$ over one horizon $\\tau$, versus the worst constrained value. The prefactor undoes the discount that the penalty suffers on its way back to the decision. Because the bound uses the best reward everywhere on $X_U$ and the latest possible failure, $p^\\star$ is only an upper bound on the minimum penalty; the explorer measures the gap on a gridworld.',
+        visual: '<div class="math-block">$$\\begin{gathered} \\frac{p^\\star + R_{X_U}\\tau}{R_{X_U}\\tau - \\inf_{X_V} V} = e^{T_f/\\tau} = \\gamma^{-T_f}, \\\\ T_f/\\tau = 5 \\Rightarrow e^{5} \\approx 148, \\qquad T_f/\\tau = 10 \\Rightarrow e^{10} \\approx 22\\,026 . \\end{gathered}$$</div>',
+        insight: 'Two design lessons follow. Penalise the earliest unviable state you can detect ("fail fast" shortens $T_f$), and never make the agent more myopic to speed up learning without re-scaling the penalty. A larger $\\tau$ helps unless rewards are negative inside $X_V$, where it also lowers $\\inf_{X_V} V$; on the shelf example $p^\\star(\\tau)$ first decreases and then increases again.'
+      }
+    ]);
+
+    initWalkthrough('vb-entropy-walkthrough', [
+      {
+        tab: '1. Bound on Q_V',
+        title: 'Step 1: The soft Q-value of viable pairs is bounded below, uniformly in p and α',
+        text: 'Let $Q_{\\alpha,p}$ be the optimal soft Q-function of the penalised problem. The optimal soft value dominates the soft value of any policy, and for a deterministic policy the soft Bellman operator is the classical one (its entropy term vanishes). Take a deterministic viable policy $\\pi \\in \\Pi_V$. On $Q_V$ it never pays: $c(x,a) = 0$ there, and $\\rho(x\',\\pi) = 0$ because $\\pi$ is safe from the viable successor $x\' = f(x,a)$.',
+        visual: '<div class="math-block">$$\\begin{aligned} Q_{\\alpha,p}(x,a) \\;\\ge\\; Q^{\\pi}_p(x,a) &= r(x,a) - p\\,c(x,a) + \\gamma\\big(G(x\',\\pi) - p\\,\\rho(x\',\\pi)\\big) \\\\ &= r(x,a) + \\gamma\\, G(x\',\\pi) \\;\\ge\\; \\frac{\\inf_Q r}{1-\\gamma} =: v_1 \\quad \\forall (x,a) \\in Q_V . \\end{aligned}$$</div>',
+        insight: 'The constant $v_1$ depends on neither $p$ nor $\\alpha$. This is "the penalty does not touch the kernel" (Proposition 1 of Section 3) in soft-Q language.'
+      },
+      {
+        tab: '2. Bound on Q_crit',
+        title: 'Step 2: The soft Q-value of critical pairs decreases linearly in p',
+        text: 'For $(x,a) \\in Q_{\\mathrm{crit}}$ use the variational form of the soft Q-function: a maximum over policies of the immediate reward plus discounted return, entropy and penalty from $x\' = f(x,a)$. Bound the return by $\\sup_Q r/(1-\\gamma)$ and the cumulative entropy by a constant (the paper uses $|A|\\ln|A|/(1-\\gamma)$, generous since $H \\le \\ln|A|$). The penalty term is $p\\,[c(x,a) + \\gamma\\bar\\rho(x\',\\pi)] \\ge p\\,u_3$ with $u_3 = \\min_{q \\in Q_{\\mathrm{crit}}}\\big[c(q) + \\gamma\\min_\\pi \\bar\\rho(f(q),\\pi)\\big]$. It is positive because a critical pair sends every trajectory into $X_C$ in finite time, so a dynamic indicator charges cost at $q$ or later (the paper\'s Lemma 1 and Corollary 3), and $Q_{\\mathrm{crit}}$ is finite. (The paper\'s printed definition of $u_3$ drops the factor $\\gamma$ that its previous line and Corollary 3 carry; without it $u_3$ can exceed $c(q) + \\gamma\\min_\\pi\\bar\\rho(f(q),\\pi)$ and the bound below would fail.)',
+        visual: '<div class="math-block">$$\\begin{aligned} Q_{\\alpha,p}(x,a) &= \\max_{\\pi}\\Big[r(x,a) + \\gamma\\bar G(x\',\\pi) + \\alpha\\gamma\\bar S(x\',\\pi) - p\\,c(x,a) - p\\gamma\\bar\\rho(x\',\\pi)\\Big] \\\\ &\\le u_1 + \\alpha\\,u_2 - p\\,u_3, \\qquad u_1 = \\frac{\\sup_Q r}{1-\\gamma},\\quad u_2 = \\frac{|A|\\ln|A|}{1-\\gamma}. \\end{aligned}$$</div>',
+        insight: 'This is Lemma 2 of the 2025 paper, the soft analogue of Lemma 2(ii) of Section 4: the penalty enters with slope $-u_3$, but now the temperature adds $\\alpha u_2$, the entropy bonus an unsafe policy can still harvest before failing.'
+      },
+      {
+        tab: '3. Softmax',
+        title: 'Step 3: Bound the probability of a critical action',
+        text: 'At a viable state $x$ the optimal policy is the softmax <span class="math-scroll-xs">$\\pi^\\star_{\\alpha,p}(a \\mid x) = \\exp(Q_{\\alpha,p}(x,a)/\\alpha)\\,/\\,\\sum_b \\exp(Q_{\\alpha,p}(x,b)/\\alpha)$</span>. Keep only one viable action $b \\in Q_V[x]$ in the denominator (the slice is nonempty because $x \\in X_V$), then apply Step 1 to the denominator and Step 2 to the numerator. For every critical pair $(x,a) \\in Q_{\\mathrm{crit}}$:',
+        visual: '<div class="math-block">$$\\pi^\\star_{\\alpha,p}(a \\mid x) \\;\\le\\; \\frac{\\exp\\big(Q_{\\alpha,p}(x,a)/\\alpha\\big)}{\\exp\\big(Q_{\\alpha,p}(x,b)/\\alpha\\big)} \\;\\le\\; \\exp\\!\\Big(\\frac{u_1 - v_1}{\\alpha} + u_2 - \\frac{p\\,u_3}{\\alpha}\\Big).$$</div>',
+        insight: 'The bound is uniform over the critical set and decays exponentially in $p/\\alpha$. It does not by itself show that exact safety is impossible (zero also satisfies an upper bound); that comes from the softmax: with $\\alpha \\gt 0$ and finite soft Q-values every action, critical ones included, has strictly positive probability. The bound only says how small that probability can be made.'
+      },
+      {
+        tab: '4. Solve for p',
+        title: 'Step 4: Impose δ-safety and solve for the penalty',
+        text: 'Require the bound of Step 3 to be below $\\delta$ and take logarithms:',
+        visual: '<div class="math-block">$$\\frac{u_1 - v_1}{\\alpha} + u_2 - \\frac{p\\,u_3}{\\alpha} \\lt \\ln\\delta \\;\\Longleftrightarrow\\; p \\;\\gt\\; p_1 := \\frac{u_1 - v_1}{u_3} + \\frac{u_2 - \\ln\\delta}{u_3}\\,\\alpha .$$</div>',
+        insight: 'For $p \\gt p_1$ the policy is $\\delta$-safe. The threshold grows linearly in the temperature $\\alpha$ and in $\\ln(1/\\delta)$: a fixed penalty is eventually overcome by a high enough temperature, the competition seen in the experiments, and each extra decade of safety costs $\\alpha \\ln 10 / u_3$ of penalty.'
+      },
+      {
+        tab: '5. Closeness',
+        title: 'Step 5: The policy converges to the constrained optimum on Q_V',
+        text: 'From the variational form, $p \\mapsto Q_{\\alpha,p}(x,a)$ is nonincreasing; on $Q_V$ it is bounded below by $v_1$, so it converges to some $\\bar Q$, while on $Q_{\\mathrm{crit}}$ it tends to $-\\infty$ by Step 2. Pass to the limit in the soft Bellman equation at a viable pair (where $c = 0$): the critical actions drop out of the log-sum-exp because their exponentials vanish.',
+        visual: '<div class="math-block">$$\\bar Q(x,a) = r(x,a) + \\alpha\\gamma\\ln\\Big[\\sum_{b \\in Q_V[x\']} \\exp\\big(\\tfrac{1}{\\alpha}\\bar Q(x\',b)\\big) + \\sum_{b \\in Q_{\\mathrm{crit}}[x\']} 0\\Big] .$$</div>',
+        insight: 'This is the soft Bellman equation of the constrained problem, whose unique fixed point is $Q_\\alpha$, so $\\bar Q = Q_\\alpha$ and the softmax policies converge uniformly on $Q_V$: there is $p_2$ with $\\max_{Q_V}|\\pi^\\star_{\\alpha,p} - \\pi^\\star_\\alpha| \\lt \\epsilon$ for $p \\gt p_2$. Theorem 2 follows with $p^\\star = \\max\\{p_1, p_2\\}$, and the paper states that Corollary 2 (a safe mode for small $\\delta$) follows directly: once every critical action has probability below $\\delta$ while the viable actions carry the rest of the mass, the most likely action is viable.'
+      }
+    ]);
+
+    initFlashcards('vb-flashcards', [
+      { q: 'Define the viability kernel $X_V$ and the unviability kernel $X_U$.', a: '$X_V = \\{x : \\exists u \\in \\mathcal{U},\\ \\forall t,\\ \\varphi^u_x(t) \\notin X_F\\}$: some controller avoids failure forever. $X_U = X \\setminus X_V$: every controller fails in finite time. $X_V$ is the largest controlled-invariant set avoiding $X_F$; $X_U$ is the backward-reachable tube of $X_F$.' },
+      { q: 'What is the viable set $Q_V$ and why does it turn a dynamic constraint into a static one?', a: '$Q_V = f^{-1}(X_V) \\subset X_V \\times U$, the state-input pairs that transition into the kernel. A policy is safe from every viable state iff it maps $X_V$ into $Q_V$: necessary because leaving $X_V$ means failing, sufficient because $Q_V[x] \\ne \\emptyset$ for every $x \\in X_V$, so the choice can be repeated forever.' },
+      { q: 'What is the safety measure $\\Lambda(s)$ of Heim et al., and how is the viable set recovered from it?', a: '$\\Lambda(s) = \\operatorname{vol}\\{a : (s,a) \\in Q_V\\}$ (Lebesgue or counting measure), $\\Lambda_Q(q) = \\Lambda(T(q))$. With the counting measure viability means $\\Lambda \\gt 0$, so $Q_V = Q_{\\lambda = 0} = \\{\\Lambda_Q \\gt 0\\}$. With the Lebesgue measure this needs every nonempty viable slice to have positive volume (a state with a single viable input is viable but has $\\Lambda = 0$).' },
+      { q: 'Why are failures the informative samples when learning $\\Lambda_Q$?', a: 'A failure is the only direct observation of ground truth, $\\Lambda_Q(q) = 0$; a success only copies the current estimate $\\hat\\Lambda(s\')$. Theorem 1 (Heim et al.; finite state-action spaces, tabular updates): under infinite random sampling $\\hat\\Lambda_Q \\to 0$ on $Q_V^c$; with a start that is optimistic on every viable pair ($Q_V \\subseteq \\hat Q_V$, e.g. $\\hat\\Lambda_Q \\ge \\Lambda_Q$ pointwise) the estimate then converges to the true measure. The paper\'s state-wise $\\hat\\Lambda \\ge \\Lambda$ is not enough: a viable pair stuck at $0$ in a loop is never repaired. The GP version of the practical algorithm has no such guarantee.' },
+      { q: 'State the discounted risk $\\rho(x,u)$ and its defining property.', a: '$\\rho(x,u) = \\int_{\\mathbb{T}} e^{-t/\\tau}\\,\\delta_{X_F}(\\varphi^u_x(t))\\,dt = e^{-t_f/\\tau}$ with $t_f$ the time-to-failure ($0$ if it never fails). In continuous time $\\delta_{X_F}(\\varphi^u_x(t))\\,dt$ means the unit Dirac mass in time at $t_f$, not a spatial Dirac composed with the trajectory (that would add a factor $1/|\\text{crossing speed}|$). $u$ is safe for $x$ iff $\\rho(x,u) = 0$ (Lemma 1). The penalised value is $V_p = \\sup_u [G - p\\rho]$.' },
+      { q: 'Define a safe value function and state Proposition 1.', a: '$V_p$ is an SVF if all its optimal controllers are safe and optimal for the constrained problem (C). Then $V_p = V$ on $X_V$: the penalty does not change values inside the kernel; optimality is decoupled from safety.' },
+      { q: 'State the zeroth-order condition in continuous and in discrete time.', a: '(Za): $\\sup_{X_U} V_p \\lt \\inf_{X_V} V$. (Zb): $R_{Q_U} + \\gamma\\sup_{X_U} V_p \\lt R_{Q_V} + \\gamma\\inf_{X_V} V$, with $R_{Q_U} = \\sup_{Q_U} r$ and $R_{Q_V} = \\inf_{Q_V} r$ the one-step rewards of the exit transition and of the safe alternative. Either implies that $V_p$ is an SVF (Theorem 1).' },
+      { q: 'State Lemma 2(ii) in continuous time and the assumption it needs.', a: 'Assumption 1: the time-to-failure on $X_U$ is uniformly bounded by $T_f$. Then $\\sup_{X_U} V_p \\le R_{X_U}\\tau(1 - e^{-T_f/\\tau}) - p\\,e^{-T_f/\\tau}$ with $R_{X_U} = \\sup_{X_U \\times U} r$, which must be $\\ge 0$ for the bound to hold: true when the failure states (part of $X_U$) carry zero reward, otherwise use $\\max\\{0, \\sup_{X_U \\times U} r\\}$.' },
+      { q: 'Give the penalty threshold $p^\\star$ in continuous and in discrete time.', a: 'Continuous: $p^\\star = (R_{X_U}\\tau - \\inf_{X_V} V)\\,e^{T_f/\\tau} - R_{X_U}\\tau$. Discrete: $p^\\star = \\gamma^{-T_f}\\big[R_{X_U}\\tfrac{1-\\gamma^{T_f+1}}{1-\\gamma} + \\tfrac{R_{Q_U} - R_{Q_V}}{\\gamma} - \\inf_{X_V} V\\big]$. For all $p \\gt p^\\star$, $V_p$ is an SVF (Theorem 2).' },
+      { q: 'Why is a "very large penalty" not a free lunch, and what does the formula suggest instead?', a: 'Theory: larger $p$ never hurts. Practice: ill-conditioning and poor exploration, as in penalty methods. The formula says $p^\\star \\propto e^{T_f/\\tau}$: penalise the earliest unviable state (fail fast, smaller $T_f$), do not make the agent myopic, scale $p$ with the reward scale, and remember that a larger $\\tau$ can raise $p^\\star$ again if rewards are negative inside $X_V$.' },
+      { q: 'Strong duality vs the SVF theorem: what is the difference?', a: 'Strong duality (bounded-risk CMDP, $\\eta \\gt 0$) gives one $\\lambda^\\star$ at which some maximiser of the Lagrangian is feasible and optimal; others may be infeasible (Example 1: at $p^\\star = 10$ every $\\theta$ is optimal). The SVF theorem ($\\eta = 0$, Assumption 1) makes all maximisers safe and optimal for every $\\lambda \\gt p^\\star$.' },
+      { q: 'Why can an entropy-regularised policy never be exactly safe with a finite penalty, and what replaces exact safety?', a: 'The softmax $\\pi(a \\mid x) \\propto \\exp(Q(x,a)/\\alpha)$ puts positive mass on every action, so $\\pi \\notin \\Pi_V$ whenever $Q_{\\mathrm{crit}} \\neq \\emptyset$ (if no viable state has an unviable action, every policy is safe). Theorem 2 (2025) gives $\\delta$-safety ($\\max_{Q_{\\mathrm{crit}}}\\pi \\le \\delta$) and $\\epsilon$-closeness to the constrained optimum for $p \\gt p^\\star$; the mode is exactly safe for small $\\delta$ (Corollary 2).' },
+      { q: 'How does entropy regularisation produce robustness to action noise?', a: 'For safe policies $H(\\pi(\\cdot \\mid x)) \\le \\ln|Q_V[x]| = \\ln\\Lambda(x)$, so maximising discounted cumulative entropy steers trajectories away from states with few viable actions. The paper\'s interpretation, supported empirically but explicitly not formalised, is that the mode thereby tends to minimise the long-term share of unavailable actions, hence the chance that action noise picks one. What is proved: the temperature $\\alpha$ monotonically increases $S$-robustness, defined through expected discounted entropy (Corollary 1).' },
+      { q: 'What is the certainty constraint of UPSi?', a: 'With aleatoric variance $\\bar\\Sigma$ and epistemic variance $\\hat\\Sigma$ of the ensemble, $G = \\bar\\Sigma(\\bar\\Sigma + \\hat\\Sigma)^{-1}$ and the certain set is $C = \\{(s,a) : \\tfrac{1}{n_S}\\operatorname{tr}G \\ge \\xi\\}$. The predicted tube must stay in $C_j$ because the reachable-set over-approximation (Theorem 1) relies on Assumptions 2 and 3, which only hold there.' }
+    ]);
+
+    // ===== EXPLORER: penalty vs safety on a cliff gridworld =====
+    (function () {
+      'use strict';
+      var ROWS = 5, COLS = 8, CLIFF = 4;
+      var SLOPE = {'3,2':1, '3,3':1, '3,4':1, '3,5':1, '2,3':1, '2,4':1};
+      var GOAL = 3 * COLS + 7, START = 3 * COLS + 0;
+      var ACTS = [
+        {n:'U', dr:-1, dc:0, g:'↑'}, {n:'D', dr:1, dc:0, g:'↓'},
+        {n:'L', dr:0, dc:-1, g:'←'}, {n:'R', dr:0, dc:1, g:'→'}, {n:'S', dr:0, dc:0, g:'●'}
+      ];
+      var N = CLIFF * COLS;
+      var s, k, j, t, it;
+
+      function rc(i) { return [Math.floor(i / COLS), i % COLS]; }
+      function isSlope(i) { var p = rc(i); return SLOPE[p[0] + ',' + p[1]] === 1; }
+
+      // --- transition structure (deterministic part) ---
+      var AV = [], SUCC = [], SUCCRC = [];
+      for (s = 0; s < N; s++) {
+        var p0 = rc(s);
+        AV[s] = isSlope(s) ? [1, 2, 3, 4] : [0, 1, 2, 3, 4];
+        SUCC[s] = []; SUCCRC[s] = [];
+        for (k = 0; k < 5; k++) {
+          var r2 = Math.max(0, Math.min(ROWS - 1, p0[0] + ACTS[k].dr));
+          var c2 = Math.max(0, Math.min(COLS - 1, p0[1] + ACTS[k].dc));
+          if (isSlope(s)) r2 = Math.min(ROWS - 1, r2 + 1);
+          SUCCRC[s][k] = [r2, c2];
+          SUCC[s][k] = (r2 === CLIFF) ? -1 : r2 * COLS + c2;
+        }
+      }
+
+      // --- viability iteration (Algorithm 1) ---
+      var viable = [];
+      for (s = 0; s < N; s++) viable[s] = true;
+      var changed = true;
+      while (changed) {
+        changed = false;
+        for (s = 0; s < N; s++) {
+          if (!viable[s]) continue;
+          var ok = false;
+          for (k = 0; k < AV[s].length; k++) { t = SUCC[s][AV[s][k]]; if (t >= 0 && viable[t]) { ok = true; break; } }
+          if (!ok) { viable[s] = false; changed = true; }
+        }
+      }
+      var QV = [], LAM = [], nViable = 0;
+      for (s = 0; s < N; s++) {
+        QV[s] = [];
+        if (viable[s]) { nViable++; for (k = 0; k < AV[s].length; k++) { t = SUCC[s][AV[s][k]]; if (t >= 0 && viable[t]) QV[s].push(AV[s][k]); } }
+        LAM[s] = QV[s].length;
+      }
+      // worst-case time-to-failure on X_U
+      var TF = [];
+      for (s = 0; s < N; s++) TF[s] = viable[s] ? 0 : 1;
+      for (it = 0; it < N + 2; it++) {
+        var ch = false;
+        for (s = 0; s < N; s++) {
+          if (viable[s]) continue;
+          var m = 0;
+          for (k = 0; k < AV[s].length; k++) { t = SUCC[s][AV[s][k]]; var v = (t < 0) ? 0 : TF[t]; if (v > m) m = v; }
+          if (1 + m !== TF[s]) { TF[s] = 1 + m; ch = true; }
+        }
+        if (!ch) break;
+      }
+      var Tf = 0;
+      for (s = 0; s < N; s++) if (!viable[s] && TF[s] > Tf) Tf = TF[s];
+
+      // --- rewards and constants ---
+      function rew(i, P) { return (i === GOAL) ? P.Rg : -P.c; }
+      function constants(P) {
+        var s, k, t;
+        var RXU = 0, RQU = 0, RQV = Infinity; // cliff cells (failure states, reward 0) belong to X_U, their pairs to Q_U
+        for (s = 0; s < N; s++) {
+          var r0 = rew(s, P);
+          if (!viable[s]) { if (r0 > RXU) RXU = r0; if (r0 > RQU) RQU = r0; continue; }
+          for (k = 0; k < AV[s].length; k++) {
+            t = SUCC[s][AV[s][k]];
+            if (t >= 0 && viable[t]) { if (r0 < RQV) RQV = r0; } else { if (r0 > RQU) RQU = r0; }
+          }
+        }
+        return {RXU: RXU, RQU: RQU, RQV: RQV};
+      }
+      function constrainedV(P) {
+        var s, k, it, V = [];
+        for (s = 0; s < N; s++) V[s] = 0;
+        for (it = 0; it < 20000; it++) {
+          var d = 0;
+          for (s = 0; s < N; s++) {
+            if (!viable[s]) continue;
+            var best = -Infinity;
+            for (k = 0; k < QV[s].length; k++) { var q = rew(s, P) + P.g * V[SUCC[s][QV[s][k]]]; if (q > best) best = q; }
+            var dd = Math.abs(best - V[s]); if (dd > d) d = dd; V[s] = best;
+          }
+          if (d < 1e-9) break;
+        }
+        return V;
+      }
+      // exact value iteration for the penalised problem with slip eps (Gauss-Seidel sweeps)
+      function qval(V, i, kk, p, P) {
+        var j, t;
+        var acts = AV[i], m = acts.length, q = rew(i, P);
+        for (j = 0; j < m; j++) {
+          var pr = (j === kk ? 1 - P.e : 0) + P.e / m;
+          if (pr <= 0) continue;
+          t = SUCC[i][acts[j]];
+          q += pr * (t < 0 ? -P.g * p : P.g * V[t]);
+        }
+        return q;
+      }
+      function solve(p, P, V0) {
+        var s, k, it, V = [];
+        for (s = 0; s < N; s++) V[s] = V0 ? V0[s] : 0;
+        for (it = 0; it < 20000; it++) {
+          var d = 0;
+          for (s = 0; s < N; s++) {
+            var best = -Infinity, m = AV[s].length;
+            for (k = 0; k < m; k++) { var q = qval(V, s, k, p, P); if (q > best) best = q; }
+            var dd = Math.abs(best - V[s]); if (dd > d) d = dd; V[s] = best;
+          }
+          if (d < 1e-9 * (1 + Math.abs(p))) break;
+        }
+        return V;
+      }
+      // greedy analysis: a viable state is unsafe if ANY maximiser leaves the kernel
+      function analyse(V, p, P) {
+        var s, k, t, unsafe = [], arrow = [], greedy = [];
+        for (s = 0; s < N; s++) {
+          var acts = AV[s], m = acts.length, qs = [], best = -Infinity, bk = 0;
+          for (k = 0; k < m; k++) { qs[k] = qval(V, s, k, p, P); if (qs[k] > best) { best = qs[k]; bk = k; } }
+          greedy[s] = acts[bk]; // a greedy action, also on unviable cells (used by the rollout)
+          if (!viable[s]) { arrow[s] = -1; continue; }
+          var bad = -1, good = -1;
+          for (k = 0; k < m; k++) {
+            if (qs[k] < best - 1e-9) continue;
+            t = SUCC[s][acts[k]];
+            if (t >= 0 && viable[t]) { if (good < 0) good = acts[k]; } else { if (bad < 0) bad = acts[k]; }
+          }
+          if (bad >= 0) { unsafe.push(s); arrow[s] = bad; } else arrow[s] = good;
+        }
+        return {unsafe: unsafe, arrow: arrow, greedy: greedy};
+      }
+      // sup of V_p over X_U: the unviable slope cells and the cliff cells (failure states, value -p)
+      function supU(V, p) { var s, m = -p; for (s = 0; s < N; s++) if (!viable[s] && V[s] > m) m = V[s]; return m; }
+
+      // --- scan over penalties ---
+      var PG = [];
+      for (k = 0; k <= 60; k++) PG.push(Math.pow(10, -2 + k / 12));
+      function bisect(lo, hi, P, test) {
+        var Vw = null;
+        for (var b = 0; b < 14; b++) {
+          var mid = Math.sqrt(lo * hi);
+          if (lo <= 0) mid = 0.5 * (lo + hi);
+          Vw = solve(mid, P, Vw);
+          if (test(Vw, mid)) hi = mid; else lo = mid;
+        }
+        return hi;
+      }
+      function scan(P, K, infV) {
+        var k;
+        var Pd = {g: P.g, c: P.c, Rg: P.Rg, e: 0};
+        var Vd = null, Vs = null, rows = [];
+        var RHS = K.RQV + P.g * infV;
+        for (k = 0; k < PG.length; k++) {
+          var p = PG[k];
+          Vd = solve(p, Pd, Vd);
+          Vs = (P.e > 0) ? solve(p, P, Vs) : Vd;
+          var an = analyse(Vs, p, P);
+          rows.push({p: p, sup: supU(Vd, p), lhs: K.RQU + P.g * supU(Vd, p), n: an.unsafe.length});
+        }
+        // empirical p_min (current slip)
+        var pmin = Infinity, first = -1;
+        for (k = 0; k < rows.length; k++) if (rows[k].n === 0) { first = k; break; }
+        var safeTest = function (Vw, pp) { return analyse(Vw, pp, P).unsafe.length === 0; };
+        if (first === 0) {
+          var V0 = solve(0, P, null);
+          pmin = safeTest(V0, 0) ? 0 : bisect(0, PG[0], P, safeTest);
+        } else if (first > 0) {
+          pmin = bisect(PG[first - 1], PG[first], P, safeTest);
+        }
+        // first penalty at which (Zb) holds (deterministic)
+        var pZ = Infinity, fz = -1;
+        for (k = 0; k < rows.length; k++) if (rows[k].lhs < RHS) { fz = k; break; }
+        var zTest = function (Vw, pp) { return K.RQU + P.g * supU(Vw, pp) < RHS; };
+        if (fz === 0) { var Vz = solve(0, Pd, null); pZ = zTest(Vz, 0) ? 0 : bisect(0, PG[0], Pd, zTest); }
+        else if (fz > 0) pZ = bisect(PG[fz - 1], PG[fz], Pd, zTest);
+        return {rows: rows, pmin: pmin, pZ: pZ, RHS: RHS};
+      }
+
+      // --- DOM ---
+      var $ = function (id) { return document.getElementById(id); };
+      var elP = $('vb-p'), elG = $('vb-g'), elE = $('vb-e'), elC = $('vb-c'), elR = $('vb-r');
+      var gridSvg = $('vb-grid'), chartSvg = $('vb-chart');
+      function fmt(x, d) {
+        if (x === Infinity) return '> 1000';
+        if (x === -Infinity) return '−∞';
+        return (Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(d === undefined ? 2 : d));
+      }
+      function esc(str) { return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+      var CS = 44, OX = 6, OY = 6;
+      function cellFill(i) {
+        var r = rc(i)[0];
+        if (r === CLIFF) return '#ef9a9a';
+        if (!viable[i]) return '#ffe0b2';
+        var shades = ['#ffffff', '#e8f5e9', '#c8e6c9', '#a5d6a7', '#81c784', '#66bb6a'];
+        return shades[Math.min(5, LAM[i])];
+      }
+      function drawGrid(V, an, p, P) {
+        var k, out = '';
+        var r, c, i;
+        for (r = 0; r < ROWS; r++) {
+          for (c = 0; c < COLS; c++) {
+            i = r * COLS + c;
+            var x = OX + c * CS, y = OY + r * CS;
+            var isCliff = (r === CLIFF);
+            var fill = isCliff ? '#ef9a9a' : cellFill(i);
+            var unsafeHere = (!isCliff && an.unsafe.indexOf(i) >= 0);
+            out += '<rect x="' + x + '" y="' + y + '" width="' + CS + '" height="' + CS + '" fill="' + fill + '" stroke="' + (unsafeHere ? '#c62828' : '#bbb') + '" stroke-width="' + (unsafeHere ? 3 : 1) + '"/>';
+            if (isCliff) {
+              out += '<line x1="' + (x + 6) + '" y1="' + (y + 6) + '" x2="' + (x + CS - 6) + '" y2="' + (y + CS - 6) + '" stroke="#c62828" stroke-width="1.5"/>';
+              out += '<line x1="' + (x + CS - 6) + '" y1="' + (y + 6) + '" x2="' + (x + 6) + '" y2="' + (y + CS - 6) + '" stroke="#c62828" stroke-width="1.5"/>';
+              continue;
+            }
+            if (isSlope(i)) {
+              out += '<path d="M' + (x + 4) + ' ' + (y + CS - 4) + ' L' + (x + CS - 4) + ' ' + (y + CS - 4) + ' L' + (x + CS - 4) + ' ' + (y + 4) + ' Z" fill="#ffb74d" opacity="0.45"/>';
+            }
+            if (viable[i]) {
+              out += '<text x="' + (x + 4) + '" y="' + (y + 11) + '" font-size="9" fill="#555">' + LAM[i] + '</text>';
+              var a = an.arrow[i];
+              if (a >= 0) {
+                out += '<text x="' + (x + CS / 2) + '" y="' + (y + CS / 2 + 7) + '" font-size="' + (a === 4 ? 12 : 20) + '" text-anchor="middle" fill="' + (unsafeHere ? '#c62828' : '#1a237e') + '" font-weight="700">' + ACTS[a].g + '</text>';
+              }
+            } else {
+              out += '<text x="' + (x + CS / 2) + '" y="' + (y + CS / 2 + 4) + '" font-size="10" text-anchor="middle" fill="#e65100">t<tspan font-size="7" dy="2">f</tspan><tspan dy="-2">=' + TF[i] + '</tspan></text>';
+            }
+            out += '<text x="' + (x + CS - 3) + '" y="' + (y + CS - 3) + '" font-size="8" text-anchor="end" fill="#777">' + fmt(V[i], 1) + '</text>';
+            if (i === GOAL) {
+              out += '<rect x="' + (x + 1.5) + '" y="' + (y + 1.5) + '" width="' + (CS - 3) + '" height="' + (CS - 3) + '" fill="none" stroke="#f9a825" stroke-width="3"/>';
+              out += '<text x="' + (x + CS - 4) + '" y="' + (y + 12) + '" font-size="11" text-anchor="end" fill="#f57f17" font-weight="700">G</text>';
+            }
+            if (i === START) {
+              out += '<text x="' + (x + CS - 4) + '" y="' + (y + 12) + '" font-size="11" text-anchor="end" fill="#1565c0" font-weight="700">S</text>';
+            }
+          }
+        }
+        // greedy rollout from S (deterministic)
+        var cur = START, pts = [], fell = false, reached = false, steps = 0;
+        var cx = function (rr, cc) { return (OX + cc * CS + CS / 2) + ',' + (OY + rr * CS + CS / 2); };
+        pts.push(cx(rc(cur)[0], rc(cur)[1]));
+        while (steps < 40) {
+          var a0 = an.arrow[cur];
+          if (a0 < 0) { a0 = an.greedy[cur]; }
+          var nxt = SUCC[cur][a0], rr2 = SUCCRC[cur][a0];
+          steps++;
+          if (nxt < 0) { pts.push(cx(rr2[0], rr2[1])); fell = true; break; }
+          if (nxt === cur) { reached = (cur === GOAL); break; }
+          pts.push(cx(rr2[0], rr2[1]));
+          cur = nxt;
+          if (cur === GOAL && an.arrow[cur] === 4) { reached = true; break; }
+        }
+        out += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + (fell ? '#c62828' : '#1565c0') + '" stroke-width="3" opacity="0.7" stroke-linejoin="round"/>';
+        var last = pts[pts.length - 1].split(',');
+        out += '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="5" fill="' + (fell ? '#c62828' : '#1565c0') + '"/>';
+        // legend (two rows of swatches, then two lines of text; everything fits the 364-wide viewBox)
+        var ly = OY + ROWS * CS + 16;
+        var leg = [['#66bb6a', 'viable (shade = Λ)'], ['#ffe0b2', 'unviable slope (t_f shown)'], ['#ef9a9a', 'cliff = failure set X_F'], ['#fff', 'red frame: an optimal action leaves X_V']];
+        for (k = 0; k < leg.length; k++) {
+          var lx = OX + (k % 2) * 124, lyk = ly + Math.floor(k / 2) * 16;
+          out += '<rect x="' + lx + '" y="' + (lyk - 9) + '" width="11" height="11" fill="' + leg[k][0] + '" stroke="' + (k === 3 ? '#c62828' : '#999') + '" stroke-width="' + (k === 3 ? 2 : 1) + '"/>';
+          out += '<text x="' + (lx + 15) + '" y="' + lyk + '" font-size="9.5" fill="#444">' + esc(leg[k][1]) + '</text>';
+        }
+        out += '<text x="' + OX + '" y="' + (ly + 36) + '" font-size="9.5" fill="#444">Line: greedy rollout from S (blue; red if it falls).</text>';
+        out += '<text x="' + OX + '" y="' + (ly + 52) + '" font-size="9.5" fill="#444">Small grey number: V<tspan font-size="7" dy="2">p</tspan><tspan dy="-2">. Arrow: an optimal action.</tspan></text>';
+        gridSvg.innerHTML = out;
+        return {fell: fell, reached: reached};
+      }
+
+      function drawChart(sc, P, K, infV, pstar, pcur) {
+        var k;
+        var W = 440, H = 318, L = 46, R = 40, T = 60, B = 34;
+        var pw = W - L - R, ph = H - T - B;
+        var x0 = -2, x1 = 3;
+        var xs = function (p) { return L + (Math.log(p) / Math.LN10 - x0) / (x1 - x0) * pw; };
+        var rows = sc.rows, RHS = sc.RHS;
+        var lhs0 = rows[0].lhs;
+        var bound = function (p) { return K.RQU + P.g * (K.RXU * (1 - Math.pow(P.g, Tf + 1)) / (1 - P.g) - p * Math.pow(P.g, Tf)); };
+        var yhi = Math.max(lhs0, bound(rows[0].p), RHS) + 0.5;
+        var ylo = RHS - Math.max(yhi - RHS, 1.5) - 0.5;
+        var ys = function (v) { var vv = Math.max(ylo, Math.min(yhi, v)); return T + (yhi - vv) / (yhi - ylo) * ph; };
+        var out = '';
+        out += '<rect x="' + L + '" y="' + T + '" width="' + pw + '" height="' + ph + '" fill="#fff" stroke="#ccc"/>';
+        // x ticks
+        for (var e = -2; e <= 3; e++) {
+          var xx = xs(Math.pow(10, e));
+          out += '<line x1="' + xx + '" y1="' + (T + ph) + '" x2="' + xx + '" y2="' + (T + ph + 4) + '" stroke="#888"/>';
+          out += '<text x="' + xx + '" y="' + (T + ph + 15) + '" font-size="9.5" text-anchor="middle" fill="#555">' + (e < 0 ? Math.pow(10, e).toString() : Math.pow(10, e)) + '</text>';
+        }
+        out += '<text x="' + (L + pw / 2) + '" y="' + (H - 4) + '" font-size="10" text-anchor="middle" fill="#444">penalty p (log scale)</text>';
+        // y ticks (left, values)
+        var nt = 4;
+        for (var q = 0; q <= nt; q++) {
+          var vv = ylo + (yhi - ylo) * q / nt, yy = ys(vv);
+          out += '<line x1="' + (L - 4) + '" y1="' + yy + '" x2="' + L + '" y2="' + yy + '" stroke="#888"/>';
+          out += '<text x="' + (L - 6) + '" y="' + (yy + 3) + '" font-size="9" text-anchor="end" fill="#555">' + vv.toFixed(1) + '</text>';
+        }
+        // right axis: unsafe count
+        var nmax = Math.max(1, nViable);
+        var yc = function (n) { return T + ph - (n / nmax) * ph; };
+        for (q = 0; q <= 2; q++) {
+          var nn = Math.round(nmax * q / 2), yq = yc(nn);
+          out += '<line x1="' + (L + pw) + '" y1="' + yq + '" x2="' + (L + pw + 4) + '" y2="' + yq + '" stroke="#e67e22"/>';
+          out += '<text x="' + (L + pw + 6) + '" y="' + (yq + 3) + '" font-size="9" fill="#e67e22">' + nn + '</text>';
+        }
+        // RHS line
+        out += '<line x1="' + L + '" y1="' + ys(RHS) + '" x2="' + (L + pw) + '" y2="' + ys(RHS) + '" stroke="#2e7d32" stroke-width="2" stroke-dasharray="6,4"/>';
+        // curves
+        var pl = '', pb = '', pn = '';
+        for (k = 0; k < rows.length; k++) {
+          pl += (k ? ' ' : '') + xs(rows[k].p).toFixed(1) + ',' + ys(rows[k].lhs).toFixed(1);
+          pb += (k ? ' ' : '') + xs(rows[k].p).toFixed(1) + ',' + ys(bound(rows[k].p)).toFixed(1);
+          if (k > 0) pn += ' ' + xs(rows[k].p).toFixed(1) + ',' + yc(rows[k - 1].n).toFixed(1);
+          pn += (k ? ' ' : '') + xs(rows[k].p).toFixed(1) + ',' + yc(rows[k].n).toFixed(1);
+        }
+        out += '<polyline points="' + pn + '" fill="none" stroke="#e67e22" stroke-width="2.5" opacity="0.85"/>';
+        out += '<polyline points="' + pb + '" fill="none" stroke="#7b1fa2" stroke-width="1.8" stroke-dasharray="4,3"/>';
+        out += '<polyline points="' + pl + '" fill="none" stroke="#1565c0" stroke-width="2.2"/>';
+        // vertical markers
+        var marks = [[sc.pmin, '#e67e22', 'p_min'], [sc.pZ, '#1565c0', 'p_Z'], [pstar, '#7b1fa2', 'p*'], [pcur, '#555', 'p']];
+        for (k = 0; k < marks.length; k++) {
+          var mp = marks[k][0];
+          if (!(mp > 0) || mp === Infinity) continue;
+          var mxp = Math.max(Math.pow(10, x0), Math.min(Math.pow(10, x1), mp));
+          var mx = xs(mxp);
+          out += '<line x1="' + mx + '" y1="' + T + '" x2="' + mx + '" y2="' + (T + ph) + '" stroke="' + marks[k][1] + '" stroke-width="1.5"' + (k === 3 ? ' stroke-dasharray="3,3"' : '') + '/>';
+          out += '<text x="' + (mx + 3) + '" y="' + (T + 11 + 11 * k) + '" font-size="9.5" fill="' + marks[k][1] + '" font-weight="600">' + marks[k][2] + '</text>';
+        }
+        // legend (top; four short lines that fit the 440-wide viewBox)
+        out += '<text x="' + L + '" y="12" font-size="9.5" fill="#1565c0">— R_QU + γ·sup V_p on X_U (slip 0)</text>';
+        out += '<text x="' + (L + 196) + '" y="12" font-size="9.5" fill="#7b1fa2">- - same with the Lemma 2 bound</text>';
+        out += '<text x="' + L + '" y="25" font-size="9.5" fill="#2e7d32">- - R_QV + γ·inf V on X_V</text>';
+        out += '<text x="' + (L + 196) + '" y="25" font-size="9.5" fill="#e67e22">— unsafe viable states (right axis)</text>';
+        out += '<text x="' + L + '" y="39" font-size="9" fill="#666">(Zb) holds where the solid blue curve is below the green line;</text>';
+        out += '<text x="' + L + '" y="51" font-size="9" fill="#666">p* is where the dashed purple bound crosses the green line.</text>';
+        chartSvg.innerHTML = out;
+      }
+
+      function update() {
+        var s;
+        var p = Math.pow(10, parseFloat(elP.value));
+        var P = {g: parseFloat(elG.value), e: parseFloat(elE.value), c: parseFloat(elC.value), Rg: parseFloat(elR.value)};
+        $('vb-p-val').textContent = fmt(p);
+        $('vb-g-val').textContent = P.g.toFixed(2);
+        $('vb-e-val').textContent = P.e.toFixed(2);
+        $('vb-c-val').textContent = P.c.toFixed(1);
+        $('vb-r-val').textContent = P.Rg.toFixed(1);
+
+        var K = constants(P);
+        var Vc = constrainedV(P);
+        var infV = Infinity;
+        for (s = 0; s < N; s++) if (viable[s] && Vc[s] < infV) infV = Vc[s];
+        var pstar = Math.pow(P.g, -Tf) * (K.RXU * (1 - Math.pow(P.g, Tf + 1)) / (1 - P.g) + (K.RQU - K.RQV) / P.g - infV);
+        var sc = scan(P, K, infV);
+
+        var Vcur = solve(p, P, null);
+        var an = analyse(Vcur, p, P);
+        var roll = drawGrid(Vcur, an, p, P);
+        drawChart(sc, P, K, infV, pstar, p);
+        var Vdet = (P.e > 0) ? solve(p, {g: P.g, c: P.c, Rg: P.Rg, e: 0}, null) : Vcur;
+
+        $('vb-Tf').textContent = Tf;
+        $('vb-RXU').textContent = fmt(K.RXU, 1);
+        $('vb-RQU').textContent = fmt(K.RQU, 1);
+        $('vb-RQV').textContent = fmt(K.RQV, 1);
+        $('vb-infV').textContent = fmt(infV);
+        $('vb-supU').textContent = fmt(supU(Vdet, p));
+        $('vb-pstar').textContent = (pstar < 0 ? fmt(pstar) + ' (every p ≥ 0 is certified)' : (pstar === 0 ? '0 (every p > 0 is certified)' : fmt(pstar)));
+        $('vb-pZ').textContent = (sc.pZ === 0 ? '0' : fmt(sc.pZ));
+        $('vb-pmin').textContent = (sc.pmin === 0 ? '0' : fmt(sc.pmin));
+        $('vb-vstart').textContent = fmt(Vcur[START]);
+
+        var nU = an.unsafe.length, msg;
+        if (nU === 0) {
+          msg = '<strong style="color:#2e7d32;">Safe:</strong> at p = ' + fmt(p) + ' every optimal action at every viable state stays in the kernel' + (P.e > 0 ? ' (deterministic part)' : '') + '. ';
+        } else {
+          msg = '<strong style="color:#c62828;">Unsafe:</strong> at p = ' + fmt(p) + ', ' + nU + ' viable state' + (nU > 1 ? 's have' : ' has') + ' an optimal action that leaves the kernel (red frames). ';
+        }
+        msg += 'Greedy rollout from S: ' + (roll.fell ? '<span style="color:#c62828;">falls off the cliff</span>' : (roll.reached ? 'reaches the goal' : 'stops without reaching the goal')) + '. ';
+        var sPmin = (sc.pmin === 0 ? '0' : fmt(sc.pmin)), sPZ = (sc.pZ === 0 ? '0' : fmt(sc.pZ));
+        if (P.e === 0) {
+          if (pstar > 0) {
+            var ratio = (sc.pmin > 0 && sc.pmin !== Infinity) ? ' (p<sup>*</sup> / p<sub>min</sub> = ' + (pstar / sc.pmin).toFixed(1) + ')' : '';
+            msg += 'Thresholds: empirical p<sub>min</sub> = ' + sPmin + ' ≤ p<sub>Z</sub> = ' + sPZ + ' ≤ p<sup>*</sup> = ' + fmt(pstar) + ratio + ': the theorem is sufficient but conservative, and the sufficient condition (Zb) is itself looser than the truth.';
+          } else {
+            msg += 'Thresholds: empirical p<sub>min</sub> = ' + sPmin + ', p<sub>Z</sub> = ' + sPZ + ', and the formula gives p<sup>*</sup> = ' + fmt(pstar) + ' ≤ 0, so Theorem 2 certifies every p ' + (pstar < 0 ? '≥ 0: the reward alone already keeps every optimal action in the kernel.' : '> 0: any positive penalty works, while at p = 0 unsafe actions tie with safe ones.');
+          }
+        } else {
+          msg += 'With slip ε = ' + P.e.toFixed(2) + ' the dynamics are stochastic, outside the assumptions of Theorem 2, and no policy avoids the cliff forever; p<sup>*</sup> and p<sub>Z</sub> are shown for the deterministic world, while p<sub>min</sub> is the smallest penalty at which every optimal intended action keeps its nominal successor in the kernel. Notice the policy retreating from the edge as p grows: the penalty now buys robustness, not just viability.';
+        }
+        $('vb-status').innerHTML = msg;
+      }
+
+      [elP, elG, elE, elC, elR].forEach(function (el) { el.addEventListener('input', update); });
+      $('vb-reset').addEventListener('click', function () {
+        elP.value = 0; elG.value = 0.90; elE.value = 0; elC.value = 1; elR.value = 1; update();
+      });
+      update();
+    })();
+  </script>
+</body>
+</html>
