@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>B. Calculus, Convexity &amp; Optimization — Safe Learning</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+</head>
+<body>
+
+  <nav id="sidebar" class="sidebar"></nav>
+  <button class="sidebar-open" onclick="toggleSidebar()">&#9776;</button>
+
+  <main class="main-content">
+
+    <h1 class="page-title">B. Calculus, Convexity &amp; Optimization</h1>
+    <p class="page-subtitle">Gradients, Lipschitz continuity, convex sets and functions, descent methods and constraints</p>
+
+    <div class="prereq-box">
+      <div class="prereq-title">Before you start</div>
+      <p style="margin:0;">This primer assumes:</p>
+      <ul>
+        <li>Single-variable calculus: derivatives, chain and product rule, Taylor polynomials, integrals and the fundamental theorem of calculus <span class="prereq-src">(baseline)</span></li>
+        <li>A first course in linear algebra: matrix products, transpose, inverse, determinant, eigenvalues <span class="prereq-src">(baseline)</span></li>
+        <li><a href="primer-linalg.html#la-vectors-norms">Inner products, norms and Cauchy&ndash;Schwarz</a> <span class="prereq-src">(Primer A)</span></li>
+        <li><a href="primer-linalg.html#la-psd">Positive semidefinite matrices &amp; quadratic forms</a> <span class="prereq-src">(Primer A)</span></li>
+        <li><a href="primer-basics.html#mb-sup-inf">Supremum, infimum and the extended reals</a> <span class="prereq-src">(Primer 0)</span></li>
+        <li><a href="primer-basics.html#mb-sets-logic">Set-builder notation and quantifiers</a> <span class="prereq-src">(Primer 0)</span></li>
+        <li><a href="primer-basics.html#mb-topology">Open, closed and compact sets; continuity</a> <span class="prereq-src">(Primer 0)</span></li>
+        <li><a href="primer-basics.html#mb-asymptotics">Asymptotic notation $O,\ o,\ \Theta$</a> <span class="prereq-src">(Primer 0)</span></li>
+        <li><a href="primer-linalg.html#la-matrix-norms">Operator norms</a> and <a href="primer-linalg.html#la-block">trace, determinant &amp; log det</a> <span class="prereq-src">(Primer A)</span></li>
+      </ul>
+    </div>
+
+    <div class="page-toc">
+      <div class="page-toc-title">Contents</div>
+      <a href="#opt-multivariable">1. Gradients, Jacobians, Hessians &amp; the Chain Rule</a>
+      <a href="#opt-matrix-calculus">2. Matrix Calculus You Will Need</a>
+      <a href="#opt-lipschitz">3. Lipschitz Continuity, Smoothness &amp; Sensitivity</a>
+      <a href="#opt-convexity">4. Convex Sets, Convex Functions &amp; Conjugates</a>
+      <a href="#opt-descent">5. Gradient Descent, Newton's Method &amp; Step Sizes</a>
+      <a href="#opt-constraints">6. Constraints: Lagrange Multipliers, Projections, Penalties &amp; Barriers</a>
+      <a href="#opt-lp-qp">7. Linear &amp; Quadratic Programs</a>
+      <a href="#opt-minmax">8. argmax, Min-Max Problems &amp; Saddle Points</a>
+      <a class="toc-interactive" href="#opt-explorer">Interactive: Descent, Projection &amp; Barriers in 2-D</a>
+      <a href="#exercises">Exercises</a>
+      <a href="#reading">Further Reading</a>
+      <a class="toc-interactive" href="#flashcards">Flashcards</a>
+    </div>
+
+    <p>The modules certify safety with inequalities and compute controllers, multipliers and weights by optimisation. Both rest on one toolbox: multivariable derivatives, bounds on how fast functions change, convexity, and algorithms that turn "find the best feasible point" into iterations. Each concept comes with a definition, a small example, the general statement, and pointers to where the modules use it.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Notation &mdash; On this page</div>
+      <div>
+        <ul>
+          <li>Vectors are columns; $x^\top y$ is the inner product and $\|x\|$ the Euclidean norm unless subscripted ($\|x\|_1,\|x\|_\infty$). $\nabla f$ is the gradient (a column), $J_f$ the Jacobian, $\nabla^2f$ the Hessian; $C^r$: $r$ times continuously differentiable.</li>
+          <li>$A\succeq0$ ($A\succ0$): symmetric positive semidefinite (definite); $\|A\|$ spectral and $\|A\|_F$ Frobenius norm, $\langle A,B\rangle=\operatorname{tr}(A^\top B)$; $(u)_+=\max(u,0)$, componentwise for vectors; $P_C(y)$: projection onto $C$.</li>
+          <li>Running example of Sections 6&ndash;8: minimise $(x-2)^2$ subject to $x\le1$; solution $x^\star=1$, optimal value $p^\star=1$.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Background &mdash; The probability used in the examples (finite case)</div>
+      <div class="collapsible-body">
+        <p>A few examples (expectations in Section 4, SGD in Section 5, mixed strategies in Section 8) use probability, treated fully in Primer C (<a href="primer-probability.html#pr-basics">expectation</a>, <a href="primer-probability.html#pr-conditioning">conditioning</a>, <a href="primer-probability.html#pr-information">KL divergence</a>). Here a random variable $Z$ takes finitely many values $z_j$ with probabilities $p_j\ge0$, $\sum_jp_j=1$ ("uniform on $n$ values": $p_j=1/n$). Then $\mathbb P(Z\in A)=\sum_{j:\,z_j\in A}p_j$, and the <strong>expectation</strong> $\mathbb Eg(Z)=\sum_jp_jg(z_j)$ is a probability-weighted average: for $Z$ uniform on $\{1,2,3,6\}$, $\mathbb EZ=3$. The conditional expectation $\mathbb E[g_k\mid x_k]$ in SGD averages over the fresh sampling randomness of step $k$ with the current iterate $x_k$ held fixed. For distributions $p,q$ on the same finite set, $\mathrm{KL}(p\|q)=\sum_jp_j\log(p_j/q_j)\ge0$ (with $0\log0=0$, and $+\infty$ if some $q_j=0\lt p_j$), zero iff $p=q$, measures their discrepancy (not symmetric).</p>
+      </div>
+    </div>
+
+
+    <!-- ===== SECTION 1: MULTIVARIABLE CALCULUS ===== -->
+    <h2 class="section-heading" id="opt-multivariable">1. Gradients, Jacobians, Hessians &amp; the Chain Rule</h2>
+
+    <p>Almost every argument in the modules that involves motion (a state along a trajectory, weights during training, an input inside a ball) uses one trick: restrict a function of many variables to a line or a curve, and apply single-variable calculus there.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Partial derivative, gradient, directional derivative</div>
+      <div>
+        For $f:\mathbb R^n\to\mathbb R$, $\partial f/\partial x_i$ is the ordinary derivative in $x_i$ with the other coordinates frozen, and the <strong>gradient</strong> is the column $\nabla f(x)=\big(\tfrac{\partial f}{\partial x_1},\dots,\tfrac{\partial f}{\partial x_n}\big)^{\top}$. The <strong>directional derivative</strong> along $v$ is the slope on the line through $x$ in direction $v$:
+        <div class="math-block">$$D_vf(x)=\lim_{t\to0}\frac{f(x+tv)-f(x)}{t}=\frac{d}{dt}f(x+tv)\Big|_{t=0}.$$</div>
+        $f$ is <strong>differentiable</strong> at $x$ if $f(x+\delta)=f(x)+\nabla f(x)^{\top}\delta+e(\delta)$ with $e(\delta)/\|\delta\|\to0$; then $D_vf(x)=\nabla f(x)^{\top}v$. $f\in C^1$ if all partials exist and are continuous (this implies differentiability); $C^r$: all partials up to order $r$ exist and are continuous.
+      </div>
+    </div>
+
+    <p><strong>Example.</strong> $f(x)=x_1^2+3x_1x_2$ has $\nabla f=(2x_1+3x_2,\ 3x_1)$, so $\nabla f(1,2)=(8,3)$ and along $v=(1,1)/\sqrt2$ the slope is $11/\sqrt2\approx7.78$. By Cauchy&ndash;Schwarz $\nabla f^{\top}v\le\|\nabla f\|$ for unit $v$, with equality for $v=\nabla f/\|\nabla f\|$: the steepest slope is $\sqrt{73}\approx8.54$.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Intuition</div>
+      <div>The gradient points uphill most steeply, and it is perpendicular to the level set through $x$: along a curve $c(t)$ inside $\{f=f(x)\}$, $0=\tfrac{d}{dt}f(c(t))=\nabla f^{\top}\dot c$. For a safe set $C=\{h\ge0\}$, $\nabla h$ (where nonzero) is the boundary normal pointing into $C$. "$0$ is a <strong>regular value</strong> of $h$" means $\nabla h\ne0$ wherever $h=0$; then the boundary is a smooth surface. For the unit disc $h=1-\|x\|^2$, $\nabla h=-2x\ne0$ on the circle, pointing inwards; for $h(x)=-x^3$, $h'(0)=0$ and the derivative cannot tell the safe side from the unsafe one.</div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall</div>
+      <div>Partials can exist without differentiability: $f=x_1x_2/(x_1^2+x_2^2)$, $f(0)=0$, has zero partials at $0$ but equals $\tfrac12$ on the diagonal; $C^1$ rules this out. "$C^1$ on a closed set $S$" means: the restriction of a $C^1$ function on an open set containing $S$, so gradients exist on the boundary too.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Jacobian</div>
+      <div>
+        For $f=(f_1,\dots,f_m):\mathbb R^n\to\mathbb R^m$, $J_f(x)\in\mathbb R^{m\times n}$ has entries $\partial f_i/\partial x_j$; row $i$ is $\nabla f_i^{\top}$. If every $f_i$ is differentiable at $x$ (e.g. $f$ is $C^1$ near $x$), then $f(x+\delta)=f(x)+J_f(x)\delta+e(\delta)$ with $\|e(\delta)\|/\|\delta\|\to0$: the Jacobian is the best local linear map. Existing entries alone do not give this (the Pitfall above has $J_f(0)=0$, yet $f=\tfrac12$ on the diagonal). For scalar $f$, $J_f=\nabla f^{\top}$. An affine map $Wx+b$ has $J=W$; an elementwise activation $\sigma(v)$ has $J=\operatorname{diag}(\sigma'(v_1),\dots,\sigma'(v_n))$. Example: $f=(x_1x_2,\ x_1+x_2^2)$ has $J_f=\begin{bmatrix}x_2 & x_1\\ 1 & 2x_2\end{bmatrix}$, equal to $\begin{bmatrix}2 & 1\\ 1 & 4\end{bmatrix}$ at $(1,2)$.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Chain rule</div>
+      <div>
+        If $g$ is differentiable at $x$ and $f$ at $g(x)$, then $J_{f\circ g}(x)=J_f(g(x))\,J_g(x)$ (composing the best linear maps). Special cases used constantly:
+        <div class="math-block">$$\frac{d}{dt}f(x(t))=\nabla f(x(t))^{\top}\dot x,\qquad \nabla(f\circ g)(x)=J_g(x)^{\top}\nabla f(g(x)),\qquad \frac{d}{dt}\big(a^{\top}b\big)=\dot a^{\top}b+a^{\top}\dot b .$$</div>
+      </div>
+    </div>
+
+    <p><strong>Derivatives along trajectories.</strong> For $\dot x=f(x)+g(x)u$ and $C^1$ $h$, the first case gives the <strong>Lie derivatives</strong> ($L_gh$ is a row when $u\in\mathbb R^m$):</p>
+    <div class="math-block">$$\dot h=\nabla h(x)^{\top}\dot x=\underbrace{\nabla h(x)^{\top}f(x)}_{L_fh(x)}+\underbrace{\nabla h(x)^{\top}g(x)}_{L_gh(x)}\,u .$$</div>
+    <p>The product rule gives $\tfrac{d}{dt}(x^{\top}Px)=\dot x^{\top}Px+x^{\top}P\dot x=2x^{\top}P\dot x$ for symmetric $P$, and the chain rule applied to $\nabla f$ (whose Jacobian is the Hessian) gives $\tfrac{d}{dt}\nabla f(x(t))=\nabla^2f(x(t))\,\dot x$. A path $q(s)$, $s\in[0,1]$, run with timing $s(t)$ has $\dot q=q'(s)\dot s$ and $\ddot q=q''(s)\dot s^2+q'(s)\ddot s$; with $\dot s\ge0$ the same points are visited in the same order, so time scaling changes only the timing, never the geometric path ($\dot s=0$ means stopping on it). <strong>Example:</strong> $\dot x_1=x_2$, $\dot x_2=-x_1+u$ and $h=1-x_1^2-x_2^2$ give $L_fh=-2x_1x_2+2x_2x_1=0$ and $L_gh=-2x_2$; at the boundary point $(0.6,0.8)$, $\dot h=-1.6u$, so exactly the inputs $u\le0$ keep $h$ from decreasing.</p>
+
+    <p><strong>Backpropagation is the chain rule in reverse.</strong> $f(x)=W_2\sigma(W_1x+b_1)+b_2$ with scalar output has $\nabla f(x)=W_1^{\top}\operatorname{diag}(\sigma'(v))W_2^{\top}$, $v=W_1x+b_1$. Backpropagation evaluates it from the output side ($W_2^{\top}$, then $\operatorname{diag}(\sigma'(v))$, then $W_1^{\top}$) by matrix-vector products, so a gradient costs a few forward passes (finite differences need $n+1$). Take the <strong>ReLU</strong> $\sigma(z)=\max(z,0)$, applied to each coordinate: neuron $i$ is <em>active</em> when $v_i\gt0$, where $\sigma'(v_i)=1$, and inactive when $v_i\lt0$, where $\sigma'(v_i)=0$. With $W_1=\begin{bmatrix}1 & 2\\ 1 & -2\end{bmatrix}$, $b_1=0$, $W_2=[1\ \ 1]$ and $x=(1,0.25)$: $v=(1.5,0.5)$, both neurons active, $\operatorname{diag}(\sigma'(v))=I$ and $\nabla f=W_1^{\top}(1,1)^{\top}=(2,0)$; indeed $f=2x_1$ near $x$. ReLU networks are not differentiable on finitely many hyperplane pieces (zero volume), where autodiff uses a convention such as $\sigma'(0)=0$; along a segment they stay continuous and piecewise affine. More in <a href="primer-rl-nn.html#nn-basics">Primer E</a>.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Hessian</div>
+      <div>
+        For $f\in C^2$, $\nabla^2f(x)$ has entries $\partial^2f/\partial x_i\partial x_j$; it is the Jacobian of $\nabla f$ and is symmetric (mixed partials commute). $f=x_1^2+3x_1x_2$ has $\nabla^2f=\begin{bmatrix}2 & 3\\ 3 & 0\end{bmatrix}$ with eigenvalues $1\pm\sqrt{10}\approx4.16,-2.16$: it curves up in one direction and down in another although the diagonal is nonnegative; the mixed partial decides.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; Taylor expansion with remainder</div>
+      <div>
+        For $f\in C^2$: $\ f(x+\delta)=f(x)+\nabla f(x)^{\top}\delta+\tfrac12\delta^{\top}\nabla^2f(x)\,\delta+o(\|\delta\|^2)$. If $\|\nabla^2f\|\le M$ on the segment from $x$ to $x+\delta$, then $|f(x+\delta)-f(x)-\nabla f(x)^{\top}\delta|\le\tfrac M2\|\delta\|^2$ (one-variable Taylor with remainder applied to $t\mapsto f(x+t\delta)$, whose second derivative is $\delta^{\top}\nabla^2f\,\delta$).
+      </div>
+    </div>
+
+    <p><strong>O-notation</strong> (<a href="primer-basics.html#mb-asymptotics">Primer 0</a>). $e(\delta)=O(\|\delta\|^k)$ as $\delta\to0$ means $|e(\delta)|\le C\|\delta\|^k$ for small $\delta$; $o(\|\delta\|^k)$ means $e/\|\delta\|^k\to0$. As $n\to\infty$ the same symbol bounds growth: "$O(n^2)$ operations" means at most $Cn^2$. Same definition, opposite limit: always say which variable goes where. Two $C^2$ functions that agree to <strong>first order</strong> at $x_0$ (value and gradient) differ by $O(\|\delta\|^2)$: first-order agreement fixes the gradient but says nothing quantitative at a finite step, which needs a second-order bound.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; Multiplying expansions; linearising with a quadratic remainder</div>
+      <div class="collapsible-body">
+        <p>With $e^u=1+u+\tfrac{u^2}2+O(u^3)$, multiply term by term and collect everything of total order $\ge3$ into $O(h^3)$:</p>
+        <div class="math-block">$$(2-e^{-ah})\,e^{bh}=\big[1+ah-\tfrac{a^2h^2}{2}\big]\big[1+bh+\tfrac{b^2h^2}{2}\big]+O(h^3)=1+(a+b)h+\big(ab+\tfrac{b^2}{2}-\tfrac{a^2}{2}\big)h^2+O(h^3).$$</div>
+        <p>For $a=0.6$, $b=1.3$ the error of the quadratic is $7.0\cdot10^{-4}\approx0.70h^3$ at $h=0.1$ and $6.8\cdot10^{-7}$ at $h=0.01$: a factor $1000$ for a factor $10$ in $h$, the signature of $O(h^3)$. Subtracting $1$ and dividing by $h=1/\tau$ gives $p^\star(\tau)=a+b+(ab+\tfrac{b^2}{2}-\tfrac{a^2}{2})/\tau+O(\tau^{-2})$ in <a href="viability.html#exercises">Exercise 7.3</a>.</p>
+        <p><strong>Linearisation.</strong> For $C^2$ $F$ with $F(0)=0$, $A=J_F(0)$ and $F(x)=Ax+r(x)$: if $\|\nabla^2F_i\|\le M_i$ on $\|z\|\le\rho$, the Taylor bound per component gives $\|r(x)\|\le k\|x\|^2$ there, with $k=\tfrac12(\sum_iM_i^2)^{1/2}$. Example: $F=(0.5x_1+x_2^2,\ 0.5x_2)$ has $A=0.5I$, $r=(x_2^2,0)$, $M_1=2$, $M_2=0$, $k=1$, and indeed $\|r\|=x_2^2\le\|x\|^2$.</p>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Integrating the gradient along a segment (mean value theorem)</div>
+      <div>
+        If $f$ is $C^1$ near the segment from $x$ to $x+\delta$, then $\varphi(t)=f(x+t\delta)$ has $\varphi'(t)=\nabla f(x+t\delta)^{\top}\delta$, and
+        <div class="math-block">$$f(x+\delta)-f(x)=\int_0^1\nabla f(x+t\delta)^{\top}\delta\,dt=\nabla f(x+\xi\delta)^{\top}\delta\quad\text{for some }\xi\in(0,1).$$</div>
+        For $f:\mathbb R^n\to\mathbb R^m$ integrate each component: $f(x+\delta)-f(x)=\big(\int_0^1J_f(x+t\delta)dt\big)\delta$, so $\|f(x+\delta)-f(x)\|\le\sup_t\|J_f(x+t\delta)\|\,\|\delta\|$. If only $r(t)=f(x+t\delta)$ is continuous and piecewise $C^1$ (a ReLU network along any segment), use $f(x+\delta)-f(x)=\int_0^1r'(t)\,dt$: $r'(t)=J_f(x+t\delta)\delta$ where $f$ is differentiable, and for a ReLU network $r'(t)=J_k\delta$ with $J_k$ the Jacobian of an affine piece containing that stretch, even if the segment runs inside a kink ($f=|x_1|+x_2$ has no gradient on the $x_2$-axis, yet $r(t)=t$ there). <em>Caution:</em> for vector-valued maps there is no single $\xi$: $(\cos t,\sin t)$ returns to its start on $[0,2\pi]$ although its derivative never vanishes.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Fact &mdash; An interior minimiser has zero gradient</div>
+      <div>
+        If $x^\star$ is a local minimiser in the <em>interior</em> of the domain and $f$ is differentiable there, then $\nabla f(x^\star)=0$. <em>Proof.</em> $\varphi(t)=f(x^\star+tv)$ has a local minimum at $0$, so $\nabla f(x^\star)^{\top}v=\varphi'(0)=0$ for every $v$; take $v=\nabla f(x^\star)$. For $f\in C^2$ also $\nabla^2f(x^\star)\succeq0$, and $\nabla f=0$ with $\nabla^2f\succ0$ gives a strict local minimum. On the boundary the gradient need not vanish ($\min x$ over $x\ge0$; Section 6), and a zero gradient can be a saddle ($x_1^2-x_2^2$); for convex $f$ it suffices (Section 4).
+      </div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        <ul>
+          <li><strong>Lie derivatives, derivatives along trajectories:</strong> the CBF condition (<a href="landscape.html#guarantee-types">Module 1</a>, <a href="barriers.html#invariance-nagumo">Module 10</a>), $C^1$ safe value functions (<a href="viability.html#safe-value-functions">Module 7</a>), $\tfrac{d}{dt}x^{\top}Px$ for controller states (<a href="nn-in-the-loop.html#synthesis">Module 14</a>), $\tfrac{d}{dt}\nabla f=\nabla^2f\,\dot x$ in the multiplier ODE (<a href="cmdp.html#pid-lagrangian">Module 8</a>), time scaling $q(s(t))$ (<a href="barriers.html#learned-filters">Module 10</a>).</li>
+          <li><strong>Jacobians, backpropagation:</strong> $\|J_f\|$ and Lipschitz constants (<a href="lipsdp.html#lipschitz-robustness">Module 12</a>), $W_k^{\top}$ and $\operatorname{diag}(\sigma')$ in the backward pass (<a href="lipschitz-by-design.html#why-by-design">Module 13</a>), integrating a network gradient along a segment (<a href="verification.html#sdp-relaxation">Module 15</a>).</li>
+          <li><strong>Taylor and $O(\cdot)$:</strong> <a href="viability.html#exercises">Module 7</a> (Exercise 7.3), first-order agreement of surrogates (<a href="policy-optimization.html#performance-difference">Module 9</a>), $\|r(x)\|\le k\|x\|^2$ (<a href="lyapunov-mpc.html#lyapunov-roa">Module 11</a>). <strong>Stationarity</strong> in KKT (<a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 2: MATRIX CALCULUS ===== -->
+    <h2 class="section-heading" id="opt-matrix-calculus">2. Matrix Calculus You Will Need</h2>
+
+    <p>All gradients with respect to vectors and matrices follow from one habit: write the first-order change of the function (its <em>differential</em>) and read the gradient off it.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Differential and the identification rule</div>
+      <div>
+        For $f:\mathbb R^n\to\mathbb R$, $df=\nabla f(x)^{\top}dx$ is the first-order change caused by $dx$. For $g:\mathbb R^{m\times n}\to\mathbb R$: if $dg=\operatorname{tr}(G^{\top}dW)=\langle G,dW\rangle$ for all $dW$, then $\nabla_Wg=G$ (the matrix of partials $\partial g/\partial W_{ij}$); equivalently $g(W+\varepsilon E)=g(W)+\varepsilon\langle G,E\rangle+o(\varepsilon)$. Rules: $d(AXB)=A\,dX\,B$, $d(XY)=dX\,Y+X\,dY$, $d\operatorname{tr}X=\operatorname{tr}dX$, $\operatorname{tr}(AB)=\operatorname{tr}(BA)$, $\operatorname{tr}(A^{\top})=\operatorname{tr}A$.
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Function</th><th>Gradient / differential</th><th>How</th></tr></thead>
+      <tbody>
+        <tr><td>$a^{\top}x$</td><td>$a$</td><td>$d(a^{\top}x)=a^{\top}dx$</td></tr>
+        <tr><td>$x^{\top}Ax$</td><td>$(A+A^{\top})x$ ($=2Ax$ if $A=A^{\top}$); Hessian $A+A^{\top}$</td><td>$dx^{\top}Ax+x^{\top}A\,dx$</td></tr>
+        <tr><td>$\|Ax-b\|^2$</td><td>$2A^{\top}(Ax-b)$; Hessian $2A^{\top}A\succeq0$</td><td>$r=Ax-b$, $d(r^{\top}r)=2r^{\top}A\,dx$</td></tr>
+        <tr><td>$\operatorname{tr}(AX)$</td><td>$A^{\top}$</td><td>$\operatorname{tr}(A\,dX)=\langle A^{\top},dX\rangle$</td></tr>
+        <tr><td>$\|X\|_F^2$</td><td>$2X$</td><td>$2\operatorname{tr}(X^{\top}dX)$</td></tr>
+        <tr><td>$\log\det X$, $X\succ0$</td><td>$X^{-1}$; directional derivative $\operatorname{tr}(X^{-1}E)$</td><td>below</td></tr>
+        <tr><td>$X^{-1}$</td><td>$d(X^{-1})=-X^{-1}\,dX\,X^{-1}$</td><td>differentiate $XX^{-1}=I$</td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>Why $X^{-1}$ for $\log\det$.</strong> $\det(X+\varepsilon E)=\det X\det(I+\varepsilon X^{-1}E)$ and $\det(I+\varepsilon M)=\prod_i(1+\varepsilon\mu_i)=1+\varepsilon\operatorname{tr}M+O(\varepsilon^2)$ ($\mu_i$ the eigenvalues of $M$), so $\log\det(X+\varepsilon E)=\log\det X+\varepsilon\operatorname{tr}(X^{-1}E)+O(\varepsilon^2)$. Check with $X=\begin{bmatrix}2 & 1\\ 1 & 2\end{bmatrix}$, $E=\begin{bmatrix}0 & 1\\ 1 & 0\end{bmatrix}$: $\det(X+\varepsilon E)=3-2\varepsilon-\varepsilon^2$ has log-slope $-\tfrac23$ at $0$, and $\operatorname{tr}(X^{-1}E)=\tfrac13(-1-1)=-\tfrac23$. For the inverse, $dX\,X^{-1}+X\,d(X^{-1})=d(I)=0$ (scalar case: $d(1/x)=-dx/x^2$).</p>
+
+    <p><strong>Example (least squares).</strong> Fitting $y\approx\theta_1+\theta_2t$ to $(0,1),(1,2),(2,2)$: $A=\begin{bmatrix}1 & 0\\ 1 & 1\\ 1 & 2\end{bmatrix}$, $b=(1,2,2)$, and $\nabla\|A\theta-b\|^2=0$ gives the normal equations $\begin{bmatrix}3 & 3\\ 3 & 5\end{bmatrix}\theta=\begin{bmatrix}5\\ 6\end{bmatrix}$, so $\theta=(7/6,1/2)$; the residual $(1/6,-1/3,1/6)$ is orthogonal to both columns. The Hessian $2A^{\top}A\succ0$ makes this the global minimiser (Section 4). The ridge objective $\|y-K\alpha\|^2+\lambda\alpha^{\top}K\alpha$ of GP regression has gradient $-2K(y-(K+\lambda I)\alpha)$, which vanishes at $\alpha=(K+\lambda I)^{-1}y$.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; The chain rule through a matrix-valued map (a log-det barrier)</div>
+      <div class="collapsible-body">
+        <p>For symmetric $N(W)\succ0$, $d\log\det N=\operatorname{tr}(N^{-1}dN)$. The barrier $g(W)=-\log\det(cI-W^{\top}W)$ is defined while $\|W\|^2\lt c$. With $N=cI-W^{\top}W$, $dN=-(dW^{\top}W+W^{\top}dW)$ and</p>
+        <div class="math-block">$$dg=\operatorname{tr}\big(N^{-1}(dW^{\top}W+W^{\top}dW)\big)=2\operatorname{tr}(N^{-1}W^{\top}dW)\ \Longrightarrow\ \nabla_Wg=2WN^{-1},$$</div>
+        <p>using $\operatorname{tr}(N^{-1}dW^{\top}W)=\operatorname{tr}(W^{\top}dW\,N^{-1})=\operatorname{tr}(N^{-1}W^{\top}dW)$ (transpose, $N^{-1}$ symmetric, cyclicity). For $W=\begin{bmatrix}1 & 0.5\\ 0 & 1\end{bmatrix}$, $c=4$: $\nabla_Wg=\begin{bmatrix}0.75 & 0.5\\ 0.125 & 0.75\end{bmatrix}$, confirmed by finite differences.</p>
+      </div>
+    </div>
+
+    <p><strong>Inverses, linear solves, optimisers.</strong> For $\|E\|\lt1$, $(I+E)^{-1}=I-E+E^2-\cdots$ (Neumann series), so $(X+\varepsilon E)^{-1}=X^{-1}-\varepsilon X^{-1}EX^{-1}+O(\varepsilon^2)$ and, for $\lambda\gt\|K\|$, $(K+\lambda I)^{-1}=\lambda^{-1}I-\lambda^{-2}K+O(\lambda^{-3})$, a matrix of norm at most $C\lambda^{-3}$ (eigenvalue by eigenvalue: $\tfrac1{\lambda+k_i}=\tfrac1\lambda-\tfrac{k_i}{\lambda^2}+O(\lambda^{-3})$). If $A(\theta)x=b(\theta)$, then $A\,dx+dA\,x=db$, so $dx=A^{-1}(db-dA\,x)$. If $x^\star(\theta)$ solves $\nabla_xF(x^\star,\theta)=0$ with $\nabla^2_{xx}F\succ0$, then $\partial x^\star/\partial\theta=-(\nabla^2_{xx}F)^{-1}\nabla^2_{x\theta}F$ (implicit function theorem): this is how sensitivities of an optimisation layer or an MPC problem are computed.</p>
+
+    <p><strong>Hessian-vector products.</strong> For fixed $v$, $\nabla^2f(x)\,v=\nabla_x\big(\nabla f(x)^{\top}v\big)$, which autodiff computes for about the cost of two gradients without forming the $n\times n$ matrix. Example: $f=x_1^2x_2$ gives $\nabla f^{\top}v=2x_1x_2v_1+x_1^2v_2$, whose gradient $(2x_2v_1+2x_1v_2,\ 2x_1v_1)$ equals $\begin{bmatrix}2x_2 & 2x_1\\ 2x_1 & 0\end{bmatrix}v$. A cheaper approximation is $(\nabla f(x+\varepsilon v)-\nabla f(x))/\varepsilon$. In trust-region RL the matrix is the Hessian of the KL divergence at $\theta_k$ (the Fisher matrix), often damped to $(H+\beta I)v$, and conjugate gradients (Section 5) solve $Hx=g$ with these products alone.</p>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall</div>
+      <div>Layouts differ: $\nabla_X\operatorname{tr}(AX)=A^{\top}$, not $A$, and tables listing $2X^{-1}-\operatorname{diag}(X^{-1})$ for $\log\det$ treat $X_{ij}$ and $X_{ji}$ as one variable. Test any formula against $\operatorname{tr}(G^{\top}E)$ for one concrete $E$.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        Kernel ridge regression (<a href="toolkit-gp.html#gp-regression">Module 3</a>) and the inverse expansion of Exercise 3.3 (<a href="toolkit-gp.html#exercises">Module 3</a>); Fisher&ndash;vector products and CG in CPO (<a href="policy-optimization.html#cpo-update">Module 9</a>); the $\log\det$ directional derivative in barrier training (<a href="lipsdp.html#training-with-lipsdp">Module 12</a>); $\beta(WW^{\top}-I)W$ (Exercise B.2) and inverses in Cayley layers (<a href="lipschitz-by-design.html#orthogonal-layers">Module 13</a>); NLP sensitivities (<a href="lyapunov-mpc.html#learning-based-mpc">Module 11</a>).
+      </div>
+    </div>
+
+    <!-- ===== SECTION 3: LIPSCHITZ ===== -->
+    <h2 class="section-heading" id="opt-lipschitz">3. Lipschitz Continuity, Smoothness &amp; Sensitivity</h2>
+
+    <p>A Lipschitz constant is a worst-case exchange rate between input change and output change. It turns one measurement at one point into a guarantee on a whole neighbourhood, which is why it appears in nearly every safety certificate of the section.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Lipschitz continuity, global and local</div>
+      <div>
+        $f:D\to\mathbb R^m$ is <strong>$L$-Lipschitz</strong> on $D$ (for a distance $d$, e.g. $d(x,x')=\|x-x'\|$) if
+        <div class="math-block">$$\|f(x)-f(x')\|\le L\,d(x,x')\qquad\text{for all }x,x'\in D.$$</div>
+        The smallest such $L$ is <em>the</em> Lipschitz constant; any larger number is also valid, and "a known Lipschitz constant" in a theorem means a known valid upper bound. $f$ is <strong>locally Lipschitz</strong> if every point has a neighbourhood where it is Lipschitz (the constant may vary), and <strong>non-expansive</strong> if $L\le1$.
+      </div>
+    </div>
+
+    <p><strong>Intuition and examples.</strong> Every chord has slope at most $L$, so around each point the graph stays in the cone $|f(x')-f(x)|\le L|x'-x|$. $|x|$ and $\sin x$ are $1$-Lipschitz on $\mathbb R$. $x^2$ is not Lipschitz on $\mathbb R$ (chord slope $x+x'$) but is $2R$-Lipschitz on $[-R,R]$, hence locally Lipschitz. $\sqrt x$ on $[0,1]$ is continuous but not Lipschitz (infinite slope at $0$), and a step function is not even continuous: Lipschitz $\Rightarrow$ continuous, not conversely.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Key equation &mdash; Transfer of a lower bound</div>
+      <div>
+        $|f(x)-f(x')|\le L\,d(x,x')$ gives $f(x')\ge f(x)-L\,d(x,x')$. If $f(x)\ge\ell$ is known and safety means $f\ge h$, every $x'$ with $d(x,x')\le(\ell-h)/L$ is certified without being evaluated. Example: $f(x_0)\ge0.5$, threshold $0$, $L=2$ certify $|x'-x_0|\le0.25$, and no more: $0.5-2|x'-x_0|$ is $2$-Lipschitz and hits $0$ there. If the true constant exceeds the assumed $L$, the certificate is void, not merely loose.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; A gradient bound is a Lipschitz constant (dual norms)</div>
+      <div>
+        Let $f$ be $C^1$ on an open convex $D$ (or continuous and piecewise $C^1$ along segments), with inputs measured by a norm $\|\cdot\|$ whose <strong>dual norm</strong> is $\|g\|_*=\max_{\|d\|\le1}g^{\top}d$. Then $L=\sup_{x\in D}\|\nabla f(x)\|_*$ is the Lipschitz constant; for $f:\mathbb R^n\to\mathbb R^m$ with Euclidean norms, $L=\sup_x\|J_f(x)\|$. Dual pairs: $\ell_2\leftrightarrow\ell_2$, $\ell_1\leftrightarrow\ell_\infty$ (Hölder: $|g^{\top}d|\le\|g\|_*\|d\|$).<br>
+        <em>Proof.</em> By Section 1, $|f(y)-f(x)|=\big|\int_0^1\nabla f(x+t(y-x))^{\top}(y-x)dt\big|\le\sup_D\|\nabla f\|_*\|y-x\|$ (piecewise case: the integrand is $r'(t)$, the gradient of the active piece times $y-x$). Conversely $\nabla f(x)^{\top}d$ is a limit of chord slopes, each $\le L\|d\|$.
+      </div>
+    </div>
+
+    <p><strong>Example.</strong> $f(x)=3x_1-x_2$ has gradient $g=(3,-1)$ everywhere, so $|f(x)-f(y)|$ is at most $3\|x-y\|_1$ ($\|g\|_\infty=3$), $4\|x-y\|_\infty$ ($\|g\|_1=4$) or $\sqrt{10}\|x-y\|_2$, each constant exact: an $\ell_\infty$ gradient bound gives an $\ell_1$ Lipschitz constant. For nonlinear $f$ bound each dual norm over $D$ separately: $(2.1,2.1)$ has a smaller $\ell_2$ but a larger $\ell_1$ norm than $(3,-1)$. With several smooth branches (an input saturation switching on and off) take the largest gradient norm over all branches.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Fact &mdash; Calculus of Lipschitz constants</div>
+      <div>
+        $L(f\circ g)\le L(f)L(g)$; $\ L(f+g)\le L(f)+L(g)$; $\ L(af)=|a|L(f)$; for bounded scalars $L(fg)\le\sup|f|\,L(g)+\sup|g|\,L(f)$; if $|g|\ge c\gt0$, $L(1/g)\le L(g)/c^2$. <em>Proofs:</em> $\|f(g(x))-f(g(y))\|\le L(f)\|g(x)-g(y)\|$; $\ fg(x)-fg(y)=f(x)(g(x)-g(y))+g(y)(f(x)-f(y))$; $\ \tfrac1{g(x)}-\tfrac1{g(y)}=\tfrac{g(y)-g(x)}{g(x)g(y)}$.<br>
+        <em>Local versions.</em> $C^1$ functions are locally Lipschitz (a continuous gradient is bounded on a closed ball). If $f$ and $g$ are locally Lipschitz and $g(x_0)\ne0$, continuity gives $|g|\ge|g(x_0)|/2$ near $x_0$, so $f/g$ is locally Lipschitz there by the two rules above. Continuity of $g$ alone is not enough: $g=1+\sqrt{|x|}$ has $g(0)=1$, but $1/g$ has infinite slope at $0$. Hence closed-form safety filters dividing by $\|L_gh\|^2$ are locally Lipschitz away from $L_gh=0$ provided $L_fh$, $L_gh$, $\alpha$ and the nominal input are locally Lipschitz (e.g. locally Lipschitz dynamics and $\nabla h$). A network with $1$-Lipschitz activations has $L\le\prod_k\|W_k\|$.<br>
+        <em>Two arguments.</em> If $|g(a,x)-g(a',x)|\le L_a\|a-a'\|$ for every $x$ and $|g(a,x)-g(a,x')|\le L_x\|x-x'\|$ for every $a$, then inserting $g(a',x)$ gives $|g(a,x)-g(a',x')|\le L_a\|a-a'\|+L_x\|x-x'\|$. The bounds must be uniform in the other argument.
+      </div>
+    </div>
+
+    <p><strong>Sensitivity along trajectories.</strong> Compositions of non-expansive maps are non-expansive, so trajectories of $x_{t+1}=F(x_t)$ with $L(F)\le1$ never separate; the Euler step $x^+=(1-hk)x$ of $\dot x=-kx$ is non-expansive iff $0\le hk\le2$. For infima, $|\inf_ta_t-\inf_tb_t|\le\sup_t|a_t-b_t|$ (since $a_t\le b_t+\sup|a-b|$ for every $t$, and symmetrically), so with an $L$-Lipschitz $\bar g$ and non-expansive dynamics the margin $\inf_t\bar g(x_t)$ is $L$-Lipschitz in $x_0$. For a model $\hat f$ with $\|f^\star-\hat f\|\le e$ and $f^\star$ $L_f$-Lipschitz, prediction errors obey $d_{t+1}\le L_fd_t+e$, so $d_t\le L_f^td_0+e\sum_{j\lt t}L_f^j$. From the same initial state ($d_0=0$) this is $e(L_f^t-1)/(L_f-1)$, or $et$ if $L_f=1$: $e=0.01$, $L_f=1.1$ give $d_{10}\le0.159$, and margins grow geometrically when $L_f\gt1$. In continuous time a Lipschitz vector field gives unique solutions with $\|x(t)-x'(t)\|\le e^{Lt}\|x(0)-x'(0)\|$ (<a href="primer-systems.html#sys-state-space">Primer D</a>); a merely continuous one need not: $\dot x=\sqrt{|x|}$, $x(0)=0$ is solved by $x\equiv0$ and by $x=t^2/4$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; H&ouml;lder continuity and moduli of continuity</div>
+      <div>
+        A <strong>modulus of continuity</strong> is a nondecreasing $\omega:[0,\infty)\to[0,\infty)$, $\omega(0)=0$, continuous at $0$, with $|f(x)-f(x')|\le\omega(d(x,x'))$. Lipschitz: $\omega(r)=Lr$; <strong>$\alpha$-H&ouml;lder</strong>: $\omega(r)=Cr^\alpha$, $0\lt\alpha\le1$ (e.g. $c\sqrt r$). The lower bound transfers as $f(x')\ge f(x)-\omega(d(x,x'))$: with margin $s\ge0$ and $\omega$ strictly increasing, the radius $\omega^{-1}(s)$ is certified. $\omega^{-1}$ exists only on the range of $\omega$; for a bounded modulus such as $1-e^{-r}$ and $s\ge\sup\omega$, every point is certified. Example, $s=0.2$: $\omega=2r$ gives radius $0.1$, $\omega=2\sqrt r$ only $(s/2)^2=0.01$.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Fact &mdash; Grids, covering radii and the Lipschitz margin</div>
+      <div>
+        A finite $G\subset D$ has <strong>covering radius</strong> $r_c$ (is an $r_c$-net) if every $x\in D$ is within $r_c$ of some $g\in G$. Then $f(x)\ge f(g)-Lr_c$ for the nearest $g$, so the grid test <em>$f(g)\ge Lr_c$ for all $g\in G$</em> (not $f(g)\ge0$) certifies $f\ge0$ on all of $D$; renaming or enlarging $L$ does not remove this margin. A grid of spacing $\Delta$ on $[0,1]^d$ has $(1/\Delta+1)^d$ points and $\ell_2$ covering radius $\tfrac{\sqrt d}2\Delta$: for $\Delta=0.1$, $11$ points in $d=1$ but $11^6\approx1.8$ million in $d=6$ (the curse of dimensionality). The fewest points of an $\varepsilon$-net is the <strong>covering number</strong>, of order $(1/\varepsilon)^d$ for a cube. Gradients work the same way: if $\|\nabla^2f\|\le H$, then $\|\nabla f(x)\|\le\|\nabla f(g)\|+Hr_c$ on the cell of $g$.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; $L$-smooth functions and the descent lemma</div>
+      <div>
+        $f$ is <strong>$L$-smooth</strong> if $\|\nabla f(x)-\nabla f(y)\|\le L\|x-y\|$ (for $C^2$ on a convex set: $\|\nabla^2f\|\le L$). Then $f(y)\le f(x)+\nabla f(x)^{\top}(y-x)+\tfrac L2\|y-x\|^2$. <em>Proof:</em> the left side minus the first two terms on the right is $\int_0^1(\nabla f(x+t(y-x))-\nabla f(x))^{\top}(y-x)\,dt\le\int_0^1Lt\|y-x\|^2dt$. Example: $\tfrac12x^{\top}Qx$ with $Q\succeq0$ is $\lambda_{\max}(Q)$-smooth. $|x|$ is Lipschitz but not smooth; $x^2$ is smooth but not globally Lipschitz.
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Going deeper &mdash; Rademacher's theorem and set-valued maps</div>
+      <div class="collapsible-body">
+        <p><strong>Rademacher's theorem</strong> (statement): a Lipschitz $f:\mathbb R^n\to\mathbb R^m$ is differentiable except on a set of zero volume ("almost everywhere"), and its Lipschitz constant is the supremum of $\|J_f\|$ where the Jacobian exists. A <strong>set-valued map</strong> $F$ is $L$-Lipschitz if $d_H(F(x),F(x'))\le L\|x-x'\|$, with Hausdorff distance $d_H(A,B)=\max\{\sup_{a\in A}\operatorname{dist}(a,B),\sup_{b\in B}\operatorname{dist}(b,A)\}$.</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall</div>
+      <div>The largest gradient norm at sampled points is a <em>lower</em> bound on the Lipschitz constant and certifies nothing. A local constant (valid on a ball around $x$) only covers perturbations inside that ball. On a nonconvex domain a gradient bound controls changes along paths inside the domain, not along segments that leave it.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        <ul>
+          <li><strong>Transferring lower bounds:</strong> SafeOpt's safe set (<a href="safe-bo.html#problem-setting">Module 4</a>, <a href="safe-bo-theory.html#the-gap">Module 5</a>), GP bounds (<a href="toolkit-gp.html#kernels-rkhs">Module 3</a>), parameters and initial states (<a href="gosafe.html#why-local-fails">Module 6</a>). <strong>Moduli:</strong> LoSBO (<a href="safe-bo-theory.html#losbo">Module 5</a>), the square-root modulus of $\sigma_N$ (<a href="toolkit-gp.html#practical-bounds">Module 3</a>).</li>
+          <li><strong>Grids and margins:</strong> continuous domains in SafeOpt (<a href="safe-bo.html#safeopt-theory">Module 4</a>), why grids fail beyond small $d$ (<a href="safe-bo-theory.html#los-gp-ucb">Module 5</a>), $\varepsilon$-nets (<a href="barriers.html#robust-cbf">Module 10</a>), sampled gradients plus a Hessian correction and $\ell_\infty/\ell_1$ duality (<a href="lyapunov-mpc.html#roa-explorer">Module 11</a>).</li>
+          <li><strong>Composition, local constants, sensitivity:</strong> locally Lipschitz dynamics and filters (<a href="barriers.html#invariance-nagumo">Module 10</a>), $L_V,L_f,L_\pi$ (<a href="lyapunov-mpc.html#lyapunov-roa">Module 11</a>), local versus global constants (<a href="lipsdp.html#lipschitz-robustness">Module 12</a>), model-error propagation (<a href="policy-optimization.html#model-based">Module 9</a>), non-expansive Euler steps and trajectory infima (<a href="gosafe.html#gosafe-explorer">Module 6</a>), Lipschitz versus continuous dynamics (<a href="viability.html#viability-kernel">Module 7</a>).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 4: CONVEXITY ===== -->
+    <h2 class="section-heading" id="opt-convexity">4. Convex Sets, Convex Functions &amp; Conjugates</h2>
+
+    <p>Convexity makes local information global: a tangent plane underestimates the whole function, a stationary point is a global minimiser, and a feasible region has no hidden pockets. It separates problems that solvers answer reliably from problems they only attack heuristically.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Notation &mdash; Sets, topology and hulls (recap)</div>
+      <div>
+        <ul>
+          <li><strong>Sets</strong> (<a href="primer-basics.html#mb-sets-logic">Primer 0</a>): $\{x\in D:g(x)\ge0\}$ is "the $x$ in $D$ with $g(x)\ge0$"; $\in$, $\subseteq$, $\forall$ (for all), $\exists$ (there exists), $\cup$, $\cap$, $D\setminus S=\{x\in D:x\notin S\}$; $\bigcap_{i\in I}S_i$ holds the points in <em>every</em> $S_i$, $\bigcup_{i\in I}S_i$ those in <em>at least one</em>. Order matters: $C_t=C_{t-1}\cap Q_t$ can only shrink, and $D\setminus(A\cup B)=(D\setminus A)\cap(D\setminus B)$.</li>
+          <li><strong>Topology</strong> (<a href="primer-basics.html#mb-topology">Primer 0</a>): $x$ is interior to $S$ if a small ball around $x$ lies in $S$; $S$ is closed if it contains the limits of its convergent sequences; boundary = closure minus interior; in $\mathbb R^n$, compact = closed and bounded. <em>Weierstrass:</em> a continuous function on a nonempty compact set attains its maximum and minimum.</li>
+          <li><strong>Affine hull, relative interior:</strong> $\operatorname{aff}S=\{\sum_i\theta_ix_i:x_i\in S,\ \sum_i\theta_i=1\}$ (weights may be negative) is the smallest shifted subspace containing $S$, and $\operatorname{relint}S$ is the interior relative to it. The segment from $(0,0)$ to $(1,0)$ has empty interior in $\mathbb R^2$ but relative interior the open segment; the simplex $\{p\in\mathbb R^3:p\ge0,\sum_ip_i=1\}$ has relative interior $\{\text{all }p_i\gt0\}$. Slater's condition asks for a strictly feasible point in $\operatorname{relint}\mathcal D$.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Convex set, convex combination, convex hull</div>
+      <div>
+        $C$ is <strong>convex</strong> if $\theta x+(1-\theta)y\in C$ for all $x,y\in C$, $\theta\in[0,1]$: with $y$, the whole segment $y+\theta(x-y)$ lies in $C$. A <strong>convex combination</strong> is $\sum_i\theta_ix_i$ with $\theta_i\ge0$, $\sum_i\theta_i=1$; the <strong>convex hull</strong> $\operatorname{conv}S$ is the set of all finite convex combinations of points of $S$, the smallest convex set containing $S$.
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Convex set</th><th>Why convex / remark</th></tr></thead>
+      <tbody>
+        <tr><td>Ball $\{\|x-c\|\le r\}$, any norm</td><td>$\|\theta x+(1-\theta)y-c\|\le\theta\|x-c\|+(1-\theta)\|y-c\|$</td></tr>
+        <tr><td>Half-space $\{a^{\top}x\le b\}$, hyperplane $\{a^{\top}x=b\}$</td><td>normal vector $a$, signed offset $b/\|a\|$</td></tr>
+        <tr><td>Polyhedron $\{Hx\le h\}=\bigcap_i\{H_ix\le h_i\}$</td><td>row $H_i$ is the outward normal of facet $i$</td></tr>
+        <tr><td>Polytope (bounded polyhedron)</td><td>the convex hull of its finitely many vertices</td></tr>
+        <tr><td>Ellipsoid $\{(x-c)^{\top}P^{-1}(x-c)\le1\}$, $P\succ0$</td><td>image of the unit ball under $u\mapsto c+P^{1/2}u$</td></tr>
+        <tr><td>Zonotope $\{c+G\xi:\|\xi\|_\infty\le1\}$</td><td>affine image of a box (a parallelotope if $G$ is square and invertible)</td></tr>
+        <tr><td>PSD cone $\mathbb S^n_+$</td><td>$x^{\top}(\theta A+(1-\theta)B)x=\theta x^{\top}Ax+(1-\theta)x^{\top}Bx\ge0$</td></tr>
+        <tr><td>Simplex $\Delta(\mathcal A)=\{p\ge0,\sum_ap_a=1\}$</td><td>adding $p_a\ge\epsilon_0/|\mathcal A|$ gives the restricted simplex (nonempty iff $\epsilon_0\le1$); a stationary policy lies in the product $\Delta(\mathcal A)^{|\mathcal S|}$</td></tr>
+      </tbody>
+    </table>
+
+    <p>Not convex: $\{\|x\|\ge1\}$, two disjoint intervals, the ReLU graph, $\{0,1\}^n$. Convexity is preserved by arbitrary intersections, Cartesian products, and affine images and preimages; linear maps commute with hulls, $A\operatorname{conv}S=\operatorname{conv}(AS)$, since $A\sum_i\theta_ix_i=\sum_i\theta_iAx_i$. <strong>Polytopes as quadratic constraints:</strong> for $x\in\{Hx\le h\}$ each product $(h-Hx)_i(h-Hx)_j\ge0$, so $(Hx-h)^{\top}\Gamma(Hx-h)\ge0$ for every $\Gamma$ with nonnegative entries, one quadratic form in $(x,1)$ once the constant coordinate is appended. It is an <em>outer</em> approximation: a point violating two facets also makes their product positive.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Convex, concave and extended-value functions</div>
+      <div>
+        $f$ on a convex set is <strong>convex</strong> if $f(\theta x+(1-\theta)y)\le\theta f(x)+(1-\theta)f(y)$ (chords above the graph; equivalently the epigraph $\{(x,t):t\ge f(x)\}$ is convex), <strong>concave</strong> if $-f$ is convex; affine functions are both. With the value $+\infty$ allowed, $\operatorname{dom}f=\{f\lt\infty\}$; $f$ is <strong>proper</strong> if it is never $-\infty$ and not identically $+\infty$, and <strong>closed</strong> (lower semicontinuous) if all sublevel sets $\{f\le c\}$ are closed. The indicator $\iota_C$ ($0$ on $C$, $+\infty$ off it) turns a constraint into an objective: $\min_Cf=\min(f+\iota_C)$.
+      </div>
+    </div>
+
+    <p><strong>Recognising convexity.</strong> Convex: norms, $\|Ax+b\|$, $e^x$, $-\log x$, $x\log x$, $\tfrac12x^{\top}Qx$ ($Q\succeq0$), maxima of affine functions such as $\nu\mapsto(z-\nu)_+$, and the KL divergence (jointly). Concave: $\log x$, $\sqrt x$, $\log\det X$ ($X\succ0$), $\lambda_{\min}(X)=\min_{\|v\|=1}v^{\top}Xv$, and every infimum of affine functions, such as a Lagrange dual function. Rules: (i) nonnegative sums <strong>and expectations</strong> ($\theta\mapsto\mathbb E_zf(\theta,z)$ is convex if each $f(\cdot,z)$ is); (ii) composition with affine maps; (iii) pointwise maxima and suprema; (iv) partial minimisation: $\inf_yF(x,y)$ is convex if $F$ is jointly convex (and the infimum is $\gt-\infty$); (v) perspectives $t\,f(x/t)$, $t\gt0$.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Proof &mdash; Partial minimisation and perspectives; separate convexity and symmetry</div>
+      <div class="collapsible-body">
+        <p><strong>(iv)</strong> For $\varepsilon\gt0$ pick $y_i$ with $F(x_i,y_i)\le h(x_i)+\varepsilon$; then $h(\theta x_1+(1-\theta)x_2)\le F(\theta(x_1,y_1)+(1-\theta)(x_2,y_2))\le\theta h(x_1)+(1-\theta)h(x_2)+\varepsilon$. <strong>(v)</strong> With $T=\theta t_1+(1-\theta)t_2$ and $\mu=\theta t_1/T$: $\theta t_1f(\tfrac{x_1}{t_1})+(1-\theta)t_2f(\tfrac{x_2}{t_2})=T[\mu f(\tfrac{x_1}{t_1})+(1-\mu)f(\tfrac{x_2}{t_2})]\ge Tf(\tfrac{\theta x_1+(1-\theta)x_2}{T})$. So $x^{\top}Mx/t$ ($M\succeq0$, $t\gt0$), the perspective of $x^{\top}Mx$, is jointly convex, also after restricting $x$ to an affine set.</p>
+        <p><strong>Separate is not joint:</strong> $xy$ is linear in each variable, yet $f(t,-t)=-t^2$. Separate convexity still gives: the maximum over a box is attained at a vertex (a convex function of one variable on an interval peaks at an endpoint; push the coordinates to endpoints one at a time). <strong>Symmetry averaging:</strong> if $f$ is convex, the feasible set is convex, and a linear involution $S$ ($S(Sx)=x$) maps feasible points to feasible points with $f(Sx)=f(x)$, then $\tfrac12(x+Sx)$ is feasible, $S$-invariant, and $f(\tfrac12(x+Sx))\le\tfrac12f(x)+\tfrac12f(Sx)=f(x)$: if a minimiser exists, a symmetric one does. Convexity of $f$ is essential: $-x^2$ on $[-1,1]$ with $Sx=-x$ is minimised at $\pm1$, not at the symmetric point $0$.</p>
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; First- and second-order conditions, strong convexity</div>
+      <div>
+        For $f$ differentiable on an open convex set:
+        <ol>
+          <li>$f$ convex $\iff f(y)\ge f(x)+\nabla f(x)^{\top}(y-x)$ for all $x,y$. Hence $\nabla f(x^\star)=0$ gives a <em>global</em> minimum, and over a convex $C$, $x^\star$ is optimal iff $\nabla f(x^\star)^{\top}(y-x^\star)\ge0$ for all $y\in C$.</li>
+          <li>For $f\in C^2$: convex $\iff\nabla^2f\succeq0$ everywhere.</li>
+          <li>Convex $\iff\nabla f$ is <strong>monotone</strong>, $(\nabla f(x)-\nabla f(y))^{\top}(x-y)\ge0$ (in one variable: $f'$ nondecreasing).</li>
+          <li><strong>$\mu$-strongly convex</strong> ($\mu\ge0$): $f-\tfrac\mu2\|x\|^2$ convex $\iff f(y)\ge f(x)+\nabla f(x)^{\top}(y-x)+\tfrac\mu2\|y-x\|^2\iff(\nabla f(x)-\nabla f(y))^{\top}(x-y)\ge\mu\|x-y\|^2\iff\nabla^2f\succeq\mu I$. $\mu=0$ is plain convexity. For $\mu\gt0$ there is at most one minimiser, and on all of $\mathbb R^n$ one exists (the quadratic lower bound makes $f$ coercive); on a smaller open set it may not ($x^2$ on $(0,1)$). With $f^\star=\inf f$ always $f(x)-f^\star\le\tfrac1{2\mu}\|\nabla f(x)\|^2$, and if $x^\star$ exists, $\tfrac\mu2\|x-x^\star\|^2\le f(x)-f^\star$.</li>
+        </ol>
+        <em>Proof of 1.</em> ($\Rightarrow$) $f(x+\theta(y-x))\le f(x)+\theta(f(y)-f(x))$; subtract $f(x)$, divide by $\theta$, let $\theta\to0$. ($\Leftarrow$) Apply the inequality at $z=\theta x+(1-\theta)y$ towards $x$ and $y$, and add with weights $\theta,1-\theta$. <em>Last bound of 4:</em> minimising the right side of the strong-convexity inequality over $y$ gives $f^\star\ge f(x)-\|\nabla f(x)\|^2/(2\mu)$.
+      </div>
+    </div>
+
+    <p><strong>Example.</strong> $x_1^2+x_2^2+ax_1x_2$ has Hessian eigenvalues $2\pm a$: convex iff $|a|\le2$. For $a=3$ the diagonal is positive, yet $f(t,-t)=-t^2$: nonnegative curvature along the axes does not make a Hessian PSD. <strong>Slopes and potentials:</strong> in one variable, for $0\le\mu\le L$, "$\Phi'$ has chord slopes in $[\mu,L]$" is exactly "$\Phi$ is $\mu$-strongly convex and $L$-smooth", so an activation slope-restricted in $[\alpha,\beta]$ with $0\le\alpha\le\beta$ (nondecreasing, as Module 12 assumes) is the derivative of the convex potential $\int_0^u\varphi$ (ReLU is the derivative of $\tfrac12(u)_+^2$). Negative slopes break this: $\varphi(u)=-u$ has the concave potential $-u^2/2$. A set $R$ of pairs is a <strong>monotone relation</strong> if $(a-a')(b-b')\ge0$ for all $(a,b),(a',b')\in R$; it may be multivalued, like the subdifferential of $|x|$, whose graph contains the vertical segment $\{0\}\times[-1,1]$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Subgradients and one-sided derivatives</div>
+      <div>
+        $g$ is a <strong>subgradient</strong> of convex $f$ at $x$ if $f(y)\ge f(x)+g^{\top}(y-x)$ for all $y$; $\partial f(x)$, the set of subgradients, is $\{\nabla f(x)\}$ where $f$ is differentiable (for concave $f$, <em>supergradients</em> reverse the inequality). In one variable the one-sided derivatives $f'_\pm(x)=\lim_{t\to0^\pm}\tfrac{f(x+t)-f(x)}{t}$ exist and $\partial f(x)=[f'_-(x),f'_+(x)]$. <strong>Optimality:</strong> $x^\star$ minimises $f$ iff $0\in\partial f(x^\star)$, in one variable iff $f'_-(x^\star)\le0\le f'_+(x^\star)$. For $\max_i(a_i^{\top}\lambda+b_i)$, the slope $a_j$ of any maximising piece is a subgradient.
+      </div>
+    </div>
+
+    <p><strong>Example.</strong> $Z$ uniform on $\{0,1,2,3\}$ and $F(\nu)=\nu+2\,\mathbb E(Z-\nu)_+$ (the Rockafellar&ndash;Uryasev function at level $\tfrac12$, <a href="primer-probability.html#pr-quantiles-risk">Primer C</a>), convex by rules (i) and (iii), with $F'_+(\nu)=1-2\,\mathbb P(Z\gt\nu)$, $F'_-(\nu)=1-2\,\mathbb P(Z\ge\nu)$. At $\nu=1$: $[-0.5,0]\ni0$; at $\nu=2$: $[0,0.5]\ni0$; in between $F'=0$. The minimisers form the interval $[1,2]$, and $\min F=2.5$, the mean of the upper half $\{2,3\}$ (the CVaR).</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Jensen's inequality</div>
+      <div>
+        For convex $f$ and a random vector $X$ with $\mathbb E\|X\|\lt\infty$, $\mathbb E|f(X)|\lt\infty$: $f(\mathbb EX)\le\mathbb Ef(X)$; reversed for concave $f$. Equal weights: $f(\tfrac1n\sum_ix_i)\le\tfrac1n\sum_if(x_i)$. For strictly convex $f$, equality iff $X$ is constant with probability one. <em>Proof.</em> With a subgradient $g$ at $m=\mathbb EX$, $f(X)\ge f(m)+g^{\top}(X-m)$; take expectations.
+      </div>
+    </div>
+
+    <p><strong>Examples.</strong> $X$ uniform on $\{1,4,9,16\}$: $\mathbb E\sqrt X=2.5\le\sqrt{\mathbb EX}=\sqrt{7.5}\approx2.74$. Concavity of $\log$: $\sum_{i=1}^d\log(1+\mu_i/\lambda)\le d\log(1+\tfrac1d\sum_i\mu_i/\lambda)$, with equality iff all $\mu_i$ are equal; for $\lambda=1$, $\mu_1+\mu_2=4$: $(3,1)$ gives $\log8\approx2.08$, $(2,2)$ gives $\log9\approx2.20$. <strong>Sublevel sets</strong> $\{f\le c\}$ of convex $f$ are convex (e.g. the ellipsoid $\{x^{\top}Px\le c\}$, $P\succ0$), and $\{h\ge0\}$ is convex for concave $h$; the converse fails ($\sqrt{|x|}$).</p>
+
+    <p><strong>log det and matrix convexity.</strong> $\log\det(X+tE)=\log\det X+\sum_i\log(1+t\mu_i)$ with $\mu_i$ the eigenvalues of $X^{-1/2}EX^{-1/2}$: concave in $t$, so $\log\det$ is concave on $X\succ0$ and maximising $\log\det S$ under LMIs is a convex problem (determinant maximisation, not an SDP with linear objective; interior-point solvers handle it). $F$ is <em>matrix-convex</em> if $F(\theta X+(1-\theta)Y)\preceq\theta F(X)+(1-\theta)F(Y)$ in the PSD order; $W\mapsto W^{\top}W$ is, since the difference equals $\theta(1-\theta)(A-B)^{\top}(A-B)\succeq0$. So $\{W:W^{\top}W\preceq M\}$ is convex, while a term such as $-W^{\top}TW$ on the side that must stay small is matrix-concave and destroys convexity. A product $TW$ of two unknowns is bilinear: a BMI, nonconvex jointly and affine once $T$ is fixed.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Convex conjugate and Fenchel&ndash;Young inequality</div>
+      <div>
+        $f^*(y)=\sup_x(y^{\top}x-f(x))$ is convex even if $f$ is not (a supremum of affine functions of $y$), and $f(x)+f^*(y)\ge x^{\top}y$ with equality iff $y\in\partial f(x)$. Picture: $-f^*(y)$ is the intercept of the highest line of slope $y$ that stays below the graph. <em>Fenchel&ndash;Moreau</em> (statement): $f^{**}=f$ iff $f$ is proper, closed and convex. Examples: $(x^2)^*=y^2/4$; $(\tfrac12x^{\top}Qx)^*=\tfrac12y^{\top}Q^{-1}y$ for $Q\succ0$; $f(w)=\tfrac12(w-1)^2$ on $w\ge0$ has $f^*(e)=e+e^2/2$ for $e\ge-1$ and $-\tfrac12$ for $e\lt-1$ (restricting the domain changes the conjugate).<br>
+        <em>Sign translations.</em> Convex value function $p^\star(u)$, $\lambda\ge0$: $\inf_u(p^\star(u)+\lambda^{\top}u)=-(p^\star)^*(-\lambda)$. Concave value function $P(\xi)$: $\sup_\xi(P(\xi)-\lambda^{\top}\xi)=(-P)^*(-\lambda)$. For $\alpha\gt0$: $\sup_w(we-\alpha f(w))=\alpha f^*(e/\alpha)$.
+      </div>
+    </div>
+
+    <p><strong>Bregman divergence.</strong> $D_\varphi(x,y)=\varphi(x)-\varphi(y)-\nabla\varphi(y)^{\top}(x-y)\ge0$ for convex $\varphi$ (first-order condition). $\varphi=\tfrac12\|x\|^2$ gives $\tfrac12\|x-y\|^2$; the negative entropy $\sum_ip_i\log p_i$ gives $\mathrm{KL}(x\|y)$ on the simplex. It is not symmetric. <strong>Convex problems</strong> (convex $f_0$, convex $f_i\le0$, affine $h_j=0$) have no bad local minima: if $y$ beat a local minimiser $x$, the points $x+\theta(y-x)$ for small $\theta$ would beat it too. A convex feasible region alone is not enough (maximising a nonconcave acquisition over a ball is nonconvex), and convexity depends on the variables: an objective can be convex in an auxiliary $\nu$ or in occupancy measures but not in network weights.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        <ul>
+          <li><strong>Sets, hulls, polytopes:</strong> segments in a convex domain (<a href="gosafe.html#why-local-fails">Module 6</a>); balls intersected with $D$ and set notation (<a href="safe-bo-theory.html#los-gp-ucb">Module 5</a>, <a href="safe-bo-theory.html#the-gap">Module 5</a>); hulls and (restricted) simplices (<a href="cmdp.html#cmdp-definition">Module 8</a>, <a href="cmdp.html#primal-dual">Module 8</a>, <a href="policy-optimization.html#projections-first-order">Module 9</a>); polytopes $X,U$ (<a href="lyapunov-mpc.html#learning-based-mpc">Module 11</a>); facet encodings (<a href="nn-in-the-loop.html#reachability-verification">Module 14</a>); polyhedra and zonotopes (<a href="verification.html#verification-problem">Module 15</a>, <a href="verification.html#bound-propagation">Module 15</a>).</li>
+          <li><strong>Functions and operations:</strong> expectations and one-sided derivatives in the CVaR derivation (<a href="landscape.html#ls-cvar-walkthrough">Module 1</a>); concave duals, relative interiors, Legendre-type transforms (<a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>); $\max\log\det S$ (<a href="toolkit-lmi.html#lmis-sdp">Module 2</a>); perspectives (<a href="policy-optimization.html#cpo-walkthrough">Module 9</a>); box vertices (<a href="lipsdp.html#naive-bound">Module 12</a>) and symmetry averaging (<a href="lipsdp.html#lipsdp-walkthrough">Module 12</a>, Step 6); matrix concavity and BMIs (<a href="lipsdp.html#training-with-lipsdp">Module 12</a>).</li>
+          <li><strong>Curvature and monotonicity:</strong> PSD Hessians (<a href="safe-bo-theory.html#time-varying">Module 5</a>), strong convexity (<a href="safe-bo.html#practical-variants">Module 4</a>), convex potentials (<a href="lipsdp.html#slope-restriction-qc">Module 12</a>), monotone relations (<a href="nn-in-the-loop.html#feedback-setup">Module 14</a>), sub- and superdifferentials (<a href="barriers.html#robust-cbf">Module 10</a>).</li>
+          <li><strong>Jensen and conjugates:</strong> information gain (<a href="toolkit-gp.html#exercises">Module 3</a>), $\mathbb E\sqrt X\le\sqrt{\mathbb EX}$ (<a href="policy-optimization.html#trust-region-bound">Module 9</a>), the dual as a conjugate (<a href="cmdp.html#duality">Module 8</a>), Fenchel duality over ratios $w\ge0$ (<a href="policy-optimization.html#offline">Module 9</a>).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 5: DESCENT METHODS ===== -->
+    <h2 class="section-heading" id="opt-descent">5. Gradient Descent, Newton's Method &amp; Step Sizes</h2>
+
+    <p>Controllers, multipliers and network weights are improved step by step. What matters is the step size, the information each step uses (gradients, noisy gradients, function values, curvature) and how many steps an accuracy costs.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Gradient descent and ascent</div>
+      <div>$x_{k+1}=x_k-\eta\nabla f(x_k)$ with step size (learning rate) $\eta\gt0$. To maximise, use gradient <strong>ascent</strong> $x_{k+1}=x_k+\eta\nabla f(x_k)$, i.e. descent on $-f$.</div>
+    </div>
+
+    <p><strong>Step size and conditioning.</strong> On $f=\tfrac L2x^2$, $x_{k+1}=(1-\eta L)x_k$ converges iff $0\lt\eta\lt2/L$ (at $\eta=2/L$ it oscillates forever, $x_{k+1}=-x_k$), and $\eta=1/L$ lands on the minimiser at once; with $L=4$, $\eta=0.4$ multiplies by $-0.6$ (oscillating convergence) and $\eta=0.6$ by $-1.4$ (divergence). On $f=\tfrac12(x_1^2+10x_2^2)$ the curvatures are $\mu=1$ and $L=10$, the condition number is $\kappa=L/\mu=10$, and with $\eta=1/L$ the coordinate $x_2$ is solved in one step while $x_1$ shrinks only by $0.9$ per step: the flattest direction sets the pace, about $\kappa\ln(1/\varepsilon)$ steps (see the explorer).</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Gradient descent with $\eta=1/L$ on an $L$-smooth $f$</div>
+      <div>
+        (1) $f\ge f_{\inf}$: $\ \min_{k\lt K}\|\nabla f(x_k)\|^2\le2L(f(x_0)-f_{\inf})/K$ (stationary points only, not global minima). (2) Convex with minimiser $x^\star$: $\ f(x_K)-f^\star\le L\|x_0-x^\star\|^2/(2K)$ (sublinear, $O(1/K)$). (3) $\mu$-strongly convex: $\ f(x_K)-f^\star\le(1-\mu/L)^K(f(x_0)-f^\star)$ (linear, or geometric). The walkthrough derives (1) and (3); (2) needs a longer telescoping argument (Bubeck 2015, Thm. 3.3, proves the same $O(1/K)$ rate with a constant about four times larger).
+      </div>
+    </div>
+
+    <div class="interactive-container" id="pb-descent-walkthrough" data-title="Derivation: Why Gradient Descent Converges"></div>
+
+    <p><strong>Rates and budgets</strong> (<a href="primer-basics.html#mb-asymptotics">Primer 0</a>). "An $O(1/\sqrt T)$ rate" means error $\le C/\sqrt T$ for large $T$, with $C$ hiding constants such as $L$, $\|x_0-x^\star\|$ or a noise level; $\Omega$ is a lower bound, $\Theta$ both. Solve for the budget: $C/\sqrt T\le\varepsilon$ needs $T\ge C^2/\varepsilon^2$, while $(1-1/\kappa)^T$ needs only $O(\kappa\log(1/\varepsilon))$ steps. Count iterations, work per iteration (a dense $n\times n$ solve $O(n^3)$, a matrix-vector product $O(n^2)$) and measurements per iteration separately.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Stochastic gradients and SGD</div>
+      <div>
+        $g_k$ is <strong>unbiased</strong> if $\mathbb E[g_k\mid x_k]=\nabla f(x_k)$ (the average over the fresh sampling of step $k$, with $x_k$ held fixed), with <strong>bounded variance</strong> if $\mathbb E[\|g_k-\nabla f(x_k)\|^2\mid x_k]\le\sigma^2$; a minibatch average of $B$ independent samples has variance $\le\sigma^2/B$. SGD: $x_{k+1}=x_k-\eta_kg_k$. With persistent noise a constant step generally ends in a noise ball growing with $\eta\sigma^2$ (with $\sigma=0$ it is plain gradient descent, which does converge); <strong>Robbins&ndash;Monro</strong> steps, $\sum_k\eta_k=\infty$ and $\sum_k\eta_k^2\lt\infty$ (e.g. $c/(k+1)$), converge under standard assumptions. For $L$-smooth $f\ge f_{\inf}$, unbiased $g_k$ with variance $\le\sigma^2$ and a constant $\eta\le1/L$, the descent-lemma argument of the walkthrough above, with the extra term $\tfrac{L\eta^2}2\sigma^2$ per step (from $\mathbb E[\|g_k\|^2\mid x_k]\le\|\nabla f(x_k)\|^2+\sigma^2$), gives
+        <div class="math-block">$$\frac1K\sum_{k\lt K}\mathbb E\|\nabla f(x_k)\|^2\le\frac{2\,(f(x_0)-f_{\inf})}{\eta K}+L\eta\sigma^2,$$</div>
+        so $\eta\propto1/\sqrt K$ gives $\mathbb E\min_{k\lt K}\|\nabla f(x_k)\|^2=O(1/\sqrt K)$. <em>Two-timescale</em> schemes move one variable (say a multiplier) much more slowly than another, which then sees it as frozen.
+      </div>
+    </div>
+
+    <p><strong>Example.</strong> $f(x)=\tfrac12\mathbb E(x-Z)^2$, $Z$ uniform on $\{1,2,3,6\}$: at $x=0$ the gradient is $-3$; the minibatch $\{1,6\}$ gives $-3.5$, $\{2,3\}$ gives $-2.5$, and the six minibatches of size two average exactly $-3$. <strong>Variants:</strong> momentum adds $\beta(x_k-x_{k-1})$, and accelerated methods improve $\kappa$ to $\sqrt\kappa$ in iteration counts; Adam rescales each coordinate by running averages of $g$ and $g^2$ (treat it as a black box). <strong>Zeroth-order</strong> methods see only values: $\hat g_i=(f(x+he_i)-f(x-he_i))/(2h)$ has error $O(h^2)$ but costs $2d$ evaluations, and noise is amplified by $1/h$; random search keeps random perturbations that improve $f$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Newton's method, damping and backtracking</div>
+      <div>
+        Where $\nabla^2f(x_k)\succ0$, minimise the quadratic Taylor model: solve $\nabla^2f(x_k)\Delta=-\nabla f(x_k)$ (never invert), a descent direction because $\nabla f^{\top}\Delta=-\nabla f^{\top}(\nabla^2f)^{-1}\nabla f\lt0$, and set $x_{k+1}=x_k+t\Delta$. If the Hessian is not positive definite the model has no minimiser and $\Delta$ can point uphill ($f=-x^2$ at $x=1$ gives $\Delta=-1$, which raises $f$ from $-1$ to $0$, and no backtracking repairs it): modify the Hessian (e.g. add $\beta I$ until it is positive definite) or use another descent direction. Pure Newton ($t=1$) solves a strictly convex quadratic in one step, and near a minimiser with $\nabla^2f\succ0$ and a locally Lipschitz Hessian the error roughly squares each step. <strong>Damped</strong> Newton uses <strong>backtracking</strong>: halve $t$, starting from $1$, until $x_k+t\Delta$ is in the domain and $f(x_k+t\Delta)\le f(x_k)+c\,t\,\nabla f(x_k)^{\top}\Delta$ (Armijo, e.g. $c=0.25$).
+      </div>
+    </div>
+
+    <p><strong>Example.</strong> $f(x)=x-\log x$ ($x\gt0$, minimiser $1$) gives $x^+=2x-x^2$, i.e. $1-x^+=(1-x)^2$: from $0.5$, the iterates $0.75,\ 0.9375,\ 0.99609,\ 0.9999847$ square the error. From $3$ the full step lands at $-3$, outside the domain; backtracking rejects $t=1$ and $t=\tfrac12$ (which gives $0$) and accepts $t=\tfrac14$: $x=1.5$, with $f(1.5)=1.095\le f(3)-0.25\cdot\tfrac14\cdot4=1.651$. <strong>Conjugate gradients</strong> solve $Hv=g$ ($H\succ0$) using only products $Hp$: they minimise $\tfrac12v^{\top}Hv-g^{\top}v$ over growing subspaces, finish in at most $n$ steps in exact arithmetic, report accuracy by the residual $\|g-Hv\|$, and need about $\sqrt{\kappa(H)}\log(1/\varepsilon)$ iterations; with Hessian-vector products (Section 2) this gives Newton-type steps for millions of parameters.</p>
+
+    <p><strong>Four more ideas.</strong> (1) <em>Majorise&ndash;minimise:</em> a surrogate $u(\cdot\mid x_k)\ge f$ touching $f$ at $x_k$ gives $f(x_{k+1})\le u(x_{k+1}\mid x_k)\le u(x_k\mid x_k)=f(x_k)$ for its minimiser; gradient descent with $\eta=1/L$ is MM with the upper bound of Section 3, and minorise&ndash;maximise is the mirror image. (2) <em>Mirror descent / multiplicative weights</em> on the simplex: $p_{k+1}(a)\propto p_k(a)e^{-\eta g_k(a)}$, a step measured in KL instead of Euclidean distance that never leaves the simplex; $p=(\tfrac12,\tfrac12)$, $g=(1,0)$, $\eta=\ln2$ give $(\tfrac13,\tfrac23)$. (3) <em>Trust regions</em> for black-box search: accept only steps within a radius $\Delta_k$, enlarged after success and shrunk after failure. (4) <em>Multi-start:</em> minimising $x^4-2x^2+0.5x$, gradient descent from $0.5$ stops at the local minimiser $0.930$ ($f=-0.517$), from $-0.5$ at the global one $-1.057$ ($f=-1.515$); restarts help but certify nothing for nonconvex objectives.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; One-dimensional searches: bisection and golden section</div>
+      <div>
+        <strong>Bisection</strong> needs a bracket $[a,b]$ on which a continuous $g$ changes sign, or a yes/no test that switches exactly once (monotone feasibility); keep the half that still contains the switch, so after $k$ steps the bracket has width $(b-a)/2^k$. Example: $x^3=2$ on $[1,2]$: $1.5$ gives $+1.375$, keep $[1,1.5]$; $1.25$ gives $-0.047$, keep $[1.25,1.5]$; after $10$ halvings $[1.2598,1.2607]\ni2^{1/3}$. <strong>Ternary / golden-section search</strong> maximises a unimodal (e.g. concave) $f$: for $m_1\lt m_2$ inside the bracket, $f(m_1)\lt f(m_2)$ excludes $[a,m_1)$; golden-section spacing reuses a point and shrinks the bracket by $0.618$ per evaluation. Without monotonicity or unimodality neither method guarantees anything.
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall</div>
+      <div>Steps above $2/L$ lose the convergence guarantee and can diverge (every such step does on $\tfrac L2x^2$), persistent gradient noise generally stops constant-step SGD from converging exactly, a zero gradient can be a saddle, and rates hide constants. Bisection on a certified radius finds the largest radius <em>this verifier</em> certifies: with an incomplete verifier, "not certified" is not a counterexample.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        Gradient steps, noisy and value-only estimates (<a href="safe-bo.html#controller-tuning">Module 4</a>, zeroth-order oracles in <a href="nn-in-the-loop.html#synthesis">Module 14</a>); local trust regions (<a href="safe-bo.html#practical-variants">Module 4</a>); multi-start acquisition optimisation (<a href="safe-bo-theory.html#los-gp-ucb">Module 5</a>); $O(1/\sqrt T)$ rates, smoothness and bounded variance, Robbins&ndash;Monro, multiplicative weights (<a href="cmdp.html#primal-dual">Module 8</a>); SGD, mirror descent, dual updates (<a href="policy-optimization.html#projections-first-order">Module 9</a>); CG (<a href="policy-optimization.html#cpo-update">Module 9</a>); SGD, Newton and backtracking in barrier training (<a href="lipsdp.html#training-with-lipsdp">Module 12</a>); SGD and Adam (<a href="lipschitz-by-design.html#why-by-design">Module 13</a>); minorisation&ndash;maximisation (<a href="lyapunov-mpc.html#lyapunov-safe-rl">Module 11</a>); ternary search on a concave $\lambda_{\min}$ (<a href="toolkit-lmi.html#s-lemma-explorer">Module 2</a>); bisection (<a href="cmdp.html#multiplier-explorer">Module 8</a>, <a href="verification.html#bound-propagation">Module 15</a>) and golden section (<a href="nn-in-the-loop.html#local-sector-qc">Module 14</a>).
+      </div>
+    </div>
+
+    <!-- ===== SECTION 6: CONSTRAINTS ===== -->
+    <h2 class="section-heading" id="opt-constraints">6. Constraints: Lagrange Multipliers, Projections, Penalties &amp; Barriers</h2>
+
+    <p>Safety enters optimisation as constraints, handled in four ways: attach a <em>price</em> (multiplier), <em>project</em> onto the feasible set, <em>penalise</em> violations, or erect a <em>barrier</em>. The crucial difference is whether the answer is guaranteed to satisfy the constraint.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Constrained problem, feasibility, optimal value</div>
+      <div>
+        <div class="math-block">$$p^\star=\inf_{x\in\mathcal D}\ f_0(x)\quad\text{s.t.}\quad f_i(x)\le0\ \ (i=1,\dots,m),\qquad h_j(x)=0\ \ (j=1,\dots,p).$$</div>
+        $x$ is the decision variable, $\mathcal D$ the domain, $f_0$ the objective, $f_i\le0$ and $h_j=0$ the constraints. The <strong>feasible set</strong> $\mathcal F$ holds the points of $\mathcal D$ meeting all constraints; $p^\star=+\infty$ if $\mathcal F=\emptyset$ and $-\infty$ if $f_0$ is unbounded below on $\mathcal F$. A feasible $x^\star$ with $f_0(x^\star)=p^\star$ is a global optimum; a local one is best only among nearby feasible points. Maximising $f$ is minimising $-f$, and $g_i(a)\ge0$ is $-g_i(a)\le0$, so the feasible region $\{a:g_i(a)\ge0\ \forall i\}$ fits the template.
+      </div>
+    </div>
+
+    <p><strong>Lagrange multipliers.</strong> If $x^\star$ minimises $f$ subject to $h(x)=0$ and $\nabla h(x^\star)\ne0$, then $\nabla f(x^\star)+\nu\nabla h(x^\star)=0$ for some $\nu$: the level set of $f$ is tangent to the constraint surface (otherwise sliding along it would decrease $f$). Minimising $x_1+x_2$ on $x_1^2+x_2^2=2$: $(1,1)+\nu(2x_1,2x_2)=0$ and the constraint give $\nu=\pm\tfrac12$; $\nu=\tfrac12$ yields $x^\star=(-1,-1)$, $p^\star=-2$. The multiplier is a <strong>price</strong>: with right-hand side $c$, $p^\star(c)=-\sqrt{2c}$ and $dp^\star/dc=-\tfrac12=-\nu$ at $c=2$. <strong>Inequalities</strong> (one smooth constraint $f_1\le0$, $x^\star$ in the interior of $\mathcal D$): at a local minimiser $x^\star$ the constraint is either inactive ($f_1\lt0$, $\lambda=0$, $\nabla f_0=0$) or active, and if then $\nabla f_1(x^\star)\ne0$, $\nabla f_0+\lambda\nabla f_1=0$ with $\lambda\ge0$ (downhill points out of the feasible set); so $\lambda\ge0$ and $\lambda f_1(x^\star)=0$ (<strong>complementary slackness</strong>). The condition $\nabla f_1(x^\star)\ne0$ is a <em>constraint qualification</em>; without one no multiplier need exist: minimising $x$ subject to $x^2\le0$ has the single feasible point $0$, where $1+\lambda\cdot0=0$ is impossible. Several constraints need a qualification such as Slater's condition (convex problems) or linearly independent active gradients. Running example ($f_1=x-1$): $2(1-2)+\lambda=0$ gives $\lambda^\star=2$; for $x\le3$ the optimum $x=2$ has $\lambda=0$. KKT and duality: <a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>.</p>
+
+    <div class="insight-box">
+      <div class="box-label">Intuition &mdash; A multiplier is an adjustable price, not a certificate</div>
+      <div>For fixed $\lambda\ge0$ the minimiser $x_\lambda$ of $f_0+\lambda f_1$ need not be feasible: in the running example $x_\lambda=2-\lambda/2$, feasible only for $\lambda\ge2$. <strong>Dual ascent</strong> adjusts the price, $\lambda\leftarrow[\lambda+\eta f_1(x_\lambda)]_+$: up while violated, down (not below $0$) while slack. The sign follows from the concave dual function $d(\lambda)=\inf_x(f_0+\lambda f_1)$, an infimum of affine functions of $\lambda$ with supergradient $f_1(x_\lambda)$: this is projected supergradient ascent. Here $d(\lambda)=\lambda-\lambda^2/4$ peaks at $\lambda=2$ with $d=1=p^\star$. For "maximise $J_r$ s.t. $J_c\le d$" the update is $\lambda\leftarrow[\lambda+\eta(J_c-d)]_+$.</div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Projection onto a set</div>
+      <div>
+        $P_C(y)=\operatorname*{arg\,min}_{x\in C}\|x-y\|$. For nonempty closed convex $C$ it exists, is unique, satisfies $(y-P_C(y))^{\top}(x-P_C(y))\le0$ for all $x\in C$ (obtuse angle), and is non-expansive. Closed forms: box $[l,u]$ ($l\le u$): clip, $\min(\max(y_i,l_i),u_i)$ (for $[0,\infty)^n$: $(y)_+$); ball $\{\|x\|\le r\}$, $r\ge0$: $y$ if $\|y\|\le r$, else $ry/\|y\|$ (the compact form $y\min(1,r/\|y\|)$ needs $y\ne0$); half-space $\{a^{\top}x\le b\}$, $a\ne0$: $y-\tfrac{(a^{\top}y-b)_+}{\|a\|^2}a$ (for $a=0$ the set is all of $\mathbb R^n$ if $b\ge0$ and empty otherwise).
+      </div>
+    </div>
+
+    <p><strong>Examples.</strong> $(1.7,-0.4,0.3)\mapsto(1,0,0.3)$ on $[0,1]^3$; $(3,4)\mapsto(0.6,0.8)$ on the unit ball; $(2,1)\mapsto(1,0)$ on $\{x_1+x_2\le1\}$. Clipping is a two-ReLU network, $\operatorname{clip}_{[l,u]}(x)=u-(u-l-(x-l)_+)_+$: input saturation inside a network model. The interval must be closed and nonempty (on the open $(0,1)$ the point $2$ has no nearest point). Nonconvex sets can have several nearest points: $0$ projects onto $\{|x|\ge1\}$ as the set $\{-1,1\}$ (a tie-break is needed), and the nearest orthogonal matrix to an invertible $W=U\Sigma V^{\top}$ is $UV^{\top}$. The norm matters: projecting transformed coordinates is a different operation.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Normal and tangent cones; constrained stationarity</div>
+      <div>
+        For convex $C$ and $x\in C$: $N_C(x)=\{v:v^{\top}(y-x)\le0\ \forall y\in C\}$, the outward directions: $\{0\}$ inside, $\{\lambda a:\lambda\ge0\}$ on the face $a^{\top}x=b$ of a half-space, a quadrant at a box corner. With $v+S=\{v+s:s\in S\}$, optimality of $x^\star$ for convex $f$ over $C$ reads $0\in\nabla f(x^\star)+N_C(x^\star)$. Example: $\min x$ over $[0,\infty)$: $x^\star=0$ and $-1\in N_C(0)=(-\infty,0]$. The <strong>tangent cone</strong> $T_C(x)$ holds the directions that stay in $C$ to first order; for $C=\{h\ge0\}$ at a boundary point with $\nabla h\ne0$ it is $\{d:\nabla h(x)^{\top}d\ge0\}$.
+      </div>
+    </div>
+
+    <p><strong>Projected gradient</strong> $x_{k+1}=P_C(x_k-\eta\nabla f(x_k))$ keeps iterates feasible, its fixed points satisfy $-\nabla f\in N_C$, and for $L$-smooth convex $f$ with $\eta=1/L$ it has the rates of Section 5. Projected gradient <em>ascent</em> over a box also serves to <strong>falsify</strong> a certificate by maximising its violation (a violation found refutes it; none found proves nothing) and to <strong>tighten a bound</strong> valid for every parameter value (e.g. relaxation slopes in $[0,1]^n$), where soundness never depends on reaching the optimum.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Penalties, slack variables, augmented Lagrangian</div>
+      <div>
+        <strong>Quadratic penalty:</strong> $f_0+\tfrac\rho2\sum_i(f_i)_+^2$. <strong>Exact penalty:</strong> $f_0+\rho\sum_i(f_i)_+$. <strong>Slack:</strong> replace $f_i\le0$ by $f_i\le s_i$, $s_i\ge0$, and add $p\sum_is_i$ (or $p\sum_is_i^2$). <strong>Augmented Lagrangian</strong> ($f_1\le0$): minimise $f_0+\tfrac1{2\rho}[(\lambda+\rho f_1)_+^2-\lambda^2]$ over $x$, then $\lambda\leftarrow(\lambda+\rho f_1(x))_+$.
+      </div>
+    </div>
+
+    <p><strong>Running example.</strong> The quadratic penalty gives $x_\rho=\tfrac{4+\rho}{2+\rho}$: $1.5,\ 1.1,\ 1.01$ for $\rho=2,18,198$, always infeasible (violation $2/(2+\rho)$). The curvature is $2$ on one side and $2+\rho$ on the other, so large $\rho$ mixes very different scales (<strong>ill-conditioning</strong>): gradient steps must shrink like $1/\rho$, and errors in an approximate objective are amplified. The exact penalty returns $x=1$ for $\rho\ge2=\lambda^\star$, at the price of a kink; in general $\rho\gt\|\lambda^\star\|_\infty$ makes it exact for a convex problem with an attained optimal multiplier (strong duality), but a nonconvex problem can defeat it: $-x^4+\rho(x^2-1)_+$ is unbounded below for every $\rho$, although the constrained minimisers $\pm1$ of $-x^4$ s.t. $x^2\le1$ have $\lambda^\star=2$. A linear slack penalty has the same threshold: $s=1-p/2$ for $p\lt2$ ($x=1.5$ at $p=1$) and $s=0$ for $p\ge2$. Softening keeps every problem feasible (useful for recursive feasibility in MPC), but the constraint is violated whenever that is cheaper, so feasibility of the softened problem proves nothing about the original: keep safety constraints hard, use slack for soft performance terms. The augmented Lagrangian with $\rho=2$ gives $(x,\lambda)=(1.5,1),(1.25,1.5),(1.125,1.75)\to(1,2)$: the multiplier absorbs the price, so a finite $\rho$ suffices, and its positive part is the "proportional violation correction" $\max\{0,\lambda+c\cdot\text{violation}\}$. <strong>ADMM</strong> splits $\min f(x)+g(z)$ s.t. $x=z$: minimise the augmented Lagrangian over $x$, then $z$ (often a projection), then update the multiplier; guaranteed for convex problems, a heuristic for nonconvex training.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Log barrier, central path and duality gap</div>
+      <div>
+        $\phi(x)=-\sum_{i=1}^m\log(-f_i(x))$ is defined only at <strong>strictly feasible</strong> points (all slacks $-f_i\gt0$) and blows up at the boundary. The barrier problem minimises $tf_0+\phi$ (weight $\eta=1/t$ on $\phi$); its minimisers $x^\star(t)$ form the <strong>central path</strong>. For a <em>convex</em> problem $f_0(x^\star(t))-p^\star\le m/t$, since $\lambda_i=1/(-tf_i(x^\star(t)))$ is dual feasible with dual value $f_0(x^\star(t))-m/t$. Interior-point methods start strictly feasible, centre by damped Newton, increase $t$, repeat. For an LMI $F(x)\succ0$ the barrier is $-\log\det F(x)$. Running example: $x^\star(t)=\tfrac12(3-\sqrt{1+2/t})=0.634,\ 0.952,\ 0.995$ for $t=1,10,100$, with gaps $0.866,\ 0.098,\ 0.010\le1/t$.
+      </div>
+    </div>
+
+    <div class="warning-box">
+      <div class="box-label">Pitfall</div>
+      <div>A penalised or softened problem is a different problem, and a fixed multiplier is not a feasibility certificate. The $m/t$ bound needs convexity: for a nonconvex problem a stationary point of the barrier objective has no global gap guarantee. Barrier iterates stay strictly feasible (attractive for safe exploration) only if steps are short enough not to jump the boundary, e.g. no constraint may lose more than half its slack per step.</div>
+    </div>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        <ul>
+          <li><strong>Notation, multipliers, cones:</strong> $0\in\nabla_xL+N_{\mathcal D}$ (<a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>), Lagrangians (<a href="landscape.html#what-is-safety">Module 1</a>), feasible regions (<a href="gosafe.html#why-local-fails">Module 6</a>), projected multiplier updates (<a href="cmdp.html#primal-dual">Module 8</a>, <a href="viability.html#connections">Module 7</a>), fixed-multiplier Lagrangians (<a href="lyapunov-mpc.html#berkenkamp-2017">Module 11</a>), constrained versus penalised training (<a href="lipschitz-by-design.html#why-by-design">Module 13</a>), tangent cones (<a href="barriers.html#invariance-nagumo">Module 10</a>).</li>
+          <li><strong>Projections:</strong> policies onto constraint sets, with ties (<a href="viability.html#safety-measure">Module 7</a>); closed intervals (<a href="policy-optimization.html#cpo-update">Module 9</a>); Frobenius projections and saturation (<a href="nn-in-the-loop.html#synthesis">Module 14</a>, <a href="nn-in-the-loop.html#local-sector-qc">Module 14</a>); projected ascent (<a href="verification.html#bound-propagation">Module 15</a>) and PGD falsification (<a href="lyapunov-mpc.html#neural-certificates">Module 11</a>).</li>
+          <li><strong>Penalties, slack, augmented Lagrangians:</strong> ill-conditioning (<a href="viability.html#safe-value-functions">Module 7</a>), augmented-Lagrangian corrections (<a href="cmdp.html#primal-dual">Module 8</a>), CLF slack (<a href="landscape.html#notation">Module 1</a>, <a href="barriers.html#cbf">Module 10</a>), soft MPC constraints (<a href="lyapunov-mpc.html#learning-based-mpc">Module 11</a>), conformal slack (<a href="verification.html#conformal-prediction">Module 15</a>), ADMM (<a href="lipsdp.html#training-with-lipsdp">Module 12</a>). <strong>Barriers:</strong> <a href="toolkit-lmi.html#lmis-sdp">Module 2</a>, LB-SGD (<a href="safe-bo.html#beyond-safeopt">Module 4</a>), IPO (<a href="policy-optimization.html#projections-first-order">Module 9</a>).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== SECTION 7: LP & QP ===== -->
+    <h2 class="section-heading" id="opt-lp-qp">7. Linear &amp; Quadratic Programs</h2>
+
+    <p>LPs and QPs are what solvers handle reliably at scale, so the modules reduce to them where possible and treat the solver as a black box. You need the forms, the geometry, and what a solver's answer certifies.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; LP, QP, SOCP</div>
+      <div>
+        <strong>LP:</strong> minimise $c^{\top}x$ s.t. $Ax\le b$ (and $Ex=e$); standard form $\min c^{\top}x$ s.t. $Ax=b$, $x\ge0$ via slacks $s=b-Ax\ge0$ and $x=x^+-x^-$. <strong>QP:</strong> minimise $\tfrac12x^{\top}Qx+c^{\top}x$ under linear constraints; convex when $Q\succeq0$ (and, if the feasible set has nonempty interior, only then); for $Q\succ0$ and a feasible problem the objective is strongly convex and coercive ($\to\infty$ as $\|x\|\to\infty$), so the minimiser exists and is unique. <strong>SOCP:</strong> linear objective, constraints $\|A_ix+b_i\|\le c_i^{\top}x+d_i$ (the second-order cone $\{\|z\|\le t\}$). LP $\subset$ convex QP $\subset$ SOCP $\subset$ SDP (<a href="toolkit-lmi.html#lmis-sdp">Module 2</a>). A norm-ball bound $\|u\|\le u_{\max}$ is convex but not linear: with it a QP becomes an SOCP.
+      </div>
+    </div>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; LP optima sit at vertices when the feasible set is bounded</div>
+      <div>
+        An LP's feasible set is a polyhedron. If it is a nonempty polytope, the minimum exists and is attained at a vertex: for $x=\sum_i\theta_iv_i$, $c^{\top}x=\sum_i\theta_ic^{\top}v_i\ge\min_ic^{\top}v_i$. On an unbounded polyhedron a <em>recession direction</em> $d$ ($Ad\le0$, so $x+sd$ stays feasible for all $s\ge0$) with $c^{\top}d\lt0$ makes the LP unbounded; checking vertices suffices only when the optimum is finite.
+      </div>
+    </div>
+
+    <p><strong>Examples.</strong> Maximise $x_1+x_2$ s.t. $x_1+2x_2\le4$, $3x_1+x_2\le6$, $x\ge0$: vertices $(0,0),(2,0),(0,2),(1.6,1.2)$ give $0,2,2,2.8$, so $(1.6,1.2)$ is optimal. <em>Slack allocation:</em> maximise $\sum_s\epsilon_s$ s.t. $w^{\top}\epsilon\le B$, $\epsilon\ge0$, $w\ge0$: each vertex puts the budget on one coordinate (value $B/w_s$), so the smallest $w_s$ wins; $w=(2,1,0.5)$, $B=1$ give $\epsilon=(0,0,2)$, and if some $w_s=0$, $e_s$ is a recession direction and the LP is unbounded. <em>Strict feasibility:</em> $\sigma_i(a_i^{\top}x+b_i)\gt0$ for all $i$ (e.g. "does this ReLU activation pattern occur?") is solvable iff $\max s$ s.t. $\sigma_i(a_i^{\top}x+b_i)\ge s$, $s\le1$ has optimum $s^\star\gt0$; the cap keeps the LP bounded.</p>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Derivation &mdash; Projection onto a half-space: the one-constraint QP in closed form</div>
+      <div class="collapsible-body">
+        <p>Minimise $\tfrac12\|u-u_{\rm ref}\|^2$ s.t. $a^{\top}u\ge b$, $a\ne0$: the CBF-QP safety filter, with $a=L_gh(x)^{\top}$ and $b=-L_fh(x)-\alpha(h(x))$. <strong>Case 1:</strong> $a^{\top}u_{\rm ref}\ge b$: $u_{\rm ref}$ is optimal, multiplier $0$. <strong>Case 2:</strong> otherwise the constraint is active; stationarity of $\tfrac12\|u-u_{\rm ref}\|^2-\lambda(a^{\top}u-b)$ gives $u=u_{\rm ref}+\lambda a$, and $a^{\top}u=b$ gives $\lambda=(b-a^{\top}u_{\rm ref})/\|a\|^2\gt0$. Together:</p>
+        <div class="math-block">$$u^\star=u_{\rm ref}+\frac{(b-a^{\top}u_{\rm ref})_+}{\|a\|^2}\,a .$$</div>
+        <p><strong>Check:</strong> for feasible $v$, $(u_{\rm ref}-u^\star)^{\top}(v-u^\star)=-\lambda(a^{\top}v-b)\le0$, the obtuse-angle condition of Section 6. <strong>Numbers:</strong> $u_{\rm ref}=(2,1)$, $a=(1,2)$, $b=5$: $\lambda=\tfrac15$, $u^\star=(2.2,1.4)$, $a^{\top}u^\star=5$. With an input box $|u_i|\le1.5$ there is no closed form, and here no solution at all: $u_1+2u_2\le4.5\lt5$ on the box (Exercise B.6 solves a feasible version).</p>
+      </div>
+    </div>
+
+    <p><strong>Solvers as black boxes.</strong> Interior-point (Newton on a barrier), simplex and active-set methods (moving between vertices or active sets) and first-order splitting (ADMM-based, e.g. OSQP, SCS) return an optimal point with multipliers, or a certificate of infeasibility or unboundedness. "Optimal" means residuals below a tolerance (about $10^{-8}$ for interior point, $10^{-3}$ to $10^{-5}$ for first-order methods), so returned points may violate constraints by that much: for a safety certificate, re-check the solution independently with a margin, or in exact or interval arithmetic. Numerical feasibility is not a validated proof.</p>
+
+    <p><strong>Hardness and relaxations.</strong> LPs and convex QPs are solvable in time polynomial in the bit size of the data. SOCPs and SDPs are solvable to accuracy $\varepsilon$ in time polynomial in the size and $\log(1/\varepsilon)$ only under assumptions on the encoding and conditioning (for instance a known bound $R$ on the size of a solution, entering as $\log R$, and a strictly feasible point), not for every input: in a Khachiyan-type example the LMIs $\begin{bmatrix}x_{i+1} & x_i\\ x_i & 1\end{bmatrix}\succeq0$, i.e. $x_{i+1}\ge x_i^2$, with $x_0=2$ force $x_n\ge2^{2^n}$, a number with exponentially many bits (<a class="cite" href="https://arxiv.org/abs/2103.00041" target="_blank" rel="noopener">Pataki &amp; Touzov, arXiv 2021</a>). Nonconvex problems can be <strong>NP-hard</strong>: at least as hard as every problem in NP (yes/no questions whose "yes" answers can be checked quickly from a certificate, such as an input violating a property), with no known polynomial-time algorithm. <em>NP-complete</em> = NP-hard and in NP; the complementary "no violating input exists" questions of verification form coNP. Hardness is worst case; many instances are easy. <strong>Mixed-integer programs</strong> add integer variables: $y=\max(0,v)$ with bounds $l\lt0\lt u$ is exactly $y\ge v$, $y\ge0$, $y\le uz$, $y\le v-l(1-z)$, $z\in\{0,1\}$ (big-M); $z\in[0,1]$ gives an LP <em>relaxation</em> (an outer bound), tightened by valid cuts, inequalities satisfied by every integer solution. <strong>SDP relaxations:</strong> for $x\in\{\pm1\}^n$, $x^{\top}Wx=\operatorname{tr}(WX)$ with $X=xx^{\top}$; replacing $X=xx^{\top}$ by $X\succeq0$, $\operatorname{diag}X=\mathbf 1$ upper-bounds $\max x^{\top}Wx$ (the MAXCUT idea).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        The CBF-QP filter (<a href="landscape.html#what-is-safety">Module 1</a>, <a href="barriers.html#cbf-qp">Module 10</a>, <a href="barriers.html#cbf">Module 10</a>); a two-variable QP via KKT (<a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>); half-spaces $w_t^{\top}a\ge b_t$ with an action box (<a href="viability.html#uncertainty-aware">Module 7</a>); the occupancy polytope (<a href="cmdp.html#occupancy-lp">Module 8</a>); the slack-allocation LP (<a href="lyapunov-mpc.html#lyapunov-safe-rl">Module 11</a>); one LP per activation pattern and NP-hardness (<a href="lipsdp.html#lipsdp-explorer">Module 12</a>, <a href="lipsdp.html#lipschitz-robustness">Module 12</a>); LPs over polytopes, SOCPs, NP-completeness, big-M and cuts, SDP relaxations (<a href="verification.html#verification-problem">Module 15</a>, <a href="verification.html#bound-propagation">Module 15</a>, <a href="verification.html#sdp-relaxation">Module 15</a>); an SOCP for rigorous GP bounds (<a href="toolkit-gp.html#practical-bounds">Module 3</a>).
+      </div>
+    </div>
+
+    <!-- ===== SECTION 8: ARGMAX & MIN-MAX ===== -->
+    <h2 class="section-heading" id="opt-minmax">8. argmax, Min-Max Problems &amp; Saddle Points</h2>
+
+    <p>The modules optimise over infinite sets (inputs, policies, controllers, signals) and nest optimisations. Here is what $\sup$, $\operatorname{arg\,max}$ and $\min\max$ promise, and what they do not.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Definition &mdash; Supremum versus maximum; argmax as a set</div>
+      <div>
+        $\sup_{x\in X}f(x)$ is the least upper bound of the values (<a href="primer-basics.html#mb-sup-inf">Primer 0</a>), possibly $+\infty$; by convention $\sup_\emptyset=-\infty$, $\inf_\emptyset=+\infty$. It is a <em>maximum</em> only if attained. $\operatorname*{arg\,max}_{x\in X}f(x)=\{x\in X:f(x)=\sup_Xf\}$ is a <strong>set</strong>: empty, one point, or several (ties). The maximum is a value, the argmax a set of decisions; "$x_t\in\operatorname{arg\,max}$" means the algorithm selects one element by a tie-break, and an argmax over pairs $(a,x)$ returns pairs. If $\sup f$ is finite, every $\varepsilon\gt0$ admits an <strong>$\varepsilon$-optimal</strong> $x$ with $f(x)\ge\sup f-\varepsilon$; without a maximiser, theorems and algorithms use these.
+      </div>
+    </div>
+
+    <p><strong>Examples.</strong> $\operatorname{arg\,max}_{[-1,1]}x^2=\{-1,1\}$ (tie); $\sup_{(0,1)}x=1$ with empty argmax; $\inf_{x\ge0}e^{-x}=0$ is not attained; $\sup_{u\in\mathbb R}u=+\infty$; the CVaR function of Section 4 has argmin $[1,2]$.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; When optimisers exist</div>
+      <div>
+        (i) <em>Weierstrass:</em> continuous $f$ on a nonempty compact $X$ attains its max and min. (ii) <em>Coercivity:</em> continuous $f$ on a nonempty closed $X$ with $f(x)\to+\infty$ as $\|x\|\to\infty$ attains its min: $\{x\in X:f(x)\le f(x_0)\}$ is nonempty, closed and bounded, so (i) applies there, and points outside are worse. Lower semicontinuity suffices for minima. Closedness alone does not: $e^x$ on $\mathbb R$ has no minimum. Example: projections onto nonempty closed sets exist, because $\|x-y\|$ is continuous and coercive in $x$.
+      </div>
+    </div>
+
+    <p><strong>Suprema over inputs, signals, policies.</strong> $\sup_{u\in[-1,1]}(a+bu)=a+|b|$ at $u=\operatorname{sign}(b)$, but $+\infty$ over $u\in\mathbb R$ when $b\ne0$: a condition $\sup_{u\in U}[L_fh+L_gh\,u+\alpha(h)]\ge0$ is automatic where $L_gh\ne0$ if inputs are unbounded, and a real restriction for bounded $U$. A supremum inequality need not provide an input: $\sup_{u\in(0,1)}u\ge1$, yet no $u\in(0,1)$ has $u\ge1$; attainment needs e.g. compact $U$ and continuity. For signals, $\|d\|_\infty=\sup_{t\ge0}\|d(t)\|_2$ is a supremum over <em>time</em> of the Euclidean norm, not the largest coordinate of a vector (measurable signals use the essential supremum). Optimising over a policy class or over controllers uses the same definitions on sets of functions; attainment is an assumption. If $\varphi:[0,\infty)\to\mathbb R$ is strictly increasing, $\varphi^{-1}(s)$ exists only for $s$ in its range, below $\sup\varphi$.</p>
+
+    <p><strong>Infima, distances, level searches, max-min.</strong> $\inf_t\bar g(x_t)$ need not be attained at a visited state ($x_t=2^{-t}$, $\bar g(x)=x$: infimum $0$, every value positive). $\operatorname{dist}(x,S)=\inf_{s\in S}\|x-s\|$ is attained for closed nonempty $S$. A level search $c^\ast=\inf\{V(x):x\in B\}$ is $+\infty$ for empty $B$, and the acceptable levels may form $[0,c^\ast)$, with a supremum but no largest element. To choose a backup, first take each candidate's worst constraint margin, then the best candidate, $s^\star\in\operatorname{arg\,max}_s\min_im_i(s)$: margins $(0.4,0.1)$, $(0.3,0.25)$, $(0.5,-0.1)$ have worst cases $0.1,\ 0.25,\ -0.1$, so the second wins although the third has the best single margin.</p>
+
+    <div class="definition-box">
+      <div class="box-label">Theorem &mdash; Max-min inequality, saddle points, minimax</div>
+      <div>
+        Always $\sup_y\inf_xL(x,y)\le\inf_x\sup_yL(x,y)$: for all $x',y'$, $\inf_xL(x,y')\le L(x',y')\le\sup_yL(x',y)$; the left side is free of $x'$, the right of $y'$. A <strong>saddle point</strong> satisfies $L(x^\star,y)\le L(x^\star,y^\star)\le L(x,y^\star)$ for all $x,y$, and then both sides equal $L(x^\star,y^\star)$. <em>Minimax theorem</em> (von Neumann, Sion; statement): for convex $X,Y$, one of them compact, and continuous $L$ convex in $x$ and concave in $y$, $\inf_x\sup_yL=\sup_y\inf_xL$.
+      </div>
+    </div>
+
+    <p><strong>Examples.</strong> $x^2-y^2$ on $[-1,1]^2$: saddle $(0,0)$, value $0$. $(x-y)^2$ on $[0,1]^2$ is not concave in $y$: $\min_x\max_y=\min_x\max(x^2,(1-x)^2)=\tfrac14$ but $\max_y\min_x=0$. Matching pennies, $x,y\in\{\pm1\}$, $L=xy$: $\min\max=1$, $\max\min=-1$; with mixed strategies ($p,q$ = probabilities of $+1$) the payoff $(2p-1)(2q-1)$ is bilinear with saddle $p=q=\tfrac12$ and value $0$: randomising convexifies the game. If both players run no-regret learners, their time-averaged strategies approach a saddle point (statement). <strong>Where min-max appears:</strong> <em>duality</em>, since $\sup_{\lambda\ge0}(f_0+\lambda^{\top}f)$ is $f_0(x)$ for feasible $x$ and $+\infty$ otherwise, so $\inf_x\sup_\lambda$ is the primal, $\sup_\lambda\inf_x$ the dual, weak duality is the max-min inequality, and strong duality means these two values are equal (e.g. under Slater's condition). A saddle point exists exactly when they are equal <em>and</em> both optima are attained; equal values alone do not give one ($\inf_xe^x$ s.t. $-1\le0$ satisfies Slater's condition and has $p^\star=d^\star=0$ and $\lambda^\star=0$, but no minimiser) (<a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>; running example: $d(\lambda)=\lambda-\lambda^2/4$, $d^\star=1=p^\star$); <em>robust control</em>, min over controllers of the max over disturbances; <em>adversarial training</em>, min over weights of the max loss over a perturbation ball, the inner max approximated by projected gradient ascent. With several objectives the nondominated trade-offs form a Pareto front (<a href="primer-rl-nn.html#rl-bandits">Primer E</a>).</p>
+
+    <div class="insight-box">
+      <div class="box-label">Where this is used</div>
+      <div>
+        <ul>
+          <li><strong>argmax, ties, attainment:</strong> $\pi^\star=\operatorname{arg\,max}_\pi$, $\sup_{u\in U}$ (<a href="landscape.html#what-is-safety">Module 1</a>, <a href="landscape.html#guarantee-types">Module 1</a>); maximisers and ties (<a href="safe-bo.html#problem-setting">Module 4</a>, <a href="gosafe.html#gosafe">Module 6</a>); $\sup$ vs $\max$, $\varepsilon$-optimal policies (<a href="cmdp.html#cmdp-definition">Module 8</a>); policy classes (<a href="policy-optimization.html#trust-region-bound">Module 9</a>); $\sup_{u\in U}$ in CBFs (<a href="barriers.html#cbf">Module 10</a>); $L^\star=\sup_x$ and unique argmax classes (<a href="lipsdp.html#lipschitz-robustness">Module 12</a>); existence of a minimising action (<a href="viability.html#safety-measure">Module 7</a>).</li>
+          <li><strong>Infima and level searches:</strong> dual functions equal to $-\infty$ (<a href="toolkit-lmi.html#lagrangian-duality">Module 2</a>); $\sup|f|$ and designs (<a href="toolkit-gp.html#kernels-rkhs">Module 3</a>); $\sup_{r\ge0}\phi(r)$, $\phi^{-1}$ (<a href="safe-bo-theory.html#losbo">Module 5</a>); trajectory minima (<a href="gosafe.html#dynamical-setting">Module 6</a>); suprema over controllers (<a href="viability.html#viability-kernel">Module 7</a>); $\|d\|_\infty$ (<a href="barriers.html#robust-cbf">Module 10</a>); $c^\ast=\inf\{\dots\}$ (<a href="lyapunov-mpc.html#lyapunov-roa">Module 11</a>).</li>
+          <li><strong>Max-min and saddles:</strong> the backup with the largest margin (<a href="gosafe.html#gosafeopt">Module 6</a>), Lagrangian saddle points (<a href="cmdp.html#duality">Module 8</a>), no-regret updates of $\lambda$ (<a href="policy-optimization.html#offline">Module 9</a>).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== EXPLORER ===== -->
+    <h2 class="section-heading" id="opt-explorer">Interactive: Descent, Projection &amp; Barriers in 2-D</h2>
+
+    <p>Minimise $f(x)=\tfrac12(x-c)^{\top}Q(x-c)$, $c=(1.5,1.1)$, $Q=R_\theta\operatorname{diag}(1,\kappa)R_\theta^{\top}$ (so $\mu=1$, $L=\kappa$), over a convex set $C$ that excludes $c$. From the black point (click to move it) run gradient descent ignoring $C$, projected gradient $x_{k+1}=P_C(x_k-\eta\nabla f(x_k))$ started at $x_0=P_C(\text{black point})$, the penalty minimisers of $f+\tfrac\rho2\sum_i(f_i)_+^2$ for $\rho=1,4,\dots,1024$, and the barrier method (damped Newton on $tf+\phi$, $t\leftarrow4t$ until $m/t\lt10^{-3}$). Green dot: the exact $x^\star$ (closed form, bisection on the multiplier, or 5000 projected steps).</p>
+
+    <div class="interactive-container">
+      <div class="interactive-label">Descent, Projection &amp; Barriers in 2-D</div>
+      <div class="slider-group">
+        <div class="slider-control"><label>Condition number &kappa; <span id="pb-k-val">8</span></label><input type="range" id="pb-k" min="1" max="25" step="1" value="8"></div>
+        <div class="slider-control"><label>Rotation &theta; <span id="pb-th-val">30&deg;</span></label><input type="range" id="pb-th" min="0" max="180" step="5" value="30"></div>
+        <div class="slider-control"><label>Step &eta;&middot;L <span id="pb-s-val">1.00</span></label><input type="range" id="pb-s" min="0.1" max="2.2" step="0.05" value="1"></div>
+        <div class="slider-control"><label>Iterations K <span id="pb-K-val">30</span></label><input type="range" id="pb-K" min="1" max="100" step="1" value="30"></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-bottom:12px;font-size:13px;">
+        <label>Constraint <select id="pb-con"><option value="half">half-space x&#8321;+x&#8322; &le; 1</option><option value="disk">disk &#8214;x&#8214; &le; 1</option><option value="box">box [&minus;1,1]&times;[&minus;1,0.5]</option></select></label>
+        <label><input type="checkbox" id="pb-m0" checked> <span style="color:#1565c0;">gradient descent</span></label>
+        <label><input type="checkbox" id="pb-m1" checked> <span style="color:#e67e22;">projected gradient</span></label>
+        <label><input type="checkbox" id="pb-m2" checked> <span style="color:#c62828;">penalty path</span></label>
+        <label><input type="checkbox" id="pb-m3" checked> <span style="color:#7b1fa2;">barrier path</span></label>
+        <button id="pb-reset" style="padding:4px 10px;font-size:13px;border:1px solid #455a64;color:#455a64;background:#fff;border-radius:4px;cursor:pointer;">Reset start</button>
+      </div>
+      <div id="pb-info" style="background:#f0f4ff;border:1px solid #c5d0e6;border-radius:6px;padding:10px 14px;font-size:13px;margin-bottom:12px;line-height:1.6;"></div>
+      <svg id="pb-svg" viewBox="0 0 560 400" style="display:block;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fff;cursor:crosshair;"></svg>
+      <p style="font-size:12px;color:#666;margin-top:8px;">Grey: level sets of $f$ (cross: $c$). Green: $C$. Blue: gradient descent and orange: projected gradient from $P_C$(black point), with a dashed link when the start lies outside $C$ (from a start inside $C$ the two coincide while gradient descent stays feasible); red: penalty minimisers, outside $C$; purple: barrier Newton iterates with dots at the centres $x^\star(t)$, inside $C$.</p>
+    </div>
+
+    <p><strong>What to look for.</strong> (1) Gradient descent heads for $c$ and leaves $C$; projected gradient slides along the boundary to $x^\star$. (2) Beyond $\eta L=2$ the guarantee is gone: the steepest error component is multiplied by $|1-\eta L|\gt1$ per step, so gradient descent diverges from every start with such a component (almost every start), and at $\eta L=2$ that component flips sign forever without decaying. Larger $\kappa$ means zig-zags and more steps. (3) Penalty minimisers stay infeasible and the violation shrinks like $1/\rho$. The Hessian condition number usually grows with $\rho$, because the penalty adds curvature $\rho$ across the constraint only (half-space, disk, a single violated box bound); it does not when curvature is added in every direction: at a box corner with both upper bounds violated the Hessian is $Q+\rho I$ and the condition number falls towards $1$ (exactly $1$ for $\kappa=1$). (4) Barrier iterates never leave $C$, and at each centre $x^\star(t)$ the gap stays below $m/t$ (the readout compares the two at the last centre); from a start outside $C$ the barrier method cannot run.</p>
+
+    <!-- ===== EXERCISES ===== -->
+    <h2 class="section-heading" id="exercises">Exercises</h2>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise B.1 &mdash; Gradient, Hessian and a Taylor check
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">$f(x)=x_1^2x_2+e^{x_2}$, $x=(1,0)$. (a) Compute $\nabla f(x)$ and $D_vf(x)$ for $v=(0.6,0.8)$. (b) Compute $\nabla^2f(x)$; is it definite? (c) Predict $f(1.1,0.1)$ to first and second order and compare with the true value.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $\nabla f=(2x_1x_2,\ x_1^2+e^{x_2})=(0,2)$, so $D_vf=0\cdot0.6+2\cdot0.8=1.6$.</p>
+            <p>(b) $\nabla^2f=\begin{bmatrix}2x_2 & 2x_1\\ 2x_1 & e^{x_2}\end{bmatrix}=\begin{bmatrix}0 & 2\\ 2 & 1\end{bmatrix}$, determinant $-4$: eigenvalues $(1\pm\sqrt{17})/2\approx2.56,-1.56$, indefinite.</p>
+            <p>(c) With $\delta=(0.1,0.1)$ and $f(x)=1$: first order $1+\nabla f^{\top}\delta=1.2$; second order adds $\tfrac12\delta^{\top}\nabla^2f\delta=\tfrac12(0.04+0.01)=0.025$, giving $1.225$. The truth is $0.121+e^{0.1}=1.226171$; the error $0.00117$ is $O(\|\delta\|^3)$ (halving $\delta$ divides it by about $8$).</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise B.2 &mdash; The gradient of the Parseval regulariser
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">$R(W)=\tfrac\beta4\|WW^{\top}-I\|_F^2$. (a) Show $\nabla_WR=\beta(WW^{\top}-I)W$. (b) For $\beta=1$ and $W=\begin{bmatrix}1 & 1\\ 0 & 1\end{bmatrix}$, evaluate $R$ and $\nabla R$ and take one gradient step with $\eta=0.1$. Does $R$ decrease?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) With $E=WW^{\top}-I$ (symmetric), $d\|E\|_F^2=2\operatorname{tr}(E\,dE)$ and $dE=dW\,W^{\top}+W\,dW^{\top}$. Cyclicity, transposition and $E^{\top}=E$ give $\operatorname{tr}(E\,dW\,W^{\top})=\operatorname{tr}(E\,W\,dW^{\top})=\operatorname{tr}(W^{\top}E\,dW)$, so $dR=\tfrac\beta4\cdot2\cdot2\operatorname{tr}(W^{\top}E\,dW)=\langle\beta EW,dW\rangle$.</p>
+            <p>(b) $WW^{\top}=\begin{bmatrix}2 & 1\\ 1 & 1\end{bmatrix}$, $E=\begin{bmatrix}1 & 1\\ 1 & 0\end{bmatrix}$, $R=0.75$, $\nabla R=EW=\begin{bmatrix}1 & 2\\ 1 & 1\end{bmatrix}$ (finite differences agree). The step gives $\begin{bmatrix}0.9 & 0.8\\ -0.1 & 0.9\end{bmatrix}$ with $R\approx0.257$: a clear decrease.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise B.3 &mdash; Certifying an interval from grid measurements
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">$f$ is $1.5$-Lipschitz on $[0,2]$, and measurements certify $f\ge\ell=(0.5,\ 0.45,\ 0.3,\ 0.2,\ 0.6)$ at $0,0.5,1,1.5,2$. (a) Which points are certified to satisfy $f\ge0$? (b) Does the uniform grid test of Section 3 certify $[0,2]$? (c) Redo (a) if only $|f(x)-f(x')|\le1.5\sqrt{|x-x'|}$ is known.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) Radii $\ell_g/L=0.333,\ 0.3,\ 0.2,\ 0.133,\ 0.4$ give $[0,0.333]$, $[0.2,0.8]$, $[0.8,1.2]$, $[1.367,1.633]$, $[1.6,2]$: certified is $[0,1.2]\cup[1.367,2]$, the gap $(1.2,1.367)$ is not.</p>
+            <p>(b) $r_c=0.25$, so every node needs $\ell_g\ge Lr_c=0.375$; this fails at $1$ and $1.5$, consistent with the gap.</p>
+            <p>(c) Radii $(\ell/1.5)^2=0.111,\ 0.09,\ 0.04,\ 0.018,\ 0.16$: only small neighbourhoods. A square-root modulus makes small margins almost worthless.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise B.4 &mdash; Two conjugates
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">(a) Compute $f^*$ for $f(x)=\tfrac12x^{\top}Qx$, $Q\succ0$. (b) Compute $f^*$ for $f(w)=\tfrac12(w-1)^2$ on $w\ge0$ ($+\infty$ otherwise). (c) Check Fenchel&ndash;Young for (b) at $w=2$ with $e=0.5$ and with $e=1$.</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $y^{\top}x-\tfrac12x^{\top}Qx$ is concave with gradient $y-Qx$, zero at $x=Q^{-1}y$: $f^*(y)=\tfrac12y^{\top}Q^{-1}y$.</p>
+            <p>(b) The unconstrained maximiser of $we-\tfrac12(w-1)^2$ is $w=1+e$. For $e\ge-1$ it is admissible: $f^*(e)=(1+e)e-\tfrac12e^2=e+\tfrac12e^2$. For $e\lt-1$ the objective decreases on $w\ge0$, so $w=0$ and $f^*(e)=-\tfrac12$.</p>
+            <p>(c) $f(2)+f^*(0.5)=0.5+0.625=1.125\ge2\cdot0.5$. With $e=1=f'(2)$: $0.5+1.5=2=2\cdot1$, equality exactly when $e$ is the slope at $w$.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise B.5 &mdash; Step sizes, conditioning and Newton
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">$f(x)=\tfrac12(x_1^2+10x_2^2)$, $x_0=(10,1)$. (a) With $\eta=0.1$, how many gradient steps until $f\le10^{-6}$? (b) What happens for $\eta=0.21$? (c) Repeat (a) with $\eta=2/11$. (d) What does one Newton step do?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>The coordinates decouple: $x_1\leftarrow(1-\eta)x_1$, $x_2\leftarrow(1-10\eta)x_2$. (a) $x_2=0$ after one step and $f(x_k)=50\cdot0.81^k\le10^{-6}$ iff $k\ge\ln(2\cdot10^{-8})/\ln0.81\approx84.1$: $85$ steps. (b) $1-2.1=-1.1$: $|x_2|$ grows $10\%$ per step, since $\eta\gt2/L=0.2$. (c) Both factors have size $\tfrac9{11}$ (this $\eta=2/(L+\mu)$ is the best constant step for quadratics), $f(x_k)=55(81/121)^k\le10^{-6}$ iff $k\ge44.4$: $45$ steps. (d) $\nabla^2f=\operatorname{diag}(1,10)$, $\nabla f(x_0)=(10,10)$, $\Delta=-(10,1)$: Newton lands on $(0,0)$ in one step, whatever the conditioning.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
+        Exercise B.6 &mdash; A safety filter with an input box
+      </summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Minimise $\tfrac12\|u-u_{\rm ref}\|^2$, $u_{\rm ref}=(2,1)$, subject to $u_1+2u_2\ge4.2$ and $|u_1|,|u_2|\le1.5$. (a) Project onto the half-space alone, then clip to the box: feasible? (b) Guess the active set, solve, and verify KKT. (c) What if $4.2$ becomes $5$?</p>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
+            <p>(a) $a=(1,2)$, $a^{\top}u_{\rm ref}=4$, so $u=u_{\rm ref}+\tfrac{0.2}{5}a=(2.04,1.08)$; clipping gives $(1.5,1.08)$ with $1.5+2.16=3.66\lt4.2$. Projecting onto each constraint in turn is not projecting onto the intersection.</p>
+            <p>(b) Try $u_1=1.5$ with the half-space active: $u_2=1.35\le1.5$, so $u^\star=(1.5,1.35)$. With $g_1=4.2-u_1-2u_2\le0$, $g_2=u_1-1.5\le0$, stationarity $(-0.5,0.35)+\lambda_1(-1,-2)+\lambda_2(1,0)=0$ gives $\lambda_1=0.175$, $\lambda_2=0.675$, both $\ge0$, so KKT holds and, the problem being convex, $u^\star$ is optimal (cost $0.18625$; a grid search agrees).</p>
+            <p>(c) On the box $u_1+2u_2\le4.5\lt5$: infeasible. A filter with bounded inputs can have no solution; a slack restores solvability but gives up the guarantee.</p>
+          </div>
+        </details>
+      </div>
+    </details>
+
+    <!-- ===== FURTHER READING ===== -->
+    <h2 class="section-heading" id="reading">Further Reading</h2>
+
+    <table>
+      <thead><tr><th>Book / tutorial</th><th>Authors, publisher, year</th><th>Read it for</th></tr></thead>
+      <tbody>
+        <tr><td><a class="cite" href="https://mml-book.github.io/" target="_blank" rel="noopener">Mathematics for Machine Learning</a></td><td>Deisenroth, Faisal, Ong; Cambridge University Press, 2020 (free PDF)</td><td>Ch. 5 vector calculus and backpropagation, Ch. 7 continuous optimisation: the gentlest companion to Sections 1, 2, 5.</td></tr>
+        <tr><td><a class="cite" href="https://web.stanford.edu/~boyd/cvxbook/" target="_blank" rel="noopener">Convex Optimization</a></td><td>Boyd, Vandenberghe; Cambridge University Press, 2004 (free PDF)</td><td>Ch. 2&ndash;5 convex sets, functions, conjugates, LP/QP/SOCP/SDP, duality; Ch. 9&ndash;11 descent, Newton, interior point.</td></tr>
+        <tr><td><a class="cite" href="https://link.springer.com/book/10.1007/978-0-387-40065-5" target="_blank" rel="noopener">Numerical Optimization (2nd ed.)</a></td><td>Nocedal, Wright; Springer, 2006</td><td>Line search, trust regions, conjugate gradients, KKT, penalty and augmented-Lagrangian methods.</td></tr>
+        <tr><td><a class="cite" href="https://www2.imm.dtu.dk/pubdb/pubs/3274-full.html" target="_blank" rel="noopener">The Matrix Cookbook</a></td><td>Petersen, Pedersen; Technical University of Denmark, 2012</td><td>Tables of trace, determinant and inverse derivatives.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1405.4980" target="_blank" rel="noopener">Convex Optimization: Algorithms and Complexity</a></td><td>Bubeck; Foundations and Trends in Machine Learning, 2015</td><td>Short proofs of the gradient, SGD and mirror-descent rates.</td></tr>
+        <tr><td><a class="cite" href="https://arxiv.org/abs/1606.04838" target="_blank" rel="noopener">Optimization Methods for Large-Scale Machine Learning</a></td><td>Bottou, Curtis, Nocedal; SIAM Review, 2018</td><td>SGD, minibatches, noise and step sizes in training.</td></tr>
+        <tr><td><a class="cite" href="https://web.stanford.edu/~boyd/papers/admm_distr_stats.html" target="_blank" rel="noopener">Distributed Optimization and Statistical Learning via the Alternating Direction Method of Multipliers</a></td><td>Boyd, Parikh, Chu, Peleato, Eckstein; Foundations and Trends in Machine Learning, 2011</td><td>Augmented Lagrangians and ADMM.</td></tr>
+        <tr><td><a class="cite" href="https://jmlr.org/papers/v18/17-468.html" target="_blank" rel="noopener">Automatic Differentiation in Machine Learning: a Survey</a></td><td>Baydin, Pearlmutter, Radul, Siskind; JMLR, 2018</td><td>Forward and reverse mode, Hessian-vector products.</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ===== FLASHCARDS ===== -->
+    <h2 class="section-heading" id="flashcards">Flashcards</h2>
+    <div class="flashcard-container" id="pb-flashcards"></div>
+
+    <div class="page-nav">
+      <a href="primer-linalg.html">&larr; A. Linear Algebra II: Norms, Positive Definiteness &amp; the SVD</a>
+      <a href="primer-probability.html">C. Probability, Concentration &amp; Information &rarr;</a>
+    </div>
+
+  </main>
+
+  <script src="components.js"></script>
+  <script>
+    renderSidebar('primer-optimization');
+    initCollapsibles();
+
+    initWalkthrough('pb-descent-walkthrough', [
+      {tab: '1. Model', title: 'Step 1: A quadratic upper bound at the current point',
+       text: 'Let $f$ be $L$-smooth and $g=\\nabla f(x_k)$. The descent lemma of Section 3 with $y=x_{k+1}=x_k-\\eta g$ gives:',
+       visual: '<div class="math-block">$$f(x_{k+1})\\le f(x_k)-\\eta\\|g\\|^2+\\frac{L\\eta^2}{2}\\|g\\|^2=f(x_k)-\\eta\\Big(1-\\frac{L\\eta}{2}\\Big)\\|g\\|^2 .$$</div>',
+       insight: 'Decrease is guaranteed for $0\\lt\\eta\\lt2/L$, as for $\\tfrac L2x^2$, now for every $L$-smooth function. The range cannot be enlarged: $\\tfrac L2x^2$ is $L$-smooth and does not decrease for $\\eta\\ge2/L$.'},
+      {tab: '2. Step size', title: 'Step 2: The best guaranteed step is $\\eta=1/L$',
+       text: 'The factor $\\eta(1-L\\eta/2)$ peaks at $\\eta=1/L$. Then $x_{k+1}$ minimises the upper model $f(x_k)+g^{\\top}(y-x_k)+\\tfrac L2\\|y-x_k\\|^2$, which touches $f$ at $x_k$ (majorise&ndash;minimise):',
+       visual: '<div class="math-block">$$\\eta=\\frac1L:\\qquad f(x_{k+1})\\le f(x_k)-\\frac{1}{2L}\\|\\nabla f(x_k)\\|^2 .$$</div>',
+       insight: 'Every step with a nonzero gradient makes guaranteed progress, but little where the gradient is small.'},
+      {tab: '3. Telescope', title: 'Step 3: Add up the decreases',
+       text: 'Add Step 2 over $k=0,\\dots,K-1$; the function values telescope and $f(x_K)\\ge f_{\\inf}$:',
+       visual: '<div class="math-block">$$\\frac1{2L}\\sum_{k\\lt K}\\|\\nabla f(x_k)\\|^2\\le f(x_0)-f_{\\inf}\\ \\Longrightarrow\\ \\min_{k\\lt K}\\|\\nabla f(x_k)\\|^2\\le\\frac{2L\\,(f(x_0)-f_{\\inf})}{K}.$$</div>',
+       insight: 'No convexity is needed, but only small gradients are promised: limit points may be saddles or local minima.'},
+      {tab: '4. Strong convexity', title: 'Step 4: Strong convexity turns progress into a contraction',
+       text: 'For $\\mu$-strongly convex $f$, Section 4 gives $\\|\\nabla f(x)\\|^2\\ge2\\mu(f(x)-f^\\star)$. Insert it into Step 2 and subtract $f^\\star$:',
+       visual: '<div class="math-block">$$f(x_{k+1})-f^\\star\\le\\Big(1-\\frac{\\mu}{L}\\Big)\\big(f(x_k)-f^\\star\\big)\\ \\Longrightarrow\\ f(x_K)-f^\\star\\le\\Big(1-\\frac1\\kappa\\Big)^K\\big(f(x_0)-f^\\star\\big),\\quad\\kappa=\\frac L\\mu .$$</div>',
+       insight: 'The gap shrinks by a fixed factor per step (linear convergence): fast for small $\\kappa$, slow for ill-conditioned problems.'},
+      {tab: '5. Budget', title: 'Step 5: From a rate to an iteration count',
+       text: 'Since $1-1/\\kappa\\le e^{-1/\\kappa}$, the gap is below $\\varepsilon$ once $K\\ge\\kappa\\ln\\big((f(x_0)-f^\\star)/\\varepsilon\\big)$. For $f=\\tfrac12(x_1^2+10x_2^2)$ from $x_0=(10,1)$: $\\kappa=10$, $f(x_0)=55$:',
+       visual: '<div class="math-block">$$K\\ge10\\ln\\frac{55}{10^{-6}}\\approx178.2\\ \\text{(bound: 179 steps)},\\qquad\\text{actual: } f(x_k)=50\\cdot0.81^{k}\\le10^{-6}\\ \\text{for } k\\ge85 .$$</div>',
+       insight: 'Valid but conservative: here the $x_1$-error shrinks by $0.9$ per step, so $f$ shrinks by $0.81$. A rate is a worst case over a whole class of functions.'}
+    ]);
+
+    initFlashcards('pb-flashcards', [
+      {q: 'Write $\\tfrac{d}{dt}h(x(t))$ for $\\dot x=f(x)+g(x)u$.', a: '$\\nabla h^{\\top}f+\\nabla h^{\\top}g\\,u=L_fh(x)+L_gh(x)u$. Likewise $\\tfrac{d}{dt}x^{\\top}Px=2x^{\\top}P\\dot x$ for symmetric $P$.'},
+      {q: 'Chain rule for Jacobians, and its backpropagation form?', a: '$J_{f\\circ g}=J_f(g(x))J_g(x)$; for a scalar output $\\nabla(f\\circ g)=J_g^{\\top}\\nabla f$: multiply by transposed Jacobians ($W_k^{\\top}$, $\\operatorname{diag}(\\sigma\')$) from the output backwards.'},
+      {q: 'Gradients of $x^{\\top}Ax$, $\\|Ax-b\\|^2$, $\\log\\det X$; differential of $X^{-1}$?', a: '$(A+A^{\\top})x$; $2A^{\\top}(Ax-b)$; $X^{-1}$ ($X\\succ0$); $d(X^{-1})=-X^{-1}dX\\,X^{-1}$.'},
+      {q: 'How does a Lipschitz constant transfer a lower bound?', a: '$f(x\')\\ge f(x)-L\\,d(x,x\')$: with margin $s=f(x)-h\\ge0$, every $x\'$ within $s/L$ is certified (within $\\omega^{-1}(s)$ for a modulus $\\omega$).'},
+      {q: 'Why does a grid check need the margin $Lr_c$?', a: 'Between nodes one only knows $f(x)\\ge f(g)-Lr_c$ ($r_c$ = covering radius), so $f(g)\\ge Lr_c$ at all nodes certifies $f\\ge0$ everywhere; $f(g)\\ge0$ does not.'},
+      {q: 'Three equivalent tests for convexity of a $C^2$ function?', a: 'Chords above the graph; tangent planes below it, $f(y)\\ge f(x)+\\nabla f(x)^{\\top}(y-x)$; $\\nabla^2f\\succeq0$ everywhere (a nonnegative diagonal is not enough).'},
+      {q: 'State Jensen\'s inequality in both directions.', a: 'Convex $f$: $f(\\mathbb EX)\\le\\mathbb Ef(X)$. Concave: reversed, e.g. $\\mathbb E\\sqrt X\\le\\sqrt{\\mathbb EX}$, $\\mathbb E\\log X\\le\\log\\mathbb EX$.'},
+      {q: 'Define the convex conjugate and state Fenchel–Young.', a: '$f^*(y)=\\sup_x(y^{\\top}x-f(x))$, always convex; $f(x)+f^*(y)\\ge x^{\\top}y$, with equality iff $y\\in\\partial f(x)$.'},
+      {q: 'Gradient descent rates with $\\eta=1/L$?', a: 'Nonconvex: $\\min_{k\\lt K}\\|\\nabla f\\|^2\\le2L(f(x_0)-f_{\\inf})/K$. Convex: $f(x_K)-f^\\star\\le L\\|x_0-x^\\star\\|^2/(2K)$. Strongly convex: factor $(1-\\mu/L)^K$.'},
+      {q: 'Project $y$ onto $\\{a^{\\top}x\\le b\\}$ ($a\\ne0$) and onto a box.', a: '$y-\\frac{(a^{\\top}y-b)_+}{\\|a\\|^2}a$; clip each coordinate. The CBF-QP safety filter is such a projection.'},
+      {q: 'Penalty, slack, augmented Lagrangian, barrier: which give feasible answers?', a: 'Quadratic penalty, penalised slack: generally not for finite weights. Exact penalty: yes for a convex problem when the weight exceeds the optimal multiplier ($\\rho\\gt\\|\\lambda^\\star\\|_\\infty$, strong duality); nonconvex exactness needs more assumptions and may be only local. Augmented Lagrangian: in the limit, with finite $\\rho$. Barrier: steps that stay in the domain keep every iterate strictly feasible; only at an exact minimiser of $tf_0+\\phi$ is the convex gap $\\le m/t$ (approximate centring adds an error).'},
+      {q: '$\\sup$ vs $\\max$; what is $\\operatorname{arg\\,max}$; when does max-min equal min-max?', a: '$\\sup$ always exists in $[-\\infty,\\infty]$, $\\max$ only if attained; $\\operatorname{arg\\,max}$ is the set of maximisers (possibly empty or tied). $\\sup_y\\inf_xL\\le\\inf_x\\sup_yL$ always, with equality at a saddle point (convex-concave $L$ plus compactness).'}
+    ]);
+
+    // ===== Explorer: descent, projection, penalty and barrier on a 2-D quadratic =====
+    (function () {
+      var svg = document.getElementById('pb-svg'); if (!svg) return;
+      var C0 = [1.5, 1.1], X0 = -2.6, Y1 = 2, S = 100, START = [-0.6, -0.7], x0 = START.slice(), Z = [[0, 0], [0, 0]];
+      function el(id) { return document.getElementById(id); }
+      function mv(A, x) { return [A[0][0]*x[0] + A[0][1]*x[1], A[1][0]*x[0] + A[1][1]*x[1]]; }
+      function sol(A, b) { var d = A[0][0]*A[1][1] - A[0][1]*A[1][0]; return [(A[1][1]*b[0] - A[0][1]*b[1])/d, (A[0][0]*b[1] - A[1][0]*b[0])/d]; }
+      function clip(v, a, b) { return Math.min(Math.max(v, a), b); }
+      // constraints g_i(x) <= 0: values, gradients, Hessians, Euclidean projection
+      var CONS = {
+        half: {m: 1, g: function (x) { return [x[0] + x[1] - 1]; }, dg: function () { return [[1, 1]]; }, hg: function () { return [Z]; },
+               proj: function (y) { var v = Math.max(0, y[0] + y[1] - 1)/2; return [y[0] - v, y[1] - v]; }},
+        disk: {m: 1, g: function (x) { return [x[0]*x[0] + x[1]*x[1] - 1]; }, dg: function (x) { return [[2*x[0], 2*x[1]]]; }, hg: function () { return [[[2, 0], [0, 2]]]; },
+               proj: function (y) { var n = Math.max(1, Math.hypot(y[0], y[1])); return [y[0]/n, y[1]/n]; }},
+        box:  {m: 4, g: function (x) { return [x[0] - 1, -1 - x[0], x[1] - 0.5, -1 - x[1]]; }, dg: function () { return [[1, 0], [-1, 0], [0, 1], [0, -1]]; }, hg: function () { return [Z, Z, Z, Z]; },
+               proj: function (y) { return [clip(y[0], -1, 1), clip(y[1], -1, 0.5)]; }}
+      };
+      function viol(K, x) { return Math.max.apply(null, K.g(x)); }
+      // [value, gradient, Hessian] of t*f(x) + sum_i psi(g_i(x)); d1, d2 = psi', psi''
+      function obj(Q, K, t, psi, d1, d2) {
+        return [function (x) { var d = [x[0] - C0[0], x[1] - C0[1]], q = mv(Q, d); return 0.5*t*(d[0]*q[0] + d[1]*q[1]) + K.g(x).reduce(function (s, v) { return s + psi(v); }, 0); },
+          function (x) { var g = mv(Q, [x[0] - C0[0], x[1] - C0[1]]), ds = K.dg(x); g = [t*g[0], t*g[1]];
+            K.g(x).forEach(function (v, i) { g[0] += d1(v)*ds[i][0]; g[1] += d1(v)*ds[i][1]; }); return g; },
+          function (x) { var ds = K.dg(x), hs = K.hg(x), H = [[t*Q[0][0], t*Q[0][1]], [t*Q[1][0], t*Q[1][1]]];
+            K.g(x).forEach(function (v, i) { for (var u = 0; u < 2; u++) for (var w = 0; w < 2; w++) H[u][w] += d2(v)*ds[i][u]*ds[i][w] + d1(v)*hs[i][u][w]; }); return H; }];
+      }
+      // damped Newton with Armijo backtracking; ok(x) is the domain test
+      function newton(F, x, ok, path) {
+        for (var n = 0, it = 0; it < 60; it++) {
+          var g = F[1](x), d = sol(F[2](x), [-g[0], -g[1]]), dec = -(g[0]*d[0] + g[1]*d[1]), t = 1, fx = F[0](x), y = null;
+          if (!(dec > 1e-13)) break;
+          while (t > 1e-12) { y = [x[0] + t*d[0], x[1] + t*d[1]]; if (ok(y) && F[0](y) <= fx - 0.25*t*dec) break; t /= 2; y = null; }
+          if (!y) break; x = y; n++; if (path) path.push(x);
+        }
+        return {x: x, n: n};
+      }
+      function zero() { return 0; }
+      function solveAll(p) {
+        var c = Math.cos(p.th), s = Math.sin(p.th), k = p.k, K = CONS[p.con], L = Math.max(1, k), eta = p.s/L, i, xs;
+        var Q = [[c*c + k*s*s, (1 - k)*c*s], [(1 - k)*c*s, s*s + k*c*c]], f = obj(Q, K, 1, zero, zero, zero)[0];
+        var gf = function (x) { return mv(Q, [x[0] - C0[0], x[1] - C0[1]]); };
+        if (p.con === 'half') { var qa = sol(Q, [1, 1]), r = (C0[0] + C0[1] - 1)/(qa[0] + qa[1]); xs = [C0[0] - r*qa[0], C0[1] - r*qa[1]]; }
+        else if (p.con === 'disk') { // bisection on the multiplier l: ||(Q + l I)^{-1} Q c|| = 1
+          var Qc = mv(Q, C0), xl = function (l) { return sol([[Q[0][0] + l, Q[0][1]], [Q[1][0], Q[1][1] + l]], Qc); }, lo = 0, hi = 1;
+          while (Math.hypot.apply(null, xl(hi)) > 1) hi *= 2;
+          for (i = 0; i < 60; i++) { var mid = (lo + hi)/2; if (Math.hypot.apply(null, xl(mid)) > 1) lo = mid; else hi = mid; }
+          xs = xl(hi);
+        } else { xs = K.proj(C0); for (i = 0; i < 5000; i++) { var gg = gf(xs); xs = K.proj([xs[0] - gg[0]/L, xs[1] - gg[1]/L]); } }
+        var o = {L: L, eta: eta, xs: xs, fs: f(xs), f: f, K: K}, xg = p.x0.slice(), xp = K.proj(xg), xr = xg, Fp;
+        o.gd = [xg]; o.pgd = [xp]; o.pen = []; // projected gradient starts at P_C(start): x_0 = xp
+        for (i = 0; i < p.K; i++) {
+          var g1 = gf(xg); xg = [xg[0] - eta*g1[0], xg[1] - eta*g1[1]]; if (Math.hypot(xg[0], xg[1]) < 50) o.gd.push(xg);
+          var g2 = gf(xp); xp = K.proj([xp[0] - eta*g2[0], xp[1] - eta*g2[1]]); o.pgd.push(xp);
+        }
+        o.gdEnd = xg;
+        [1, 4, 16, 64, 256, 1024].forEach(function (r) { // penalty minimisers, warm-started
+          Fp = obj(Q, K, 1, function (v) { return v > 0 ? 0.5*r*v*v : 0; }, function (v) { return v > 0 ? r*v : 0; }, function (v) { return v > 0 ? r : 0; });
+          xr = newton(Fp, xr, function () { return true; }).x; o.pen.push(xr);
+        });
+        var H = Fp[2](xr), tr = H[0][0] + H[1][1], dd = Math.sqrt(Math.max(0, tr*tr/4 - H[0][0]*H[1][1] + H[0][1]*H[1][0]));
+        o.penViol = viol(K, xr); o.penCond = (tr/2 + dd)/(tr/2 - dd);
+        if (viol(K, p.x0) < 0) { // barrier method: centre t f + phi, then t <- 4t
+          var xb = p.x0.slice(), path = [xb], cen = [], t = 1, nN = 0, rr;
+          for (;;) {
+            rr = newton(obj(Q, K, t, function (v) { return -Math.log(-v); }, function (v) { return -1/v; }, function (v) { return 1/(v*v); }), xb, function (x) { return viol(K, x) < 0; }, path);
+            xb = rr.x; nN += rr.n; cen.push(xb); if (K.m/t < 1e-3) break; t *= 4;
+          }
+          o.bar = {path: path, cen: cen, n: nN, t: t, gap: K.m/t, x: xb};
+        }
+        return o;
+      }
+      function px(x) { return ((x[0] - X0)*S).toFixed(1) + ',' + ((Y1 - x[1])*S).toFixed(1); }
+      function line(pts, col, w, dash) { return '<polyline points="' + pts.map(px).join(' ') + '" fill="none" stroke="' + col + '" stroke-width="' + w + '"' + (dash ? ' stroke-dasharray="4 3"' : '') + '/>'; }
+      function dots(pts, r, col) { return pts.map(function (x) { var q = px(x).split(','); return '<circle cx="' + q[0] + '" cy="' + q[1] + '" r="' + r + '" fill="' + col + '"/>'; }).join(''); }
+      function fmt(x) { return '(' + x[0].toFixed(3) + ', ' + x[1].toFixed(3) + ')'; }
+      function draw() {
+        var p = {k: +el('pb-k').value, th: el('pb-th').value*Math.PI/180, s: +el('pb-s').value, K: +el('pb-K').value, con: el('pb-con').value, x0: x0};
+        el('pb-k-val').textContent = p.k; el('pb-th-val').textContent = el('pb-th').value + '\u00b0';
+        el('pb-s-val').textContent = p.s.toFixed(2); el('pb-K-val').textContent = p.K;
+        var o = solveAll(p), c = Math.cos(p.th), s = Math.sin(p.th), rk = 1/Math.sqrt(p.k), h;
+        h = p.con === 'half' ? '<polygon points="' + [[-2.6, 2], [-1, 2], [3, -2], [-2.6, -2]].map(px).join(' ') + '" fill="#e8f5e9"/>' + line([[-1, 2], [3, -2]], '#2e7d32', 1.5)
+          : p.con === 'disk' ? '<circle cx="260" cy="200" r="100" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>'
+          : '<rect x="160" y="150" width="200" height="150" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>';
+        [0.03, 0.12, 0.3, 0.6, 1.1, 1.8, 2.8, 4.2, 6].forEach(function (v) { // level sets f = v
+          for (var pts = [], r = Math.sqrt(2*v), i = 0; i <= 64; i++) { var u = Math.cos(Math.PI*i/32), w = Math.sin(Math.PI*i/32)*rk; pts.push([C0[0] + r*(c*u - s*w), C0[1] + r*(s*u + c*w)]); }
+          h += line(pts, '#cfd8dc', 1);
+        });
+        h += '<text x="405" y="95" font-size="14" fill="#78909c">&#215;</text>';
+        if (el('pb-m0').checked) h += line(o.gd, '#1565c0', 1.8) + dots(o.gd, 2.2, '#1565c0');
+        if (el('pb-m1').checked) h += (viol(o.K, x0) > 0 ? line([x0, o.pgd[0]], '#e67e22', 1, 1) : '') + line(o.pgd, '#e67e22', 1.8) + dots(o.pgd, 2.2, '#e67e22');
+        if (el('pb-m2').checked) h += line(o.pen, '#c62828', 1.2, 1) + dots(o.pen, 3.2, '#c62828');
+        if (el('pb-m3').checked && o.bar) h += line(o.bar.path, '#7b1fa2', 1.5) + dots(o.bar.cen, 3, '#7b1fa2');
+        svg.innerHTML = h + dots([o.xs], 5.5, '#2e7d32') + dots([x0], 4.5, '#212121');
+        var last = o.pgd[o.pgd.length - 1], bad = viol(o.K, o.gdEnd) > 1e-9,
+            e0 = [x0[0] - C0[0], x0[1] - C0[1]], live = Math.abs(p.k > 1 ? -s*e0[0] + c*e0[1] : Math.hypot(e0[0], e0[1])) > 1e-9, // error component along the steepest eigenvector (-sin, cos)
+            gdTxt = 'x<sub>K</sub> = ' + fmt(o.gdEnd) + ', f = ' + o.f(o.gdEnd).toFixed(4) + (bad ? ', <strong>infeasible</strong> (so f &lt; f(x*) is possible)' : ', feasible');
+        if (p.s > 2 + 1e-6) gdTxt = live ? '<strong>diverges</strong>: &eta;L &gt; 2 multiplies the steepest error component by |1 &minus; &eta;L| = ' + Math.abs(1 - p.s).toFixed(2) + ' per step'
+          : 'beyond the guaranteed range (&eta;L &gt; 2), but this start has no component along the steepest direction, so it still converges: ' + gdTxt;
+        else if (p.s > 2 - 1e-6 && live) gdTxt = '&eta;L = 2: the steepest error component flips sign every step and never decays; ' + gdTxt;
+        el('pb-info').innerHTML = 'L = &kappa; = ' + p.k + ', &mu; = 1, &eta; = ' + o.eta.toFixed(3) + ' (convergence guaranteed for &eta; &lt; 2/L = ' + (2/o.L).toFixed(3) + '); x* = ' + fmt(o.xs) + ', f(x*) = ' + o.fs.toFixed(4) + '.<br>' +
+          '<span style="color:#1565c0;">Gradient descent</span>: ' + gdTxt + '.<br>' +
+          '<span style="color:#e67e22;">Projected gradient</span> from P<sub>C</sub>(start): x<sub>K</sub> = ' + fmt(last) + ', f &minus; f* = ' + Math.max(0, o.f(last) - o.fs).toExponential(2) + ', every iterate feasible.<br>' +
+          '<span style="color:#c62828;">Penalty</span>, &rho; = 1024: violation ' + o.penViol.toExponential(2) + ' &gt; 0, Hessian condition number &asymp; ' + o.penCond.toFixed(0) + ' (vs &kappa; = ' + p.k + ').<br>' +
+          '<span style="color:#7b1fa2;">Barrier</span>: ' + (o.bar ? o.bar.n + ' Newton steps, last centre at t = ' + o.bar.t + ': gap bound m/t = ' + o.bar.gap.toExponential(2) + ', actual f &minus; f* = ' + (o.f(o.bar.x) - o.fs).toExponential(2) + '; every Newton iterate strictly feasible.'
+            : 'needs a strictly feasible start (&minus;log(&minus;f<sub>i</sub>) is undefined here); click inside the green set.');
+      }
+      ['pb-k', 'pb-th', 'pb-s', 'pb-K'].forEach(function (id) { el(id).addEventListener('input', draw); });
+      ['pb-con', 'pb-m0', 'pb-m1', 'pb-m2', 'pb-m3'].forEach(function (id) { el(id).addEventListener('change', draw); });
+      el('pb-reset').addEventListener('click', function () { x0 = START.slice(); draw(); });
+      svg.addEventListener('click', function (e) { var r = svg.getBoundingClientRect(); x0 = [(e.clientX - r.left)/r.width*5.6 + X0, Y1 - (e.clientY - r.top)/r.height*4]; draw(); });
+      draw();
+    })();
+  </script>
+</body>
+</html>
