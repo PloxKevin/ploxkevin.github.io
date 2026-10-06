@@ -353,6 +353,14 @@ const MODULES = [
   {
     cluster: 'Reference',
     modules: [
+      { id: 'study-guide', num: '↗', title: 'Study Guide & Practice Routes', file: 'study-guide.html',
+        sections: [
+          {name:'Start from the Beginning',id:'start-here'},
+          {name:'Find and Repair a Knowledge Gap',id:'find-gap'},
+          {name:'Work Through a Section',id:'study-routine'},
+          {name:'Find Practice by Topic',id:'practice-routes'},
+          {name:'Choose a Research Track',id:'reading-tracks'},
+        ] },
       { id: 'formulas', num: '∑', title: 'Formula Sheet', file: 'formulas.html',
         sections: [
         ] },
@@ -362,6 +370,7 @@ const MODULES = [
       { id: 'open-problems', num: '?', title: 'Open Problems & Research Gaps', file: 'open-problems.html',
         sections: [
           {name:'How to Read This Page',id:'op-how-to-read'},
+          {name:'Notation Used on This Page',id:'op-notation'},
           {name:'Interactive: Problem Map',id:'op-map'},
           {name:'Safe Exploration with Checkable Assumptions (Trimpe line)',id:'op-trimpe'},
           {name:'Certified Neural Networks via Robust Control (Pauli line)',id:'op-pauli'},
@@ -382,7 +391,9 @@ function renderSidebar(activeModuleId) {
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) return;
 
-  let html = '<div class="sidebar-title"><span>Safe Learning</span><button class="sidebar-toggle" onclick="toggleSidebar()" title="Hide sidebar">&times;</button></div>';
+  let html = '<div class="sidebar-title"><span>Safe Learning</span><button class="sidebar-toggle" onclick="toggleSidebar()" title="Hide sidebar" aria-label="Close navigation">&times;</button></div>' +
+    '<a href="index.html" class="sidebar-link">Overview</a>' +
+    '<a href="study-guide.html" class="sidebar-link">Study guide &amp; practice routes</a>';
 
   MODULES.forEach(cluster => {
     html += '<div class="sidebar-cluster">' + cluster.cluster + '</div>';
@@ -401,13 +412,35 @@ function renderSidebar(activeModuleId) {
 
   sidebar.innerHTML = html;
 
-  if (localStorage.getItem('sidebar-collapsed') === 'true') {
+  if (!window.matchMedia('(max-width: 768px)').matches && localStorage.getItem('sidebar-collapsed') === 'true') {
     sidebar.classList.add('collapsed');
+  }
+  const opener = document.querySelector('.sidebar-open');
+  if (opener) {
+    opener.setAttribute('aria-label', 'Open navigation');
+    opener.setAttribute('aria-controls', 'sidebar');
+    opener.setAttribute('aria-expanded', 'false');
+  }
+  const main = document.querySelector('main');
+  if (main) {
+    if (!main.id) main.id = 'main-content';
+    const skip = document.createElement('a');
+    skip.className = 'skip-link';
+    skip.href = '#' + main.id;
+    skip.textContent = 'Skip to content';
+    document.body.prepend(skip);
   }
 }
 
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
+  if (window.matchMedia('(max-width: 768px)').matches) {
+    sidebar.classList.remove('collapsed');
+    sidebar.classList.toggle('open-mobile');
+    const opener = document.querySelector('.sidebar-open');
+    if (opener) opener.setAttribute('aria-expanded', String(sidebar.classList.contains('open-mobile')));
+    return;
+  }
   sidebar.classList.toggle('collapsed');
   localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed'));
 }
@@ -426,9 +459,27 @@ function renderMath(el) {
 
 // === COLLAPSIBLE SECTIONS ===
 function initCollapsibles() {
-  document.querySelectorAll('.collapsible-header').forEach(header => {
+  document.querySelectorAll('.collapsible-header').forEach((header, index) => {
+    if (header.dataset.initialized === 'true') return;
+    header.dataset.initialized = 'true';
+    header.setAttribute('role', 'button');
+    header.tabIndex = 0;
+    const box = header.parentElement;
+    const body = box.querySelector(':scope > .collapsible-body');
+    if (body) {
+      if (!body.id) body.id = 'collapsible-content-' + index;
+      header.setAttribute('aria-controls', body.id);
+    }
+    header.setAttribute('aria-expanded', String(box.classList.contains('open')));
     header.addEventListener('click', () => {
-      header.parentElement.classList.toggle('open');
+      box.classList.toggle('open');
+      header.setAttribute('aria-expanded', String(box.classList.contains('open')));
+    });
+    header.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        header.click();
+      }
     });
   });
 }
@@ -500,9 +551,12 @@ function initWalkthrough(containerId, steps) {
   let currentStep = 0;
 
   function render() {
+    const focused = container.contains(document.activeElement) ? document.activeElement : null;
+    const focusTab = focused && focused.classList.contains('walkthrough-step-tab');
+    const focusNav = focused && focused.dataset.walkthroughNav;
     const step = steps[currentStep];
     let tabsHtml = steps.map(function(s, i) {
-      return '<div class="walkthrough-step-tab' + (i === currentStep ? ' active' : '') + '" onclick="walkthroughGoTo(\'' + containerId + '\', ' + i + ')">' + s.tab + '</div>';
+      return '<button type="button" class="walkthrough-step-tab' + (i === currentStep ? ' active' : '') + '" aria-pressed="' + (i === currentStep) + '" onclick="walkthroughGoTo(\'' + containerId + '\', ' + i + ')">' + s.tab + '</button>';
     }).join('');
 
     container.innerHTML =
@@ -515,10 +569,14 @@ function initWalkthrough(containerId, steps) {
         (step.insight ? '<div class="insight-box"><div class="box-label">Key insight</div><div>' + step.insight + '</div></div>' : '') +
       '</div>' +
       '<div class="walkthrough-nav">' +
-        '<button onclick="walkthroughGoTo(\'' + containerId + '\', ' + (currentStep - 1) + ')"' + (currentStep === 0 ? ' disabled' : '') + '>&larr; Previous</button>' +
-        '<button onclick="walkthroughGoTo(\'' + containerId + '\', ' + (currentStep + 1) + ')"' + (currentStep === steps.length - 1 ? ' disabled' : '') + '>Next &rarr;</button>' +
+        '<button data-walkthrough-nav="previous" onclick="walkthroughGoTo(\'' + containerId + '\', ' + (currentStep - 1) + ')"' + (currentStep === 0 ? ' disabled' : '') + '>&larr; Previous</button>' +
+        '<button data-walkthrough-nav="next" onclick="walkthroughGoTo(\'' + containerId + '\', ' + (currentStep + 1) + ')"' + (currentStep === steps.length - 1 ? ' disabled' : '') + '>Next &rarr;</button>' +
       '</div>';
     renderMath(container);
+    if (focusTab || focusNav) {
+      const nextFocus = focusNav && container.querySelector('[data-walkthrough-nav="' + focusNav + '"]:not(:disabled)');
+      (nextFocus || container.querySelector('.walkthrough-step-tab.active')).focus({preventScroll:true});
+    }
   }
 
   container._walkthrough = {

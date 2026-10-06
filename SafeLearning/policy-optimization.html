@@ -37,6 +37,13 @@
       </ul>
     </div>
 
+<!-- LEARNING REVIEW ROUTE START -->
+<div class="insight-box reading-route" id="reading-route"><div class="box-label">A route through this module</div>
+<p>First build the core calculation: <a href="#performance-difference">advantages and performance difference</a>, <a href="#trust-region-bound">surrogate error</a>, <a href="#cpo-update">the constrained update</a>, <a href="#cpo-walkthrough">the worked CPO calculation</a>. Try the <a href="#practice-easy">Easy practice</a> as you go, then the <a href="#practice-medium">Medium applications</a>. Next compare projection, penalty and barrier methods. Model-based, offline and benchmark sections are a second pass connecting that shared update problem to applications.</p>
+<p>The <a href="#practice-hard">Hard practice</a> checks proofs and assumptions. The <a href="#research-practice">original longer exercises</a> remain for a deeper pass. If a calculation stalls, follow its prerequisite review link and return after practising that skill.</p></div>
+<div class="collapsible" id="readiness-check"><div class="collapsible-header">Background &mdash; check the skills used next</div><div class="collapsible-body"><p>Check advantages, dot products and quadratic constraints before reading the CPO formulas.</p><details><summary>Show hint</summary><p>An advantage subtracts the old state value; a quadratic trust region bounds the size of a parameter step.</p></details><details><summary>Show worked check</summary><p>If $Q^\pi(s,a)=5$ and $V^\pi(s)=3$, then $A^\pi(s,a)=2$. For $g=(1,2)$ and $x=(0.1,0.2)$, the linearized reward change is $g^\top x=0.5$. If $H=I$ and $\tfrac12x^\top Hx\le0.125$, allowable steps have Euclidean length at most $0.5$. Review <a href="primer-rl-nn.html#rl-bellman">advantages</a>, <a href="primer-linalg.html#la-vectors-norms">dot products</a>, and <a href="primer-linalg.html#la-psd">quadratic forms</a>.</p></details></div></div>
+<!-- LEARNING REVIEW ROUTE END -->
+
     <div class="page-toc">
       <div class="page-toc-title">Contents</div>
       <a href="#performance-difference">1. The Performance Difference Lemma</a>
@@ -50,6 +57,7 @@
       <a href="#cpo-walkthrough">8. Walkthrough: The CPO Step From Bound to Closed Form</a>
       <a class="toc-interactive" href="#cpo-explorer">Interactive: CPO vs Projection in Parameter Space</a>
       <a href="#exercises">Exercises</a>
+      <a href="#graded-practice" style="padding-left:14px;">Graded practice: Easy &rarr; Medium &rarr; Hard</a>
       <a href="#papers">Key Papers</a>
       <a class="toc-interactive" href="#flashcards">Flashcards</a>
     </div>
@@ -69,9 +77,12 @@
     </div></div>
 
     <p>The network maps a state to action probabilities (or to a mean and covariance for continuous actions); $\theta$ collects its trainable weights. In KL, logarithms are natural, $0\log(0/q)=0$, and positive mass divided by zero gives infinite KL. The support is the set of actions with positive probability. These conventions explain why likelihood ratios and finite-KL updates require compatible support.</p>
-    <div class="warning-box"><div class="box-label">Caveat — Notation clashes on this page</div><div>
+    <details id="source-notation" style="margin:16px 0;">
+<summary style="cursor:pointer;font-weight:600;">Reference &mdash; notation changes across papers</summary>
+<div class="warning-box"><div class="box-label">Caveat — Notation clashes on this page</div><div>
       We keep the letters of the original papers because every implementation uses them. (i) In CPO, $c$ <em>without arguments</em> is the scalar constraint value $J_c(\pi_k)-d$, while $c(s,a)$ is the cost function; likewise $q,r,s$ are scalars, not the reward $r(s,a)$ or a state $s$. (ii) Multipliers: in CPO, PCPO and FOCOPS, $\lambda$ multiplies the trust-region (KL) constraint and $\nu$ the cost constraint; CVPO writes $\eta$ for the KL multiplier and $\lambda$ for the cost multiplier; LAMBDA, SafeDreamer, COptiDICE and <a href="cmdp.html#duality">Module 8</a> use $\lambda$ for the cost multiplier, and COptiDICE's $\nu(s)$ is a Bellman-flow multiplier (a value function). P3O writes $\kappa$ for its penalty factor, whereas CDT, DSRL, OASIS and O3SRL (Section 6) write $\kappa$ for the cost threshold, our $d$. (iii) $\delta$ is the trust-region radius here, but a failure probability in ActSafe and SOOPER. (iv) $\beta$ is C-TRPO's barrier weight and CUP's penalty coefficient; GP confidence scalings are written $\beta_n$ as in <a href="toolkit-gp.html#confidence-bounds">Module 3</a>. (v) $\Gamma_N$ is the maximum information gain of Module 3 (written $\gamma_t$ there; here $\gamma$ is the discount). (vi) FISOR's constraint function $h$ marks <em>safe</em> states by $h\le0$ and takes a maximum over time, the opposite sign of the barrier convention $h\ge0$ of the global notation and of the safety margin $l\ge0$ developed later (see <a href="barriers.html#hj-reachability">Module 10</a>).
     </div></div>
+</details>
 
     <div class="definition-box"><div class="box-label">Lemma — Performance difference (Kakade &amp; Langford, ICML 2002)</div><div>
       <em>Assumptions.</em> A discounted MDP with bounded rewards and $\gamma\in(0,1)$; two stationary policies $\pi,\pi'$ started from the same initial distribution $\mu$.<br>
@@ -294,7 +305,7 @@
     <p>CPO's weaknesses are practical: second-order machinery, a case analysis with a separate recovery rule, and active-constraint steps that sit exactly on an estimated boundary. The successors change one ingredient each: <em>where</em> the problem is solved (parameter space or policy space), <em>how</em> the constraint enters (intersection, projection, penalty, barrier, geometry), and <em>which</em> optimiser is used (conjugate gradients or plain SGD, <a href="primer-optimization.html#opt-descent">Primer B</a>).</p>
 
     <h3 class="subsection-heading">PCPO: improve, then project</h3>
-    <p><a class="cite" href="https://arxiv.org/abs/2010.03152" target="_blank" rel="noopener">Yang, Rosca, Narasimhan &amp; Ramadge, ICLR 2020</a> split the step in two: an unconstrained TRPO step for the reward, then a projection of the intermediate policy onto the (surrogate) constraint set, $\pi^{k+1}=\operatorname*{arg\,min}_\pi D(\pi,\pi^{k+1/2})$ s.t. $J_c(\pi_k)+\frac{1}{1-\gamma}\mathbb E_{d^{\pi_k},\pi}[A_c^{\pi_k}]\le d$, with $D$ either the $L_2$ distance of parameters or the KL divergence. Linearised (their Eqs. 4–6, translated to CPO letters: their $a,b,h$ are our $b,c,d$), the projection onto $\{x:c+b^{\top}x\le0\}$ in the metric $L$ has the KKT solution $x=x_{\rm TRPO}-\mu L^{-1}b$ with $\mu=(c+b^{\top}x_{\rm TRPO})_+/(b^{\top}L^{-1}b)$, i.e.</p>
+    <p><a class="cite" href="https://arxiv.org/abs/2010.03152" target="_blank" rel="noopener">Yang, Rosca, Narasimhan &amp; Ramadge, ICLR 2020</a> split the step in two: an unconstrained TRPO step for the reward, then a projection of the intermediate policy onto the (surrogate) constraint set, $\pi^{k+1}=\operatorname*{arg\,min}_\pi D(\pi,\pi^{k+1/2})$ s.t. $J_c(\pi_k)+\frac{1}{1-\gamma}\mathbb E_{d^{\pi_k},\pi}[A_c^{\pi_k}]\le d$, with $D$ either the $L_2$ distance of parameters or the KL divergence. Linearised (their Eqs. 4–6, translated to CPO letters: their $a,b,h$ are our $b,c,d$), the projection onto $\{x:c+b^{\top}x\le0\}$ in the metric $L$ has the <a href="primer-optimization.html#opt-kkt">KKT</a> solution $x=x_{\rm TRPO}-\mu L^{-1}b$ with $\mu=(c+b^{\top}x_{\rm TRPO})_+/(b^{\top}L^{-1}b)$, i.e.</p>
     <div class="math-block">$$\begin{aligned}\theta_{k+1}&amp;=\theta_k+\sqrt{\frac{2\delta}{q}}\,H^{-1}g\;-\;\max\Big(0,\ \frac{c+\sqrt{2\delta/q}\;r}{b^{\top}L^{-1}b}\Big)\,L^{-1}b,\\ L&amp;=I\ (L_2\text{ projection})\ \text{ or }\ L=H\ (\text{KL projection}).\end{aligned}$$</div>
     <div class="collapsible"><div class="collapsible-header">Derivation — The projection step from the KKT conditions</div><div class="collapsible-body"><p>The linearised projection solves $\min_x\tfrac12(x-x_{\rm TRPO})^\top L(x-x_{\rm TRPO})$ subject to $c+b^\top x\le0$, with $L\succ0$. Stationarity of the Lagrangian with multiplier $\mu\ge0$ gives $L(x-x_{\rm TRPO})+\mu b=0$, i.e. $x=x_{\rm TRPO}-\mu L^{-1}b$. If $x_{\rm TRPO}$ already satisfies the constraint, $\mu=0$. Otherwise the constraint is active: substituting into $c+b^\top x=0$ gives $c+b^\top x_{\rm TRPO}-\mu\,b^\top L^{-1}b=0$, so $\mu=(c+b^\top x_{\rm TRPO})/(b^\top L^{-1}b)$. Both cases together are the $(\cdot)_+$ formula, and $b^\top x_{\rm TRPO}=\sqrt{2\delta/q}\,r$.</p></div></div>
 
@@ -513,7 +524,7 @@
 
     <p>Two further ingredients make it safe in practice. The cost estimate $\mathbb E_{d^{\mathcal D}}[wC]$ is replaced by an <strong>upper bound</strong>: the data distribution is adversarially reweighted within a KL ball of radius $\epsilon$ (subject to a Bellman-flow compatibility constraint), in the spirit of CoinDICE, and by the same duality argument this reduces, per cost, to an unconstrained log-sum-exp minimisation over a scalar temperature $\tau\ge0$ (the multiplier of the KL ball) and a state function $\chi(s)$ (the multiplier of the flow constraint), all estimable from the dataset (their Prop. 2). And since $w^\ast$ is a ratio, not a policy, the policy is extracted by importance-weighted behaviour cloning, $\max_\pi\mathbb E_{d^{\mathcal D}}[w^\ast(s,a)\log\pi(a\mid s)]$.</p>
     <div class="definition-box"><div class="box-label">Theorem — KL-robust cost estimation with Bellman-flow compatibility (Lee et al. 2022, Prop. 2, finite-support version)</div><div><p>Fix finite tuple support $x=(s_0,s,a,s')$, a positive reference law $q(x)$, a fixed nonnegative ratio $w(s,a)$, bounded cost $C$, and $0\le\gamma\lt1$. Put $b_y(x)=(1-\gamma)\mathbf1[s_0=y]+w(s,a)(\gamma\mathbf1[s'=y]-\mathbf1[s=y])$. For $\epsilon\gt0$ define $\mathcal U=\{p\ge0:\sum_xp(x)=1,\ D_{\rm KL}(p\|q)\le\epsilon,\ \mathbb E_p b_y=0\ \forall y\}$. If this set has a relative-interior point with KL strictly below $\epsilon$, then</p><div class="math-block">$$\sup_{p\in\mathcal U}\mathbb E_p[wC]=\inf_{\tau\ge0,\chi}\left\{\tau\epsilon+\tau\log\mathbb E_q\exp\!\left(\frac{wC+\sum_y\chi(y)b_y}{\tau}\right)\right\}.$$</div><p>At $\tau=0$ use the limit of the log-sum-exp term, not division by zero. The $b_y$ equations enforce discounted flow for the weighted occupancy. The true normalised policy cost is bounded by this supremum only on an event where a law $p_{\rm true}\in\mathcal U$ also makes $wp_{\rm true}(s,a)$ that policy’s true occupancy. Finite support and strict feasibility justify duality; inclusion supplies the statistical interpretation. A fitted ratio or a chosen radius alone supplies neither inclusion nor coverage.</p><p>The adversary reallocates data mass towards expensive compatible transitions. Its dual replaces a search over distributions by a temperature and a state potential.</p><p><a class="cite" href="https://arxiv.org/abs/2204.08957" target="_blank" rel="noopener">Lee et al. 2022</a>.</p></div></div>
-    <div class="collapsible"><div class="collapsible-header">Derivation — The policy extracted by weighted behaviour cloning</div><div class="collapsible-body"><p>At a state $s$, $\max_\pi\sum_ad^{\mathcal D}(s,a)w^\ast(s,a)\log\pi(a\mid s)$ over probability vectors is a weighted maximum-likelihood problem; with a Lagrange multiplier for $\sum_a\pi(a\mid s)=1$ (<a href="primer-optimization.html#opt-constraints">Primer B</a>), stationarity gives $\pi(a\mid s)\propto d^{\mathcal D}(s,a)w^\ast(s,a)$. So, at a state with positive total weight, the unrestricted fit is $\pi(a\mid s)=d^{\mathcal D}(s,a)w^\ast(s,a)/\sum_{a'}d^{\mathcal D}(s,a')w^\ast(s,a')$. The denominator normalizes the action probabilities. If it is zero, this objective supplies no policy information at that state. A neural fit may only approximate these probabilities.</p></div></div>
+    <div class="collapsible"><div class="collapsible-header">Derivation — The policy extracted by weighted behaviour cloning</div><div class="collapsible-body"><p>At a state $s$, <span class="math-scroll">$\max_\pi\sum_ad^{\mathcal D}(s,a)w^\ast(s,a)\log\pi(a\mid s)$</span> over probability vectors is a weighted maximum-likelihood problem; with a Lagrange multiplier for $\sum_a\pi(a\mid s)=1$ (<a href="primer-optimization.html#opt-constraints">Primer B</a>), stationarity gives $\pi(a\mid s)\propto d^{\mathcal D}(s,a)w^\ast(s,a)$. So, at a state with positive total weight, the unrestricted fit is <span class="math-scroll">$\pi(a\mid s)=d^{\mathcal D}(s,a)w^\ast(s,a)/\sum_{a'}d^{\mathcal D}(s,a')w^\ast(s,a')$</span>. The denominator normalizes the action probabilities. If it is zero, this objective supplies no policy information at that state. A neural fit may only approximate these probabilities.</p></div></div>
 
     <h3 class="subsection-heading">CDT: condition on the cost-to-go</h3>
     <div class="collapsible"><div class="collapsible-header">Background — Causal transformers and tokens</div><div class="collapsible-body"><p>Here $o_t$ denotes the available sequence of states, past actions, and reward/cost target tokens up to time $t$. A token is a vector representation of one of those inputs. A causal transformer processes this history without seeing future observations and outputs the next action distribution. The scalar target updates are bookkeeping inputs to this predictor, not constraints imposed by its architecture.</p><p>For example, the inputs “state, target cost 10, past action, next state, target cost 8” condition the next prediction after spending cost 2. Causal attention lets each input use only earlier inputs.</p></div></div>
@@ -663,6 +674,121 @@
 
     <!-- ===== EXERCISES ===== -->
     <h2 class="section-heading" id="exercises">Exercises</h2>
+<!-- LEARNING REVIEW PRACTICE START -->
+<h3 class="subsection-heading" id="graded-practice">Graded practice</h3><p>Each level has four problems. Write your steps before opening the answer; use the hint when you need a first move. Close the answer and retry after checking it.</p>
+<h3 class="subsection-heading" id="practice-easy">Easy practice</h3>
+<details id="exercise-9-p1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P1 &mdash; Easy: Center an advantage under the old policy</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>At one state let $Q^\pi=(5,1)$ and $\pi=(1/4,3/4)$. Compute $V^\pi$ and the two advantages. What is their expectation under $\pi$? Under $\pi'=(1/2,1/2)$, what is the average advantage?</p>
+    <p><a href="#performance-difference">Review this topic</a> &middot; <a href="primer-rl-nn.html#rl-bellman">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">The state value is the old-policy average of the action values.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>$V^\pi=(1/4)5+(3/4)1=2$. Subtracting gives advantages $(3,-1)$. Their old-policy average is $(1/4)3+(3/4)(-1)=0$, as the advantage definition requires. The new-policy average is $(1/2)3+(1/2)(-1)=1$. The new policy shifts probability toward the action better than the old average; converting this local quantity to return also involves discounted visitation.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P2 &mdash; Easy: Measure a change in action probabilities</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>For old probabilities $(1/2,1/2)$ and new probabilities $(3/4,1/4)$, compute total variation and the KL divergence of new relative to old, using natural logs.</p>
+    <p><a href="#trust-region-bound">Review this topic</a> &middot; <a href="primer-probability.html#pr-information">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">Total variation is half the sum of absolute differences. KL weights each log ratio by its new probability.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>Total variation is $\tfrac12(|3/4-1/2|+|1/4-1/2|)=1/4$. The KL divergence is</p><div class="math-block">$$\tfrac34\log(3/2)+\tfrac14\log(1/2)\approx0.130812.$$</div><p>Both vanish for identical distributions, but they measure change differently. KL is not symmetric; the direction specified in the question matters.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p3" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P3 &mdash; Easy: Read the axes of a trust-region ellipse</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>Let $H=\mathrm{diag}(4,1)$ and $\delta=1/2$. Rewrite $\tfrac12x^\top Hx\le\delta$ in coordinates, find the axis radii, and check $x=(1/2,0)$.</p>
+    <p><a href="#cpo-update">Review this topic</a> &middot; <a href="primer-linalg.html#la-psd">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">Expand the diagonal quadratic form and cancel the common factor $1/2$.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The inequality becomes $4x_1^2+x_2^2\le1$. Setting $x_2=0$ gives $|x_1|\le1/2$; setting $x_1=0$ gives $|x_2|\le1$. The axes have radii $1/2$ and $1$. At $(1/2,0)$, the quadratic form is $1$, hence the original left side is $1/2=\delta$: this point is on the boundary. Larger curvature in the first direction permits a smaller step.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p4" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P4 &mdash; Easy: Check a linearized cost constraint</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>The current cost residual is $c=-0.2$ and its gradient is $b=(1,0)$. Test $c+b^\top x\le0$ at $x=(0.3,0.1)$ and $x=(0.1,0.1)$. What does this check actually certify?</p>
+    <p><a href="#cpo-update">Review this topic</a> &middot; <a href="primer-optimization.html#opt-multivariable">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">The second coordinate does not contribute because its gradient coefficient is zero.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The first predicted residual is $-0.2+0.3=0.1$, which violates the linearized constraint. The second is $-0.2+0.1=-0.1$, which passes. This certifies feasibility of a local affine approximation, not of the true nonlinear cost. Curvature and estimation error need separate bounds or an actual acceptance check.</p></div></details>
+  </div>
+</details>
+<h3 class="subsection-heading" id="practice-medium">Medium practice</h3>
+<details id="exercise-9-p5" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P5 &mdash; Medium: Solve the unconstrained trust-region step</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>Maximize $g^\top x$ subject to $\tfrac12x^\top Hx\le1/2$, with $g=(1,2)$ and $H=\mathrm{diag}(1,4)$. Use $x=\sqrt{2\delta/(g^\top H^{-1}g)}\,H^{-1}g$ and verify the solution.</p>
+    <p><a href="#cpo-update">Review this topic</a> &middot; <a href="primer-optimization.html#opt-constraints">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">First compute $H^{-1}g$ and its dot product with $g$.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>$H^{-1}=\mathrm{diag}(1,1/4)$, so $H^{-1}g=(1,1/2)$ and $g^\top H^{-1}g=2$. Thus $x=(1/\sqrt2,1/(2\sqrt2))$. Its quadratic form is $1/2+4(1/8)=1$, meeting the constraint boundary. The objective is $1/\sqrt2+1/\sqrt2=\sqrt2$. Cauchy–Schwarz in the $H$ metric bounds every feasible objective by $\sqrt{(g^\top H^{-1}g)(x^\top Hx)}\le\sqrt2$, proving optimality.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p6" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P6 &mdash; Medium: Project a proposed step onto a cost half-space</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>Find the Euclidean projection of $y=(0.6,0.2)$ onto $\{x:x_1\le0.1\}$. Compute the displacement and the objective $\tfrac12\|x-y\|^2$.</p>
+    <p><a href="#projections-first-order">Review this topic</a> &middot; <a href="primer-optimization.html#opt-constraints">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">The second coordinate is unrestricted, so changing it only increases the distance.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The nearest feasible first coordinate is the boundary $x_1=0.1$, and $x_2$ remains $0.2$. Thus $x=(0.1,0.2)$ and $x-y=(-0.5,0)$. The distance is $0.5$ and the objective is $\tfrac12(0.5)^2=0.125$. A projection repairs the constraint with the smallest change in the chosen metric; another metric can produce another correction.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p7" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P7 &mdash; Medium: See how discounting enlarges a bound</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>A surrogate error is bounded by $2\gamma\varepsilon v/(1-\gamma)^2$, with valid advantage bound $\varepsilon=0.5$ and average total variation $v=0.01$. Evaluate this expression at $\gamma=0.9$ and $\gamma=0.5$.</p>
+    <p><a href="#trust-region-bound">Review this topic</a> &middot; <a href="primer-basics.html#mb-asymptotics">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">Evaluate the squared denominator before dividing. Here $\varepsilon$ and $v$ are held fixed.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>At $0.9$, the numerator is $2(0.9)(0.5)(0.01)=0.009$ and denominator is $0.1^2=0.01$, giving $0.9$. At $0.5$, they are $0.005$ and $0.5^2=0.25$, giving $0.02$. The first bound is $45$ times larger. A small policy change can therefore have a loose worst-case return bound at a long effective horizon; this calculation describes the bound, not the actual error.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p8" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P8 &mdash; Medium: Apply a pessimistic model cost check</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>On a stated confidence event, true policy cost satisfies $J_c\le\widehat J_c+2$. The budget is $8$. Can estimates $7$ and $5$ certify feasibility on that event? Does failure of the check prove a policy is unsafe?</p>
+    <p><a href="#model-based">Review this topic</a> &middot; <a href="toolkit-gp.html#confidence-bounds">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">Compare the upper bound, rather than the estimate, with the budget.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>An estimate of $7$ gives upper bound $9\gt8$, so the stated bound cannot certify that policy. An estimate of $5$ gives upper bound $7\le8$, so that policy is feasible on the confidence event. The failed first check does not prove true cost exceeds $8$: it may be below the upper bound. The probability of the resulting certificate is inherited from the confidence event, which must cover this policy evaluation.</p></div></details>
+  </div>
+</details>
+<h3 class="subsection-heading" id="practice-hard">Hard practice</h3>
+<details id="exercise-9-p9" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P9 &mdash; Hard: Solve a cost-constrained step on a disk</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>Maximize $x_1+x_2$ subject to $x_1^2+x_2^2\le1$ and $x_1\le0.2$. Find the optimizer and explain why simply taking the unconstrained trust-region direction fails.</p>
+    <p><a href="#cpo-update">Review this topic</a> &middot; <a href="primer-optimization.html#opt-constraints">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">For a fixed $x_1=t$, the best allowed $x_2$ is $\sqrt{1-t^2}$. Maximize the resulting one-variable function over $-1\le t\le0.2$.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>Without the cost constraint, the optimum is $(1/\sqrt2,1/\sqrt2)$, whose first coordinate exceeds $0.2$. On the upper disk boundary, the objective is $f(t)=t+\sqrt{1-t^2}$. Its derivative is $1-t/\sqrt{1-t^2}$, positive for $-1\lt t\le0.2$. Therefore its maximum on the allowed interval occurs at $t=0.2$.</p><p>The optimizer is $(0.2,\sqrt{0.96})\approx(0.2,0.979796)$, with objective approximately $1.179796$. Both the disk and cost constraints are active; the gradient direction alone does not account for their intersection.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p10" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P10 &mdash; Hard: Audit a linearized boundary step</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>The true cost residual is $J_c(x)-d=-0.1+x+2x^2$. Linearize at $x=0$. A step $x=0.1$ reaches the linearized boundary. Is it truly feasible? Find the largest nonnegative feasible step.</p>
+    <p><a href="#cpo-update">Review this topic</a> &middot; <a href="primer-optimization.html#opt-multivariable">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">Retain the quadratic remainder for the true check, and solve $2x^2+x-0.1=0$.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The linearization is $-0.1+x$, which is zero at $0.1$. But the true residual there is $-0.1+0.1+2(0.1)^2=0.02\gt0$, so the step is infeasible. The positive root is</p><div class="math-block">$$x_{\max}=\frac{-1+\sqrt{1.8}}4\approx0.085410.$$</div><p>The quadratic increases for $x\ge0$, so feasible nonnegative steps are exactly $0\le x\le x_{\max}$. The discarded curvature term explains the violation. A local subproblem needs an error margin or line search to transfer its prediction to the true constraint.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p11" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P11 &mdash; Hard: Check support before importance weighting</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>The data policy chooses two actions with probabilities $(0.99,0.01)$; the candidate uses $(0.5,0.5)$. Find both likelihood ratios and their expectation under the data policy. What changes if its second probability is zero?</p>
+    <p><a href="#offline">Review this topic</a> &middot; <a href="primer-probability.html#pr-conditioning">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">The ratio is candidate probability divided by data probability for the same action.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The ratios are $0.5/0.99=50/99$ and $0.5/0.01=50$. Their old-policy average is $0.99(50/99)+0.01(50)=0.5+0.5=1$. The rare action receives a large weight, making estimates sensitive to few observations even though the normalization is correct.</p><p>If the data policy assigns zero probability to the second action while the candidate assigns $0.5$, the ratio is undefined there and data provide no samples of that action. The usual importance-sampling identity requires candidate support to be contained in data-policy support; an extrapolated critic does not repair that missing statistical assumption.</p></div></details>
+  </div>
+</details>
+<details id="exercise-9-p12" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+  <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 9.P12 &mdash; Hard: Combine reward and cost confidence statements</summary>
+  <div style="padding:14px 16px;font-size:14px;">
+    <p>A proposed update has predicted return improvement $0.4$ with error at most $0.3$ on event $E_r$ of probability at least $0.98$. Its cost estimate is $7$ with upward error at most $0.5$ on event $E_c$ of probability at least $0.97$. Budget is $8$. Give a joint guarantee without assuming independence.</p>
+    <p><a href="#model-based">Review this topic</a> &middot; <a href="primer-probability.html#pr-high-probability">Revisit the prerequisite</a></p>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><div style="margin-top:8px;">Use the union bound on failure events, then apply both numerical margins on their intersection.</div></details>
+    <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary><div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The union bound gives $\mathbb P(E_r\cap E_c)\ge1-0.02-0.03=0.95$. On that joint event, true improvement is at least $0.4-0.3=0.1\gt0$, and true cost is at most $7+0.5=7.5\le8$. Hence the update improves reward and satisfies the budget with probability at least $0.95$, provided the two events apply to this selected update. No independence was used; multiplying the two success probabilities would require it.</p></div></details>
+  </div>
+</details>
+<h3 class="subsection-heading" id="research-practice">Original longer exercises</h3>
+<!-- LEARNING REVIEW PRACTICE END -->
 
     <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
       <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">

@@ -37,6 +37,23 @@
 </ul>
 </div>
 
+    <!-- Reader bridge and diagnostic checks: learning review 2026-10 -->
+    <div class="insight-box" id="reading-route">
+      <div class="box-label">How to study this module</div>
+      <p><strong>Core reading.</strong> Read the kernel and reproducing-property definitions in <a href="#kernels-rkhs">Section 1</a>, then compute the <a href="#gp-regression">one-observation posterior</a> and <a href="#noise-free-bound">noise-free error bound</a>. Follow with <a href="#information-gain">information gain</a>, the meaning of <a href="#confidence-bounds">simultaneous bands</a>, and the computable formula in <a href="#practical-bounds">Section 6</a>. Finish with the concrete failure modes in <a href="#misspecification">Section 7</a>.</p>
+      <p><strong>Practice route.</strong> Try the <a href="#readiness-check">three readiness checks</a>. If a skill is rusty, use its exact review link, then return. Work through <a href="#practice-easy">Easy P1–P4</a>, <a href="#practice-medium">Medium P5–P8</a>, and <a href="#practice-hard">Hard P9–P12</a>; each has a separate hint and a full worked solution. Reattempt a missed problem later without opening the answer.</p>
+      <p><strong>Optional research reading.</strong> The Fourier/Sobolev characterization, full self-normalized martingale proofs, kernel-specific information-gain rates, and newer confidence-set refinements are research extensions. Their assumptions remain attached to the results; you can learn the posterior and safety logic before proving every concentration theorem.</p>
+    </div>
+    <div class="collapsible" id="readiness-check">
+      <div class="collapsible-header">Readiness check &mdash; Three prerequisite skills</div>
+      <div class="collapsible-body">
+        <p>Try these before opening the answer. The review links lead to earlier material.</p>
+        <ol><li>Solve $(1+1/4)a=2$. <a href="primer-linalg.html#la-block">Review linear solves</a>.</li><li>If variance is $0.09$, what is the standard deviation? <a href="primer-probability.html#pr-basics">Review variance and standard deviation</a>.</li><li>What bound does Cauchy–Schwarz give for $|\langle u,v
+angle|$? <a href="primer-linalg.html#la-vectors-norms">Review inner products</a>.</li></ol>
+        <details><summary>Show readiness answers</summary><p>The solution is $a=2/(5/4)=8/5$. Standard deviation is the nonnegative square root, $0.3$. Cauchy–Schwarz gives $|\langle u,v\rangle|\le\|u\|\|v\|$. GP regression repeatedly solves the first kind of equation, and the RKHS error proof repeatedly uses the third inequality.</p></details>
+      </div>
+    </div>
+
     <div class="page-toc">
       <div class="page-toc-title">Contents</div>
       <a href="#kernels-rkhs">1. Kernels &amp; the RKHS</a>
@@ -49,6 +66,7 @@
       <a class="toc-interactive" href="#bound-walkthrough">Walkthrough: Deriving the RKHS Error Bound</a>
       <a class="toc-interactive" href="#gp-band-explorer">Interactive: GP Confidence Bands and β</a>
       <a href="#exercises">Exercises</a>
+      <a href="#graded-practice">Graded practice: Easy, Medium &amp; Hard</a>
       <a href="#papers">Key Papers</a>
       <a class="toc-interactive" href="#flashcards">Flashcards</a>
     </div>
@@ -70,6 +88,19 @@
 
     <!-- ===== SECTION 1: KERNELS & RKHS ===== -->
     <h2 class="section-heading" id="kernels-rkhs">1. Kernels &amp; the RKHS</h2>
+    <div class="insight-box" id="first-pass-example"><div class="box-label">Intuition &mdash; A starting example</div><p><strong>Think in a finite feature space first.</strong> For the linear kernel $k(x,z)=xz$, write the feature as $\varphi(x)=x$ and a function as $f(x)=ax$. The function is represented by the single coefficient $a$, its RKHS norm is $|a|$, and $\langle f,k(x,\cdot)\rangle_k=ax=f(x)$. Thus “reproducing” means that an inner product evaluates the function. General kernels use more features, possibly infinitely many, but the evaluation rule and Cauchy–Schwarz still do the work. <a href="primer-linalg.html#la-function-spaces">Primer A's function-space examples</a> give a slower bridge.</p></div>
+
+    <p><span class="lead-label">In plain words.</span> A kernel $k(x,x')$ says how similar we expect the function values at two inputs to be: close inputs, similar values. The RKHS is the space of functions you can build by adding up "bumps" $k(z,\cdot)$ centred at different points. Its norm $\|f\|_k$ measures how much bump material you need. A function that changes sharply over short distances needs a lot of it, so the norm acts as a smoothness measure. Safe-BO guarantees assume a known bound $\|f\|_k\le B$.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$k(x,x')$: the kernel, here mostly the squared-exponential (SE) kernel $e^{-r^2/(2\ell^2)}$ with distance $r=\|x-x'\|$ and length scale $\ell$.</li>
+        <li>$K=[k(x_i,x_j)]_{i,j}$: the Gram matrix of a set of points. A kernel is positive semidefinite if every Gram matrix is.</li>
+        <li>$k(z,\cdot)$: the bump function $x\mapsto k(z,x)$ centred at $z$. A combination $f=\sum_ic_ik(z_i,\cdot)$ has $\|f\|_k^2=c^{\top}K_zc$.</li>
+        <li>$\mathcal H_k$, $\|f\|_k$: the RKHS and its norm; $\langle f,k(x,\cdot)\rangle_k=f(x)$ is the reproducing property.</li>
+        <li>$d_k(x,x')=\sqrt{k(x,x)-2k(x,x')+k(x',x')}$: the kernel distance used in the Lipschitz lemma.</li>
+      </ul>
+    </div>
 
     <p>A kernel is a similarity measure between inputs that behaves like an inner product. That single property is what turns the whole GP machinery into linear algebra.</p>
 
@@ -140,8 +171,35 @@
       </div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; a Gram matrix, and what the RKHS norm measures</div>
+      <div class="collapsible-body">
+        <p><strong>A Gram matrix.</strong> For the SE kernel with $\ell=1$ and the points $0$, $1$, $2$:</p>
+        <div class="math-block">$$K=\begin{bmatrix}1&0.6065&0.1353\\0.6065&1&0.6065\\0.1353&0.6065&1\end{bmatrix},\qquad\text{eigenvalues }0.207,\ 0.865,\ 1.928 .$$</div>
+        <p>All eigenvalues are positive, so $c^{\top}Kc\gt0$ for every $c\ne0$. For example, the "wiggly" combination $c=(1,-2,1)$ gives $c^{\top}Kc=1.418$, which is $\|k(0,\cdot)-2k(1,\cdot)+k(2,\cdot)\|_k^2$.</p>
+        <p><strong>Steep changes cost norm.</strong> What is the smallest RKHS norm of a function with value $+1$ at $x=0$ and $-1$ at $x=d$? The minimum-norm interpolant (Section 3) has $\|f\|_k^2=y^{\top}K^{-1}y$ with $y=(1,-1)$, which here equals $2/(1-k(0,d))$:</p>
+        <ul>
+          <li>$d=1$: $k(0,1)=0.6065$, so $\|f\|_k=\sqrt{2/0.3935}=2.25$;</li>
+          <li>$d=0.1$: $k(0,0.1)=0.9950$, so $\|f\|_k=\sqrt{2/0.0050}=20.0$.</li>
+        </ul>
+        <p>The same jump of size 2, made ten times faster, needs about nine times the norm. The Lipschitz lemma above gives the same number from the other side: $|f(0)-f(d)|=2\le\|f\|_k\,d_k(0,d)$ forces $\|f\|_k\ge2/d_k(0,0.1)=20.0$.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 2: GP REGRESSION ===== -->
     <h2 class="section-heading" id="gp-regression">2. GP Regression = Kernel Ridge Regression</h2>
+
+    <p><span class="lead-label">In plain words.</span> GP regression predicts an unknown function from noisy samples and says how unsure it is. Near the data the prediction follows the measurements and the uncertainty is small. For kernels whose correlations decay with distance, such as SE and Mat&eacute;rn, the prediction far from all data falls back to the prior mean, zero, and the uncertainty returns to its prior level. Other kernels, such as the linear kernel, extrapolate differently. The same formula has two readings: Bayesian (the posterior of a random function) and frequentist (kernel ridge regression of a fixed unknown function). Safe BO uses the second.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$x_1,\dots,x_t$ and $y_t=(y_1,\dots,y_t)$: inputs and noisy measurements, $y_i=f(x_i)+\varepsilon_i$.</li>
+        <li>$K_t$: the Gram matrix of the inputs; $k_t(x)=(k(x_1,x),\dots,k(x_t,x))$: the kernel values between the data and a query $x$.</li>
+        <li>$\lambda$: the noise variance in the Bayesian reading, a regulariser in the frequentist one; it plays both roles.</li>
+        <li>$\mu_t(x)$, $\sigma_t^2(x)$: the posterior mean and variance after $t$ measurements.</li>
+      </ul>
+    </div>
 
     <p>A Gaussian process $f\sim\mathcal{GP}(0,k)$ is the statement that the values of $f$ at any finite set of inputs are jointly Gaussian with covariance $K$. With the observation model $y_i=f(x_i)+\varepsilon_i$, $\varepsilon_i\sim\mathcal N(0,\sigma_n^2)$ i.i.d. and independent of $f$, the vector $(y_t,f(x))$ is jointly Gaussian too (see <a href="primer-probability.html#pr-gaussian">Primer C</a>):
     $$\begin{pmatrix}y_t\\ f(x)\end{pmatrix}\sim\mathcal N\!\left(0,\begin{pmatrix}K_t+\sigma_n^2I & k_t(x)\\ k_t(x)^\top & k(x,x)\end{pmatrix}\right).$$
@@ -236,8 +294,36 @@
       </div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; a GP posterior from two measurements</div>
+      <div class="collapsible-body">
+        <p>Take the SE kernel with $\ell=1$, two measurements, $y=1$ at $x=0$ and $y=0.5$ at $x=1$, and $\lambda=0.01$. Then</p>
+        <div class="math-block">$$K_t+\lambda I=\begin{bmatrix}1.01&0.6065\\0.6065&1.01\end{bmatrix},\qquad \mu_t(x)=k_t(x)^{\top}(K_t+\lambda I)^{-1}\begin{bmatrix}1\\0.5\end{bmatrix} .$$</div>
+        <table>
+          <thead><tr><th>Query $x$</th><th>$k_t(x)$</th><th>mean $\mu_t(x)$</th><th>std. dev. $\sigma_t(x)$</th><th>Reading</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>(1, 0.6065)</td><td>0.989</td><td>0.099</td><td>at a data point: near the measurement, small uncertainty</td></tr>
+            <tr><td>0.5</td><td>(0.8825, 0.8825)</td><td>0.819</td><td>0.191</td><td>between the data: in between, more uncertain</td></tr>
+            <tr><td>3</td><td>(0.0111, 0.1353)</td><td>&minus;0.009</td><td>0.987</td><td>far away: back to the prior, mean near 0, std. dev. near 1</td></tr>
+          </tbody>
+        </table>
+        <p>At $x=0$ the mean is $0.989$ rather than $1$. With $\lambda\gt0$ the regression does not interpolate exactly, because it allows for measurement noise; as $\lambda\to0$ it becomes the interpolant of Section 3. The standard deviation never looks at the measured values $y$, only at where the data are.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 3: NOISE-FREE BOUND ===== -->
     <h2 class="section-heading" id="noise-free-bound">3. The Noise-Free Error Bound</h2>
+
+    <p><span class="lead-label">In plain words.</span> With exact, noise-free measurements, how far can the true function be from the interpolant through the data? The answer of this section is short: at most the function's RKHS norm times the posterior standard deviation, $\|f\|_k\,P_t(x)$. Near the data $P_t$ is small and the interpolant can be trusted. For a decaying kernel such as SE, far from the data $P_t$ is close to its prior value, and the norm bound is all you have. (In general $P_t(x)$ measures how much of "the value at $x$" cannot be reproduced from the measured values, which need not grow with distance.)</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$s_t(x)$: the interpolant, the GP mean with $\lambda\to0$, which passes exactly through the data.</li>
+        <li>$P_t(x)$: the power function, the noise-free posterior standard deviation at $x$.</li>
+        <li>$f_{1:t}=(f(x_1),\dots,f(x_t))$: the exact measured values.</li>
+      </ul>
+    </div>
 
     <p>Before any probability enters, here is the cleanest reason why $\sigma_t$ measures ignorance. Take noise-free observations $y_i=f(x_i)$ at distinct inputs with $K_t\succ0$ and let $\lambda\to0$: the GP mean becomes the interpolant $s_t(x)=k_t(x)^\top K_t^{-1}f_{1:t}$ and $\sigma_t^2$ becomes the <em>power function</em> $P_t(x)^2=k(x,x)-k_t(x)^\top K_t^{-1}k_t(x)$.</p>
 
@@ -271,8 +357,29 @@
       <div>$P_t(x)$ is the distance from the evaluation functional at $x$ to the span of the evaluation functionals at the data: how much of "the value at $x$" cannot be reproduced from "the values at $x_1,\dots,x_t$", for <em>any</em> function of bounded norm. No prior, no noise, no probability. Everything in Section 5 is this argument plus a separate bound for the noise, and the term $B\sigma_t(x)$ in every frequentist $\beta_t$ is exactly this theorem with $\lambda\gt0$ (Step 2 of the walkthrough).</div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; how big the error can be, near and far from the data</div>
+      <div class="collapsible-body">
+        <p>Take data at $x=0$ and $x=1$ and the SE kernel with $\ell=1$. The power function is</p>
+        <div class="math-block">$$P_t(x)^2=1-k_t(x)^{\top}K_t^{-1}k_t(x),\qquad P_t(0.5)=0.175,\qquad P_t(3)=0.987 .$$</div>
+        <p>Suppose you know $\|f\|_k\le B=2$. Then the theorem guarantees $|f(0.5)-s_t(0.5)|\le2\times0.175=0.35$ between the data, but only $|f(3)-s_t(3)|\le2\times0.987=1.97$ far away.</p>
+        <p>The bound is sharp. Open Problem T1 builds the function that attains it at $x=0.5$: it vanishes at both data points and equals $0.0305$ at the midpoint, with norm $0.1745$. Scaled to norm $B$, it reaches exactly $B\,P_t(0.5)$ (<a href="open-problems.html#op-T1">Open Problems, T1</a>). That function is invisible in the data, so no amount of noise-free data at $0$ and $1$ can tell you whether you are in the good case or the bad one. Only $B$ can.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 4: INFORMATION GAIN ===== -->
     <h2 class="section-heading" id="information-gain">4. Maximum Information Gain</h2>
+
+    <p><span class="lead-label">In plain words.</span> Each measurement teaches the GP something about $f$, but a measurement close to earlier ones teaches little that is new. The information gain counts how much is learned in total, in units of information (nats). The maximum information gain $\gamma_T$ is the most that $T$ measurements could ever reveal, and it is what regret and sample-complexity bounds depend on. If it grows slowly, the uncertainty must shrink fast wherever the algorithm keeps sampling.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$I(y_A;f_A)=\tfrac12\log\det(I+\lambda^{-1}K_A)$: the information gain of measuring at the design $A=(x_1,\dots,x_T)$. $\log$ is the natural logarithm, so the unit is nats.</li>
+        <li>$\gamma_T$: its maximum over all designs with $T$ points (here $\gamma$ is not a discount factor).</li>
+        <li>$\det$: the determinant, the product of the eigenvalues.</li>
+      </ul>
+    </div>
 
     <p>Regret and sample-complexity bounds (see <a href="primer-rl-nn.html#rl-bandits">Primer E</a>) must control how fast the posterior variances shrink along whatever sequence the algorithm chooses. The right quantity is the amount of information that $t$ noisy observations can reveal about $f$ under the GP model.</p>
 
@@ -345,8 +452,38 @@
       <div>Plugging a $\gamma_T$ rate into an RKHS regret bound $O(\beta_T\sqrt{T\gamma_T})$ with $\beta_T=O(\sqrt{\gamma_T})$ gives $O(\sqrt T\gamma_T)$, sublinear only if $\gamma_T=o(\sqrt T)$: with the Matérn rate $T^{d/(2\nu+d)}$ this needs $d\lt2\nu$, and with the original Srinivas rate it fails for many $(\nu,d)$. Vakili et al. fixed $\gamma_T$; <a class="cite" href="https://arxiv.org/abs/2307.07539" target="_blank" rel="noopener">Whitehouse, Ramdas &amp; Wu, NeurIPS 2023</a> fixed the regret by regularising in proportion to kernel smoothness (Section 6). These rates are what every safe-BO sample-complexity statement in Modules 4–6 depends on.</div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; repeated measurements are worth less</div>
+      <div class="collapsible-body">
+        <p>Take the SE kernel with $\ell=1$ and $\lambda=0.01$, and compare designs of one or two measurements:</p>
+        <table>
+          <thead><tr><th>Design</th><th>$\tfrac12\log\det(I+\lambda^{-1}K_A)$</th></tr></thead>
+          <tbody>
+            <tr><td>one point, $x=0$</td><td>$\tfrac12\log(1+100)=2.31$</td></tr>
+            <tr><td>the same point twice, $x=0,0$</td><td>$\tfrac12\log(1+200)=2.65$</td></tr>
+            <tr><td>two close points, $x=0,\ 0.1$</td><td>$2.85$</td></tr>
+            <tr><td>two far-apart points, $x=0,\ 5$</td><td>$\log(101)=4.62$</td></tr>
+          </tbody>
+        </table>
+        <p>For the repeated point, $K_A=\begin{bmatrix}1&1\\1&1\end{bmatrix}$ has eigenvalues $2$ and $0$, so the determinant is $(1+200)(1+0)=201$. The second measurement only averages out noise and is worth about $0.34$ nats. Two far-apart points have $K_A\approx I$ and give $\tfrac12\log(101^2)$, twice a single point's gain.</p>
+        <p>The sequential form in the lemma above gives the same total. For the repeated point it is $\tfrac12\big[\log(1+100)+\log(1+\sigma_1^2/\lambda)\big]$ with $\sigma_1^2=1-1/1.01=0.0099$, again $2.65$.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 5: CONFIDENCE BOUNDS ===== -->
     <h2 class="section-heading" id="confidence-bounds">5. Frequentist Confidence Bounds &amp; $\beta_t$</h2>
+
+    <p><span class="lead-label">In plain words.</span> Safe BO needs error bars that hold at every input and every round at once, with probability at least $1-\delta$, even though the algorithm chooses where to measure based on earlier noisy data. The answer is a band $\mu_{t-1}(x)\pm\beta_t\sigma_{t-1}(x)$. The width multiplier $\beta_t$ collects four ingredients: the norm bound $B$, the noise level $R$, the failure probability $\delta$, and the information gain. Only the information gain grows with data.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$\beta_t$: the width of the band in standard deviations, with $|\mu_{t-1}(x)-f(x)|\le\beta_t\sigma_{t-1}(x)$ for all $x$ and $t$.</li>
+        <li>$B$: the bound on $\|f\|_k$; $R$: the noise level; $\delta$: the failure probability.</li>
+        <li>Conditionally $R$-sub-Gaussian noise: $\mathbb E[e^{a\varepsilon_t}\mid\text{past}]\le e^{a^2R^2/2}$ for every real $a$. This forces mean zero given the past and a Gaussian-shaped tail bound, $\mathbb P(|\varepsilon_t|\ge u\mid\text{past})\le2e^{-u^2/(2R^2)}$ (<a href="primer-probability.html#pr-inequalities">Primer C</a>). Gaussian noise with standard deviation $R$ qualifies, and so does zero-mean noise bounded in $[-R,R]$.</li>
+        <li>Martingale difference noise: zero mean given the past, but otherwise allowed to depend on it (<a href="primer-probability.html#pr-martingales">Primer C</a>).</li>
+      </ul>
+    </div>
 
     <p>The goal is: with probability at least $1-\delta$, for all $t\ge1$ and all $x\in D$ simultaneously, $|\mu_{t-1}(x)-f(x)|\le\beta_t\,\sigma_{t-1}(x)$. "Simultaneously" is the hard part: a safe-exploration algorithm chooses $x_t$ from the past, the noise is only a martingale difference sequence (its conditional law may depend on the history; see <a href="primer-probability.html#pr-martingales">Primer C</a>), and a naive union bound assigning the same failure budget to every point and time is insufficient. Three generations of results achieve it.</p>
     <!-- audit jump 20 -->
@@ -454,6 +591,23 @@
     <div class="insight-box">
       <div class="box-label">Key insight</div>
       <div>A confidence bound has four ingredients that the user must supply or choose: the norm bound $B$ (unknowable, Section 1), the noise level $R$ (measurable), the failure probability $\delta$ (it enters only through $\log(1/\delta)$) and the regulariser $\lambda$ (a free choice that trades the size of $\beta$ against the size of $\sigma_t$). The information term is the only one that grows with data, and for the SE kernel only polylogarithmically in $t$. In the modern bounds $\beta$ is dominated either by $B$ or by the noise term $(R/\sqrt\lambda)\sqrt{\log\det}$, and the explorer shows both regimes. Of all the ingredients only $B$ cannot be measured: it is the price of admitting that one does not know how wiggly $f$ is.</div>
+    </div>
+
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; computing $\beta$ and the band it gives</div>
+      <div class="collapsible-body">
+        <p>Use the all-time bound above,</p>
+        <div class="math-block">$$\beta_t=B+\frac{R}{\sqrt\lambda}\sqrt{2\gamma_{t-1}+2\ln(1/\delta)},$$</div>
+        <p>with $B=1$, noise level $R=0.1$, $\lambda=0.01$ (so $R/\sqrt\lambda=1$), $\delta=0.01$, and the SE kernel, for which $k(x,x)=1$. At round $t=2$ we need $\gamma_1$, the most one measurement can reveal: $\gamma_1=\tfrac12\log(1+1/\lambda)=2.31$ (Section 4). Then</p>
+        <div class="math-block">$$\beta_2=1+\sqrt{2(2.31)+2\ln100}=1+\sqrt{4.62+9.21}=4.72 .$$</div>
+        <ul>
+          <li>Where $\sigma_1(x)=0.1$, the band is $\mu_1(x)\pm0.47$. The common heuristic $\beta=2$ would give $\pm0.2$: less than half as wide, and not backed by the theorem.</li>
+          <li>Tightening to $\delta=0.001$ raises $\beta_2$ only to $5.29$, because the failure probability enters through a logarithm.</li>
+          <li>The norm bound enters additively: doubling $B$ to $2$ adds $1$ to $\beta$, a full extra standard deviation.</li>
+        </ul>
+        <p>Underestimating $B$ or $R$ makes the band too narrow, and the guarantee silently fails. That is the gap between theory and practice that Module 5 opens with (<a href="safe-bo-theory.html#the-gap">Module 5 &sect;1</a>).</p>
+      </div>
     </div>
 
     <!-- ===== SECTION 6: PRACTICAL BOUNDS ===== -->
@@ -656,7 +810,10 @@
 
     <!-- ===== EXPLORER ===== -->
     <h2 class="section-heading" id="gp-band-explorer">Interactive: GP Confidence Bands and $\beta$</h2>
-    <p>A 1-D GP regression whose truth is an exact RKHS element $f=\sum_{i=1}^8c_i\,k_{\mathrm{SE}}(\cdot,z_i)$ with $\|f\|_k=\sqrt{c^\top K_zc}$ normalised to $3$ (so $|f|\le3$ by the reproducing property), so every assumption of the theorems can be met or broken on purpose. The domain $D$ is the 201-point grid on $[0,1]$. The value $3$ is the norm of $f$ on $[0,1]$; the centres $z_i$ lie off the grid, and restricting $f$ to $D$ can only lower its norm (the minimum over all extensions, Section 1). Thus $B=3$ is a valid upper bound on the grid norm; equality is not needed for the certificate. The $t$ inputs are drawn uniformly from $D$ (seeded and nested, so increasing $t$ adds points; repetitions are possible), with Gaussian noise of standard deviation $\sigma_n$, hence $R=\sigma_n$. The posterior is a Cholesky solve (see <a href="primer-linalg.html#la-psd">Primer A</a>) of $K_t+\lambda I$. The a-priori "Chowdhury–Gopalan type" rule is their proof with general $\lambda$, i.e. the corrected Fiedler et al. formula with the realised $\log\det(I+K_t/\lambda)$ replaced by $2\hat\gamma_t$, where $\hat\gamma_t=\tfrac{e}{e-1}I_{\mathrm{greedy}}\ge\gamma_t$ is a certified upper bound on this finite $D$ (the greedy design of Srinivas et al., which repeatedly observes the point of largest posterior variance, is within a factor $1-1/e$ of optimal by submodularity). The data-dependent rules use the realised $\log\det$. Red dots mark grid points where the true $f$ leaves the band.</p>
+    <p>A 1-D GP regression whose truth is an exact RKHS element $f=\sum_{i=1}^8c_i\,k_{\mathrm{SE}}(\cdot,z_i)$ with $\|f\|_k=\sqrt{c^\top K_zc}$ normalised to $3$ (so $|f|\le3$ by the reproducing property), so every assumption of the theorems can be met or broken on purpose.</p>
+    <p>The domain $D$ is the 201-point grid on $[0,1]$. The value $3$ is the norm of $f$ on $[0,1]$; the centres $z_i$ lie off the grid, and restricting $f$ to $D$ can only lower its norm (the minimum over all extensions, Section 1). Thus $B=3$ is a valid upper bound on the grid norm; equality is not needed for the certificate.</p>
+    <p>The $t$ inputs are drawn uniformly from $D$ (seeded and nested, so increasing $t$ adds points; repetitions are possible), with Gaussian noise of standard deviation $\sigma_n$, hence $R=\sigma_n$. The posterior is a Cholesky solve (see <a href="primer-linalg.html#la-psd">Primer A</a>) of $K_t+\lambda I$. </p>
+    <p>The a-priori "Chowdhury–Gopalan type" rule is their proof with general $\lambda$, i.e. the corrected Fiedler et al. formula with the realised $\log\det(I+K_t/\lambda)$ replaced by $2\hat\gamma_t$, where $\hat\gamma_t=\tfrac{e}{e-1}I_{\mathrm{greedy}}\ge\gamma_t$ is a certified upper bound on this finite $D$ (the greedy design of Srinivas et al., which repeatedly observes the point of largest posterior variance, is within a factor $1-1/e$ of optimal by submodularity). The data-dependent rules use the realised $\log\det$. Red dots mark grid points where the true $f$ leaves the band.</p>
     <!-- audit jump 48 -->
     <p>The percentage of red points describes this one simulated data set; it is not an estimate of $\delta$, which bounds the probability, over repeated experiments, that the band fails anywhere at any time. Moving the length-scale slider rebuilds the true $f$ for the new $\ell$ (same centres and relative weights, norm renormalised to $3$), so it changes the experiment rather than refitting one fixed plant; each theorem concerns one fixed kernel and norm bound, not settings chosen after looking at the plot.</p>
 
@@ -709,6 +866,160 @@
 
     <!-- ===== EXERCISES ===== -->
     <h2 class="section-heading" id="exercises">Exercises</h2>
+    <!-- Graded practice added by the learning review; original exercises remain below. -->
+    <h3 class="subsection-heading" id="graded-practice">Graded practice &mdash; Build the argument yourself</h3>
+    <p>There are 12 new problems: four Easy, four Medium, and four Hard. Start with the level that lets you make progress without opening the solution. Easy problems rebuild individual operations; Medium problems combine them; Hard problems ask for proofs, boundary cases, and the limits of a guarantee. The required concepts are explained on this page or in the linked earlier material.</p>
+    <h3 class="subsection-heading" id="practice-easy">Easy &mdash; Warm up one skill at a time.</h3>
+    <details id="practice-1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P1 &mdash; Easy: A two-point kernel matrix</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">A kernel has $k(a,a)=k(b,b)=1$ and $k(a,b)=k(b,a)=1/2$. Write the Gram matrix and find its eigenvalues. For $f=k(a,\cdot)-k(b,\cdot)$, compute $f(a)$, $f(b)$ and $\|f\|_k^2$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-psd">Primer A: eigenvalues and PSD matrices</a>. <strong>Apply here:</strong> <a href="#kernels-rkhs">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use coefficient vector $c=(1,-1)^\top$ and $\|f\|_k^2=c^\top Kc$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The Gram matrix is $K=\begin{bmatrix}1&1/2\\1/2&1\end{bmatrix}$. Its eigenvalues are $3/2$ on $(1,1)^\top$ and $1/2$ on $(1,-1)^\top$, so it is positive definite.</p><p>Evaluation gives $f(a)=1-1/2=1/2$ and $f(b)=1/2-1=-1/2$. The squared norm is $c^\top Kc=1-1/2-1/2+1=1$, hence $\|f\|_k=1$. The coefficient norm squared is 2; it differs from the RKHS norm squared because the two kernel sections are not orthogonal.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P2 &mdash; Easy: One observation, one posterior</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Use a zero-mean GP with $k(a,a)=k(b,b)=1$, $k(a,b)=1/2$, nominal noise variance $\lambda=1/4$, and one observation $y=2$ at $a$. Compute the posterior means and latent variances at $a$ and $b$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-probability.html#pr-gaussian">Primer C: Gaussian conditioning</a>. <strong>Apply here:</strong> <a href="#gp-regression">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The matrix inverse is just the scalar $1/(1+\lambda)=4/5$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>At $a$, $\mu(a)=1(4/5)2=8/5=1.6$ and $\sigma^2(a)=1-1(4/5)1=1/5=0.2$. At $b$, $\mu(b)=(1/2)(4/5)2=4/5=0.8$ and $\sigma^2(b)=1-(1/2)(4/5)(1/2)=4/5=0.8$.</p><p>The observed point remains uncertain because the observation is noisy. Correlation transfers some information to $b$, but less than to $a$. These are variances of the latent function value; under the correctly specified likelihood, a fresh noisy observation has an additional variance $1/4$.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-3" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P3 &mdash; Easy: Standard deviation is not variance</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">At one input, a posterior has mean 1, latent variance $0.04$, and half-width multiplier $\beta=3$. Compute the band $\mu\pm\beta\sigma$. Does it certify the threshold $f(x)\ge0.5$ on the valid-band event?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-probability.html#pr-basics">Primer C: variance and standard deviation</a>. <strong>Apply here:</strong> <a href="#confidence-bounds">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Take the square root before applying the multiplier.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The standard deviation is $\sigma=\sqrt{0.04}=0.2$. The half-width is $3(0.2)=0.6$, giving the interval $[0.4,1.6]$. Its lower endpoint is below 0.5, so it does not certify safety at threshold 0.5.</p><p>Using the variance as though it were the standard deviation would give the incorrect narrower band $[0.88,1.12]$ and a false certificate. The true value might still exceed 0.5; “uncertified” means that the available lower bound is insufficient, not that the input is known unsafe.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-4" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P4 &mdash; Easy: Translate the square-root convention</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Paper A writes its band as $\mu\pm\sqrt{b_t}\sigma$, while this module writes $\mu\pm\beta_t\sigma$. If $b_t=9$, what is this module's multiplier? If Paper A bounds $\|f\|_k^2\le16$, what norm bound $B$ should be used here?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-basics.html#mb-functions">Primer 0: functions and notation</a>. <strong>Apply here:</strong> <a href="#confidence-bounds">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Match the actual coefficient multiplying $\sigma$, and take the nonnegative square root of the squared norm bound.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The half-widths agree when $\beta_t=\sqrt{b_t}$, so $b_t=9$ translates to $\beta_t=3$. The squared norm bound $\|f\|_k^2\le16$ translates to $\|f\|_k\le4$, hence $B=4$ in this module.</p><p>These are two separate conversions: one concerns a confidence multiplier, the other a function-class assumption. Reusing the symbol $\beta$ or $B$ from another paper without checking its defining formula can inflate a constant, or dangerously shrink it. Match equations before comparing numbers.</p></div>
+        </details>
+      </div>
+    </details>
+    <h3 class="subsection-heading" id="practice-medium">Medium &mdash; Combine definitions and compute a certificate.</h3>
+    <details id="practice-5" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P5 &mdash; Medium: Noise-free uncertainty at an unseen point</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">One exact observation is available at $a$, with $k(a,a)=k(b,b)=1$ and $k(a,b)=0.6$. Compute the power function $P_1(b)$ and the guaranteed interpolation error when $\|f\|_k\le2$. What happens at $a$?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-vectors-norms">Primer A: projection and norm bounds</a>. <strong>Apply here:</strong> <a href="#noise-free-bound">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use $P_1(b)^2=k(b,b)-k(a,b)^2/k(a,a)$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The power-function squared is $1-0.6^2=0.64$, so $P_1(b)=0.8$. The deterministic error bound is $|f(b)-s_1(b)|\le2(0.8)=1.6$. The interpolant is $s_1(b)=0.6f(a)$, so the unknown value lies within 1.6 of that prediction.</p><p>At $a$, $P_1(a)^2=1-1=0$ and interpolation is exact. The norm assumption controls the part of the function not determined by the exact data. No failure probability is involved in this noise-free bound; its uncertainty is a worst-case function-class statement.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-6" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P6 &mdash; Medium: Repeated noisy measurements still help</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">At a single input $a$ with prior variance 1, take $n$ independent observations with nominal noise variance $\lambda=1$. Show that the posterior latent variance is $1/(n+1)$. Compare $n=1$ and $n=3$, and distinguish this from a noiseless repeated measurement.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-block">Primer A: matrix solves</a>. <strong>Apply here:</strong> <a href="#gp-regression">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The Gram matrix is $\mathbf1\mathbf1^\top$; solve $(I+\mathbf1\mathbf1^\top)v=\mathbf1$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The vector $v=\mathbf1/(n+1)$ solves that system, because $\mathbf1\mathbf1^\top\mathbf1=n\mathbf1$. Hence $\sigma_n^2(a)=1-\mathbf1^\top v=1-n/(n+1)=1/(n+1)$.</p><p>For $n=1$ the variance is $1/2$, and for $n=3$ it is $1/4$. Independent noisy repeats reduce uncertainty, with diminishing gains. Repeating an exact noiseless observation adds no new information once the value is known; a direct noiseless inverse formula would also need care because repeated inputs make the Gram matrix singular.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-7" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P7 &mdash; Medium: Information gain from eigenvalues</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">A two-observation Gram matrix has eigenvalues $3/2$ and $1/2$, and $\lambda=1$. Compute the realized information gain $I=\tfrac12\log\det(I_2+K)$ in nats. Is this automatically the maximum information gain $\gamma_2$?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-block">Primer A: determinants and log determinants</a>. <strong>Apply here:</strong> <a href="#information-gain">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The eigenvalues of $I_2+K$ are $1$ plus the eigenvalues of $K$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The determinant is $(1+3/2)(1+1/2)=(5/2)(3/2)=15/4$. Thus $I=\tfrac12\log(15/4)\approx0.660878$ nats, where the logarithm is natural.</p><p>This is the information gain of this particular two-point design. The maximum $\gamma_2$ optimizes over all allowed two-query designs, including repeats in the convention used here, so $I\le\gamma_2$. Equality needs evidence that this design is optimal. A realized log determinant and a worst-case maximum serve different roles in confidence bounds.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-8" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P8 &mdash; Medium: Evaluate a data-dependent confidence multiplier</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Use the valid-bound formula <span class="math-scroll">$\beta=B+(R/\sqrt\lambda)\sqrt{\log\det(I+K/\lambda)+2\log(1/\delta)}$</span>. Take $B=2$, $R=0.1$, $\lambda=0.04$, $\delta=0.05$, and realized log determinant 3. Compute $\beta$ and the half-width at $\sigma(x)=0.2$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-probability.html#pr-high-probability">Primer C: confidence levels</a>. <strong>Apply here:</strong> <a href="#practical-bounds">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>First compute $R/\sqrt\lambda=1/2$; then keep the logarithms inside the square root.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The multiplier is $2+0.5\sqrt{3+2\log20}\approx3.4992885$, so the half-width is $0.2\beta\approx0.6998577$. The norm contribution alone is $B\sigma=0.4$, and the remainder comes from the noise/concentration term.</p><p>The arithmetic does not establish the assumptions. This bound requires the fixed function to have RKHS norm at most $B$, the stated conditional sub-Gaussian noise bound, predictable query choices, and the matching regularizer. A plausible-looking interval produced from an invalid $B$ does not inherit the advertised probability.</p></div>
+        </details>
+      </div>
+    </details>
+    <h3 class="subsection-heading" id="practice-hard">Hard &mdash; Explain why the argument works and where it stops.</h3>
+    <details id="practice-9" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P9 &mdash; Hard: Minimum norm required by two conflicting values</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $k(a,a)=k(b,b)=1$ and $k(a,b)=r$ with $0\le r\lt1$. Among RKHS functions with $f(a)=1$ and $f(b)=-1$, derive the minimum squared norm and evaluate it at $r=0.5$ and $r=0.99$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-vectors-norms">Primer A: Cauchy–Schwarz</a>. <strong>Apply here:</strong> <a href="#kernels-rkhs">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use the minimum-norm interpolant with $y=(1,-1)^\top$, or Cauchy–Schwarz applied to $k(a,\cdot)-k(b,\cdot)$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The Gram matrix satisfies $Ky=(1-r)y$, so the interpolation coefficient is $K^{-1}y=y/(1-r)$. Its squared norm is $y^\top K^{-1}y=2/(1-r)$. Projection onto the data span preserves the two values and can only decrease the norm, so this interpolant is the minimum.</p><p>At $r=0.5$, the squared norm is 4 and the norm is 2. At $r=0.99$, the squared norm is 200 and the norm is $\sqrt{200}\approx14.1421$. Highly correlated inputs are expected to have similar values; forcing opposite values needs a much larger norm. Independently, $2=|f(a)-f(b)|\le\|f\|_k\sqrt{2(1-r)}$ yields the same lower bound.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-10" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P10 &mdash; Hard: A misspecification floor remains</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Suppose $|f^*(x)-\tilde f(x)|\le\epsilon$, $|\tilde f(x)-\mu(x)|\le\beta\sigma(x)$, and $|\mu(x)-\mu^*(x)|\le\epsilon\sqrt{n/\lambda}\,\sigma(x)$. Combine these bounds. Evaluate at $\epsilon=0.05$, $n=16$, $\lambda=0.25$, $\beta=2$, $\sigma(x)=0.1$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-vectors-norms">Primer A: triangle inequality</a>. <strong>Apply here:</strong> <a href="#misspecification">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Insert $\tilde f$ and $\mu$ between $f^*$ and $\mu^*$, then apply the triangle inequality.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><div class="math-block">$$|f^*(x)-\mu^*(x)|\le\epsilon+\left(\beta+\epsilon\sqrt{n/\lambda}\right)\sigma(x).$$</div><p>Here $\sqrt{16/0.25}=8$, so the error bound is $0.05+(2+0.05\cdot8)(0.1)=0.29$. Keeping only the original $\beta\sigma=0.2$ would omit both the direct model mismatch and its effect on the fitted mean.</p><p>For fixed $n$, even when $\sigma(x)$ tends to zero this certificate retains the floor $\epsilon=0.05$. More measurements alone do not justify pretending that the unknown function belongs to the smaller assumed class. The three inequalities are assumptions of this calculation; their validity must be established by the corresponding model-mismatch argument.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-11" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P11 &mdash; Hard: Spend a confidence budget over infinitely many rounds</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For round $t\ge1$, suppose failure has probability at most $\delta_t=\delta/[t(t+1)]$. Prove that failure at any round has probability at most $\delta$. Contrast this with using $\delta_t=0.01$ forever.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-basics.html#mb-sequences">Primer 0: telescoping series</a>. <strong>Apply here:</strong> <a href="#confidence-bounds">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use $1/[t(t+1)]=1/t-1/(t+1)$, then take a limit of finite unions.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The first $T$ budgets sum to $\delta\sum_{t=1}^T(1/t-1/(t+1))=\delta(1-1/(T+1))\le\delta$. The union bound therefore controls failure within the first $T$ rounds by that number. As $T\to\infty$, the finite failure unions increase to “failure at some round,” and continuity of probability gives the bound $\delta$.</p><p>A constant budget 0.01 sums to $0.01T$, which becomes uninformative once it reaches 1. Separate 99% marginal statements are therefore insufficient for a 99% infinite-run guarantee. Genuine confidence-sequence theorems establish a simultaneous event directly rather than requiring independent pointwise statements.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-12" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.P12 &mdash; Hard: Verify a posterior without forming an inverse</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Take $K=\begin{bmatrix}1&1/2\\1/2&1\end{bmatrix}$, $\lambda=1/2$, observations $y=(1,-1)^\top$, and query vector $k_x=(1/2,0)^\top$ with $k(x,x)=1$. Solve $(K+\lambda I)\alpha=y$ and $(K+\lambda I)v=k_x$. Use the solves to obtain the posterior mean and variance.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-block">Primer A: linear systems and block algebra</a>. <strong>Apply here:</strong> <a href="#gp-regression">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The first solve uses an eigenvector. For the second, multiply the two scalar equations by 2.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The matrix is $M=\begin{bmatrix}3/2&1/2\\1/2&3/2\end{bmatrix}$. Since $My=y$, $\alpha=(1,-1)^\top$. The second solve is $3v_1+v_2=1$, $v_1+3v_2=0$, giving $v=(3/8,-1/8)^\top$.</p><p>Therefore $\mu(x)=k_x^\top\alpha=1/2$ and $\sigma^2(x)=1-k_x^\top v=1-3/16=13/16=0.8125$. The query covariance is consistent: the full latent covariance has positive Schur complement $1-k_x^\top K^{-1}k_x=2/3$. Numerical GP implementations use factorization and solves for these quantities; a displayed inverse is a mathematical formula, not a requirement to compute an explicit inverse.</p></div>
+        </details>
+      </div>
+    </details>
+
+    <h3 class="subsection-heading" id="research-practice">Further practice &mdash; Original problems and research connections</h3>
+    <p>The original exercises below retain their numbering. Some compare later methods or ask for longer research derivations; use the graded set above first, and return to a research-connection problem after reading the relevant linked module.</p>
+
 
     <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
       <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 3.1 &mdash; RKHS continuity, Lipschitz constants and sharpness</summary>
@@ -733,7 +1044,7 @@
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
           <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
             <p>(a) With $A=K_t+\lambda I$, $C=k_t(x)$, $B=k(x,x)$ and $S=B-C^\top A^{-1}C$, the derivation in Section 2 gives $f(x)\mid y_t\sim\mathcal N(C^\top A^{-1}y_t,\ S)$, i.e. $\mu_t(x)=k_t(x)^\top(K_t+\lambda I)^{-1}y_t$ and $\sigma_t^2(x)=k(x,x)-k_t(x)^\top(K_t+\lambda I)^{-1}k_t(x)$. The key facts used: the Schur complement of the $y$-block is the conditional covariance, and the cross term of the block inverse gives the conditional mean.</p>
-            <p>(b) The posterior after $t-1$ points is again a GP, with mean $\mu_{t-1}$ and covariance $k_{t-1}(\cdot,\cdot)$; use it as the prior for the single observation $y_t=f(x_t)+\varepsilon_t$. The joint covariance of $(y_t,f(x),f(x'))$ under this prior has entries $k_{t-1}(x_t,x_t)+\lambda$, $k_{t-1}(x,x_t)$, $k_{t-1}(x',x_t)$, and the $1\times1$ Schur complement gives $k_t(x,x')=k_{t-1}(x,x')-k_{t-1}(x,x_t)k_{t-1}(x_t,x')/(k_{t-1}(x_t,x_t)+\lambda)$. (Sequential conditioning equals joint conditioning for Gaussians.) Setting $x'=x$, the subtracted term is $k_{t-1}(x,x_t)^2/(\sigma_{t-1}^2(x_t)+\lambda)\ge0$, so $\sigma_t^2(x)\le\sigma_{t-1}^2(x)$: data never increase the posterior variance anywhere, whatever the observed values. This monotonicity is why the GP intervals $Q_t=[\mu_t\pm\beta\sigma_t]$ narrow as data arrive, apart from the slow growth of $\beta_t$; SafeOpt's $C_t=C_{t-1}\cap Q_t$ is nested by construction, so that growth cannot widen it. The same rank-one update is what the explorer uses for the greedy information-gain bound.</p>
+            <p>(b) The posterior after $t-1$ points is again a GP, with mean $\mu_{t-1}$ and covariance $k_{t-1}(\cdot,\cdot)$; use it as the prior for the single observation $y_t=f(x_t)+\varepsilon_t$. The joint covariance of $(y_t,f(x),f(x'))$ under this prior has entries $k_{t-1}(x_t,x_t)+\lambda$, $k_{t-1}(x,x_t)$, $k_{t-1}(x',x_t)$, and the $1\times1$ Schur complement gives <span class="math-scroll">$k_t(x,x')=k_{t-1}(x,x')-k_{t-1}(x,x_t)k_{t-1}(x_t,x')/(k_{t-1}(x_t,x_t)+\lambda)$</span>. (Sequential conditioning equals joint conditioning for Gaussians.) Setting $x'=x$, the subtracted term is $k_{t-1}(x,x_t)^2/(\sigma_{t-1}^2(x_t)+\lambda)\ge0$, so $\sigma_t^2(x)\le\sigma_{t-1}^2(x)$: data never increase the posterior variance anywhere, whatever the observed values. This monotonicity is why the GP intervals $Q_t=[\mu_t\pm\beta\sigma_t]$ narrow as data arrive, apart from the slow growth of $\beta_t$; SafeOpt's $C_t=C_{t-1}\cap Q_t$ is nested by construction, so that growth cannot widen it. The same rank-one update is what the explorer uses for the greedy information-gain bound.</p>
           </div>
         </details>
       </div>
@@ -799,8 +1110,8 @@
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
           <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
-            <p>(a) For $\lambda\lt1$, $\bar\lambda=1$, so the corrected noise term is $\frac{R}{\sqrt\lambda}\sqrt{\log\det(I+K_N/\lambda)-2\log\delta}$ and the original is $R\sqrt{\log\det(I+K_N)-2\log\delta}$. Since $K_N/\lambda\succeq K_N$, $\log\det(I+K_N/\lambda)\ge\log\det(I+K_N)$, and $1/\sqrt\lambda\gt1$; both factors go the wrong way for the original, so $\beta^{\mathrm{orig}}_N\lt\beta_N$. Numbers: $-2\log0.05=5.99$; corrected: $\frac{0.1}{0.1}\sqrt{\ln101+5.99}=\sqrt{4.62+5.99}\approx3.26$; original: $0.1\sqrt{\ln2+5.99}=0.1\sqrt{6.68}\approx0.26$. The printed constant under-states the noise contribution by a factor of about $12.6$ at a single data point, and by at least $1/\sqrt\lambda=10$ always.</p>
-            <p>(b) Replace $k$ by $ck$ and $\lambda$ by $c\lambda$ with $c\gt0$ (keep $c\lambda\le1$). The posterior mean is unchanged, $(ck_t)^\top(cK_t+c\lambda I)^{-1}y_t=k_t^\top(K_t+\lambda I)^{-1}y_t$; the posterior variance scales as $c\sigma_t^2$; and $\|f\|_{ck}=\|f\|_k/\sqrt c$, so $B\to B/\sqrt c$. The error $|\mu-f|$ is thus the same random variable for every $c$. The corrected formula scales as $\beta\to\beta/\sqrt c$ exactly, $\frac{B}{\sqrt c}+\frac{R}{\sqrt{c\lambda}}\sqrt{\log\det(I+cK/(c\lambda))-2\log\delta}=\frac1{\sqrt c}\beta_N$, so its band $\beta\sqrt c\,\sigma$ does not depend on $c$. The original gives $\frac{B}{\sqrt c}+R\sqrt{\log\det(I+cK)-2\log\delta}$, whose band $\beta\sqrt c\,\sigma$ shrinks to $B\sigma$ as $c\to0$. Exact scale equivariance is not necessary for validity (a conservative bound may change its width), so this alone proves nothing; a concrete failure does. Take $f=0$, $B=0$, one observation with $k(x_1,x_1)=1$ and Gaussian noise $\varepsilon_1\sim\mathcal N(0,R^2)$, $R\gt0$ (which is $R$-sub-Gaussian). After rescaling, $\mu(x_1)=\varepsilon_1/(1+\lambda)$ for every $c$, while $\sigma^2(x_1)=c\lambda/(1+\lambda)$, and the original formula claims the half-width $R\sqrt{\log(1+c)-2\log\delta}\,\sqrt{c\lambda/(1+\lambda)}\to0$ as $c\to0$. The probability that the band covers $f(x_1)=0$ therefore tends to $0$: about $0.017$ for $\lambda=0.5$, $R=1$, $\delta=0.05$, $c=10^{-4}$, instead of at least $0.95$. The corrected half-width here is $R\sqrt{\log(1+1/\lambda)-2\log\delta}/\sqrt{1+\lambda}\approx2.17$ for every $c$ (coverage $\approx0.999$). So the original formula cannot hold for all $\lambda$; the corrected one does. For $\lambda\ge1$ the two differ only by the factor $\sqrt\lambda$ on the noise term, the original being the larger, so it remains valid there (conservatively), and at $\lambda=1$ they coincide.</p>
+            <p>(a) For $\lambda\lt1$, $\bar\lambda=1$, so the corrected noise term is <span class="math-scroll">$\frac{R}{\sqrt\lambda}\sqrt{\log\det(I+K_N/\lambda)-2\log\delta}$</span> and the original is <span class="math-scroll">$R\sqrt{\log\det(I+K_N)-2\log\delta}$</span>. Since $K_N/\lambda\succeq K_N$, $\log\det(I+K_N/\lambda)\ge\log\det(I+K_N)$, and $1/\sqrt\lambda\gt1$; both factors go the wrong way for the original, so $\beta^{\mathrm{orig}}_N\lt\beta_N$. Numbers: $-2\log0.05=5.99$; corrected: $\frac{0.1}{0.1}\sqrt{\ln101+5.99}=\sqrt{4.62+5.99}\approx3.26$; original: $0.1\sqrt{\ln2+5.99}=0.1\sqrt{6.68}\approx0.26$. The printed constant under-states the noise contribution by a factor of about $12.6$ at a single data point, and by at least $1/\sqrt\lambda=10$ always.</p>
+            <p>(b) Replace $k$ by $ck$ and $\lambda$ by $c\lambda$ with $c\gt0$ (keep $c\lambda\le1$). The posterior mean is unchanged, $(ck_t)^\top(cK_t+c\lambda I)^{-1}y_t=k_t^\top(K_t+\lambda I)^{-1}y_t$; the posterior variance scales as $c\sigma_t^2$; and $\|f\|_{ck}=\|f\|_k/\sqrt c$, so $B\to B/\sqrt c$. The error $|\mu-f|$ is thus the same random variable for every $c$. The corrected formula scales as $\beta\to\beta/\sqrt c$ exactly, <span class="math-scroll">$\frac{B}{\sqrt c}+\frac{R}{\sqrt{c\lambda}}\sqrt{\log\det(I+cK/(c\lambda))-2\log\delta}=\frac1{\sqrt c}\beta_N$</span>, so its band $\beta\sqrt c\,\sigma$ does not depend on $c$. The original gives $\frac{B}{\sqrt c}+R\sqrt{\log\det(I+cK)-2\log\delta}$, whose band $\beta\sqrt c\,\sigma$ shrinks to $B\sigma$ as $c\to0$. Exact scale equivariance is not necessary for validity (a conservative bound may change its width), so this alone proves nothing; a concrete failure does. Take $f=0$, $B=0$, one observation with $k(x_1,x_1)=1$ and Gaussian noise $\varepsilon_1\sim\mathcal N(0,R^2)$, $R\gt0$ (which is $R$-sub-Gaussian). After rescaling, $\mu(x_1)=\varepsilon_1/(1+\lambda)$ for every $c$, while $\sigma^2(x_1)=c\lambda/(1+\lambda)$, and the original formula claims the half-width <span class="math-scroll">$R\sqrt{\log(1+c)-2\log\delta}\,\sqrt{c\lambda/(1+\lambda)}\to0$</span> as $c\to0$. The probability that the band covers $f(x_1)=0$ therefore tends to $0$: about $0.017$ for $\lambda=0.5$, $R=1$, $\delta=0.05$, $c=10^{-4}$, instead of at least $0.95$. The corrected half-width here is <span class="math-scroll">$R\sqrt{\log(1+1/\lambda)-2\log\delta}/\sqrt{1+\lambda}\approx2.17$</span> for every $c$ (coverage $\approx0.999$). So the original formula cannot hold for all $\lambda$; the corrected one does. For $\lambda\ge1$ the two differ only by the factor $\sqrt\lambda$ on the noise term, the original being the larger, so it remains valid there (conservatively), and at $\lambda=1$ they coincide.</p>
     <!-- audit jump 52 -->
     <div class="collapsible"><div class="collapsible-header">Derivation — the two coverage probabilities</div><div class="collapsible-body"><p>At the observed point, $\mu=\varepsilon/(1+\lambda)$ with $\varepsilon\sim\mathcal N(0,R^2)$. For any proposed half-width $w$, coverage of the true value zero is $\Pr(|\mu|\le w)=2\Phi((1+\lambda)w/R)-1$. Substituting the original and corrected half-widths gives the two reported probabilities. Here $\Phi$ is the standard-normal CDF, not the design operator $\Phi_t$.</p></div></div>
 

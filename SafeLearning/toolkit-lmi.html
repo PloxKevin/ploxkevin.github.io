@@ -27,8 +27,8 @@
     <li><a href="primer-linalg.html#la-psd">Positive definiteness, quadratic forms, matrix square roots, and ellipsoids</a> <span class="prereq-src">(Primer A)</span></li>
     <li><a href="primer-optimization.html#opt-convexity">Convex sets and functions, affine functions, and optimality conditions</a> <span class="prereq-src">(Primer B)</span></li>
     <li><a href="primer-optimization.html#opt-minmax">Infimum, supremum, argmin, and attainment of an optimum</a> <span class="prereq-src">(Primer B)</span></li>
-    <li><a href="primer-optimization.html#opt-multivariable">Gradients, directional derivatives, and the multivariable chain rule</a> <span class="prereq-src">(Primer B)</span></li>
     <li><a href="primer-optimization.html#opt-constraints">Constraints, multipliers, projections, and barrier methods</a> <span class="prereq-src">(Primer B)</span></li>
+    <li><a href="primer-optimization.html#opt-kkt">KKT conditions, constraint qualifications, and approximate KKT points</a>; <a href="primer-optimization.html#opt-multivariable">gradients and the chain rule</a> <span class="prereq-src">(Primer B)</span></li>
     <li><a href="primer-linalg.html#la-block">Block matrices, trace identities, and determinants</a> <span class="prereq-src">(Primer A)</span></li>
     <li><a href="primer-linalg.html#la-matrix-norms">Spectral norms, singular values, and bounds on stretching</a> <span class="prereq-src">(Primer A)</span></li>
     <li><a href="primer-systems.html#sys-lyapunov">Linear-system stability and quadratic Lyapunov functions</a> <span class="prereq-src">(Primer D)</span></li>
@@ -36,6 +36,22 @@
     <li><a href="primer-rl-nn.html#nn-basics">Neural-network layers, activations, and their slopes</a> <span class="prereq-src">(Primer E)</span></li>
   </ul>
 </div>
+
+    <!-- Reader bridge and diagnostic checks: learning review 2026-10 -->
+    <div class="insight-box" id="reading-route">
+      <div class="box-label">How to study this module</div>
+      <p><strong>Core reading.</strong> Work through <a href="#lagrangian-duality">one scalar Lagrangian</a>, <a href="#lmis-sdp">PSD matrices and the Lyapunov LMI</a>, <a href="#schur-complement">the definite-corner Schur complement</a>, and <a href="#s-procedure">one-constraint S-procedure</a>. Then connect the <a href="#quadratic-constraints">sector inequality</a> to the <a href="#qc-to-lmi-walkthrough">walkthrough</a>, and read the elementary energy balance in <a href="#dissipativity">dissipativity</a>.</p>
+      <p><strong>Practice route.</strong> Try the <a href="#readiness-check">three readiness checks</a>. If a skill is rusty, use its exact review link, then return. Work through <a href="#practice-easy">Easy P1–P4</a>, <a href="#practice-medium">Medium P5–P8</a>, and <a href="#practice-hard">Hard P9–P12</a>; each has a separate hint and a full worked solution. Reattempt a missed problem later without opening the answer.</p>
+      <p><strong>Optional research reading.</strong> The supporting-hyperplane and Fenchel–Moreau detours, interior-point complexity, full KYP equivalence, and dynamic IQC refinements are research extensions. Learn what each certificate proves before returning to how the general theorem is established.</p>
+    </div>
+    <div class="collapsible" id="readiness-check">
+      <div class="collapsible-header">Readiness check &mdash; Three prerequisite skills</div>
+      <div class="collapsible-body">
+        <p>Try these before opening the answer. The review links lead to earlier material.</p>
+        <ol><li>What is the derivative of $(x-2)^2$? <a href="primer-optimization.html#opt-multivariable">Review gradients</a>.</li><li>For $P=\operatorname{diag}(2,3)$, what is $x^\top Px$ at $x=(1,-1)^\top$? <a href="primer-linalg.html#la-psd">Review quadratic forms</a>.</li><li>Does $x=0$ satisfy the constraint $x-1\le0$ strictly? <a href="primer-optimization.html#opt-constraints">Review feasibility</a>.</li></ol>
+        <details><summary>Show readiness answers</summary><p>The derivative is $2(x-2)$. The quadratic form is $2(1)^2+3(-1)^2=5$. At $x=0$, $x-1=-1\lt0$, so the constraint is strictly satisfied. These are the operations underneath the first duality and matrix certificates.</p></details>
+      </div>
+    </div>
 
     <div class="page-toc">
       <div class="page-toc-title">Contents</div>
@@ -49,6 +65,7 @@
       <a class="toc-interactive" href="#s-lemma-explorer">Interactive: S-Lemma in 2-D</a>
       <a class="toc-interactive" href="#lmi-explorer">Interactive: Lyapunov LMI Feasibility</a>
       <a href="#exercises">Exercises</a>
+      <a href="#graded-practice">Graded practice: Easy, Medium &amp; Hard</a>
       <a href="#papers">Key Papers</a>
       <a class="toc-interactive" href="#flashcards">Flashcards</a>
     </div>
@@ -64,6 +81,19 @@
 
     <!-- ===== SECTION 1: LAGRANGIAN DUALITY ===== -->
     <h2 class="section-heading" id="lagrangian-duality">1. Lagrangian Duality &amp; KKT</h2>
+    <div class="insight-box" id="first-pass-example"><div class="box-label">Intuition &mdash; A starting example</div><p><strong>Start with one price.</strong> In $\min (x-2)^2$ subject to $x\le1$, the unconstrained best point 2 is excluded, so the answer is $x=1$ with value 1. Write the constraint as $x-1\le0$ and attach a price $\lambda\ge0$: $L=(x-2)^2+\lambda(x-1)$. At a feasible point the added term is nonpositive, which is why minimizing this relaxed expression gives a <em>lower</em> bound. The sign and the order of the minimization/maximization are the main ideas to track; the graded problems compute the entire example.</p></div>
+
+    <p><span class="lead-label">In plain words.</span> A constrained minimisation can be hard to solve directly. Duality turns it into an easier question. Attach a price $\lambda_i\ge0$ to each constraint, let the optimiser violate constraints if it pays the price, and see how low the cost can then go. Whatever the prices, this relaxed problem can only do better than the original one, so its value is a <em>lower bound</em> on the true optimum (weak duality). The dual problem looks for the prices that give the best lower bound. When that bound is exact (strong duality) and some prices attain it, those best prices, together with a primal optimum, are KKT multipliers in the sense of <a href="primer-optimization.html#opt-kkt">Primer B</a> (for differentiable problems on an open domain). Exactness alone is not enough: the example $\min x$ s.t. $x^2\le0$ below has zero gap but no finite optimal price.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$p^\star$: the optimal value of the original (primal) problem; $f_0$, $f_i\le0$, $h_j=0$: objective and constraints, as in Primer B.</li>
+        <li>$L(x,\lambda,\nu)$: the Lagrangian, the cost plus price times violation of each constraint; $\lambda_i\ge0$ prices inequalities, $\nu_j$ (any sign) prices equalities.</li>
+        <li>$g(\lambda,\nu)=\inf_xL(x,\lambda,\nu)$: the dual function, the lowest cost reachable when constraints may be violated at their price.</li>
+        <li>$d^\star=\sup_{\lambda\ge0,\nu}g(\lambda,\nu)$: the best lower bound; $p^\star-d^\star\ge0$ is the duality gap.</li>
+        <li>$\inf$ and $\sup$: greatest lower bound and least upper bound, which need not be attained (<a href="primer-basics.html#mb-sup-inf">Primer 0</a>).</li>
+      </ul>
+    </div>
 
     <p>Duality is the art of bounding a hard minimisation from below by an easy maximisation. Nothing in this subsection assumes convexity until strong duality; the first two results hold for <em>any</em> problem, which is why they survive the non-convex policy spaces of Module 8.</p>
 
@@ -143,7 +173,7 @@
 
     <div class="definition-box">
       <div class="box-label">Definition &mdash; Karush&ndash;Kuhn&ndash;Tucker conditions</div>
-      <div>
+      <div><p style="margin-top:0;"><em>First time? <a href="primer-optimization.html#opt-kkt">Primer B</a> builds these conditions up from a picture, with worked examples, constraint qualifications and approximate KKT points.</em></p>
         For differentiable $f_i,h_j$ (see <a href="primer-optimization.html#opt-multivariable">Primer B</a>) on an open domain $\mathcal D$ (e.g. $\mathcal D=\mathbb R^n$; Boyd &amp; Vandenberghe Sec. 5.5.3 assume open domains), a triple $(x^\star,\lambda^\star,\nu^\star)$ is a KKT point if
         $$\begin{aligned}
         &\text{primal feasibility:}\quad x^\star\in\mathcal D,\ \ f_i(x^\star)\le0,\ \ h_j(x^\star)=0;\qquad \text{dual feasibility:}\quad \lambda^\star\ge0;\\
@@ -210,8 +240,42 @@
       </div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; computing a dual function by hand</div>
+      <div class="collapsible-body">
+        <p>Take the problem from Primer B's KKT examples: minimise $f_0(x)=(x_1-2)^2+(x_2-1)^2$ subject to $f_1(x)=x_1+x_2-1\le0$. Its optimum is $x^\star=(1,0)$ with $p^\star=2$.</p>
+        <p><strong>Step 1: the Lagrangian.</strong> $L(x,\lambda)=(x_1-2)^2+(x_2-1)^2+\lambda(x_1+x_2-1)$.</p>
+        <p><strong>Step 2: minimise over $x$, ignoring the constraint.</strong> Setting the gradient to zero, $2(x_1-2)+\lambda=0$ and $2(x_2-1)+\lambda=0$, gives $x_1=2-\lambda/2$ and $x_2=1-\lambda/2$.</p>
+        <p><strong>Step 3: substitute back.</strong></p>
+        <div class="math-block">$$g(\lambda)=\frac{\lambda^2}{4}+\frac{\lambda^2}{4}+\lambda\,(3-\lambda-1)=2\lambda-\frac{\lambda^2}{2}.$$</div>
+        <p><strong>Step 4: read off the bounds.</strong> Every price gives a lower bound on $p^\star=2$: $g(0)=0$, $g(1)=1.5$, $g(3)=1.5$. The best price maximises $g$: $g'(\lambda)=2-\lambda=0$ gives $\lambda^\star=2$ and $d^\star=g(2)=2=p^\star$. The gap is zero, as the strong duality theorem promises for this convex problem with a strictly feasible point (for example $x=(0,0)$). The best price $\lambda^\star=2$ is exactly the KKT multiplier found in Primer B.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; a duality gap from a yes/no decision</div>
+      <div class="collapsible-body">
+        <p>Duality gaps appear when the problem is not convex. Let the decision be yes or no, $x\in\mathcal D=\{0,1\}$, and minimise $f_0(x)=x$ subject to $f_1(x)=0.5-x\le0$. Only $x=1$ is feasible, so $p^\star=1$.</p>
+        <p>The dual function minimises $L(x,\lambda)=x+\lambda(0.5-x)$ over the two points of $\mathcal D$:</p>
+        <div class="math-block">$$g(\lambda)=\min\big\{L(0,\lambda),\,L(1,\lambda)\big\}=\min\big\{0.5\lambda,\ 1-0.5\lambda\big\}.$$</div>
+        <p>The first term rises with $\lambda$ and the second falls, so the best price is where they cross, $\lambda=1$, with $d^\star=0.5$. The gap is $p^\star-d^\star=0.5$. The dual answers the question as if $x=0.5$ were allowed: it only sees the convex relaxation $x\in[0,1]$ of the yes/no choice. The same mechanism gives a gap when constrained RL optimises over a restricted, non-convex policy class (<a href="cmdp.html#duality">Module 8</a>).</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 2: LMIs & SDPs ===== -->
     <h2 class="section-heading" id="lmis-sdp">2. LMIs &amp; Semidefinite Programs</h2>
+
+    <p><span class="lead-label">In plain words.</span> A symmetric matrix $M$ is positive semidefinite, $M\succeq0$, if the quadratic form $x^{\top}Mx$ is never negative: picture a bowl that does not dip below zero in any direction. A linear matrix inequality (LMI) asks for unknown numbers that make a matrix, built linearly from those numbers, positive semidefinite. That sounds exotic, but stability, gain and Lipschitz certificates all take this form. And the set of solutions is always convex, so computers can search it reliably.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$\mathbb S^n$: symmetric $n\times n$ matrices. $M\succeq0$: positive semidefinite (all eigenvalues $\ge0$); $M\succ0$: positive definite (all $\gt0$); $M\preceq0$ means $-M\succeq0$.</li>
+        <li>$F(x)=F_0+x_1F_1+\dots+x_mF_m$: a symmetric matrix that depends affinely on the unknowns $x\in\mathbb R^m$; the constraint $F(x)\succeq0$ is an LMI.</li>
+        <li>SDP (semidefinite program): minimise a linear function of $x$ subject to LMIs.</li>
+        <li>$P$: a matrix unknown, as in a Lyapunov certificate $V(x)=x^{\top}Px$; $\rho(A)$: the spectral radius, the largest absolute value of an eigenvalue of $A$.</li>
+      </ul>
+    </div>
 
     <p>A linear matrix inequality is a constraint on a vector of unknowns that says "this symmetric matrix, which depends affinely on the unknowns, is positive semidefinite". Its power comes from a coincidence: the PSD cone is convex, yet it can express Lyapunov, gain, robustness and Lipschitz conditions that look hopelessly nonlinear when written out entrywise.</p>
 
@@ -316,8 +380,45 @@
       </div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; what the set described by an LMI looks like</div>
+      <div class="collapsible-body">
+        <p>Consider the LMI in two unknowns $x$ and $y$:</p>
+        <div class="math-block">$$\begin{bmatrix}x & 1\\ 1 & y\end{bmatrix}=\underbrace{\begin{bmatrix}0&1\\1&0\end{bmatrix}}_{F_0}+x\underbrace{\begin{bmatrix}1&0\\0&0\end{bmatrix}}_{F_1}+y\underbrace{\begin{bmatrix}0&0\\0&1\end{bmatrix}}_{F_2}\ \succeq\ 0 .$$</div>
+        <p>A symmetric $2\times2$ matrix is positive semidefinite exactly when both diagonal entries and the determinant are nonnegative. Here that means $x\ge0$, $y\ge0$ and $xy-1\ge0$. The solution set is the region on and above the hyperbola $y=1/x$ in the first quadrant. It is convex, but its boundary is curved, so finitely many linear inequalities could not describe it.</p>
+        <ul>
+          <li>$(x,y)=(2,0.5)$: $xy=1$, on the boundary. The matrix has eigenvalues $0$ and $2.5$.</li>
+          <li>$(x,y)=(2,0.4)$: $xy=0.8\lt1$, outside. The determinant is $-0.2$, so one eigenvalue is negative.</li>
+          <li>$(x,y)=(0.5,3)$: $xy=1.5$, inside.</li>
+        </ul>
+        <p>Averaging the two feasible points $(2,0.5)$ and $(0.5,3)$ gives $(1.25,1.75)$, with $xy=2.19\ge1$: feasible again, as convexity guarantees.</p>
+      </div>
+    </div>
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; a stability certificate that the identity matrix cannot give</div>
+      <div class="collapsible-body">
+        <p>The system $x_{t+1}=Ax_t$ with $A=\begin{bmatrix}0.5&1\\0&0.5\end{bmatrix}$ is stable: both eigenvalues are $0.5$, so $\rho(A)=0.5\lt1$ and every trajectory goes to zero. The Lyapunov LMI asks for $P\succ0$ with $A^{\top}PA-P\prec0$, so that $V(x)=x^{\top}Px$ decreases at every step.</p>
+        <p><strong>The obvious guess fails.</strong> With $P=I$, $V(x)=\|x\|^2$ is the squared length. But from $x_0=(0,1)$ the first step gives $x_1=(1,0.5)$, with $\|x_1\|=1.118\gt1$: the length grows before it shrinks. Correspondingly, $A^{\top}A-I$ has a positive eigenvalue, so $P=I$ is not a certificate.</p>
+        <p><strong>Solving for $P$.</strong> Solve the Stein equation $A^{\top}PA-P=-I$, which is linear in the three unknown entries of $P$:</p>
+        <div class="math-block">$$P=\begin{bmatrix}1.3333&0.8889\\0.8889&4.2963\end{bmatrix},\qquad\text{eigenvalues }1.087\text{ and }4.543 .$$</div>
+        <p>So $P\succ0$ and $A^{\top}PA-P=-I\prec0$: a valid certificate. Along the same trajectory $V(x_0)=4.2963$ and $V(x_1)=3.2963$. $V$ drops by exactly $\|x_0\|^2=1$, because $V(x_{t+1})-V(x_t)=x_t^{\top}(A^{\top}PA-P)x_t=-\|x_t\|^2$. A tilted ellipse measures progress where the round circle could not.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 3: SCHUR COMPLEMENT ===== -->
     <h2 class="section-heading" id="schur-complement">3. The Schur Complement</h2>
+
+    <p><span class="lead-label">In plain words.</span> Checking whether a big symmetric matrix is positive definite can be split into two smaller checks: one diagonal block must be positive definite, and a "leftover" matrix, the Schur complement, must be too. Used in reverse, the same fact turns a nonlinear condition, such as "a squared length is at most $t$", into a linear matrix inequality in a larger matrix. That is how most LMIs on this page are built.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$M=\begin{bmatrix}A&B\\B^{\top}&C\end{bmatrix}$: a symmetric block matrix with symmetric diagonal blocks $A$ and $C$ (here $A$ is a block, not a system matrix).</li>
+        <li>$C-B^{\top}A^{-1}B$ and $A-BC^{-1}B^{\top}$: the Schur complements of $A$ and of $C$ in $M$.</li>
+        <li>$I$: the identity matrix; $\|x\|^2=x^{\top}x$.</li>
+      </ul>
+    </div>
 
     <p>The Schur complement is the tool that turns "quadratic in the unknown" into "linear in a bigger matrix". Every LMI on this page that contains a term like $W^{\top}W$, $c^{\top}P^{-1}c$ or $PBR^{-1}B^{\top}P$ was produced by it.</p>
 
@@ -363,8 +464,29 @@
 
     <p><strong>(d) From analysis to training.</strong> In LipSDP the last layer enters through $W_l^{\top}W_l$. With the weights fixed this is a constant, but for training <a class="cite" href="https://arxiv.org/abs/2005.02929" target="_blank" rel="noopener">Pauli et al., L-CSS 2022</a> need the certificate to be linear in $W_l$; the Schur complement with a $-I$ block achieves exactly that. Step 6 of the walkthrough does the computation.</p>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; two uses of the Schur complement</div>
+      <div class="collapsible-body">
+        <p><strong>Testing a matrix.</strong> Is $M=\begin{bmatrix}2&1\\1&1\end{bmatrix}$ positive definite? The top-left block $A=2$ is positive, and its Schur complement is $C-B^{\top}A^{-1}B=1-1\cdot\tfrac12\cdot1=0.5\gt0$. So $M\succ0$. Check: the eigenvalues are $(3\pm\sqrt5)/2$, about $0.382$ and $2.618$, both positive.</p>
+        <p><strong>Turning a nonlinear condition into an LMI.</strong> The condition $\|x\|^2\le t$ is quadratic in $x$. With $C=I\succ0$, the Schur complement theorem gives</p>
+        <div class="math-block">$$\begin{bmatrix}t & x^{\top}\\ x & I\end{bmatrix}\succeq0\quad\Longleftrightarrow\quad t-x^{\top}I^{-1}x=t-\|x\|^2\ \ge\ 0 ,$$</div>
+        <p>and the matrix on the left is affine in the unknowns $(t,x)$: an LMI. For $x=(3,4)$ we have $\|x\|^2=25$, and the block matrix is positive semidefinite for $t=25$ (on the boundary) and $t=26$, but not for $t=24$.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 4: S-PROCEDURE ===== -->
     <h2 class="section-heading" id="s-procedure">4. The S-Procedure / S-Lemma</h2>
+
+    <p><span class="lead-label">In plain words.</span> Many certificates need a statement of the form "whenever this quadratic inequality holds, that one holds too". Checking it point by point is impossible, because there are infinitely many points. The S-procedure instead looks for one number $\tau\ge0$ such that "the second quadratic minus $\tau$ times the first" is nonnegative <em>everywhere</em>. If such a $\tau$ exists, the implication is proved: wherever the first quadratic is nonnegative, the second is at least $\tau$ times it, hence nonnegative too. With a single constraint that holds strictly somewhere, the S-lemma adds the converse: if the implication is true, such a $\tau$ exists.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$\sigma_0,\sigma_1,\dots,\sigma_m$: quadratic functions of a vector $\xi$. The question is whether $\sigma_1(\xi)\ge0,\dots,\sigma_m(\xi)\ge0$ imply $\sigma_0(\xi)\ge0$.</li>
+        <li>$\tau_i\ge0$: the S-procedure multipliers, one per constraint (Lagrange multipliers in disguise).</li>
+        <li>Strict feasibility: some $\bar\xi$ with $\sigma_1(\bar\xi)\gt0$.</li>
+      </ul>
+    </div>
 
     <p>A robustness question almost always has the shape "for all signals that satisfy <em>this</em> quadratic constraint, is <em>that</em> quadratic form nonpositive?" The S-procedure replaces the universal quantifier by one nonnegative multiplier per constraint and one matrix inequality. It is a Lagrangian relaxation in disguise, and for a single strictly feasible constraint it is exact.</p>
 
@@ -439,8 +561,31 @@
 </div>
     </div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; finding the multiplier that proves an implication</div>
+      <div class="collapsible-body">
+        <p>Claim: if $x^2\le1$, then $2-x-x^2\ge0$. In S-procedure form, $\sigma_1(x)=1-x^2\ge0$ should imply $\sigma_0(x)=2-x-x^2\ge0$. (The claim is true, because $2-x-x^2=(1-x)(2+x)$ is nonnegative on $[-1,1]$.)</p>
+        <p><strong>Step 1: the certificate condition.</strong> We need $\tau\ge0$ with $\sigma_0(x)-\tau\sigma_1(x)\ge0$ for <em>all</em> real $x$:</p>
+        <div class="math-block">$$(2-x-x^2)-\tau(1-x^2)=(\tau-1)x^2-x+(2-\tau)\ \ge\ 0\quad\text{for all }x .$$</div>
+        <p><strong>Step 2: when is a quadratic nonnegative everywhere?</strong> Its leading coefficient must be positive, $\tau\gt1$, and its discriminant must be at most zero: $1-4(\tau-1)(2-\tau)\le0$. Expanding gives $4\tau^2-12\tau+9\le0$, that is, $(2\tau-3)^2\le0$, so $\tau=1.5$ exactly.</p>
+        <p><strong>Step 3: the certificate.</strong> With $\tau=1.5$ the difference is $0.5x^2-x+0.5=0.5(x-1)^2\ge0$, a perfect square. So for every $x$ with $1-x^2\ge0$ we get $2-x-x^2\ge1.5\,(1-x^2)\ge0$. Any other $\tau$, for example $1.4$ or $1.6$, makes the difference negative somewhere. The S-lemma guaranteed that this search would succeed, because the constraint is strictly feasible ($\sigma_1(0)=1\gt0$) and the implication is true.</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 5: QUADRATIC CONSTRAINTS ===== -->
     <h2 class="section-heading" id="quadratic-constraints">5. Quadratic Constraints</h2>
+
+    <p><span class="lead-label">In plain words.</span> A neural network's activation function, or an uncertain part of a plant, is hard to handle exactly. A quadratic constraint replaces it by one simple fact it is known to satisfy, written as a quadratic inequality between its input and its output. For ReLU, the fact is "the output lies between 0 and the input": a sector. Certificates then hold for <em>every</em> function obeying that fact, so they are safe but can be loose. The S-procedure of Section 4 combines such facts, each with a nonnegative weight, into one LMI.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$\varphi$: a scalar nonlinearity, for example an activation, with input $v$ and output $\varphi(v)$.</li>
+        <li>Sector $[\alpha,\beta]$: $\alpha v^2\le v\,\varphi(v)\le\beta v^2$; the graph lies between the lines of slopes $\alpha$ and $\beta$. Slope restriction $[\alpha,\beta]$: the same for every chord, $\alpha\le\frac{\varphi(v)-\varphi(\bar v)}{v-\bar v}\le\beta$.</li>
+        <li>$\Delta v=v-\bar v$, $\Delta\varphi=\varphi(v)-\varphi(\bar v)$: increments between two inputs. Incremental QCs compare two arbitrary inputs; non-incremental ones compare with a fixed point.</li>
+        <li>$T=\mathrm{diag}(\lambda_i)$ with $\lambda_i\ge0$: one multiplier per neuron (not the Lagrange multiplier of Section 1).</li>
+      </ul>
+    </div>
 
     <p>A quadratic constraint (QC) is the control-theoretic way to say "I do not know this nonlinearity exactly, but I know a quadratic inequality its input&ndash;output pairs satisfy." Activations, uncertain plants and delays are all treated the same way, which is what lets the same LMI machinery certify a Lipschitz constant and a closed-loop region of attraction.</p>
 
@@ -512,8 +657,33 @@
 
 
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; a Lipschitz bound for one neuron from a quadratic constraint</div>
+      <div class="collapsible-body">
+        <p>Take the one-neuron network $f(x)=w_2\,\mathrm{ReLU}(w_1x)$ with $w_1=2$ and $w_2=3$. Its true Lipschitz constant is $|w_1w_2|=6$, the slope where the neuron is on. Can the quadratic-constraint machinery find it without knowing where the neuron is on or off?</p>
+        <p><strong>Step 1: the fact.</strong> ReLU is slope-restricted in $[0,1]$. Let $\Delta v=w_1\Delta x$ be the pre-activation increment and $\Delta z$ the neuron's output increment. The incremental QC of the lemma above, with $\alpha=0$ and $\beta=1$, reads $2\lambda\,\Delta z\,(w_1\Delta x-\Delta z)\ge0$ for any $\lambda\ge0$.</p>
+        <p><strong>Step 2: what we want.</strong> $|\Delta f|\le L\,|\Delta x|$, that is, $L^2\Delta x^2-w_2^2\Delta z^2\ge0$ for all increments the neuron can produce.</p>
+        <p><strong>Step 3: the S-procedure.</strong> It suffices that</p>
+        <div class="math-block">$$L^2\Delta x^2-w_2^2\Delta z^2-2\lambda\,\Delta z\,(w_1\Delta x-\Delta z)\ \ge\ 0\ \text{ for all }(\Delta x,\Delta z)\quad\Longleftrightarrow\quad\begin{bmatrix}L^2 & -\lambda w_1\\ -\lambda w_1 & 2\lambda-w_2^2\end{bmatrix}\succeq0 .$$</div>
+        <p><strong>Step 4: solve.</strong> The $2\times2$ test needs $2\lambda-9\ge0$ and a nonnegative determinant, $L^2(2\lambda-9)-4\lambda^2\ge0$. At $\lambda=9/2$ the determinant is $-4\lambda^2\lt0$ whatever $L$ is, so $\lambda\gt9/2$, and then $L^2\ge4\lambda^2/(2\lambda-9)$. Minimising over $\lambda$ gives $\lambda=9$ and $L^2=36$: <strong>$L=6$, the exact constant</strong>. The matrix is then $\begin{bmatrix}36&-18\\-18&9\end{bmatrix}$, with eigenvalues $0$ and $45$.</p>
+        <p>Any other admissible multiplier, $\lambda\gt9/2$, still gives a <em>valid</em> bound, just a looser one: $\lambda=12$ gives $L\approx6.20$. Choosing the multipliers well is exactly what the SDP in LipSDP does, for thousands of neurons at once (<a href="lipsdp.html#lipsdp-derivation">Module 12</a>).</p>
+      </div>
+    </div>
+
     <!-- ===== SECTION 6: DISSIPATIVITY ===== -->
     <h2 class="section-heading" id="dissipativity">6. Dissipativity &amp; the KYP Lemma</h2>
+
+    <p><span class="lead-label">In plain words.</span> Think of a system as a tank of energy. The input pours energy in, the output takes energy out, and the tank's content, the storage $V$, can never be negative. A system is dissipative if the stored energy grows by at most what the supply rate $s$ allows. With the supply rate $s=\gamma^2\|w\|^2-\|z\|^2$, dissipativity says "the output energy is at most $\gamma^2$ times the input energy": a gain bound. For linear systems with quadratic storage, finding $V$ is an LMI, and the KYP lemma links that LMI to the frequency response.</p>
+    <div class="symbols-box">
+      <div class="symbols-title">Symbols in this section</div>
+      <ul>
+        <li>$x_{t+1}=f(x_t,w_t)$, $z_t=h(x_t,w_t)$: a system with state $x$, input $w$ and output $z$.</li>
+        <li>$V(x)\ge0$: the storage function; $s(w,z)$: the supply rate; the dissipation inequality is $V(x_{t+1})-V(x_t)\le s(w_t,z_t)$.</li>
+        <li>$\gamma$: an $\ell_2$-gain bound, $\sum_t\|z_t\|^2\le\gamma^2\sum_t\|w_t\|^2$ from zero initial state; $(Q,S,R)$: the matrices of a general quadratic supply rate.</li>
+        <li>$G(e^{j\omega})$: the frequency response. For a stable linear system the best $\gamma$ is its peak magnitude.</li>
+      </ul>
+    </div>
 
     <p>Dissipativity is the energy bookkeeping that turns "the system cannot amplify its input by more than $\gamma$" into a matrix inequality, and it is the reason a stack of neural-network layers can be certified layer by layer.</p>
 
@@ -590,6 +760,17 @@
     </div>
     <div class="definition-box"><div class="box-label">Theorem &mdash; Splitting a fully connected LipSDP certificate</div><div><p>Consider fixed affine weights in a feedforward chain $z_k=\varphi_k(W_kz_{k-1}+b_k)$, $k=1,\dots,l$, and final affine output $W_{l+1}z_l+b_{l+1}$. Each $\varphi_k$ is elementwise slope-restricted in $[0,1]$. Use exactly the scalar sector QCs with nonnegative diagonal multipliers $T_k$ and no cross-neuron couplings. For arbitrary increment variables $v_0,\dots,v_l$, define</p><div class="math-block">$$q_k=2v_k^TT_kW_kv_{k-1}-2v_k^TT_kv_k.$$</div><p>The global LipSDP inequality $\rho\|v_0\|^2-\|W_{l+1}v_l\|^2-\sum_k q_k\ge0$ for all increments is equivalent to existence of symmetric interface matrices $X_1,\dots,X_{l-1}$, with $X_0=\rho I$, $X_l=W_{l+1}^{\top}W_{l+1}$, such that</p><div class="math-block">$$\begin{bmatrix}X_{k-1}&-W_k^TT_k\\-T_kW_k&2T_k-X_k\end{bmatrix}\succeq0,\qquad k=1,\dots,l.$$</div><p>The interface matrices have no imposed diagonal or scalar structure; semidefinite boundary cases are allowed. Each $X_{k-1}$ is automatically PSD as a principal block. Optimising over the same multiplier family therefore gives equal infimal values of $\rho$.</p><p><em>Intuition.</em> Summing the local inequalities proves one direction. The converse decomposes the positive semidefinite block-tridiagonal global matrix along its chain, as in the cited splitting theorem. Thus splitting adds no loss to this SDP; the activation abstraction and S-procedure can still overestimate the true Lipschitz constant. Singular interface matrices give quadratic forms, not norms, but the telescoping argument still holds.</p><p><a class="cite" href="https://arxiv.org/abs/2405.01125" target="_blank" rel="noopener">Pauli, Gramlich &amp; Allg&ouml;wer 2024</a>, Theorem 1 and Sec. IV.</p></div></div>
 
+
+    <div class="collapsible">
+      <div class="collapsible-header">Worked example &mdash; the gain of a first-order system from a storage function</div>
+      <div class="collapsible-body">
+        <p>System: $x_{t+1}=0.5\,x_t+w_t$ with output $z_t=x_t$. Try storage $V(x)=p\,x^2$ with supply rate $s(w,z)=\gamma^2w^2-z^2$. The dissipation inequality $p(0.5x+w)^2-px^2\le\gamma^2w^2-x^2$ must hold for all $x$ and $w$. Collecting terms gives</p>
+        <div class="math-block">$$\begin{bmatrix}x\\w\end{bmatrix}^{\top}\begin{bmatrix}1-0.75p & p/2\\ p/2 & p-\gamma^2\end{bmatrix}\begin{bmatrix}x\\w\end{bmatrix}\ \le\ 0\ \text{ for all }(x,w)\quad\Longleftrightarrow\quad\begin{bmatrix}1-0.75p & p/2\\ p/2 & p-\gamma^2\end{bmatrix}\preceq0 .$$</div>
+        <p>For a $2\times2$ matrix to be $\preceq0$, both diagonal entries must be $\le0$ and the determinant $\ge0$. The diagonal gives $p\ge4/3$, but at $p=4/3$ the determinant is $-4/9\lt0$, so $p\gt4/3$. The determinant condition then becomes $\gamma^2\ge p+p^2/(3p-4)$. The right side is smallest at $p=2$, where it equals $4$. So <strong>$\gamma=2$</strong>, certified by $V(x)=2x^2$. The matrix is then $\begin{bmatrix}-0.5&1\\1&-2\end{bmatrix}$, with eigenvalues $0$ and $-2.5$.</p>
+        <p><strong>Sanity check.</strong> A constant input $w_t=1$ settles at $x=0.5x+1$, that is, $x=2$: the output is twice the input. The frequency response $G(e^{j\omega})=1/(e^{j\omega}-0.5)$ has its largest magnitude at $\omega=0$, also $1/(1-0.5)=2$. The storage-function LMI found the exact gain, as the KYP lemma promises for linear systems.</p>
+      </div>
+    </div>
+
     <!-- ===== WALKTHROUGH ===== -->
     <h2 class="section-heading" id="qc-to-lmi-walkthrough">Walkthrough: From a Quadratic Constraint to an LMI</h2>
 
@@ -658,6 +839,160 @@
 
     <!-- ===== EXERCISES ===== -->
     <h2 class="section-heading" id="exercises">Exercises</h2>
+    <!-- Graded practice added by the learning review; original exercises remain below. -->
+    <h3 class="subsection-heading" id="graded-practice">Graded practice &mdash; Build the argument yourself</h3>
+    <p>There are 12 new problems: four Easy, four Medium, and four Hard. Start with the level that lets you make progress without opening the solution. Easy problems rebuild individual operations; Medium problems combine them; Hard problems ask for proofs, boundary cases, and the limits of a guarantee. The required concepts are explained on this page or in the linked earlier material.</p>
+    <h3 class="subsection-heading" id="practice-easy">Easy &mdash; Warm up one skill at a time.</h3>
+    <details id="practice-1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P1 &mdash; Easy: KKT with one active constraint</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Minimize $(x-2)^2$ over $x\le1$. Write the Lagrangian with constraint $x-1\le0$, and find the optimum and multiplier using stationarity, feasibility and complementary slackness.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-optimization.html#opt-constraints">Primer B: constrained optimization</a>. <strong>Apply here:</strong> <a href="#lagrangian-duality">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The unconstrained minimizer is excluded, so check the endpoint $x=1$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The Lagrangian is $L(x,\lambda)=(x-2)^2+\lambda(x-1)$ with $\lambda\ge0$. Stationarity is $2(x-2)+\lambda=0$. The feasible point closest to 2 is $x^\star=1$, with value 1; substituting gives $\lambda^\star=2$.</p><p>Primal feasibility holds at equality, dual feasibility holds because $2\ge0$, and complementary slackness is $2(1-1)=0$. The objective is convex and the constraint affine; a strictly feasible point is $x=0$. Thus the KKT conditions certify a global optimum. The nonzero price reflects that relaxing the bound lets the objective improve.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P2 &mdash; Easy: Positive entries do not mean PSD</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Compare $A=\begin{bmatrix}2&1\\1&2\end{bmatrix}$ and $B=\begin{bmatrix}1&2\\2&1\end{bmatrix}$. Compute their eigenvalues and identify which is PSD. Find one vector exposing the negative direction of the other.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-psd">Primer A: positive semidefiniteness</a>. <strong>Apply here:</strong> <a href="#lmis-sdp">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>For equal diagonal entries, $(1,1)$ and $(1,-1)$ are eigenvectors.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>For $A$, those directions have eigenvalues $2+1=3$ and $2-1=1$, both positive, so $A\succ0$. For $B$, the eigenvalues are $1+2=3$ and $1-2=-1$, so $B$ is indefinite despite all entries being positive.</p><p>Take $v=(1,-1)^\top$. Then $Bv=-v$ and $v^\top Bv=-v^\top v=-2\lt0$. PSD means the quadratic form is nonnegative in <em>every direction</em>. It is a matrix-order condition, not an entrywise sign check.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-3" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P3 &mdash; Easy: First Schur-complement calculation</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Find all real $t$ for which $M(t)=\begin{bmatrix}t&2\\2&1\end{bmatrix}\succeq0$. When is it positive definite?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-block">Primer A: block matrices</a>. <strong>Apply here:</strong> <a href="#schur-complement">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use the bottom-right block 1, which is strictly positive.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The Schur complement of the bottom-right entry is $t-2(1^{-1})2=t-4$. Since that corner is positive, $M(t)\succeq0$ exactly when $t-4\ge0$, or $t\ge4$. Strict positive definiteness requires $t\gt4$.</p><p>At $t=4$, the matrix is $vv^\top$ for $v=(2,1)^\top$: it is PSD but singular. The vector $(1,-2)^\top$ lies in its nullspace. Checking this boundary case helps keep semidefinite and definite conclusions separate.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-4" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P4 &mdash; Easy: Read a scalar sector constraint</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $y=\max\{0,x\}$. Verify $y(x-y)\ge0$ separately for $x\ge0$ and $x\lt0$. Write the inequality as a quadratic form in $z=(x,y)^\top$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-rl-nn.html#nn-basics">Primer E: ReLU activation</a>. <strong>Apply here:</strong> <a href="#quadratic-constraints">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>For ReLU the product is zero in both cases; the cross term of $z^\top Qz$ is twice the off-diagonal entry.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>If $x\ge0$, then $y=x$, so $y(x-y)=x\cdot0=0$. If $x\lt0$, then $y=0$ and the product is again zero. Hence ReLU obeys the sector inequality.</p><div class="math-block">$$y(x-y)=xy-y^2=\begin{bmatrix}x\\y\end{bmatrix}^{\!\top}\begin{bmatrix}0&1/2\\1/2&-1\end{bmatrix}\begin{bmatrix}x\\y\end{bmatrix}\ge0.$$</div><p>The quadratic constraint also admits many pairs that are not on the ReLU graph, such as $(x,y)=(2,1)$. Certificates built only from it deliberately cover a larger set of input-output pairs.</p></div>
+        </details>
+      </div>
+    </details>
+    <h3 class="subsection-heading" id="practice-medium">Medium &mdash; Combine definitions and compute a certificate.</h3>
+    <details id="practice-5" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P5 &mdash; Medium: A scalar Lyapunov LMI</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For $x_{t+1}=0.8x_t$, find $P\gt0$ satisfying $0.8^2P-P=-1$. Show how the result proves decrease of $V(x)=Px^2$. Would any $P\gt0$ work for the strict decrease inequality?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-systems.html#sys-lyapunov">Primer D: Lyapunov decrease</a>. <strong>Apply here:</strong> <a href="#lmis-sdp">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Solve $-0.36P=-1$, then separate the normalization from the sign condition.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The normalized equation gives $P=1/0.36=25/9\approx2.77778$. Along the system, $V(x_{t+1})-V(x_t)=(0.64-1)Px_t^2=-x_t^2$, strictly negative for $x_t\ne0$. Since $P\gt0$, $V$ is positive definite and certifies asymptotic stability.</p><p>Every $P\gt0$ satisfies the strict inequality because $-0.36P\lt0$. The equation with right-hand side $-1$ chooses one scale for the certificate; stability depends on the sign, not that normalization. For an unstable scalar factor 1.1, the coefficient becomes $+0.21$, and no positive $P$ can give decrease.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-6" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P6 &mdash; Medium: An S-procedure certificate on an interval</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Prove that $1-x^2\ge0$ implies $2-x^2\ge0$ using a nonnegative multiplier $\tau$ and a globally nonnegative residual. Then find every $\tau\ge0$ for which the residual works.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-basics.html#mb-sets-logic">Primer 0: implications</a>. <strong>Apply here:</strong> <a href="#s-procedure">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Expand $(2-x^2)-\tau(1-x^2)$ and require its constant and quadratic coefficients to be nonnegative.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The residual is $(2-\tau)+(\tau-1)x^2$. It is nonnegative for every real $x$ exactly when $2-\tau\ge0$ and $\tau-1\ge0$, hence $1\le\tau\le2$. For instance, $\tau=1$ leaves the constant 1.</p><p>At a point where $1-x^2\ge0$, write $2-x^2=[(2-x^2)-\tau(1-x^2)]+\tau(1-x^2)$. Both terms are nonnegative, so the implication follows. This direction uses only the displayed certificate; the converse supplied by the S-lemma requires its additional strict-feasibility assumption.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-7" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P7 &mdash; Medium: Lift a quadratic epigraph into an LMI</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For $x=(x_1,x_2)^\top$ and scalar $t$, express $x_1^2+x_2^2\le t$ as an LMI with an identity block. Verify the least feasible $t$ when $x=(3,4)^\top$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-optimization.html#opt-convexity">Primer B: convex sets and epigraphs</a>. <strong>Apply here:</strong> <a href="#schur-complement">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Put $t$ in the top-left corner and $x$ in the off-diagonal blocks.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><div class="math-block">$$\begin{bmatrix}t&x^\top\\x&I_2\end{bmatrix}=\begin{bmatrix}t&x_1&x_2\\x_1&1&0\\x_2&0&1\end{bmatrix}\succeq0.$$</div><p>The bottom-right block is $I_2\succ0$, so the Schur complement gives $t-x^\top I_2^{-1}x=t-x_1^2-x_2^2\ge0$. The larger matrix is affine in all three unknowns, even though the original inequality contains squares.</p><p>For $(3,4)$, $x^\top x=9+16=25$, so the least feasible value is $t=25$. At equality the block matrix is singular; requiring it to be positive definite would impose the stricter condition $t\gt25$.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-8" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P8 &mdash; Medium: Turn energy bookkeeping into a gain bound</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">A discrete-time system obeys $V_{t+1}-V_t\le4w_t^2-z_t^2$, with $V_t\ge0$ and $V_0=0$. Derive a finite-horizon bound between input and output energies. If $\sum_{t=0}^{T-1}w_t^2=3$, what output-energy bound follows?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-systems.html#sys-frequency">Primer D: signal energy and gain</a>. <strong>Apply here:</strong> <a href="#dissipativity">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Sum the storage differences; the intermediate terms telescope.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>Summing from $t=0$ to $T-1$ gives $V_T-V_0\le4\sum w_t^2-\sum z_t^2$. Rearranging and using $V_0=0$, $V_T\ge0$ yields $\sum z_t^2\le4\sum w_t^2-V_T\le4\sum w_t^2$.</p><p>The output energy is therefore at most $4(3)=12$. Taking square roots gives a signal-norm gain bound of 2, not 4. With nonzero initial storage the bound would instead contain $+V_0$, representing energy initially present in the system. An infinite-horizon statement follows by taking limits when the input has finite total energy.</p></div>
+        </details>
+      </div>
+    </details>
+    <h3 class="subsection-heading" id="practice-hard">Hard &mdash; Explain why the argument works and where it stops.</h3>
+    <details id="practice-9" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P9 &mdash; Hard: Compute the whole dual function</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For the first practice problem, compute $g(\lambda)=\inf_{x\in\mathbb R}[(x-2)^2+\lambda(x-1)]$ for $\lambda\ge0$. Maximize it and compare with the constrained primal value.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-optimization.html#opt-multivariable">Primer B: derivatives and minimizers</a>. <strong>Apply here:</strong> <a href="#lagrangian-duality">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Complete the square in $x$, or substitute the stationary point $x=2-\lambda/2$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><div class="math-block">$$L(x,\lambda)=\left(x-2+\frac\lambda2\right)^2+\lambda-\frac{\lambda^2}{4},\qquad g(\lambda)=\lambda-\frac{\lambda^2}{4}.$$</div><p>The squared term has infimum zero, attained at $x=2-\lambda/2$. The dual function is a concave parabola. Its derivative is $1-\lambda/2$, so its maximum on $\lambda\ge0$ occurs at $\lambda=2$, with $g(2)=1$.</p><p>The primal optimum is also 1 at $x=1$, giving zero gap and primal recovery. For any other nonnegative $\lambda$, $1-g(\lambda)=(\lambda-2)^2/4\ge0$: every price supplies a valid lower bound, while the best price makes it exact.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-10" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P10 &mdash; Hard: A singular corner needs a range check</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">For real numbers $a,b$, characterize when $\begin{bmatrix}a&b\\b&0\end{bmatrix}\succeq0$. Explain why replacing the inverse of the zero corner by zero would give an incomplete test.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-psd">Primer A: PSD quadratic forms</a>. <strong>Apply here:</strong> <a href="#schur-complement">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Test the quadratic form on $(1,t)^\top$ for arbitrary $t$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The quadratic form at $(1,t)^\top$ is $a+2bt$. If $b\ne0$, choosing $t$ with the opposite sign and sufficiently large magnitude makes it negative. Therefore PSD forces $b=0$. Once $b=0$, the matrix is PSD exactly when $a\ge0$.</p><p>Using a pseudoinverse of the zero corner gives only the condition $a\ge0$ and misses the necessary $b=0$. The general semidefinite Schur-complement rule needs a range condition in addition to the pseudoinverse. The definite-corner version avoids this issue because an invertible corner has the entire space as its range.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-11" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P11 &mdash; Hard: Compose a slope bound with weights</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Let $F(x)=3\varphi(2x+1)-4$, where $\varphi$ is slope-restricted in $[0,1]$, meaning $0\le[\varphi(a)-\varphi(b)]/(a-b)\le1$ for $a\ne b$. Prove that $F$ is 6-Lipschitz and its squared-gain bound is $\rho=36$. Is the bound attained for ReLU?</p>
+        <p><strong>Review if needed:</strong> <a href="primer-optimization.html#opt-lipschitz">Primer B: Lipschitz continuity</a>. <strong>Apply here:</strong> <a href="#quadratic-constraints">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Biases cancel in differences. Apply the slope bound to the two hidden inputs, then multiply by the output weight.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>Slope restriction implies $|\varphi(a)-\varphi(b)|\le|a-b|$. Hence $|F(x)-F(y)|=3|\varphi(2x+1)-\varphi(2y+1)|\le3|2x-2y|=6|x-y|$. Squaring gives $|F(x)-F(y)|^2\le36|x-y|^2$, so the page's squared convention is $\rho=36$.</p><p>For ReLU, choose two distinct inputs $x,y\gt-1/2$. Both hidden inputs are positive, and $F(x)-F(y)=6(x-y)$, so the ratio is exactly 6 and no smaller global Lipschitz constant works. A certificate that reports $\rho=36$ must be square-rooted before being read as a norm gain.</p></div>
+        </details>
+      </div>
+    </details>
+    <details id="practice-12" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+      <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 2.P12 &mdash; Hard: A feasible certificate can be conservative</summary>
+      <div style="padding:14px 16px;font-size:14px;">
+        <p style="margin-top:0;">Consider $A=\begin{bmatrix}0.5&2\\0&0.5\end{bmatrix}$. Show that the system is Schur stable but $P=I$ fails the Lyapunov decrease test. Solve $A^\top PA-P=-I$ for symmetric $P=\begin{bmatrix}p&q\\q&r\end{bmatrix}$ and check $P\succ0$.</p>
+        <p><strong>Review if needed:</strong> <a href="primer-systems.html#sys-linear">Primer D: eigenvalues and discrete-time stability</a>. <strong>Apply here:</strong> <a href="#lmis-sdp">this module's explanation</a>.</p>
+        <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The diagonal entries give the eigenvalues. Match the three independent entries of the Stein equation in order $p,q,r$.</p></details>
+        <details style="margin-top:10px;">
+          <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The eigenvalues are both 0.5, so the system is stable. Yet $A^\top A-I=\begin{bmatrix}-0.75&1\\1&3.25\end{bmatrix}$ has a positive quadratic form on $(0,1)^\top$, so Euclidean energy need not decrease at every step.</p><p>Matching entries of the equation gives $-3p/4=-1$, $p-3q/4=0$, and $4p+2q-3r/4=-1$. Thus $p=4/3$, $q=16/9$, and $r=356/27$. The first principal minor is positive and the determinant is $1168/81\gt0$, hence $P\succ0$.</p><p>The resulting weighted energy decreases by $\|x\|_2^2$ each step. Failing one chosen certificate, $P=I$, does not prove instability; one must distinguish failure of a particular candidate from infeasibility of the entire LMI.</p></div>
+        </details>
+      </div>
+    </details>
+
+    <h3 class="subsection-heading" id="research-practice">Further practice &mdash; Original problems and research connections</h3>
+    <p>The original exercises below retain their numbering. Some compare later methods or ask for longer research derivations; use the graded set above first, and return to a research-connection problem after reading the relevant linked module.</p>
+
 
     <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
       <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">
