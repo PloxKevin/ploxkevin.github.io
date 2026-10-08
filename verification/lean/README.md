@@ -21,6 +21,16 @@ The toolchain and dependency manifest pin Lean 4.34.1 and Mathlib commit
 and cached Mathlib dependencies. A fresh checkout needs network access for these
 dependencies. No global toolchain setting is changed.
 
+For the expanded book's current audit, preserve the historical report directory:
+
+```sh
+python3 verify.py --output ../../reports/book/lean-verification
+```
+
+The runner also checks that the local Git revision of every cached dependency
+matches the pinned manifest. Run `python3 book/check_coverage.py` from the
+repository root after the book's static validator and formal runner pass.
+
 The runner builds the proof modules, replays their declarations with
 `lake env leanchecker -v SafeLearning`, and prints every theorem's transitive
 axiom dependencies. It rejects `sorry`, custom axioms and native evaluation proof
@@ -45,6 +55,10 @@ when the local cached browser path is unavailable.
   1–7 and 12–15.
 - `CoreModules.lean` and `CoreAnalysis.lean`: exercises and general results from
   modules 8–11, including optimization, safety, convergence and validation.
+- `BookApplications.lean`: selected general implications for robust tank
+  feedback, one-state policy mixing, held-input barriers, scalar disturbance
+  tubes and metric Lipschitz safety transfer. The exact source map and limits
+  are in `book/review/new-formal-map.json` at the repository root.
 
 The proofs include universal statements about invariance, convex optimality,
 contraction, probability bounds, convergence and minimal sample sizes, as well as

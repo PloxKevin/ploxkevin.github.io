@@ -1,5 +1,11 @@
 # Safe Learning correctness audit
 
+This directory records the October 7 audit of the earlier 26-page version.
+The expanded book's current source fingerprints, proof audit and outstanding
+rendering/publication work are recorded separately in
+[`../book/README.md`](../book/README.md). Historical browser results here do not
+validate the new application material.
+
 This audit catalogues all 489 exercises, corrects the issues found in the course,
 and adds a local Lean 4.34.1 project with 473 theorem declarations passing build,
 kernel replay and a standard-axiom audit. The formal results cover selected

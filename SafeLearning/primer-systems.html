@@ -97,7 +97,10 @@
 
     <!-- applied-primer-review:end -->
 
-    <div class="page-toc">
+    <!-- BOOK ENTRY START -->
+<p class="book-entry"><a href="book.html#book-contents">Book contents</a> &middot; <a href="#book-lab">Apply this chapter to a real decision</a> &middot; <a href="glossary.html">Glossary</a></p>
+<!-- BOOK ENTRY END -->
+<div class="page-toc">
       <div class="page-toc-title">Contents</div>
       <a href="#sys-state-space">1. State-Space Models, Trajectories &amp; Equilibria</a>
       <a href="#sys-linear">2. Linear Systems: Solutions, Eigenvalues &amp; Stability</a>
@@ -110,6 +113,7 @@
       <a href="#sys-optimal-control">9. Optimal Control, Dynamic Programming &amp; MPC</a>
       <a class="toc-interactive" href="#pd-walkthrough">Walkthrough: From the Bellman Equation to the Riccati Equation</a>
       <a class="toc-interactive" href="#sys-explorer">Interactive: Phase Portraits &amp; Lyapunov Ellipses</a>
+      <a href="#book-lab">Application lab &amp; chapter review</a>
       <a href="#exercises">Exercises</a>
       <a href="#reading">Further Reading</a>
       <a class="toc-interactive" href="#flashcards">Flashcards</a>
@@ -1649,7 +1653,96 @@
     </div>
 
     <!-- ===== EXERCISES ===== -->
-    <h2 class="section-heading" id="exercises">Exercises</h2>
+    <!-- BOOK APPLICATION START -->
+<section class="book-chapter" id="book-lab">
+  <h2 class="section-heading">From the mathematics to a real decision</h2>
+  <p>A controller chooses an input, but a physical system keeps moving between choices. To judge the controller, we need a state, a clock, input limits, and a requirement on the resulting trajectory. This chapter develops those ingredients for a room-temperature controller and a braking robot. All coefficients and limits define hypothetical systems; the calculations are not empirical claims about a particular building or robot.</p>
+  <div class="insight-box" id="book-d-objectives">
+    <div class="box-label">What you will learn to do</div>
+    <ul>
+      <li>Convert a continuous rate model into an exact update for a held input.</li>
+      <li>Check convergence, actuator limits, and temperature limits as separate requirements.</li>
+      <li>Turn a stopping-distance calculation into a state-based safety condition.</li>
+      <li>Include delay and measurement uncertainty before stating a guarantee.</li>
+    </ul>
+  </div>
+
+  <h3 class="subsection-heading" id="book-d-model">Choose states and units before tuning feedback</h3>
+  <p>Suppose a room loses heat to surroundings held at $18\,{}^\circ\mathrm C$. Its heater input $u$ is measured in kilowatts and must satisfy $0\le u\le2$. Assume the room is well mixed, the temperature sensor is exact, and the model is valid throughout $20$ to $24\,{}^\circ\mathrm C$. With time $t$ in minutes, define</p>
+  <div class="math-block">$$\dot T=-\frac{T-18}{20}+0.2u.$$</div>
+  <p>The first coefficient has units per minute; the second has units degrees Celsius per minute per kilowatt. Thus both terms give a temperature rate. The model describes thermal inertia: setting an input does not instantly set the temperature. It also omits people, sunlight and parameter drift, so any guarantee initially concerns this ideal system.</p>
+  <p>The target is $22\,{}^\circ\mathrm C$. At equilibrium, the temperature rate is zero, giving $0=-(22-18)/20+0.2u_*$ and therefore $u_*=1$ kW. Introduce temperature error $x=T-22$ and input deviation $v=u-1$. Substitution gives $\dot x=-0.05x+0.2v$. The target becomes $x=0$, and heater limits become $-1\le v\le1$. This shift keeps the constant heating needed at the target visible.</p>
+  <p>Suppose the controller reads the sensor every five minutes and keeps its selected input constant until the next reading. Write $x_k$ for the error at the $k$th reading and $v_k$ for that held deviation. The sampling interval is part of the controller specification, not just a plotting preference.</p>
+
+  <h3 class="subsection-heading" id="book-d-example-thermal">Worked example 1 &mdash; Tune a held-input temperature controller</h3>
+  <p><strong>Step 1: integrate over a sampling interval.</strong> With $v_k$ constant and elapsed time $s$ measured from the reading, solving the scalar differential equation gives</p>
+  <div class="math-block">$$x(k\Delta+s)=e^{-0.05s}x_k+4(1-e^{-0.05s})v_k,\qquad 0\le s\le\Delta.$$</div>
+  <p>Differentiation checks the solution, and setting $s=0$ recovers $x_k$. At $\Delta=5$ minutes, put $a=e^{-0.25}\approx0.778801$ and $b=4(1-a)\approx0.884797$. The exact sampled model is $x_{k+1}=ax_k+bv_k$. Here $a$ is dimensionless and $b$ has units degrees Celsius per kilowatt.</p>
+  <p><strong>Step 2: close the loop.</strong> Choose $v_k=-0.5x_k$, where the gain is $0.5$ kilowatts per degree Celsius. Then</p>
+  <div class="math-block">$$x_{k+1}=qx_k,\qquad q=a-0.5b\approx0.336402.$$</div>
+  <p>Since $|q|\lt1$, the sampled error tends to zero: $x_k=q^kx_0$. For an initial temperature of $20\,{}^\circ\mathrm C$, $x_0=-2$. The first input is $u_0=1-0.5(-2)=2$ kW. The first two sampled errors are $x_1\approx-0.672805$ and $x_2\approx-0.226333$ degrees Celsius, corresponding to temperatures about $21.3272$ and $21.7737\,{}^\circ\mathrm C$.</p>
+  <p><strong>Step 3: check the input and state region.</strong> For every $|x_k|\le2$, the commanded input $1-0.5x_k$ lies between $0$ and $2$ kW. Also $|x_{k+1}|=q|x_k|\le2$, so induction proves that this region is preserved at readings. The candidate Lyapunov function $V(x)=x^2$ satisfies $V(x_{k+1})=q^2V(x_k)\approx0.113167V(x_k)$, a strict decrease away from the target.</p>
+  <p><strong>Step 4: inspect what happens between readings.</strong> Substituting the held feedback value into the exact trajectory gives $x(k\Delta+s)=(3e^{-0.05s}-2)x_k$. On $0\le s\le5$, this multiplier decreases from $1$ to $q$, remaining positive. The trajectory therefore stays between $x_k$ and $qx_k$. It never leaves $[-2,2]$, so the full temperature trajectory stays within $20$ to $24\,{}^\circ\mathrm C$. This conclusion uses the held-input model, not only the sampled eigenvalue.</p>
+  <p>Before increasing the gain, decide which improvement is wanted. Faster temperature recovery, smaller peak heater demand and lower energy use are different objectives. Energy over an interval is input power integrated over time; a small temperature error does not by itself measure that energy. Changing the sampling interval also changes both coefficients of the update, so the gain should be reassessed with the new clock rather than copied unchanged.</p>
+  <div class="warning-box" id="book-d-repair">
+    <div class="box-label">Common wrong approach &mdash; Analyse a different clock</div>
+    <p>Substituting $v(t)=-0.5x(t)$ gives the continuously updated equation $\dot x=-0.15x$. Its five-minute multiplier is $e^{-0.75}\approx0.472367$, which differs from $0.336402$. Continuous feedback changes the input while the temperature changes; the actual controller holds it fixed. Repair the argument by integrating with the held input first, then substituting the sampled feedback. Likewise, stability alone does not check actuator limits.</p>
+  </div>
+
+  <h3 class="subsection-heading" id="book-d-example-braking">Worked example 2 &mdash; Decide whether a robot can still stop</h3>
+  <p>Now a robot approaches a wall. Let $d$ be remaining distance in metres and $v\ge0$ the speed toward the wall in metres per second. The state needs both quantities: equal distances with different speeds can require different decisions. While moving, assume $\dot d=-v$ and available braking acceleration is exactly $a=1\ \mathrm{m/s}^2$. The brake stops the robot at zero speed and then holds it there.</p>
+  <p><strong>Step 1: derive the required distance.</strong> Starting at speed $v_0$, full braking gives $v(t)=v_0-at$ until stopping at $t_*=v_0/a$. Integrate speed over this interval:</p>
+  <div class="math-block">$$\int_0^{t_*}(v_0-at)\,\mathrm dt=v_0\frac{v_0}{a}-\frac a2\left(\frac{v_0}{a}\right)^2=\frac{v_0^2}{2a}.$$</div>
+  <p>At $d_0=0.8$ m and $v_0=1$ m/s, stopping requires $0.5$ m. Immediate braking leaves $0.3$ m of clearance. The relevant safety quantity is $h(d,v)=d-v^2/(2a)$, measured in metres. The condition $h\ge0$ means stopping before or at the wall is possible under these assumptions; a strictly positive clearance would require a positive margin.</p>
+  <p><strong>Step 2: check the condition along the braking trajectory.</strong> While braking, the chain rule gives $\dot h=\dot d-(v/a)\dot v=-v-(v/a)(-a)=0$. Thus $h$ remains constant until stopping. Afterwards $v=0$ and the distance stays fixed. This is an all-time argument for this specified backup action, not a list of successful simulated positions.</p>
+  <p><strong>Step 3: include decision delay.</strong> Suppose the robot coasts for $\tau=0.4$ seconds before braking starts. Coasting consumes distance $v_0\tau=0.4$ m, leaving $0.4$ m for a brake that still needs $0.5$ m. The robot cannot avoid the wall under this delayed strategy. The admissible delay satisfies</p>
+  <div class="math-block">$$v_0\tau+\frac{v_0^2}{2a}\le d_0,\qquad \tau\le\frac{d_0-v_0^2/(2a)}{v_0}=0.3\text{ seconds}.$$</div>
+  <p><strong>Step 4: state the operational conclusion.</strong> Immediate braking is feasible, but the proposed $0.4$-second delay is too long. A sampled monitor must reserve distance for everything that happens before braking begins. The braking condition also assumes the stated acceleration is available; estimating it optimistically would invalidate the clearance calculation.</p>
+
+  <h3 class="subsection-heading" id="book-d-practice">Change a physical assumption and rebuild the argument</h3>
+  <details id="book-d-b1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise D.B1 &mdash; Easy: Translate a comfort deadline into readings</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>For example 1, starting at $20\,{}^\circ\mathrm C$, require $|T-22|\le0.3\,{}^\circ\mathrm C$ at a reading. Find the first reading that meets it and the elapsed time. Does the input remain admissible before that reading?</p>
+      <p><strong>Review:</strong> <a href="#sys-linear">discrete linear trajectories</a>; <a href="#book-d-example-thermal">the held temperature controller</a>.</p>
+      <details><summary>Show hint</summary><p>Use $|x_k|=2q^k$ and check successive integer values of $k$, including zero.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>At $k=0$ the error magnitude is $2$. At $k=1$ it is about $0.672805$, still above $0.3$. At $k=2$ it is about $0.226333$, so the first qualifying reading is two intervals later, after $10$ minutes. The first held input is $2$ kW and the second is $1-0.5(-0.672805)\approx1.336402$ kW, both admissible. The between-reading argument also shows the temperature stays inside its allowed interval while approaching the tolerance.</p></div></details>
+    </div>
+  </details>
+  <details id="book-d-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise D.B2 &mdash; Medium: Select a gain against bounded disturbances</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>Use $v_k=-kx_k$ with $0\le k\le0.5$. Suppose sampled errors obey $x_{k+1}=(a-bk)x_k+w_k$, with $|w_k|\le0.1\,{}^\circ\mathrm C$. Choose all gains that make $[-0.2,0.2]$ invariant at readings. Continue to respect heater limits for commands at every $|x_k|\le2$.</p>
+      <p><strong>Review:</strong> <a href="#sys-lyapunov">invariant regions</a>; <a href="#book-d-example-thermal">sampling and actuator limits</a>.</p>
+      <details><summary>Show hint</summary><p>Here $a-bk$ is positive. Bound the next error by $(a-bk)0.2+0.1$, and require this to be at most $0.2$.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>The worst next magnitude is $0.2(a-bk)+0.1$. Invariance requires $a-bk\le0.5$, so $k\ge(a-0.5)/b\approx0.315101$ kW per degree Celsius. Heater limits throughout $|x_k|\le2$ require $1-2k\ge0$ and $1+2k\le2$, giving $k\le0.5$. Thus the allowable range is approximately $[0.315101,0.5]$. The interval is invariant only if the state starts in it; this calculation does not establish when a colder room enters it. The disturbance assumption describes sampled updates, so it alone does not bound temperature excursions between readings.</p></div></details>
+    </div>
+  </details>
+  <details id="book-d-b3" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise D.B3 &mdash; Hard: Budget braking delay under measurement uncertainty</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>The robot's distance lies in $[0.72,0.78]$ m, its speed in $[0.9,1.1]$ m/s, and braking acceleration is at least $1\ \mathrm{m/s}^2$. During a $0.2$-second delay it coasts. Is $d\ge0$ guaranteed for every allowed state? Find the largest delay that the interval information certifies, allowing zero final clearance.</p>
+      <p><strong>Review:</strong> <a href="#sys-state-space">states and trajectories</a>; <a href="#book-d-example-braking">the stopping-distance condition</a>.</p>
+      <details><summary>Show hint</summary><p>The difficult case has the smallest distance, largest speed and weakest braking. Include both delay travel and braking distance.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>Worst-case travel is $1.1(0.2)+1.1^2/(2\cdot1)=0.22+0.605=0.825$ m, exceeding the available $0.72$ m. Hence the proposed delay lacks a guarantee; this allowed worst case actually fails the stopping condition. Solving $1.1\tau+0.605\le0.72$ gives $\tau\le0.115/1.1\approx0.104545$ seconds. Using midpoint estimates would give $1(0.2)+1^2/2=0.7\le0.75$, an optimistic conclusion that omits measurement uncertainty. The robust bound assumes the entire stated interval is possible and that speed stays constant during the delay.</p></div></details>
+    </div>
+  </details>
+  <details id="book-d-b4" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise D.B4 &mdash; Hard: Repair a controller after input saturation</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>Increase the temperature gain to $1$ kW per degree Celsius, but clip $u=1-x$ into $[0,2]$. Starting at $x_0=-2$, compare the unclipped prediction with the actual first sampled error. Prove that sampled errors in $[-2,2]$ remain in that interval for the clipped controller.</p>
+      <p><strong>Review:</strong> <a href="#sys-feedback">feedback and actuator saturation</a>; <a href="#book-d-example-thermal">the exact sampled model</a>.</p>
+      <details><summary>Show hint</summary><p>Write the map in three pieces: $v=1$ for $x\le-1$, $v=-x$ for $|x|\le1$, and $v=-1$ for $x\ge1$. Check the endpoints of each affine piece.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>The unclipped multiplier is $a-b\approx-0.105996$, predicting $x_1\approx0.211992$. But the requested $u_0=3$ kW clips to $2$, so the actual update is $-2a+b\approx-0.672805$. On $[-2,-1]$, the increasing map $ax+b$ ranges from $-0.672805$ to $0.105996$. On $[-1,1]$, $(a-b)x$ ranges between $-0.105996$ and $0.105996$. On $[1,2]$, $ax-b$ ranges from $-0.105996$ to $0.672805$. Their union lies in $[-2,2]$, proving sampled invariance by induction. Each held-input scalar trajectory is monotone between its endpoints, so the full temperature trajectory also stays inside this interval. The unclipped linear formula cannot be used outside $|x|\le1$.</p></div></details>
+    </div>
+  </details>
+
+  <h3 class="subsection-heading" id="book-d-synthesis">Read a guarantee as a statement about trajectories</h3>
+  <p>Explain without looking back why temperature error is a useful shifted state, why a stable sampled multiplier needs an input-limit check, and why distance alone cannot determine a braking decision. Identify the exact step that extends a statement from sampled times to the entire trajectory in each worked example.</p>
+  <p>The method is to model rates, derive the actual controller's update, state the allowed initial region, and propagate a property through time. A Lyapunov decrease supports convergence; an invariant region supports staying within limits; a stopping backup supports recoverability. Continue to <a href="barriers.html#cbf">barrier certificates</a> for state-dependent safety constraints, <a href="lyapunov-mpc.html#learning-based-mpc">learning-based MPC</a> for uncertain prediction and planning, and <a href="nn-in-the-loop.html#offset-free">offset-free tracking</a> for controllers that must remove persistent tracking errors.</p>
+</section>
+<!-- BOOK APPLICATION END -->
+<h2 class="section-heading" id="exercises">Exercises</h2>
     <p>These cumulative problems connect several ideas. If a step feels too large, return to the <a href="#reading-route">section practice route</a>, where each topic has an Easy, Medium and Hard problem with a separate hint, worked solution and prerequisite review link.</p>
 
     <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">

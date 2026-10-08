@@ -6,6 +6,7 @@ Dependencies are pinned by lean-toolchain and lake-manifest.json.
 """
 from pathlib import Path
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import json
 import re
@@ -14,7 +15,13 @@ import time
 
 PROJECT = Path(__file__).resolve().parent
 ROOT = PROJECT.parent.parent
-OUT = ROOT / 'reports/lean-verification'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--output', type=Path, default=ROOT / 'reports/lean-verification',
+                    help='Report directory; use a separate directory for a new source revision.')
+args = parser.parse_args()
+OUT = args.output.resolve()
+if not OUT.is_relative_to(ROOT):
+    raise ValueError('Reports must stay within the repository.')
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -62,6 +69,17 @@ for p in proof_files:
 
 checks = []
 checks.append(run(['lean', '--version'], 'lean-version.txt'))
+manifest = json.loads((PROJECT / 'lake-manifest.json').read_text())
+dependencies = []
+for package in manifest['packages']:
+    if package.get('type') != 'git':
+        raise RuntimeError(f'Unrecognized dependency type: {package["name"]}')
+    checkout = PROJECT / manifest['packagesDir'] / package['name']
+    revision = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD'],
+                                       text=True).strip()
+    if revision != package['rev']:
+        raise RuntimeError(f'Dependency revision mismatch: {package["name"]}')
+    dependencies.append({'name': package['name'], 'revision': revision})
 checks.append(run(['lake', 'build'], 'build.log'))
 checks.append(run(['lake', 'env', 'leanchecker', '-v', 'SafeLearning'], 'kernel-replay.log'))
 
@@ -89,12 +107,12 @@ if initial_hashes != final_hashes:
     raise RuntimeError('Proof, project or site source changed during verification; rerun after edits finish.')
 site_hashes = {str(p.relative_to(ROOT)): sha(p) for p in site_files}
 proof_hashes = {str(p.relative_to(ROOT)): sha(p) for p in proof_files}
-manifest = json.loads((PROJECT / 'lake-manifest.json').read_text())
 report = {
     'status': 'passed',
     'verified_at_utc': datetime.now(timezone.utc).isoformat(),
     'lean_version': (OUT / 'lean-version.txt').read_text().strip(),
     'mathlib_revision': next(p['rev'] for p in manifest['packages'] if p['name'] == 'mathlib'),
+    'dependency_revisions': dependencies,
     'checks': checks,
     'proof_file_count': len(proof_files),
     'theorem_count': len(declarations),

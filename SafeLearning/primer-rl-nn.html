@@ -97,7 +97,10 @@
 
     <!-- applied-primer-review:end -->
 
-    <div class="page-toc">
+    <!-- BOOK ENTRY START -->
+<p class="book-entry"><a href="book.html#book-contents">Book contents</a> &middot; <a href="#book-lab">Apply this chapter to a real decision</a> &middot; <a href="glossary.html">Glossary</a></p>
+<!-- BOOK ENTRY END -->
+<div class="page-toc">
       <div class="page-toc-title">Contents</div>
       <a href="#rl-bandits">1. Bandits, Regret &amp; Bayesian Optimization</a>
       <a href="#rl-mdp">2. Markov Decision Processes, Policies &amp; Returns</a>
@@ -109,6 +112,7 @@
       <a href="#nn-architectures">8. Convolutions, Residual, Recurrent &amp; Equilibrium Layers</a>
       <a href="#nn-robustness">9. Classifiers, Margins &amp; Adversarial Examples</a>
       <a class="toc-interactive" href="#rle-explorer">Interactive: Value Iteration &amp; a Tiny Network</a>
+      <a href="#book-lab">Application lab &amp; chapter review</a>
       <a href="#exercises">Exercises</a>
       <a href="#reading">Further Reading</a>
       <a class="toc-interactive" href="#flashcards">Flashcards</a>
@@ -1603,7 +1607,96 @@
     <ol><li>Worked example: at $x=(0.5,2.5)$ the certified radius is $0.316$ but the true distance $0.707$; move to $x=(2,1)$ and the two coincide (Section 9).</li><li>The green disk never crosses the black curve, for any network, scale or activation: that is the theorem.</li><li>Raising $s$ scales $L$ but also changes the margin $|f(x)|$, so the certified radius can grow, shrink or stay the same: at the default point, $s=1$ gives $0.316$ and $s=2$ gives $0.474$; compare both quantities.</li><li>With tanh the boundary bends and the slopes vary continuously in $(0,1]$, but the all-pattern bound stays valid and, for invertible $W_1$, exact: the two pre-activations vary independently, so each corner slope pair is attained or approached (at $s=1$, $x=(0.5,0.5)$ both pre-activations vanish, the gradient is $(-1,3)$ and its norm is $L=\sqrt{10}$). A tanh network can also have no boundary at all: for the worked network with $b_2=3$, $f=3+\tanh v_1-2\tanh v_2\gt0$ for every input, whatever $s$, and the readout says so.</li><li>Random networks: for the first ten seeds the product bound is $1$&ndash;$64\%$ above the all-pattern bound, the price of multiplying norms of layers that do not align (Module 12).</li></ol>
 
     <!-- ===== EXERCISES ===== -->
-    <h2 class="section-heading" id="exercises">Exercises</h2>
+    <!-- BOOK APPLICATION START -->
+<section class="book-chapter" id="book-lab">
+  <h2 class="section-heading">From the mathematics to a real decision</h2>
+  <p>A learning system can make a plausible recommendation while missing the requirement that matters to an operator. We therefore begin with states, rewards and costs, evaluate a policy, and only then introduce a learned recommendation. The running case is a hypothetical packing machine whose faster mode increases wear. A second case asks whether a learned score remains consistent under sensor error. All probabilities, scores and budgets below are specified models, not empirical performance reports.</p>
+  <div class="insight-box" id="book-e-objectives">
+    <div class="box-label">What you will learn to do</div>
+    <ul>
+      <li>Evaluate delayed rewards and costs by conditioning on the next state.</li>
+      <li>Choose a policy parameter that respects a stated expected budget.</li>
+      <li>Turn physical measurement uncertainty into a bound on a neural decision score.</li>
+      <li>Explain why stable recommendations, accurate predictions and feasible policies are different claims.</li>
+    </ul>
+  </div>
+
+  <h3 class="subsection-heading" id="book-e-model">Specify what a good policy should accomplish</h3>
+  <p>A shift begins with the machine either ready, state $R$, or worn, state $W$. In $R$, gentle operation produces $2$ items during the shift and leaves the machine ready. Fast operation produces $4$ items, then leaves the machine worn with probability $0.25$ and ready with probability $0.75$. In $W$, the only action is repair: it produces zero items, costs one maintenance unit, and returns the machine to $R$ for the next shift.</p>
+  <p>Assume this two-state description is Markov: wear history does not change transition probabilities once the current state is known. Assume states are observed exactly and the specified probabilities remain constant. These choices make the calculations possible; a real process with hidden cumulative wear would need a richer state or an uncertainty model.</p>
+  <p>Consider a stationary randomised policy. Whenever the state is $R$, choose fast with probability $p$ and gentle with probability $1-p$, using a fresh draw. Repair whenever the state is $W$. The parameter $p\in[0,1]$ is a probability, not a speed setting. In $R$, expected immediate reward is $2(1-p)+4p=2+2p$ items, and the probability of next state $W$ is $0.25p$.</p>
+  <p>Start in $R$ and discount future shifts by $\gamma=0.8$. Let $J(p)$ be expected discounted production and $C(p)$ expected discounted maintenance use. Their units are items and maintenance units, respectively: discounting adds weights, not new physical units. The decision is to maximise $J(p)$ subject to $C(p)\le0.5$. This budget concerns an average over random trajectories and is not a ban on individual repairs.</p>
+
+  <h3 class="subsection-heading" id="book-e-example-policy">Worked example 1 &mdash; Choose speed while accounting for delayed maintenance</h3>
+  <p><strong>Step 1: evaluate reward from each state.</strong> Write $V_R,V_W$ for expected discounted production when starting in each state. Repair gives no current production and returns to $R$, so $V_W=0.8V_R$. From $R$, average over the next state:</p>
+  <div class="math-block">$$V_R=2+2p+0.8\big[(1-0.25p)V_R+0.25pV_W\big].$$</div>
+  <p>Substitute $V_W=0.8V_R$. The coefficient of $V_R$ on the right is $0.8-0.04p$. Moving it left gives $(0.2+0.04p)V_R=2+2p$, hence $J(p)=(2+2p)/(0.2+0.04p)$.</p>
+  <p><strong>Step 2: evaluate cost separately.</strong> Write $C_R,C_W$ for expected discounted maintenance. In $W$, repair costs one now, so $C_W=1+0.8C_R$. In $R$, there is no immediate maintenance cost:</p>
+  <div class="math-block">$$C_R=0.8\big[(1-0.25p)C_R+0.25pC_W\big],\qquad C(p)=C_R=\frac{0.2p}{0.2+0.04p}=\frac{p}{1+0.2p}.$$</div>
+  <p>The numerator $0.2p=0.8(0.25p)$ accounts for a repair occurring next shift after wear. Counting one maintenance unit immediately whenever fast is chosen would describe a different cost timeline.</p>
+  <p><strong>Step 3: solve the budget inequality.</strong> The denominator is positive for $p\in[0,1]$, so multiplication preserves the inequality:</p>
+  <div class="math-block">$$\frac{p}{1+0.2p}\le0.5\ \Longleftrightarrow\ p\le0.5+0.1p\ \Longleftrightarrow\ 0.9p\le0.5\ \Longleftrightarrow\ p\le\frac59.$$</div>
+  <p><strong>Step 4: choose within the feasible range.</strong> Differentiating $J$ gives $J'(p)=0.32/(0.2+0.04p)^2\gt0$, so production increases with $p$. The best feasible parameter in this policy family is $p_*=5/9$. It yields $C(p_*)=0.5$ maintenance units and $J(p_*)=14$ items. Gentle operation alone gives $10$ discounted items; always fast gives $50/3\approx16.667$ items but maintenance cost $5/6\approx0.8333$, exceeding the budget.</p>
+  <p>This is an exact optimisation over the specified one-parameter policy family, with known transitions. Learning would enter if rewards or transitions had to be estimated, or if a larger policy were fitted from experience. The algebra supplies a baseline against which such a learned policy can be checked.</p>
+  <div class="warning-box" id="book-e-repair">
+    <div class="box-label">Common wrong approach &mdash; Optimise the immediate reward alone</div>
+    <p>Fast produces more items this shift, so an immediate-reward comparison always chooses it. That misses both the next shift lost to repair and the maintenance budget. Repair the argument by writing one Bellman equation for reward and another for cost, including their different immediate signals. A reward penalty can be a useful algorithmic device, but its coefficient does not replace checking the original budget.</p>
+  </div>
+
+  <h3 class="subsection-heading" id="book-e-example-network">Worked example 2 &mdash; Check a learned recommendation under sensor error</h3>
+  <p>Suppose a learned system recommends between two fixed operating policies before an episode begins. Mode A uses $p_A=0.4$ and mode B uses $p_B=0.8$ throughout that episode. The choice is made once; within the selected mode, action draws remain fresh at each ready shift. Assume the transition model above applies to either choice regardless of the initial sensor reading.</p>
+  <p>A vibration measurement $y$, in millimetres per second, is normalised as $z=(y-2\ \mathrm{mm/s})/(1\ \mathrm{mm/s})$. Define the learned score difference</p>
+  <div class="math-block">$$m(z)=1.2-0.6\operatorname{relu}(z+0.5)-0.4\operatorname{relu}(z-0.5),\qquad \operatorname{relu}(r)=\max\{0,r\}.$$</div>
+  <p>A positive score nominates B; a nonpositive score nominates A. The dimensionless score is a preference, not a failure probability or maintenance estimate.</p>
+  <p><strong>Step 1: compute the nominal recommendation.</strong> At measured vibration $y_0=2$ mm/s, $z_0=0$. The hidden activations are $0.5$ and $0$, giving $m(0)=1.2-0.6(0.5)=0.9$. The learned system nominates B.</p>
+  <p><strong>Step 2: bound the effect of measurement error.</strong> Assume a hard measurement bound $|y-y_0|\le0.2$ mm/s. Normalisation gives $|z-z_0|\le0.2$. ReLU changes by at most its input change, so the triangle inequality gives $|m(z)-m(z_0)|\le(0.6+0.4)|z-z_0|=|z-z_0|$. Thus $m(z)\ge0.9-0.2=0.7\gt0$ throughout the uncertainty interval. Direct evaluation gives the tighter minimum $m(0.2)=0.78$, confirming the bound is conservative.</p>
+  <p><strong>Step 3: apply the original feasibility requirement.</strong> The robust recommendation is still B, but $C(0.8)=0.8/1.16=20/29\approx0.68966\gt0.5$. A gate that checks the original model budget rejects B and selects the feasible fallback A, whose cost is $C(0.4)=0.4/1.08=10/27\approx0.37037$. Its expected production is $J(0.4)=350/27\approx12.96296$ items.</p>
+  <p><strong>Step 4: name the two conclusions.</strong> The score certificate guarantees that this fixed network's nomination stays B within the stated input interval. The cost calculation says A satisfies the model's expected budget. Robustness of the nomination does not make B feasible. If the selected mode changed during the episode, the gate would need to evaluate that switching policy; these two fixed-mode values would no longer be sufficient.</p>
+
+  <h3 class="subsection-heading" id="book-e-practice">Test whether a changed policy still meets the stated requirement</h3>
+  <details id="book-e-b1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise E.B1 &mdash; Easy: Tighten the maintenance budget</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>Replace the discounted maintenance budget $0.5$ by $0.25$. Find the best $p$ in the same policy family and its expected discounted production.</p>
+      <p><strong>Review:</strong> <a href="#rl-bellman">reward and cost Bellman equations</a>; <a href="#book-e-example-policy">the constrained policy calculation</a>.</p>
+      <details><summary>Show hint</summary><p>Use the already evaluated $C(p)$, solve the new inequality, and use the fact that $J$ increases with $p$.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>The budget requires $p/(1+0.2p)\le0.25$. Multiplying by the positive denominator gives $p\le0.25+0.05p$, hence $0.95p\le0.25$ and $p\le5/19$. The best feasible choice is $p=5/19\approx0.263158$. Its reward numerator is $2+10/19=48/19$ and denominator is $0.2+0.04(5/19)=4/19$, so $J=12$ items. Substitution gives maintenance cost exactly $0.25$ units.</p></div></details>
+    </div>
+  </details>
+  <details id="book-e-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise E.B2 &mdash; Medium: Protect the budget against uncertain wear rates</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>Replace fast mode's wear probability $0.25$ by an unknown constant $\rho\in[0.2,0.3]$. Derive $C(p,\rho)$ and find the largest $p$ meeting the $0.5$ budget for every allowed $\rho$. Does $p=0.5$ pass?</p>
+      <p><strong>Review:</strong> <a href="#rl-mdp">transition probabilities and policies</a>; <a href="#book-e-example-policy">delayed maintenance cost</a>.</p>
+      <details><summary>Show hint</summary><p>Replace $0.25p$ by $\rho p$ in the cost equations. The worst cost occurs at the largest product $\rho p$.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>Eliminating $C_W=1+0.8C_R$ gives $C(p,\rho)=0.8\rho p/(0.2+0.16\rho p)$. This increases with $\rho p$, because its derivative with respect to that product is $0.16/(0.2+0.16\rho p)^2\gt0$. At $\rho=0.3$, the budget becomes $0.24p\le0.1+0.024p$, so $p\le25/54\approx0.462963$. At $p=0.5$, worst-case cost is $0.12/0.224=15/28\approx0.535714$, so it fails. The conclusion is robust to this fixed interval of model parameters, provided that interval contains the actual wear probability; it says nothing about the statistical confidence of an estimated interval.</p></div></details>
+    </div>
+  </details>
+  <details id="book-e-b3" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise E.B3 &mdash; Hard: Include a sensor bias before certifying the nomination</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>At $y_0=2.8$ mm/s, suppose the total error is a bounded noise of magnitude at most $0.2$ mm/s plus a fixed unknown bias of magnitude at most $0.15$ mm/s. Is a positive nomination certified? If not, find an allowed input where the score is negative and the exact positive-direction distance to a tie.</p>
+      <p><strong>Review:</strong> <a href="#nn-robustness">margins and input perturbations</a>; <a href="#book-e-example-network">the physical measurement model</a>.</p>
+      <details><summary>Show hint</summary><p>Add the magnitudes to obtain a hard total bound. For $z\ge0.5$, both ReLUs are active, so simplify the score first.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>The nominal normalised input is $0.8$, with score $1.2-0.6(1.3)-0.4(0.3)=0.3$. Total input uncertainty is at most $0.35$ after normalisation, so the Lipschitz lower bound is $0.3-0.35=-0.05$, which is inconclusive for positivity. Here there is an actual flip: choosing both errors positive gives $z=1.15$ and score $-0.05$. For $z\ge0.5$, the score is $1.1-z$, so the tie is at $z=1.1$, or $y=3.1$ mm/s, only $0.3$ mm/s above the nominal reading. A closed uncertainty interval including that point cannot certify strict positivity. Repeated readings do not remove the fixed bias bound.</p></div></details>
+    </div>
+  </details>
+  <details id="book-e-b4" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+    <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise E.B4 &mdash; Hard: Translate the policy into long-run operating rates</summary>
+    <div style="padding:14px 16px;font-size:14px;">
+      <p>For $p=5/9$ and wear probability $0.25$, find the stationary fraction of repair shifts and mean production per shift in stationarity. Compare the expected repairs in $20$ stationary shifts with the discounted budget $0.5$. Why are these different quantities?</p>
+      <p><strong>Review:</strong> <a href="primer-probability.html#pr-markov">stationary distributions</a>; <a href="#rl-mdp">return conventions</a>; <a href="#book-e-model">the operating model</a>.</p>
+      <details><summary>Show hint</summary><p>Let $w$ be stationary probability of state $W$. Balance the next worn probability: $w=(1-w)(0.25p)$. Multiply per-shift means by $20$ only after specifying stationary initialisation.</p></details>
+      <details><summary>Show worked solution</summary><div class="insight-box"><p>Here $0.25p=5/36$. Stationarity gives $w=(1-w)5/36$, hence $41w=5$ and $w=5/41\approx0.121951$. Repair occurs exactly in state $W$, so the mean repair rate is $5/41$ units per shift. Ready probability is $36/41$, giving production $(36/41)(2+10/9)=112/41\approx2.731707$ items per shift. Twenty stationary shifts have expected repairs $100/41\approx2.439024$. This does not contradict $C=0.5$: the latter starts in $R$ and discounts every future maintenance cost by $0.8^t$. The stationary twenty-shift expectation has a different initial law, horizon and weighting.</p></div></details>
+    </div>
+  </details>
+
+  <h3 class="subsection-heading" id="book-e-synthesis">Keep the objective, model and certificate aligned</h3>
+  <p>Reconstruct the cost Bellman equation without looking, explaining why repair's immediate cost is one while fast's immediate maintenance cost is zero. Then explain why a positive score is neither a probability nor a budget certificate, and why changing the units of the sensor input changes a physical robustness radius.</p>
+  <p>Learning changes how a policy or model is obtained. It does not change what must be checked: the stated objective, constraint, transition assumptions and deployment inputs. Continue to <a href="cmdp.html#cmdp-definition">constrained MDPs</a> to study policy optimisation with budgets, <a href="policy-optimization.html#performance-difference">policy performance differences</a> to evaluate updates, and <a href="verification.html#bound-propagation">network verification</a> to replace a simple Lipschitz bound with more detailed input-region reasoning.</p>
+</section>
+<!-- BOOK APPLICATION END -->
+<h2 class="section-heading" id="exercises">Exercises</h2>
     <p>These cumulative problems connect several ideas. If a step feels too large, return to the <a href="#reading-route">section practice route</a>, where each topic has an Easy, Medium and Hard problem with a separate hint, worked solution and prerequisite review link.</p>
 
     <details style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">

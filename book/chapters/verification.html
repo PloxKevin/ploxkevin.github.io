@@ -1,0 +1,43 @@
+<section class="book-chapter" id="book-lab">
+<h2 class="section-heading">From the mathematics to a real decision</h2>
+<h3 class="subsection-heading">Learning objectives</h3>
+<ul><li>Verify a concrete neural output specification by enumerating its linear regions.</li><li>Interpret a loose interval bound as unresolved rather than as a physical counterexample.</li><li>Combine deterministic network bounds with marginal statistical coverage without changing either guarantee.</li></ul>
+<h3 class="subsection-heading">A commissioning decision</h3>
+
+<p>A controller predicts a next temperature by adding a neural correction to a nominal thermal model. Let the dimensionless sensor feature lie in $z\in[-0.3,0.4]$ and let the correction, measured in degrees Celsius, be</p>
+<div class="math-block">$$n(z)=\operatorname{ReLU}(z+0.2)-2\operatorname{ReLU}(z-0.1).$$</div>
+<p>The numerical coefficients include the conversion from normalized features to degrees. The proposed nominal prediction is 59.65 degrees, and the desired specification is $59.65+n(z)\le60$ for every allowed feature. Assume this network is implemented exactly, the input interval is justified independently, and the nominal-plus-network expression initially describes the entire prediction. This is a verification question about a fixed function over a fixed set.</p>
+<p>A later residual-calibration step will add model discrepancy. Keeping that step separate lets us see exactly what deterministic verification proves before a statistical assumption enters. An output enclosure is useful only when its direction matches the requested specification: here we need a sound upper bound, because larger temperature is worse.</p>
+
+<h3 class="subsection-heading">Worked decision, with its limits</h3>
+
+<p><strong>Try interval propagation.</strong> The first hidden output lies in $[0,0.6]$ and the second in $[0,0.3]$. Combining these intervals independently yields $n(z)\in[-0.6,0.6]$. The corresponding temperature upper bound is 60.25 degrees, so this inexpensive calculation cannot approve the proposal. It does not provide an input that produces overheating.</p>
+<p><strong>Preserve the shared input.</strong> Split at the ReLU breakpoints $z=-0.2$ and $z=0.1$. On $[-0.3,-0.2]$, both hidden units are zero, so $n=0$. On $[-0.2,0.1]$, only the first is active, so $n=z+0.2$. On $[0.1,0.4]$, both are active, giving $n=0.4-z$. The exact range is $[0,0.3]$, with the maximum attained at $z=0.1$.</p>
+<p><strong>Make the deterministic decision.</strong> The actual upper temperature in this model is $59.65+0.3=59.95$ degrees. Every allowed input passes, with 0.05 degrees of margin. The interval calculation lost correlation between two hidden outputs driven by the same scalar. Splitting restores the relevant relationship and converts “unresolved” into a certificate.</p>
+<p><strong>Now include a different uncertainty source.</strong> Suppose an additional physical prediction residual $r$ remains. A score $|r|$ was fixed before calibration, and 19 calibration examples together with the next test example are exchangeable. At miscoverage level 0.1, split conformal uses order $k=\lceil20(0.9)\rceil=18$. Suppose the sorted scores are 0.01 through 0.16 in increments of 0.01, followed by 0.22, 0.24, and 0.30 degrees. Then the calibration radius is 0.24 degrees.</p>
+<p>The original proposal now has upper temperature $59.65+0.3+0.24=60.19$ on the residual-coverage event and must be revised. A nominal prediction at most $60-0.3-0.24=59.46$ passes that robust inequality. The residual interval has at least 90% marginal coverage over calibration and test examples under exchangeability; it is not a deterministic bound on every future residual or a conditional guarantee for every selected input.</p>
+
+<h3 class="subsection-heading">A tempting wrong approach</h3>
+
+<div class="warning-box"><div class="box-label">Common mistake &mdash; Check only interval endpoints</div><p>The neural correction is zero at both input endpoints $-0.3$ and 0.4, but reaches 0.3 inside the interval. Endpoint evaluation is exact for an affine function on an interval, not for an arbitrary piecewise-affine network. A grid can also miss a narrow interior peak. Here the breakpoint enumeration supplies an exhaustive argument; its completeness is what makes the maximum useful for approval.</p></div>
+
+<h3 class="subsection-heading">Transfer the argument</h3>
+<details id="book-m15-b1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 15.B1 &mdash; Medium: Reverify after the input envelope changes</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>A new sensor calibration gives $z\in[-0.1,0.5]$. Find the exact correction range and decide whether a nominal temperature of 59.7 degrees satisfies the deterministic specification. Exclude the additional residual for this exercise.</p>
+<p><strong>Review:</strong> <a href="verification.html#bound-propagation">ReLU relaxation and branching</a>.</p>
+<details><summary>Show hint</summary><div><p>The first ReLU is active everywhere on the new interval. Split only at 0.1.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>On $[-0.1,0.1]$, $n=z+0.2$ ranges from 0.1 to 0.3. On $[0.1,0.5]$, $n=0.4-z$ ranges from 0.3 down to $-0.1$. Thus the exact range is $[-0.1,0.3]$. The upper predicted temperature is 60.0 degrees, which satisfies the stated non-strict limit. It has zero certified margin and would fail a requirement of strict separation or any unbudgeted positive implementation error. The old minimum zero cannot be reused after changing the input domain.</p></div></details>
+</div></details><details id="book-m15-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 15.B2 &mdash; Hard: Calibrate a whole ten-step forecast</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>For a ten-minute forecast, use the single trajectory score $s=\max_{1\le t\le10}|r_t|$. Require marginal coverage at least 0.99 for the whole residual trajectory. Find the smallest calibration size permitting a finite split-conformal quantile. At that size suppose the chosen quantile is 0.32 degrees. Does nominal temperature 59.35 degrees at every step pass with the same neural upper bound 0.3?</p>
+<p><strong>Review:</strong> <a href="verification.html#conformal-prediction">Trajectory-level conformal scores</a>.</p>
+<details><summary>Show hint</summary><div><p>The order is $\lceil(n+1)0.99\rceil$; it must not exceed $n$. Calibration examples must be entire exchangeable trajectories.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>A finite quantile requires $0.99(n+1)\le n$, equivalently $n\ge99$. At $n=99$, the order is 99, the largest calibration trajectory score. On the event $s\le0.32$, every step has residual magnitude at most 0.32, so each upper temperature is $59.35+0.3+0.32=59.97$ degrees. Under exchangeability of the 99 calibration trajectories and the next trajectory, the event has marginal probability at least 0.99. Calibrating individual time points at 99% separately would not yield the same joint statement; a ten-step union bound would only ensure 90% without an adjusted budget.</p></div></details>
+</div></details>
+<h3 class="subsection-heading">Synthesis and bridge</h3>
+
+<p>The complete argument contains two different pieces of evidence: a universal neural output bound on a specified input set and a marginal residual-coverage statement under exchangeability. Combining them requires an explicit implication from the coverage event to the physical constraint. Neither piece acquires stronger quantifiers merely because they appear in one controller.</p>
+<p>Across the book, the recurring task is to connect a precise mathematical object to a decision the model actually supports. Before approving a learned robot or thermal controller, trace that connection from sensors and units through model uncertainty, admissible actions, and future trajectories. The open problems are opportunities to strengthen specific links in that chain.</p>
+
+</section>

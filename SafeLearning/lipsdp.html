@@ -36,7 +36,10 @@
       </ul>
     </div>
 
-    <div class="page-toc">
+    <!-- BOOK ENTRY START -->
+<p class="book-entry"><a href="book.html#book-contents">Book contents</a> &middot; <a href="#book-lab">Apply this chapter to a real decision</a> &middot; <a href="glossary.html">Glossary</a></p>
+<!-- BOOK ENTRY END -->
+<div class="page-toc">
       <div class="page-toc-title">Contents</div>
       <a href="#lipschitz-robustness">1. Lipschitz Constants and Certified Robustness</a>
       <a href="#naive-bound">2. The Product Bound and Why It Is Loose</a>
@@ -51,6 +54,7 @@
       <a class="toc-interactive" href="#lipsdp-explorer">Interactive: Naive vs LipSDP vs Empirical</a>
       <a href="#graded-practice">Graded practice: Easy / Medium / Hard</a>
       <a href="#research-practice">Original research exercises</a>
+      <a href="#book-lab">Application lab &amp; chapter review</a>
       <a href="#exercises">Exercises and readiness check</a>
       <a href="#papers">Key Papers</a>
       <a class="toc-interactive" href="#flashcards">Flashcards</a>
@@ -763,7 +767,53 @@
     <p>Why can $L^\star$ jump at $\kappa=1$ although $f$ changes continuously at every input? $L^\star$ is a supremum over all inputs, including distant ones. For $\kappa\lt1$ the steep both-active region can be a thin wedge, or lie far away, and still determine that supremum; at $\kappa=1$ its two boundaries coincide, the region loses its interior and its Jacobian no longer counts. Sampling in one fixed square can miss the region long before it disappears.</p>
 
     <!-- ===== EXERCISES ===== -->
-    <h2 class="section-heading" id="exercises">Exercises</h2>
+    <!-- BOOK APPLICATION START -->
+<section class="book-chapter" id="book-lab">
+<h2 class="section-heading">From the mathematics to a real decision</h2>
+<h3 class="subsection-heading">Learning objectives</h3>
+<ul><li>Translate a certified network sensitivity into a physical output-error budget.</li><li>Check a concrete diagonal-multiplier certificate and distinguish it from the exact network constant.</li><li>Explain why preprocessing, valid multiplier classes, and the final closed-loop argument remain necessary.</li></ul>
+<h3 class="subsection-heading">A commissioning decision</h3>
+
+<p>A learned module corrects the enclosure temperature prediction from two normalized sensor features $x=(x_1,x_2)$. Features are dimensionless and the physical correction is $c(x)=2f(x)$ degrees Celsius, where</p>
+<div class="math-block">$$f(x)=\tfrac12\operatorname{ReLU}(x_1+2x_2)+\tfrac12\operatorname{ReLU}(x_1-2x_2).$$</div>
+<p>Assume the deployed module is exactly this real-valued function, including the factor 2, and the normalized sensor error satisfies $\|\Delta x\|_2\le0.04$. Floating-point and quantization error are excluded for now. The downstream controller has reserved 0.10 degrees for the change in this correction caused by sensor error. The decision is whether the learned module meets that component budget.</p>
+<p>The weight matrices are $W_0=\left[\begin{smallmatrix}1&2\\1&-2\end{smallmatrix}\right]$ and $W_1=(1/2,1/2)$. Their spectral norms are $2\sqrt2$ and $1/\sqrt2$, so the usual product upper bound is 2 for $f$. It would bound the physical correction change by $2(2)(0.04)=0.16$ degrees, which fails the reserved budget. A failed sufficient bound does not establish a faulty network.</p>
+
+<h3 class="subsection-heading">Worked decision, with its limits</h3>
+
+<p><strong>Propose a valid multiplier.</strong> ReLU is slope-restricted in $[0,1]$. Choose the diagonal nonnegative matrix $T=I/3$ and squared sensitivity $\rho=4/3$. The one-hidden-layer LipSDP matrix becomes</p>
+<div class="math-block">$$M=\begin{bmatrix}-4/3&0&1/3&1/3\\0&-4/3&2/3&-2/3\\1/3&2/3&-5/12&1/4\\1/3&-2/3&1/4&-5/12\end{bmatrix}.$$</div>
+<p><strong>Verify its sign.</strong> Rotate the hidden coordinates to their normalized sum and difference. The matrix separates into two blocks: $\left[\begin{smallmatrix}-4/3&\sqrt2/3\\\sqrt2/3&-1/6\end{smallmatrix}\right]$ and $\left[\begin{smallmatrix}-4/3&2\sqrt2/3\\2\sqrt2/3&-2/3\end{smallmatrix}\right]$. Each has determinant zero and negative trace. Thus the eigenvalues of $M$ are $-1.5,-2,0,0$, establishing negative semidefiniteness exactly, rather than relying only on a solver status.</p>
+<p><strong>Spend the physical budget.</strong> The certificate gives $L\le\sqrt{4/3}\approx1.154701$ for $f$. Consequently $|c(x+\Delta x)-c(x)|\le2\sqrt{4/3}(0.04)\approx0.092376$ degrees. The module passes the 0.10-degree allowance, leaving about 0.007624 degrees of certified slack.</p>
+<p><strong>Compare with the actual piecewise-linear map.</strong> The four activation patterns have gradients $(0,0)$, $(1/2,1)$, $(1/2,-1)$, and $(1,0)$. Each occurs on a nonempty region, so the exact global Lipschitz constant is $\sqrt5/2\approx1.118034$. The SDP bound is slightly larger. Its usefulness is that it establishes a sufficient inequality; it need not recover the sharp constant to approve this component.</p>
+<p>The approved statement concerns sensitivity of a function. A thermal trajectory still needs the plant model, an action limit, and an invariant-set or other closed-loop argument. A small correction change does not bound the correction's absolute value, nor does it ensure the nominal temperature prediction is accurate. Those quantities require their own budgets.</p>
+
+<h3 class="subsection-heading">A tempting wrong approach</h3>
+
+<div class="warning-box"><div class="box-label">Common mistake &mdash; A large sample becomes an upper bound</div><p>Sampling sensor inputs and recording the largest observed gradient produces a lower estimate of the worst possible gradient, not a certificate. Rare activation regions may be missed. The exact pattern calculation works here because there are only two hidden neurons and their regions can be checked. Its computational convenience should not be generalized to arbitrary large networks.</p></div>
+
+<h3 class="subsection-heading">Transfer the argument</h3>
+<details id="book-m12-b1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 12.B1 &mdash; Medium: Return to physical sensor errors</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>Suppose $x_1=(T-40)/10$ and $x_2=(d-0.5)/0.1$, with $T$ in degrees Celsius and distance $d$ in metres. Hardware errors satisfy $|\Delta T|\le0.2$ degrees and $|\Delta d|\le0.002$ metres. Find the correction-error bound. Does a tighter allowance of 0.06 degrees pass?</p>
+<p><strong>Review:</strong> <a href="lipsdp.html#lipschitz-robustness">Sensitivity and certified radii</a>.</p>
+<details><summary>Show hint</summary><div><p>Transform the sensor-error box into normalized coordinates and bound its Euclidean radius.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>Both normalized coordinate errors are at most 0.02, so the radius is $\sqrt{2}(0.02)\approx0.028284$. This SDP certificate bounds physical correction error by $2\sqrt{4/3}\sqrt2(0.02)\approx0.065320$ degrees, so it cannot approve the tighter 0.06-degree allowance. That does not establish a physical violation. In fact, the physical correction's regional gradients are $(0,0),(1,2),(1,-2),(2,0)$. Their largest $\ell_1$ norm is 3, giving exact box error at most $3(0.02)=0.06$ degrees, attained within a one-active region. Thus an exact box analysis passes the non-strict allowance. Scaling both hardware-error bounds by at most $0.06/0.065320\approx0.918559$ would instead make the original SDP certificate sufficient. Treating the numerical metre and temperature errors as coordinates in one unscaled Euclidean norm would misrepresent the preprocessing.</p></div></details>
+</div></details><details id="book-m12-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 12.B2 &mdash; Hard: Audit an attractive coupled multiplier</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>A colleague proposes $T=\left[\begin{smallmatrix}1&-1\\-1&1\end{smallmatrix}\right]$ because it is positive semidefinite. Test whether the incremental ReLU inequality $2\Delta z^\top T(\Delta v-\Delta z)\ge0$ holds for $v=(2,-2)$ and $\bar v=(1,-3)$. Explain the consequence for a resulting sensitivity certificate.</p>
+<p><strong>Review:</strong> <a href="lipsdp.html#lipsdp-network-error">The incremental multiplier restriction</a>.</p>
+<details><summary>Show hint</summary><div><p>Compute each ReLU output before forming its increment. Positive semidefiniteness of $T$ alone is not the admissibility condition.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>The preactivation increment is $\Delta v=(1,1)$, while ReLU outputs are $(2,0)$ and $(1,0)$, giving $\Delta z=(1,0)$. Thus $\Delta v-\Delta z=(0,1)$ and the quadratic expression is $2(1,0)T(0,1)^\top=-2$. The claimed constraint fails even though $T$ has eigenvalues 0 and 2. An LMI derived using it would not imply a valid incremental bound. The diagonal nonnegative multiplier restriction protects the sum of separate scalar inequalities; admissible non-incremental verification multipliers answer a different question.</p></div></details>
+</div></details>
+<h3 class="subsection-heading">Synthesis and bridge</h3>
+
+<p>A network certificate becomes useful when connected to a physical sensitivity allowance and its preprocessing map. The chain here is explicit: normalized error radius, certified network gain, physical output scaling, and downstream slack. Each arrow can invalidate the final number if it is silently omitted.</p>
+<p>The next chapter changes the order of operations. Instead of training an arbitrary network and seeking a certificate afterward, a constrained architecture makes a sensitivity budget structural. That can simplify this commissioning calculation, while still leaving units, numerical implementation, and closed-loop consequences to be checked.</p>
+
+</section>
+<!-- BOOK APPLICATION END -->
+<h2 class="section-heading" id="exercises">Exercises</h2>
 
     <div class="definition-box" id="readiness-check"><div class="box-label">Readiness check</div><div><p>Explain why the output bound is a square root, why a sampled norm is a lower bound, and why a PSD multiplier can still be invalid. Then try the scalar certificate before the deep-network derivation.</p><p>If this is difficult, revisit <a href="primer-linalg.html#la-psd">the earlier prerequisite</a>, work the Easy questions, and return to the linked section. You can postpone the advanced extensions while building confidence with the core certificate.</p></div></div>
     <h3 class="subsection-heading" id="graded-practice">Graded practice: build the calculation, then audit the claim</h3>

@@ -1,0 +1,43 @@
+<section class="book-chapter" id="book-lab">
+<h2 class="section-heading">From the mathematics to a real decision</h2>
+<h3 class="subsection-heading">Learning objectives</h3>
+<ul><li>Combine plant and neural-controller dynamics before making a stability claim.</li><li>Verify state containment, actuator limits, and disturbance effects on the same operating region.</li><li>Identify when sensor bias or controller memory changes the object that must be certified.</li></ul>
+<h3 class="subsection-heading">A commissioning decision</h3>
+
+<p>The enclosure's temperature reference is fixed at 40 degrees Celsius. Let $e_t=(T_t-40)/10$ be normalized temperature error, with one-minute sampling. A centered heater command $u_t$ is measured in kilowatts; negative command means reducing power relative to the equilibrium feedforward setting. Assume the plant and controller satisfy</p>
+<div class="math-block">$$e_{t+1}=0.9e_t+0.2u_t+w_t,\qquad u_t=-1.5\tanh(e_t).$$</div>
+<p>The centered actuator permits $|u_t|\le0.8\,\mathrm{kW}$. The desired operating region is $|e_t|\le0.5$, corresponding to 35–45 degrees. Disturbance contributes at most $|w_t|\le0.02$ per update, or 0.2 degrees Celsius. Assume the plant equation is exact inside this region, the equilibrium feedforward really cancels the fixed ambient load, the controller has no delay, and the sensor initially reports $e_t$ exactly.</p>
+<p>This is a deliberately simple neural nonlinearity. It isolates the feedback calculation without attributing a deployment guarantee to a trained network. The actuator requirement also makes the certificate local in its physical applicability even though the mathematical tanh expression is defined globally.</p>
+
+<h3 class="subsection-heading">Worked decision, with its limits</h3>
+
+<p><strong>Close the loop.</strong> The disturbance-free map is $F(e)=0.9e-0.3\tanh(e)$. Its derivative is $F'(e)=0.9-0.3\operatorname{sech}^2(e)$, which lies between 0.6 and 0.9. Since $F(0)=0$, the mean-value theorem gives $|F(e)|\le0.9|e|$. Thus a Euclidean storage $V(e)=e^2$ contracts by a factor at most $0.9^2=0.81$ in the nominal loop.</p>
+<p><strong>Add the disturbance before claiming containment.</strong> The physical loop obeys $|e_{t+1}|\le0.9|e_t|+0.02$. At the proposed boundary 0.5, the right side is 0.47, inside the region. Induction establishes sampled state containment from every allowed initial error. The limiting bound is $0.02/(1-0.9)=0.2$, or 2 degrees, rather than convergence to the reference under every persistent disturbance.</p>
+<p><strong>Check the actuator on that same region.</strong> For $|e|\le0.5$, the command magnitude is at most $1.5\tanh(0.5)\approx0.693176\,\mathrm{kW}$, below 0.8. Thus saturation does not change the assumed closed-loop equation on the invariant region. A global claim based on the unsaturated tanh controller would require more care, because its limiting command magnitude is 1.5 kilowatts.</p>
+<p><strong>Inspect a physical starting point.</strong> At 44 degrees, $e_0=0.4$. The nominal next error is $0.36-0.3\tanh(0.4)\approx0.246015$, giving temperature $42.460153$ degrees. Its energy changes from 0.16 to approximately 0.060524. With the worst positive disturbance, the next error is 0.266015, still covered. The uniform 0.47 boundary calculation is stronger evidence for the whole region than this one appealing trajectory.</p>
+<p>The commissioning conclusion is sampled containment and an ultimate disturbance bound for the stated fixed reference. Continuous-time temperatures, setpoint changes, sensor errors, and controller timing are not silently included. Each can be incorporated, but the equations and resulting certificate must then be revised.</p>
+
+<h3 class="subsection-heading">A tempting wrong approach</h3>
+
+<div class="warning-box"><div class="box-label">Common mistake &mdash; A controller gain decides stability</div><p>The controller alone has sensitivity at most 1.5 kilowatts per normalized error unit. Calling that gain safe or unsafe without the plant ignores both the negative feedback sign and the plant's 0.2 coefficient. The closed map has derivative at most 0.9. Conversely, an actuator saturation or delay can change that map even if the same network weights are deployed.</p></div>
+
+<h3 class="subsection-heading">Transfer the argument</h3>
+<details id="book-m14-b1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 14.B1 &mdash; Medium: Carry a bounded sensor bias through feedback</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>The sensor reports $e+b$ with $|b|\le0.03$, corresponding to 0.3 degrees. Keep the disturbance bound 0.02. Derive a sufficient ultimate error bound, test invariance of $|e|\le0.5$, and check the actuator limit.</p>
+<p><strong>Review:</strong> <a href="nn-in-the-loop.html#local-sector-qc">Containment of a certified region</a>.</p>
+<details><summary>Show hint</summary><div><p>Tanh is 1-Lipschitz. Treat the change from $\tanh(e)$ to $\tanh(e+b)$ as an additional bounded input to the closed map.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>The extra next-error magnitude is at most $0.3|b|\le0.009$. Therefore $|e_{t+1}|\le0.9|e_t|+0.029$, with ultimate bound 0.29, or 2.9 degrees. At the boundary the bound is $0.45+0.029=0.479\le0.5$, preserving invariance. The command magnitude is at most $1.5\tanh(0.53)\approx0.728072$ kilowatts, still below 0.8. Constant bias need not permit zero tracking error; the correct conclusion is the revised bound.</p></div></details>
+</div></details><details id="book-m14-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 14.B2 &mdash; Hard: A stable delayed loop can leave the temperature box</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>Consider instead the linear delayed controller $u_t=-1.5e_{t-1}$ with zero disturbance. Use augmented state $(e_t,e_{t-1})$ and matrix $A_d=\left[\begin{smallmatrix}0.9&-0.3\\1&0\end{smallmatrix}\right]$. Test all initial augmented states in the square, allowing controller memory to be initialized independently of the current temperature. Show that this linear loop is asymptotically stable but the square $|e_t|,|e_{t-1}|\le0.5$ is not invariant. No prior actuator-bounded history is required in this initialization model.</p>
+<p><strong>Review:</strong> <a href="nn-in-the-loop.html#feedback-setup">The full closed-loop state</a>.</p>
+<details><summary>Show hint</summary><div><p>Compute the roots of $\lambda^2-0.9\lambda+0.3=0$. Then try histories with current and previous error of opposite signs.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>The roots are $0.45\pm0.312250i$, each with magnitude $\sqrt{0.3}\approx0.547723\lt1$. Hence all augmented trajectories converge to zero. Yet history $(0.5,-0.5)$ gives next error $0.9(0.5)-0.3(-0.5)=0.6$, outside the temperature limit. The command is 0.75 kilowatts and respects the 0.8 limit, so saturation does not explain the violation. Stability in the augmented state does not imply containment in the requested square. A valid delay-aware design needs an invariant region in both state coordinates whose projection satisfies the physical temperature limit.</p></div></details>
+</div></details>
+<h3 class="subsection-heading">Synthesis and bridge</h3>
+
+<p>A feedback certificate ties together an equilibrium, a plant, a controller, a state description, and an operating domain. The same weights can support a different conclusion after sensor bias or timing is changed. Storage decrease and physical containment should be read together, with the disturbance terms kept visible.</p>
+<p>The final verification chapter returns to the neural map and asks whether a specified output inequality holds over every allowed input. Such a verifier can supply the missing local bounds used in a feedback argument, but the distinction between a function specification and an entire trajectory remains essential.</p>
+
+</section>
