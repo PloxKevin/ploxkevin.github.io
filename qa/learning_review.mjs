@@ -23,7 +23,7 @@ if (args.some(arg=>arg.startsWith('--'))) throw new Error('Unknown option: ' + a
 const site = path.resolve(process.env.SAFELEARNING_QA_SITE || 'SafeLearning');
 const files = args.length ? args : fs.readdirSync(site).filter(f => f.endsWith('.html')).sort();
 const qaSources = Object.fromEntries(['learning_review.mjs','book_browser_checks.mjs'].map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(new URL(name,import.meta.url))).digest('hex')]));
-const report = files.map(name=>({file:name,qa_source_sha256:qaSources,status:'pending',errors:[],exerciseCounts:{},viewports:[],screenshots:[],checks:Object.fromEntries(['browser','nativeBookExercises','bookNavigation','print','dynamicMath','sliderLimits','screenshots'].map(check=>[check,{status:'pending'}]))}));
+const report = files.map(name=>({file:name,qa_source_sha256:qaSources,status:'pending',errors:[],exerciseCounts:{},viewports:[],screenshots:[],checks:Object.fromEntries(['browser','nativeBookExercises','bookNavigation','print','dynamicMath','sliderLimits','mobileTitle','screenshots'].map(check=>[check,{status:'pending'}]))}));
 const writeReport = () => {
   fs.mkdirSync(path.dirname(reportPath),{recursive:true});
   const temporary = reportPath + '.tmp-' + process.pid;
@@ -208,6 +208,7 @@ for (const [index,name] of files.entries()) {
       ? {status:r.sliderSamples.some(s=>s.mathErrors.length || s.runtimeErrors.length || Number(s.actual)!==Number(s.requested))?'failed':'passed',kind:'Input/error smoke',samples:r.sliderSamples.length,settle:'Two animation frames plus 250 ms per value',scope:'Checks retained input values and rendered math/runtime errors after settling; captures associated value labels for review',explorerNumericalCorrectness:'not_checked'}
       : {status:'skipped',reason:'No range inputs on this page'};
     r.errors.push(...await page.locator('body').evaluate(renderedMathProblems));
+    r.checks.mobileTitle = {status:'passed',viewports:[]};
     for (const width of [320,390,768,820,1280]) {
       await page.setViewportSize({width,height:900});
       await page.evaluate(() => {
@@ -224,6 +225,25 @@ for (const [index,name] of files.entries()) {
       r.viewports.push(v);
       if (v.documentWidth>width+8) r.errors.push('Page overflow at ' + width + ': ' + v.documentWidth);
       if (v.clipped.length) r.errors.push('Clipped expanded boxes at ' + width + ': ' + JSON.stringify(v.clipped));
+      if (width<=768 && await page.locator('.sidebar-open').count() && await page.locator('main h1').count()) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); scrollTo({top:0,behavior:'instant'}); });
+        await settle(page);
+        // Font/layout anchoring can move a long page after a viewport resize.
+        // Measure the opening title at the actual top, rather than mid-scroll.
+        await page.evaluate(() => scrollTo({top:0,behavior:'instant'}));
+        await page.waitForFunction(() => Math.abs(scrollY)<1,null,{timeout:3000});
+        if (await page.locator('.sidebar-open').isVisible()) {
+          const title = await page.evaluate(() => {
+            const h=document.querySelector('main h1').getBoundingClientRect();
+            const b=document.querySelector('.sidebar-open').getBoundingClientRect();
+            return {width:innerWidth,scrollY,titleTop:h.top,buttonBottom:b.bottom,visible:h.top>=0 && h.top<innerHeight,overlap:h.left<b.right && h.right>b.left && h.top<b.bottom && h.bottom>b.top};
+          });
+          r.checks.mobileTitle.viewports.push(title);
+          if (!title.visible || Math.abs(title.scrollY)>=1) r.errors.push('Page title is not at the settled opening viewport at ' + width);
+          if (title.overlap) r.errors.push('Navigation button overlaps page title at ' + width);
+        }
+      }
       if (width===390 && await page.locator('.sidebar-open').count()) {
         await page.locator('.sidebar-open').click();
         await page.waitForTimeout(350);
@@ -241,6 +261,8 @@ for (const [index,name] of files.entries()) {
         }
       }
     }
+    r.checks.mobileTitle.status = r.checks.mobileTitle.viewports.some(v=>v.overlap || !v.visible || Math.abs(v.scrollY)>=1) ? 'failed' : r.checks.mobileTitle.viewports.length ? 'passed' : 'skipped';
+    if (r.checks.mobileTitle.status==='skipped') r.checks.mobileTitle.reason='No visible mobile navigation/title pair';
     r.checks.screenshots = {status:r.screenshots.some(s=>s.status==='failed')?'failed':r.screenshots.some(s=>s.status==='passed')?'passed':'skipped', artifacts:r.screenshots.filter(s=>s.status==='passed').length, visualInspection:'pending'};
     for (const screenshot of r.screenshots) screenshot.source_sha256 = r.source_sha256;
     if (r.checks.print.pdf) r.checks.print.pdf.source_sha256 = r.source_sha256;

@@ -56,10 +56,10 @@ for heading,group in [('Part I — Mathematical foundations',chapters[:6]),
                       ('Part III — Safe exploration',chapters[9:13]),
                       ('Part IV — Constrained learning and control',chapters[13:17]),
                       ('Part V — Certified neural networks and verification',chapters[17:])]:
-    catalog.append('<h3 class="subsection-heading">'+html.escape(heading)+'</h3><ol class="book-contents">')
+    catalog.append('<h3 class="subsection-heading">'+html.escape(heading)+'</h3><ul class="book-contents">')
     for c in group:
         catalog.append(f'<li><a href="{c["file"]}">{html.escape(c["num"]+". "+c["title"])}</a> — <a href="{c["file"]}#book-lab">application and review</a></li>')
-    catalog.append('</ol>')
+    catalog.append('</ul>')
 
 def page(title, content, active):
     return '''<!DOCTYPE html>

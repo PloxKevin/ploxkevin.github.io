@@ -42,8 +42,8 @@ The current [correctness audit](../reports/book/README.md) records 499 theorem
 declarations, exact source fingerprints, independent reviews and remaining
 formalization gaps. A theorem count does not count fully verified exercises.
 
-Rendered verification remains pending in the restricted environment. Use Node
-20 or newer, a Chromium executable and CDN access. `npm ci` installs the
+For rendered verification, use Node 20 or newer, a Chromium executable and CDN
+access. `npm ci` installs the
 Playwright library; it does not install a browser. Set the executable path:
 
 ```sh
@@ -52,5 +52,5 @@ SAFELEARNING_CHROMIUM=/absolute/path/to/chromium node qa/learning_review.mjs --r
 ```
 
 Inspect the saved screenshots and representative PDFs as well as the machine
-report. Browser and print checks need actual passing results before the pending
-usability requirements can be marked complete.
+report. The audit README links the recorded browser results and independent
+visual reviews; source hashes identify the version they checked.

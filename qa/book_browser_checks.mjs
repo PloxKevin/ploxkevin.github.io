@@ -229,9 +229,9 @@ export async function checkBookPrint(page, name, artifacts) {
     await page.evaluate(() => document.fonts.ready);
     await page.emulateMedia({media:'print'});
     const filename = artifacts ? path.join(artifacts, name.replace(/\.html$/, '') + '-print.pdf') : undefined;
-    const pdf = await page.pdf({...(filename ? {path:filename}:{}), format:'A4', printBackground:true});
+    const pdf = await page.pdf({...(filename ? {path:filename}:{}), format:'A4', margin:{top:'12mm',right:'12mm',bottom:'12mm',left:'12mm'}, printBackground:true});
     const validPDF = pdf.subarray(0,5).toString()==='%PDF-' && pdf.length>1000;
-    result.pdf = {status:validPDF?'passed':'failed', ...(filename ? artifactInfo(filename) : {path:null,bytes:pdf.length,artifactStatus:'skipped',reason:'No artifact directory configured'}), visualInspection:'pending'};
+    result.pdf = {status:validPDF?'passed':'failed', ...(filename ? artifactInfo(filename) : {path:null,bytes:pdf.length,artifactStatus:'skipped',reason:'No artifact directory configured'}), paper:'A4',marginMillimetres:12,visualInspection:'pending'};
     if (!validPDF) result.errors.push('PDF output is missing its header or unexpectedly small');
     await page.waitForFunction(() => window.__bookQAPrintEvents.some(e=>e.type==='afterprint'), null, {timeout:3000});
     const events = await page.evaluate(() => window.__bookQAPrintEvents);
@@ -266,9 +266,10 @@ export async function captureBookScreenshot(page, name, width, artifacts) {
   const target = page.locator('#book-lab, main.book-content').first();
   if (!await target.count()) return {status:'skipped', reason:'No application lab or book reference content'};
   await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
   await settle(page);
   const filename = path.join(artifacts, name.replace(/\.html$/, '') + '-' + width + '.png');
   const box = await target.boundingBox();
-  await target.screenshot({path:filename, animations:'disabled'});
-  return {status:'passed', viewportWidth:width, target:await target.getAttribute('id') || 'main.book-content', dimensions:{width:box.width,height:box.height}, ...artifactInfo(filename), visualInspection:'pending'};
+  await target.screenshot({path:filename, animations:'disabled',style:'.sidebar-open,.skip-link { visibility: hidden !important; }'});
+  return {status:'passed', viewportWidth:width, target:await target.getAttribute('id') || 'main.book-content', dimensions:{width:box.width,height:box.height}, ...artifactInfo(filename), captureScope:'Isolated content: fixed menu and skip controls hidden; title/control overlap checked separately with controls visible',visualInspection:'pending'};
 }

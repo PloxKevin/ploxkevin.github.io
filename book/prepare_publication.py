@@ -58,9 +58,9 @@ report = dict(status='prepared_and_locally_verified_not_pushed',
               patch=str(patch.relative_to(ROOT)), patch_sha256=sha(patch), changed_files=changed,
               source_sha256={str(p.relative_to(ROOT)): sha(p) for p in site_files},
               local_check='git apply --check, application in disposable checkout, exact SHA-256 comparison of all site files',
-              remote_status='Unavailable: GitHub DNS resolution failed; see remote-check.log.',
-              browser_status='Blocked before launch by sandbox; see browser-attempt.log.',
-              limits=['No publishing checkout was modified and no commit was pushed.',
-                      'Rendered browser/print QA and live-site checks remain pending.'])
+              remote_status='This offline patch helper does not query or push the remote; publication is verified separately.',
+              browser_status='See reports/book/browser-final.json and the rendered-review reports for current browser evidence.',
+              limits=['This helper only applies a patch in a disposable checkout; it does not modify a publishing checkout or push a commit.',
+                      'Browser/print acceptance and live publication require their separate recorded checks.'])
 (OUT/'publication-preparation.json').write_text(json.dumps(report, indent=2)+'\n')
 print(f'Prepared site patch: {len(changed)} files; exact local application check passed. Not pushed.')

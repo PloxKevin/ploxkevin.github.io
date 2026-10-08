@@ -99,6 +99,6 @@ report = dict(status='passed', checked_at_utc=datetime.now(timezone.utc).isoform
               limits=['The original 489 exercise bodies are byte-preserved after removing book insertions.',
                       'Valid names and complete inventories do not prove semantic correspondence.',
                       'A theorem count is not a count of fully verified exercises.',
-                      'Historical browser evidence predates these additions; current rendered QA is blocked.'])
+                      'Rendered behavior is checked separately in reports/book/browser-final.json and the visual reviews.'])
 (OUT/'coverage.json').write_text(json.dumps(report, indent=2)+'\n')
 print(f'Coverage integrity passed: 489 preserved + 67 new exercises; {formal["theorem_count"]} Lean declarations.')
