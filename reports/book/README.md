@@ -61,11 +61,14 @@ supremum wording; the source reviews document those changes and assumptions.
 - [Static supplement and prose word-count method](static-supplement.json)
 - [Publication patch and exact site hashes](publication-preparation.json)
 - [Publication dependencies](../../book/review/publication-dependencies.json)
-- [Isolated-checkout static validation](checkout-validation.log) and [coverage check](checkout-coverage.log)
+- [Isolated-checkout input bindings](checkout-verification.json), [static validation](checkout-validation.log) and [coverage check](checkout-coverage.log)
 - [Current status](status.json) and [completion audit](completion-audit-final.json)
 
-Publication is pending the authorized push and live delivery check. The
-isolated checkout preserves unrelated portfolio work.
+The [live book](https://ploxkevin.github.io/SafeLearning/book.html) is published.
+All 31 site files returned HTTP 200 and matched the verified local SHA-256 hashes;
+see the [delivery record](publication-final.json). That record identifies the
+site commit it verified. Recording this evidence leaves the course sources
+and assets unchanged. The isolated checkout preserves unrelated portfolio work.
 
 Earlier blocked-browser, DNS and incomplete-run reports are historical
 diagnostics. October 7 formal/browser/publication reports describe the prior
