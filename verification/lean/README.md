@@ -61,9 +61,9 @@ always runs a fresh replay.
 
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its 2,735 theorems in 174 files passed the local build, source-exact kernel checks
-and a fresh standard-axiom audit. Twenty-seven modules were freshly replayed;
-147 actual passing replays were reused only after identical source/import and
+Its 3,002 theorems in 202 files passed the local build, source-exact kernel checks
+and a fresh standard-axiom audit. Twenty-eight modules were freshly replayed;
+174 actual passing replays were reused only after identical source/import and
 compiled dependency fingerprints were validated. The inventory contains 556
 exercises and 12,774 overlapping material review units. Source correspondence
 review can reopen coverage entries while their existing formal proofs remain

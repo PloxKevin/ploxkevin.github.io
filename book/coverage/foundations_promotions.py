@@ -950,3 +950,128 @@ for node in [599,601]:
          'CompleteFoundationsCholeskyCost','Expression','evaluate','arithmeticCost','subtractProducts','sourceCell','actual_accumulator_evaluation','actual_accumulator_operation_count','actual_cell_evaluation','actual_positive_recursion_cell_is_factor_entry','actual_cell_operation_count','sourceProgramCost','actual_row_operation_count','actual_program_cost_as_squares','actual_program_cost_polynomial','actual_cost_independent_of_entries','actual_cubic_leading_term',
          hypotheses='Dense exact arithmetic with matrix-entry reads uncounted and each multiplication, subtraction, division and square root assigned unit cost. Every row evaluates exactlycolumns0 throughits row index; positive-recursion assumptions are required for those expression values to equal the actual Cholesky factor entries.',
          correspondence='The arithmetic-expression evaluator is proved equal to the source diagonal/off-diagonal recurrence and to actual factor entries. Its syntactic operation count is summed over the actual lower-triangular row/column indexing. The exact polynomial and actual asymptotic limit substantiate the printed approximate cost; no wall-clock or floating-point stability assertion is inferred.')])
+
+# Genuine differential objects and Taylor remainders added after snapshot9.
+COMPLETE_EXERCISES['opt-ex-derivatives-1'] = [
+ claim('For the actual Euclidean polynomial x1²+x1*x2+2*x2², the genuine gradient is (2*x1+x2,x1+4*x2), and its actual Frechet derivative is the symmetric Hessian [[2,1],[1,4]].',
+       'CompleteFoundationsCalculusModels','sourceQuadratic','actual_quadratic_gradient','actual_quadratic_gradient_coordinates','actual_quadratic_hessian','actual_quadratic_hessian_symmetric',
+       hypotheses='Every vector in the real two-dimensional Euclidean space.',
+       correspondence='Actual HasGradientAt and HasFDerivAt objects encode the source partials and mixed second partials, with an actual transpose equality rather than a numeric Hessian label.'),
+ claim('At (1,-1), the actual gradient is (1,-3) and the actual differential in direction (0,1) is -3. Every vertical displacement t has exact change -3*t+2*t², so the residual after the linear term is genuinely O(t²) near zero.',
+       'CompleteFoundationsCalculusModels','actual_directional_derivative','actual_vertical_displacement','actual_vertical_bigO',
+       hypotheses='The exact source base point and direction; every real displacement for the exact identity, and the neighbourhood filter at zero for the asymptotic statement.',
+       correspondence='The directional derivative is actual fderiv applied to the source direction. A genuine IsBigO statement substantiates the local-slope interpretation and its quadratic remainder.')]
+COMPLETE_EXERCISES['opt-ex-derivatives-2'] = [
+ claim('For the actual margin 1-x1²-x2² and curve (t,t²), substitution gives 1-t²-t⁴ and a genuine scalar derivative -2*t-4*t³.',
+       'CompleteFoundationsCalculusModels','margin','curve','actual_substituted_curve','actual_substitution_derivative',
+       hypotheses='Every real curve parameter.',
+       correspondence='The actual function composition is identified before its actual HasDerivAt theorem is proved; the source computation is not merely a polynomial expression with no analytic derivative.'),
+ claim('The genuine margin gradient is (-2*x1,-2*x2) and the actual curve velocity is (1,2*t). Their actual inner product is the same derivative by the genuine chain rule. At t=1 the actual value is -1 and derivative -6, so the safety test h≥0 fails and the immediate change is negative.',
+       'CompleteFoundationsCalculusModels','actual_margin_gradient','actual_curve_velocity','actual_chain_rule_derivative','actual_curve_source_values',
+       hypotheses='Every real parameter for the chain rule; exactly t=1 for the source safety/sign conclusion.',
+       correspondence='Actual HasGradientAt, vector-valued HasDerivAt and their composition give the source dot-product rule. The actual value and derivative are strictly negative; no all-time safety inference is made from this local statement.')]
+COMPLETE_EXERCISES['opt-ex-derivatives-3'] = [
+ claim('The actual Euclidean objective exp(x)+y² has genuine gradient (exp(x),2*y) and Hessian diag(exp(x),2). At the origin its value is1, gradient(1,0), Hessian diag(1,2), and its actual second-order Taylor expression is 1+x+x²/2+y².',
+       'CompleteFoundationsTaylorModels','objective','actual_gradient','actual_hessian','actual_origin_data','actual_taylor_model','actual_remainder_identity',
+       hypotheses='Every real Euclidean input; the origin is the expansion point.',
+       correspondence='The model equals the actual value plus the actual gradient inner product plus half the actual Hessian quadratic. The y² contribution is exact, leaving only the actual scalar exponential remainder.'),
+ claim('For positive x, the actual exponential Taylor remainder equals exp(c)*x³/6 for some c between0 andx, and lies between0 andexp(x)*x³/6. The actual third derivative is exp(t), bounded by exp(0.1) on [0,0.1].',
+       'CompleteFoundationsTaylorModels','actual_iterated_exponential_derivative','actual_scalar_taylor_polynomial','actual_positive_scalar_lagrange_remainder','actual_positive_remainder_bound','actual_third_derivative_and_interval_bound','actual_source_remainder',
+       hypotheses='Strictly positive scalar x for the Lagrange theorem; the exact closed interval [0,1/10] for the source derivative bound.',
+       correspondence='A genuine Taylor/Lagrange theorem yields an actual intermediate-point witness. Actual function subtraction and the interval derivative bound prove both the sign and the printed source error bound.'),
+ claim('At (0.1,0.2), the actual model is1.145, actual objective rounds to1.145170918, error to0.000170918 and bound to0.000184195. Omitting the Hessian factor1/2 adds x²/2+y², gives the actual erroneous source-point value1.19, and exceeds the true value.',
+       'CompleteFoundationsTaylorModels','actual_source_model_value','actual_exp_tenth_decimal','actual_source_decimal_values','omittedHalfModel','actual_omitted_half_error','actual_source_omitted_half_value',
+       hypotheses='The exact source rational input; every quoted decimal has a strict error enclosure of half a unit in its ninth decimal place.',
+       correspondence='Actual exp series bounds rigorously certify the printed approximations, while exact polynomial identities prove the effect of dropping the factor and a strict actual-value comparison.')]
+COMPLETE_EXERCISES['opt-ex-matrix-calculus-1'] = [
+ claim('For actual A=diag(1,2), b=(1,1) and objective ||Ax-b||², the scalar expansion is (x1-1)²+(2*x2-1)². The genuine gradient equals both (2*(x1-1),4*(2*x2-1)) and2*A transpose*(Ax-b). At zero the actual residual is(-1,-1) and actual gradient(-2,-4).',
+       'CompleteFoundationsCalculusModels','leastA','leastB','leastObjective','actual_least_square_expansion','actual_least_square_gradient','actual_least_square_residual_gradient','actual_least_square_source_values',
+       hypotheses='Every real two-dimensional Euclidean input, with the exact source matrix and right side.',
+       correspondence='The true norm-squared objective, actual gradient and coordinate expansion agree, preserving the transpose orientation and the second-coordinate chain-rule factor.'),
+ claim('The actual gradient derivative is the positive-definite Hessian2*A transpose*A=diag(2,8). The source matrix is genuinely invertible; every actual objective is nonnegative and is zero iff x=(1,1/2), which solves Ax=b and is the unique global minimizer.',
+       'CompleteFoundationsCalculusModels','actual_least_square_hessian','actual_least_square_matrix_invertible','actual_least_square_unique_minimum','actual_least_square_source_values',
+       hypotheses='Every real input for global optimality and uniqueness.',
+       correspondence='Genuine HasFDerivAt, Matrix.PosDef and IsUnit objects support the Hessian and inverse claims. Actual norm nonnegativity and an all-input equality iff establish a global unique optimum.')]
+
+for node in [267,272,276,278]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-derivatives-1'][0]]
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-280'] = [COMPLETE_EXERCISES['opt-ex-derivatives-1'][1]]
+for node in [285,294]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-derivatives-2'][0]]
+for node in [290,296,298]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-derivatives-2'][1]]
+for node in [303,308,312]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-derivatives-3'][0]]
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-316'] = [COMPLETE_EXERCISES['opt-ex-derivatives-3'][1]]
+for node in [314,318]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-derivatives-3'][2]]
+for node in [392,397,401,405]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-matrix-calculus-1'][0]]
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-403'] = [COMPLETE_EXERCISES['opt-ex-matrix-calculus-1'][1]]
+for node in [268,286,304,393]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-optimization.html::node-{node}'] = (
+  'The exact paragraph is a labelled Review link to its prerequisite section; it adds no mathematical assertion.')
+for node in [263,388]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-optimization.html::node-{node}'] = (
+  'The exact paragraph gives practice-order and review-link advice only; it asserts no mathematical theorem.')
+for node, exercise in [(267,'opt-ex-derivatives-1'),(272,'opt-ex-derivatives-1'),
+                       (285,'opt-ex-derivatives-2'),(290,'opt-ex-derivatives-2'),
+                       (303,'opt-ex-derivatives-3'),(392,'opt-ex-matrix-calculus-1')]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES[exercise]
+
+COMPLETE_EXERCISES['opt-ex-matrix-calculus-2'] = [
+ claim('For every finite invertible real square X and every real direction E, the actual determinant path has derivative det(X)*tr(X inverse*E), its actual log determinant has derivative tr(X inverse*E), and the actual matrix inverse has Frechet differential dY ↦ -X inverse*dY*X inverse.',
+       'CompleteFoundationsMatrixSensitivity','actual_generic_identity_determinant_direction','actual_generic_determinant_direction','actual_generic_log_determinant_direction','actual_generic_inverse_differential','actual_generic_inverse_direction',
+       hypotheses='Arbitrary finite real square matrices with IsUnit X; the source positive-definite X satisfies this invertibility requirement.',
+       correspondence='The actual determinant polynomial derivative at identity equals trace; actual determinant multiplicativity transports it to X. True HasDerivAt and HasFDerivAt objects encode the source directional and inverse differentials.'),
+ claim('For source X=diag(2,3) and E=[[1,1],[1,0]], the actual inverse isdiag(1/2,1/3), actual X inverse*E=[[1/2,1/2],[1/3,0]] has trace1/2, actual path is[[2+t,t],[t,3]] with determinant6+3*t-t², and the actual logarithm derivative at zero is1/2.',
+       'CompleteFoundationsMatrixSensitivity','sourceX','sourceE','sourcePath','actual_source_path','actual_source_determinant','actual_source_inverse','actual_source_invertible','actual_source_log_trace','actual_source_log_derivative','actual_source_log_expansion_derivative',
+       hypotheses='The exact source matrices and every real path parameter for the algebraic equalities; derivative at zero.',
+       correspondence='Actual matrix inverse, product, trace and determinant all agree with the genuine path derivative and its scalar determinant expansion.'),
+ claim('The actual source path is positive definite for every |t|<1/2, so it is genuinely PD with positive determinant on a neighbourhood of zero. Its actual inverse derivative is -[[1/4,1/6],[1/6,0]], with actual off-diagonal derivative -1/6.',
+       'CompleteFoundationsMatrixSensitivity','actual_source_positive_definite','actual_source_positive_neighbourhood','actual_source_inverse_formula','actual_source_inverse_derivative','actual_source_inverse_is_not_entrywise_reciprocal',
+       hypotheses='The exact open interval(-1/2,1/2) for the actual PD certificate; actual inverse differentiation at zero.',
+       correspondence='Genuine Matrix.PosDef and an eventual-neighbourhood statement substantiate the logarithm domain. The generic order-preserving matrix differential specializes to the exact matrix, and a true entry derivative confirms that matrix inversion is not entrywise reciprocation.')]
+COMPLETE_EXERCISES['opt-ex-matrix-calculus-3'] = [
+ claim('For genuine differentiable operator families A(theta), states x(theta) and right sides b(theta) satisfying Ax=b near the differentiation point, actual differentiation gives A prime*x+A*x prime=b prime and the actual sensitivity is the linear solve A*x prime=b prime-A prime*x. An invertible operator gives the unique solution by its inverse equivalence.',
+       'CompleteFoundationsSolutionSensitivity','actual_differentiated_linear_system','actual_sensitivity_is_linear_solve','actual_invertible_sensitivity_solution',
+       hypotheses='Any real normed spaces, actual continuous linear operators and actual HasDerivAt hypotheses, with equation equality on a neighbourhood; a ContinuousLinearEquiv is required for the explicit unique inverse solution.',
+       correspondence='The genuine operator-application chain rule differentiates the original equation directly. The result holds in arbitrary normed spaces, supporting the source extension to larger systems without assuming an unexplained derivative of an inverse.'),
+ claim('For actual A(theta)=diag(1+theta,2), b=(2,4) and theta>-1, every solution is exactly (2/(1+theta),2). Its genuine derivative is(-2/(1+theta)²,0). Differentiating the actual equation itself forces x(0)=(2,2), x prime(0)=(-2,0), and A*x prime=-A prime*x=(-2,0).',
+       'CompleteFoundationsSolutionSensitivity','sourceMatrix','sourceOperator','matrixDerivative','operatorDerivative','rightSide','explicitSolution','actual_operator_coordinates','actual_matrix_derivative','actual_source_solution_iff','actual_explicit_solution_derivative','actual_equation_forces_source_sensitivity','actual_source_zero_data',
+       hypotheses='The exact source family and every real parameter theta>-1; the equation-forces-derivative theorem retains an actual HasDerivAt hypothesis for any candidate solution family.',
+       correspondence='Actual continuous linear operators, an all-input solution iff, genuine derivative objects and the generic differentiated-equation theorem establish both independent methods and their agreement.'),
+ claim('The actual first-order predictor is x(0)+theta*x prime(0)=(2-2*theta,2). Its exact vector error is(2*theta²/(1+theta),0), with genuine Euclidean norm2*theta²/(1+theta) and a genuine O(theta²) estimate near zero. At theta0.01, predictor(1.98,2), exact state(200/101,2), Euclidean error1/5050, and the printed decimals1.980198020 and0.000198020 are rigorously rounded.',
+       'CompleteFoundationsSolutionSensitivity','firstOrderPrediction','actual_prediction_is_tangent','actual_exact_prediction_difference','actual_horizontal_norm','actual_prediction_error','actual_prediction_error_bigO','actual_source_prediction_values',
+       hypotheses='Theta>-1 for the exact positive error norm; the neighbourhood filter at zero for IsBigO; exact rational theta1/100 for the source numerical values.',
+       correspondence='The predictor is explicitly the actual tangent model, not merely a named polynomial. Actual vector subtraction, actual Euclidean norm and an actual asymptotic bound verify the error; strict half-unit ninth-decimal enclosures support both approximations.')]
+
+for node in [410,415]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-matrix-calculus-2']
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-419'] = [COMPLETE_EXERCISES['opt-ex-matrix-calculus-2'][1]]
+for node in [421,423]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-matrix-calculus-2']
+for node in [428,433]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-matrix-calculus-3']
+for node in [437,439]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-matrix-calculus-3'][1]]
+for node in [441,443]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = [COMPLETE_EXERCISES['opt-ex-matrix-calculus-3'][0],COMPLETE_EXERCISES['opt-ex-matrix-calculus-3'][2]]
+for node in [411,429]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-optimization.html::node-{node}'] = (
+  'The exact paragraph is only a labelled Review link to the matrix-derivative prerequisite section; it adds no mathematical assertion.')
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-357'] = [
+ claim('At every invertible finite real square X, the genuine inverse Frechet differential acts on every perturbation E as -X inverse*E*X inverse, preserving the actual multiplication order.',
+       'CompleteFoundationsMatrixSensitivity','actual_generic_inverse_differential','actual_generic_inverse_direction',
+       hypotheses='Arbitrary finite real square matrix and every real perturbation; IsUnit X is necessary for the differential.',
+       correspondence='The derivative is the actual continuous linear map for genuine matrix inversion. Its application has exactly the source left/right factors, not coordinatewise reciprocals.')]
+
+PARTIAL_EXERCISES['primer-optimization.html::exercise-30'] = [
+ claim('For every finite rectangular real W and real beta, the genuine Frobenius-norm objective beta/4*||WW transpose-I||F² has actual Hilbert gradient beta*(WW transpose-I)*W.',
+       'CompleteFoundationsParsevalModels','Space','toMatrix','fromMatrix','errorMatrix','objective','actual_frobenius_squared','actual_error_entries','actual_objective_expansion','actual_error_is_symmetric','actual_entry_differential','actual_symmetric_trace_identity','actual_inner_coordinates','actual_parseval_gradient','actual_gradient_matrix',
+       hypotheses='Arbitrary finite row and column types and arbitrary real beta; the actual matrix entries are a complete finite-dimensional Euclidean Hilbert space.',
+       correspondence='The actual Frobenius norm and actual matrix Gram error are retained. Genuine entry differentials and an all-matrix symmetric finite-sum identity produce HasGradientAt and the exact actual matrix-gradient formula. The source literal matrix-trace intermediate identities remain separate pending work.'),
+ claim('For actual W=[[1,1],[0,1]] and beta1, WW transpose-I=[[1,1],[1,0]], objective3/4 and actual gradient[[1,2],[1,1]]. The genuine gradient step0.1 is[[.9,.8],[-.1,.9]]; its actual cost10287/40000=.257175 strictly decreases and rounds to.257.',
+       'CompleteFoundationsParsevalModels','sourceW','sourcePoint','sourceStep','actual_source_data','actual_source_gradient_step','actual_source_step_decreases',
+       hypotheses='The exact source matrix and actual step size1/10.',
+       correspondence='The matrix is the actual image of a genuine Hilbert gradient, and the update subtracts that gradient. Exact actual Frobenius cost and a rigorous nearest-thousandth enclosure support the printed approximation; no scalar surrogate replaces the source objective.')]

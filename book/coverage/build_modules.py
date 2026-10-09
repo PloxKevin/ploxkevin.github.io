@@ -110,6 +110,11 @@ SGN = "SafeLearning.CompleteModulesScaledGram."
 SLLN = "SafeLearning.CompleteModulesSLL."
 SLCN = "SafeLearning.CompleteModulesSLLConsequences."
 SLEN = "SafeLearning.CompleteModulesSLLExamples."
+SWN = "SafeLearning.CompleteModulesSandwich."
+SWLN = "SafeLearning.CompleteModulesSandwichLMI."
+SWHN = "SafeLearning.CompleteModulesSandwichHalf."
+GAMN = "SafeLearning.CompleteModulesGammaLMI."
+SWCN = "SafeLearning.CompleteModulesSandwichConsequences."
 
 # These mappings are intentionally granular. A proved component is appended to
 # the requirements queue; the exercise is not marked complete merely because it
@@ -203,6 +208,15 @@ component("lipschitz-by-design.html::exercise-16", "For the actual source W=[[1,
           [SLEN+"actualSourceWeights",SLEN+"actualFirstMajorizer",SLEN+"actualSecondMajorizer",SLEN+"actual_source_gram_matrix",SLEN+"actual_first_scale_majorizer",SLEN+"actual_second_scale_majorizer",SLEN+"actual_first_certificate_matrix",SLEN+"actual_second_certificate_matrix",SLEN+"actual_both_source_certificates_are_positive_semidefinite",SLEN+"actual_first_certificate_characteristic_polynomial",SLEN+"actual_second_certificate_characteristic_polynomial",SLEN+"actual_first_certificate_eigenvalues",SLEN+"actual_second_certificate_eigenvalues",SLEN+"actual_source_majorizers_are_not_ordered"],
           ["The literal two-by-two weights and both literal positive scale vectors from Exercise13.2(c). Spectrum is the actual matrix spectrum, not an assumed eigenvalue list."],
           ["The final answer's SN spectral-norm-squared formula(3+sqrt5)/2 and its2.618 rounding are not part of this component and remain pending."])
+
+component("lipschitz-by-design.html::exercise-16", 'The actual source positive diagonal Q=diag(1/q) has actual inverse diag(q). Its literal scaled certificate equalsT-QGramQinv, has the same actual characteristic polynomial as the real symmetric certificate, and its exact diagonal entries equal the off-diagonal row radii. The genuine generic-field Gershgorin disc inclusion specializes to complex matrices; the actual source real disc interval is exactly[0,2Mii]. Transporting the actual symmetric eigenvalues through this similarity gives the actual PSD Gram-majorizer certificate.',
+          ['SafeLearning.CompleteModulesSLLGershgorin.actualSourceSimilarity', 'SafeLearning.CompleteModulesSLLGershgorin.actual_positive_scaling_inverse_product', 'SafeLearning.CompleteModulesSLLGershgorin.actual_similarity_has_same_characteristic_polynomial', 'SafeLearning.CompleteModulesSLLGershgorin.actual_real_row_dominant_eigenvalue_is_nonnegative', 'SafeLearning.CompleteModulesSLLGershgorin.actual_similarity_row_dominance_implies_positive_semidefinite', 'SafeLearning.CompleteModulesSLLGershgorin.actual_source_similarity_entry', 'SafeLearning.CompleteModulesSLLGershgorin.actual_source_majorizer_similarity_is_diagonally_dominant', 'SafeLearning.CompleteModulesSLLGershgorin.actual_weighted_gram_certificate_has_gershgorin_proof', 'SafeLearning.CompleteModulesSLLCorollaries.actual_gershgorin_disc_for_any_normed_field', 'SafeLearning.CompleteModulesSLLCorollaries.actual_source_positive_scaling_matrix_inverse', 'SafeLearning.CompleteModulesSLLCorollaries.actual_source_diagonal_similarity_identity', 'SafeLearning.CompleteModulesSLLCorollaries.actual_source_gershgorin_disc_real_interval', 'SafeLearning.CompleteModulesSLLCorollaries.actual_standard_activations_have_unit_interval_chords', 'SafeLearning.CompleteModulesSLLCorollaries.actual_positive_diagonal_gram_similarity_has_source_diagonal', 'SafeLearning.CompleteModulesSLLCorollaries.actual_positive_similarity_centers_force_positive_diagonal', 'SafeLearning.CompleteModulesSLLCorollaries.actual_source_scaled_diagonal_dominance_implies_gram_certificate', 'SafeLearning.CompleteModulesSLLCorollaries.actual_source_gershgorin_hypotheses_certify_relu_tanh_sigmoid_sll'],
+          ["Arbitrary actual finite real Gram certificate and strictly positive q. The general disc inclusion retains an actual eigenvalue of a matrix over any normed field."],[])
+
+component("lipschitz-by-design.html::exercise-16", 'The actual two source certificate matrices have determinant zero, traces2 and5/2, and actual nonzero null vectors(1,1) and(1,2). The actual Euclidean induced norm of the literal source W has squared value(3+sqrt5)/2, derived from an all-input quadratic gap and an attained maximizing direction. This actual norm-squared value rounds to2.618 with error strictly less than.0005.',
+          ['SafeLearning.CompleteModulesSLLExampleDetails.actual_first_certificate_determinant_is_zero', 'SafeLearning.CompleteModulesSLLExampleDetails.actual_second_certificate_determinant_is_zero', 'SafeLearning.CompleteModulesSLLExampleDetails.actual_first_certificate_trace_is_two', 'SafeLearning.CompleteModulesSLLExampleDetails.actual_second_certificate_trace_is_five_halves', 'SafeLearning.CompleteModulesSLLExampleDetails.actual_first_certificate_has_actual_nonzero_null_direction', 'SafeLearning.CompleteModulesSLLExampleDetails.actual_second_certificate_has_actual_nonzero_null_direction', 'SafeLearning.CompleteModulesSLLSpectral.actualGoldenRatio', 'SafeLearning.CompleteModulesSLLSpectral.actual_golden_ratio_identities', 'SafeLearning.CompleteModulesSLLSpectral.actual_source_weights_coordinate_energy', 'SafeLearning.CompleteModulesSLLSpectral.actual_source_spectral_quadratic_gap', 'SafeLearning.CompleteModulesSLLSpectral.actual_source_spectral_norm_squared', 'SafeLearning.CompleteModulesSLLSpectral.actual_source_spectral_norm_squared_rounds_to_2_618'],
+          ["The literal two-by-two source weights and both actual source diagonal constructions; spectral norm is Euclidean induced."],[])
+
 
 
 
@@ -560,6 +574,24 @@ PROMOTED_REQUIREMENTS = {
     },
 }
 
+component("lipschitz-by-design.html::exercise-17", "For actual arbitrary finite real blocks A,B satisfying the source row identity AA-transpose+BB-transpose=I and an actual positive diagonal Psi, the actual U=sqrt2 Psi-inverse B and Y=sqrt2 A-transpose Psi have Y-transpose Y=2PsiAA-transposePsi and Lambda UU-transpose Lambda=2PsiBB-transposePsi for actual Lambda=Psi squared. The actual source Schur expression is zero; both exact Schur equivalences imply the actual three-block unit-gain matrix PSD, and actual globally[0,1]-slope-restricted biased networks built from these weights are Euclidean nonexpansive.",
+          [SWN+name for name in ["actualSandwichInput","actualSandwichOutput","actualSandwichMultiplier","actual_sandwich_multiplier_is_square","actual_sandwich_output_gram","actual_sandwich_multiplier_input_gram","actual_sandwich_source_schur_expression_is_zero"]]+[SWLN+name for name in ["actual_unit_gamma_three_block_certificate_iff_lipsdp","actual_unit_gamma_lipsdp_iff_source_schur","actual_sandwich_three_block_matrix_is_positive_semidefinite","actual_sandwich_layer_is_euclidean_nonexpansive"]],
+          ["Actual finite real rectangular blocks with AA-transpose+BB-transpose=I, every diagonal scale strictly positive, arbitrary biases and actual activation with every incremental slope in[0,1]."],
+          ["The separately mapped consequences prove the literal activation QC/energy margin; independent whole-source review remains pending."])
+component("lipschitz-by-design.html::exercise-17", "For the actual half multiplier Lambda=Psi squared/2, the actual source Schur expression is Psi(1/2I-3/2AA-transpose)Psi. Its negative is genuinely positive definite whenever actual AA-transpose-1/3I is positive definite; in the actual zero-input orthogonal-output case the expression is exactly negative Psi squared.",
+          [SWHN+name for name in ["actualHalfMultiplier","actualHalfSchur","actual_half_multiplier_is_half_of_full_multiplier","actual_half_sandwich_source_schur_expression","actual_half_multiplier_is_negative_when_output_gram_exceeds_one_third","actual_orthogonal_zero_input_half_schur_is_negative_square"]],
+          ["Actual source row identity and strictly positive diagonal scale; actual strict Gram lower bound for the conditional negative definiteness. The source counterexample has nonempty hidden coordinates."],
+          ["The separately mapped consequences prove conditional actual wrong-half LMI failure; independent whole-source review remains pending."])
+component("lipschitz-by-design.html::exercise-17", "For every actual finite one-hidden-layer network matrix and every positive real gamma, the source gamma-form three-block LMI has the exact source output Schur complement. Scaling it by gamma equals the actual negative LipSDP block certificate with rho=gamma squared and T=gamma Lambda. Therefore the two actual PSD/negative-semidefinite certificates are equivalent, and sqrt(rho)=gamma.",
+          [GAMN+name for name in ["actualGammaLeading","actualGammaCertificate","actual_positive_scalar_identity_inverse","actual_gamma_matrix_output_reassociation","actual_positive_scalar_preserves_positive_semidefinite","actual_gamma_output_schur_is_literal_source_block","actual_gamma_scaled_schur_is_negative_lipsdp","actual_gamma_lmi_iff_source_lipsdp","actual_source_squared_gain_has_same_positive_bound"]],
+          ["Arbitrary actual finite real input/output weights and diagonal multipliers; gamma strictly positive. Mathematical equivalence does not require an optimizer or floating-point implementation."],
+          ["Whole Exercise13.3 independent correspondence review remains pending."])
+
+component("lipschitz-by-design.html::exercise-17", "The actual unit-gain LipSDP quadratic equals actual output norm squared minus input norm squared plus the literal2Delta-z-transpose Lambda(Delta-v-Delta-z). Actual slope restriction[0,1] and nonnegative diagonal multiplier imply the latter QC is nonnegative for arbitrary biases and input pairs. The actual Sandwich certificate therefore proves the complete source energy-margin chain. In a nonempty actual hidden space, the half multiplier genuinely fails the actual source three-block LMI under the strict source Gram condition, including the zero-input orthogonal-output example.",
+          [SWCN+name for name in ["actual_negative_definite_matrix_is_not_positive_semidefinite","actual_half_sandwich_multiplier_fails_the_source_lmi","actual_orthogonal_zero_input_half_multiplier_fails_the_source_lmi","actual_unit_block_quadratic_is_energy_plus_qc","actual_unit_slope_activation_incremental_qc","actual_unit_network_source_energy_margin","actual_sandwich_layer_has_literal_source_qc_energy_margin"]],
+          ["Actual finite real matrix/function values, source row identity, positive diagonal scaling, actual[0,1] activation slopes; actual strictly positive hidden Gram lower bound for the conditional half-multiplier failure, and nonempty hidden coordinates for strict negative-definiteness failure."],
+          ["Whole Exercise13.3 independent source review remains pending; the theorem proves a conditional failure, not that every half multiplier fails for every source block."])
+
 COMPLETE_REQUIREMENTS = {
     "safe-bo.html#book-m4-b1", "safe-bo.html#book-m4-b2",
     "safe-bo-theory.html#book-m5-b1", "gosafe.html#book-m6-b1",
@@ -659,7 +691,7 @@ for e in INV["exercises"]:
             c['hypotheses']=["Arbitrary finite real layer matrices, actual elementwise activation with every chord slope in [0,1], arbitrary biases, and Euclidean induced operator norms."]
             c['correspondence']="The listed declarations establish this exact source atom using actual functions, actual quadratic forms and exact supplied matrices. Spectral norms are Euclidean induced norms. Actual globally slope-restricted linear functions realize the admissible scalar pairs; explicit actual ReLU pairs refute invalid coupled constraints. The product optimization proof bounds the infimum of actual feasible objectives. Further optimized walkthrough values remain separate material claims."
     if e["key"] == "lipschitz-by-design.html::exercise-15":
-        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review.json"
+        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review-correction13.json"
         cayley_review = json.loads((ROOT/cayley_review_rel).read_text())
         assert cayley_review["exercise_key"] == e["key"]
         assert cayley_review["exercise_text_sha256"] == e["text_sha256"]
@@ -685,6 +717,50 @@ for e in INV["exercises"]:
                 hypotheses=[hyp for i in components for hyp in approved_components[i]["hypotheses"]],
                 correspondence="This exact source atom is discharged by the individually approved Cayley components. The source matrix is the actual rational transform, the angle has the correct sign, the decimal has an analytic error bound, and omitted matrices are characterized exactly.",
                 independent_source_review=cayley_evidence)
+        complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
+    if e["key"] == "lipschitz-by-design.html::exercise-16":
+        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-correction13.json"
+        sll_review = json.loads((ROOT/sll_review_rel).read_text())
+        assert sll_review["status"] == "independent_source_correspondence_review_passed"
+        assert sll_review["exercise_key"] == e["key"] and sll_review["exercise_text_sha256"] == e["text_sha256"]
+        assert digest(sll_review["source"]) == sll_review["source_sha256"]
+        assert not sll_review["missing_clauses"]
+        for proof,sha in sll_review["proof_sha256"].items():
+            assert digest(proof) == sha, proof
+        imported_general = sll_review["imported_general_lemma_source"]
+        assert digest(imported_general["path"]) == imported_general["sha256"]
+        sll_evidence = {"file":sll_review_rel,"sha256":digest(sll_review_rel),
+            "reviewer":sll_review["reviewer"],"status":sll_review["status"]}
+        sll_approved = [row for row in sll_review["reviewed_clauses"] if row["status"] == "approved"]
+        sll_names = sorted({name for row in sll_approved for name in row["lean_declarations"] if name.startswith("SafeLearning.")})
+        # The generic imported theorem is also retained through a precise local
+        # wrapper so our local-declaration ledger can reference the full clause.
+        sll_generic = "SafeLearning.CompleteModulesSLLCorollaries.actual_gershgorin_disc_for_any_normed_field"
+        for c in claims:
+            if "::proved-component-" in c["id"]:
+                c["remaining_gaps"] = []
+                c["independent_source_review"] = sll_evidence
+                c["scope_limits"] = ["Other SLL, AOL, Sandwich and convolution source units remain separate claims; named activation and regularized certificates do not infer an arbitrary implementation guarantee."]
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="This exact clause supplies the actual weights, positive diagonal, PSD certificate and incremental activation restriction for the requested theorem.",
+            independent_source_review=sll_evidence)
+        for index,rows in [(1,[0]),(2,[1,3,4,5]),(3,[2,6,7])]:
+            names = sorted({name for r in rows for name in sll_approved[r]["lean_declarations"] if name.startswith("SafeLearning.")})
+            if index == 2:
+                names += [sll_generic,"SafeLearning.CompleteModulesSLLCorollaries.actual_source_positive_scaling_matrix_inverse",
+                    "SafeLearning.CompleteModulesSLLCorollaries.actual_source_diagonal_similarity_identity",
+                    "SafeLearning.CompleteModulesSLLCorollaries.actual_source_gershgorin_disc_real_interval"]
+            claims[index].update(status="proved",lean_declarations=sorted(set(names)),remaining_gaps=[],
+                hypotheses=["The exact source givens and the actual reviewed finite-dimensional function/matrix hypotheses. Strict diagonal positivity for taking the inverse is distinguished from universal semidefinite majorization."],
+                correspondence="The independent full question/answer review approves this exact atom, including the actual QC/energy margin, literal similarity/Gershgorin route and complete source numerical matrices, determinants/traces, tightness, non-ordering and actual spectral-normalization value/rounding as appropriate.",
+                independent_source_review=sll_evidence)
+        for n,row in enumerate(sll_review["reviewed_clauses"],1):
+            if row["status"] == "not_a_formal_claim":
+                c=claim(e["key"]+f"::specific-source-classification-{n}",row["source_clause"],
+                    status="not_a_formal_claim",kind="navigation_and_parameter_design_motivation",correspondence=row["reason"])
+                c["remaining_gaps"] = []
+                c["independent_source_review"] = sll_evidence
+                claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
                       "label": e["label"], "source_sha256": e["source_sha256"],
@@ -760,6 +836,23 @@ for u in INV["material_source_units"]:
             hypotheses=["Actual finite complex matrices and Euclidean vector norm; arbitrary real scalar coordinates. The Cayley input is actually skew-Hermitian and the inverse domain is actually unitary with no nonzero -1 eigenvector."],
             correspondence="The independent reviewer approves all corrected mathematical clauses: genuine complex conjugation, modulus and adjoint identities; actual vector norm-square product; typed Hermitian/unitary definitions; actual [i] example; generic Cayley invertibility/unitarity/exclusion/bijection and determinant norm1. The explicit [-i] determinant counterexample justifies restricting determinant+1 to the real theorem.",
             independent_source_review=cayley_evidence)
+    if u["key"] in {"lipschitz-by-design.html::node-1333","lipschitz-by-design.html::node-1337",
+        "lipschitz-by-design.html::node-1339","lipschitz-by-design.html::node-1341"}:
+        approved_indices = {"lipschitz-by-design.html::node-1333":[0,1,2,3,4,5,6,7],
+            "lipschitz-by-design.html::node-1337":[0],"lipschitz-by-design.html::node-1339":[1,3,4,5],
+            "lipschitz-by-design.html::node-1341":[2,6,7]}[u["key"]]
+        names = sorted({name for index in approved_indices for name in sll_approved[index]["lean_declarations"] if name.startswith("SafeLearning.")})
+        if u["key"] in {"lipschitz-by-design.html::node-1333","lipschitz-by-design.html::node-1339"}:
+            names += ["SafeLearning.CompleteModulesSLLCorollaries.actual_gershgorin_disc_for_any_normed_field",
+                "SafeLearning.CompleteModulesSLLCorollaries.actual_source_positive_scaling_matrix_inverse",
+                "SafeLearning.CompleteModulesSLLCorollaries.actual_source_diagonal_similarity_identity",
+                "SafeLearning.CompleteModulesSLLCorollaries.actual_source_gershgorin_disc_real_interval"]
+        c.update(status="proved",kind="independently_reviewed_actual_sll_mathematical_clauses",remaining_gaps=[],
+            lean_declarations=sorted(set(names)),
+            hypotheses=["The exact actual finite weights, positive diagonal/Q and source incremental activation hypotheses; part(b) majorization does not require nonzero columns."],
+            correspondence="Every mathematical clause of this exact Exercise13.2 question/answer unit has the independent full-source review: actual energy/QC identities, literal Gershgorin similarity/discs and actual matrix/spectral/decimal details. The phrase motivating learningq and the answer-disclosure label are individually classified separately.",
+            independent_source_review=sll_evidence,
+            nonformal_source_classifications=[row for row in sll_review["reviewed_clauses"] if row["status"]=="not_a_formal_claim"])
     lipnode=u['key'].removeprefix('lipsdp.html::node-')
     if lipnode.isdigit() and int(lipnode) in LIPSDP_UNIT_MAP:
         c.update(kind="actual_incremental_quadratic_constraint_and_matrix_correspondence",status="proved",
@@ -855,6 +948,8 @@ material_groups = [
 ]
 material_groups.append(("lipschitz-by-design", "T^{-1}", "The exact finite residual-layer energy identity and literal source QC margin imply actual Euclidean nonexpansiveness whenever the actual source diagonal is strictly positive, the actual certificate is PSD and the actual activation has incremental slopes[0,1]. The analytic source diagonal is nonnegative and strictly positive for nonzero weight columns; its source-scaled residual layer then inherits the actual bound. Named activation wrappers, literal Gershgorin similarity/discs and the full epsilon-regularized certificate remain distinct pending claims.", COMPONENTS["lipschitz-by-design.html::exercise-16"][1][1]))
 material_groups.append(("lipschitz-by-design", "eigenvalues $0,2$", "The actual source two-by-two weights yield both literal scaled diagonals and actual PSD certificate differences, their exact characteristic polynomials and spectral values, and actual unit-vector witnesses that neither diagonal majorizes the other. The final printed SN spectral-norm formula and decimal remain pending.", COMPONENTS["lipschitz-by-design.html::exercise-16"][2][1]))
+material_groups.append(("lipschitz-by-design", "add $\\epsilon I$", 'The actual source weighted diagonal shifted by any positive epsilon yields a genuinely positive-definite Gram certificate, including zero columns. The actual residual layer is nonexpansive; actual ReLU, tanh and sigmoid obey the needed unit-interval chords, with actual sigmoid derivative in[0,1/4]. This component does not by itself close every surrounding source theorem or implementation assertion.', ['SafeLearning.CompleteModulesSLLRegularization.actualRegularizedDiagonal', 'SafeLearning.CompleteModulesSLLRegularization.actual_regularized_certificate_is_positive_definite', 'SafeLearning.CompleteModulesSLLRegularization.actual_regularized_sll_is_nonexpansive', 'SafeLearning.CompleteModulesSLLRegularization.actual_monotone_one_lipschitz_function_has_unit_interval_chords', 'SafeLearning.CompleteModulesSLLRegularization.actual_tanh_has_unit_interval_chords', 'SafeLearning.CompleteModulesSLLRegularization.actual_sigmoid_derivative_is_in_quarter_interval', 'SafeLearning.CompleteModulesSLLRegularization.actual_sigmoid_is_one_lipschitz', 'SafeLearning.CompleteModulesSLLRegularization.actual_sigmoid_has_unit_interval_chords', 'SafeLearning.CompleteModulesSLLRegularization.actual_regularized_sll_relu_tanh_sigmoid_are_nonexpansive']))
+material_groups.append(("lipschitz-by-design", "Statement 1", 'For every actual finite real W and actual strictly positive diagonal T with actual T-W-transpose W PSD, the genuine diagonal inverse-square-root normalizes T exactly to the identity. The actual rescaled linear layer W TinvSqrt has its exact Euclidean quadratic energy bounded by input energy and is nonexpansive for every input pair. Other listed SN/orthogonal/AOL/CPL classifications and spectral-normalization conventions in the overlapping source paragraph are distinct pending clauses.', ['SafeLearning.CompleteModulesAOL.actualInverseSquareRootDiagonal', 'SafeLearning.CompleteModulesAOL.actualRescaledLinearLayer', 'SafeLearning.CompleteModulesAOL.actual_inverse_square_root_diagonal_is_symmetric', 'SafeLearning.CompleteModulesAOL.actual_inverse_square_root_normalizes_diagonal', 'SafeLearning.CompleteModulesAOL.actual_rescaled_linear_layer_coordinate_energy', 'SafeLearning.CompleteModulesAOL.actual_positive_diagonal_normalized_energy', 'SafeLearning.CompleteModulesAOL.actual_positive_diagonal_gram_certificate_implies_rescaled_energy_bound', 'SafeLearning.CompleteModulesAOL.actual_source_rescaled_linear_layer_is_nonexpansive']))
 material_groups.append(("lipschitz-by-design", "Complex matrices", "The actual 1-by-1 complex skew-Hermitian matrix [i] has actual unitary Cayley transform [-i], with determinant -i rather than1. Thus the real determinant-one conclusion cannot be carried over verbatim to the complex theorem. This exact counterexample supports correction10; the corrected generic complex invertibility/unitarity/exclusion/bijection claims remain a separate pending source requirement.", [CCN+"actualImaginarySkew",CCN+"actualComplexCayley",CCN+"actual_imaginary_matrix_is_skew_hermitian",CCN+"actual_imaginary_cayley_denominator_inverse",CCN+"actual_imaginary_cayley_is_negative_imaginary",CCN+"actual_imaginary_cayley_is_unitary",CCN+"actual_imaginary_cayley_determinant_is_not_one",CCN+"actual_complex_skew_cayley_does_not_preserve_real_determinant_claim"]))
 material_groups.append(("lipschitz-by-design", "Cayley transform of a skew-symmetric matrix", "Every actual finite real orthogonal matrix Q without a nonzero eigenvector of eigenvalue -1 has exactly one actual skew-symmetric preimage under the Cayley transform. The actual inverse is (I+Q)inv*(I-Q), equal to (I-Q)*(I+Q)inv, and both actual inverse compositions recover the original matrix. Denominator invertibility is proved equivalent to the exact eigenvector exclusion.", [CYIN+"actualInverseCayley",CYIN+"actual_inverse_cayley_right_denominator_identity",CYIN+"actual_inverse_cayley_left_denominator_identity",CYIN+"actual_inverse_cayley_is_source_inverse_formula",CYIN+"actual_inverse_cayley_is_skew_symmetric",CYIN+"actual_inverse_cayley_recovers_orthogonal",CYIN+"actual_inverse_cayley_recovers_skew",CYIN+"actual_cayley_preimage_is_unique",CYIN+"actual_orthogonal_denominator_invertible_iff_no_negative_one_eigenvector",CYIN+"actual_orthogonal_without_negative_one_has_unique_skew_preimage"]))
 material_groups.append(("lipschitz-by-design", "For skew-Hermitian $A$", "For every actual finite complex skew-Hermitian matrix A, I+A and I-A are invertible, the actual Cayley matrix is unitary, its actual determinant has norm1, and it has no nonzero eigenvector of eigenvalue -1. Every actual unitary matrix with this exclusion has exactly one actual skew-Hermitian Cayley preimage. The literal inverse formula and both actual compositions are proved, without claiming complex determinant1.", [CLCN+"actualComplexCayley",CLCN+"actual_complex_skew_denominator_gram_is_positive",CLCN+"actual_complex_skew_denominator_is_invertible",CLCN+"actual_complex_skew_numerator_is_adjoint_denominator",CLCN+"actual_complex_skew_numerator_is_invertible",CLCN+"actual_complex_cayley_is_unitary",CLCN+"actual_complex_cayley_determinant_has_unit_norm",CLCN+"actual_complex_cayley_plus_identity_is_twice_inverse",CLCN+"actual_complex_cayley_plus_identity_is_invertible",CLCN+"actual_complex_cayley_has_no_negative_one_eigenvector",CLIN+"actualComplexInverseCayley",CLIN+"actual_inverse_cayley_is_source_inverse_formula",CLIN+"actual_inverse_cayley_is_skew_hermitian",CLIN+"actual_inverse_cayley_recovers_unitary",CLIN+"actual_inverse_cayley_recovers_skew",CLIN+"actual_cayley_preimage_is_unique",CLIN+"actual_unitary_denominator_invertible_iff_no_negative_one_eigenvector",CLIN+"actual_unitary_without_negative_one_has_unique_skew_preimage"]))

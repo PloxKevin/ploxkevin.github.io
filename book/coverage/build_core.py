@@ -10,8 +10,19 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import re
+import argparse
 
 ROOT = Path(__file__).resolve().parents[2]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--without-overlap-review', action='store_true',
+                    help='Generate candidate parent claims without promoting material overlaps.')
+args = parser.parse_args()
+
+def reviewed_path(name):
+    original = ROOT/'book/coverage/checks'/name
+    rebased = original.with_name(original.stem+'-correction12-rebase.json')
+    return rebased if rebased.exists() else original
+
 INV = json.loads((ROOT/'book/coverage/inventory.json').read_text())
 PAGES = {'barriers','case-studies','cmdp','lyapunov-mpc','policy-optimization',
          'book','formulas','glossary','index','open-problems','papers','study-guide'}
@@ -264,7 +275,7 @@ trajectory_additions = {
 barrier_groups = [(number, names+[N+n for n in trajectory_additions.get(number,([],''))[0]],
                    statement+trajectory_additions.get(number,([],''))[1])
                   for number,names,statement in barrier_groups]
-barrier_review_path = ROOT/'book/coverage/checks/barrier-examples-source-review.json'
+barrier_review_path = reviewed_path('barrier-examples-source-review.json')
 barrier_reviews = {}
 if barrier_review_path.exists():
     barrier_review = json.loads(barrier_review_path.read_text())
@@ -333,7 +344,7 @@ lyapunov_hypotheses = {
     '10': 'The actual plant and approximate policy recurrence. Relative-error statements assume the supplied state-dependent pointwise error bound; the absolute-error counterexample supplies a genuine permitted constant error and its nonzero equilibrium trajectory.'}
 for review_name in ['lyapunov-exercise-models-source-review.json',
                     'lyapunov-nonlinear-models-source-review.json']:
-    path = ROOT/'book/coverage/checks'/review_name
+    path = reviewed_path(review_name)
     if not path.exists():
         continue
     review = json.loads(path.read_text())
@@ -366,12 +377,23 @@ practice_hypotheses = {
     'cmdp.html#exercise-8-p6': ['One self-looping state and the stated stationary two-action marginal PMF, with deterministic reward/cost given the action, discount1/2 and budget1. The expectation of the infinite random return is derived without intertime independence.'],
     'cmdp.html#exercise-8-p9': ['The same actual policy-probability domain[0,1], reward2+6p and cost4p. The unique dual minimum belongs to the nonnegative multiplier domain.'],
     'cmdp.html#exercise-8-p5': ['The actual deterministic two-state path starts at0, moves to1 and stays there; discount1/2 and rewards0,2.'],
-    'barriers.html::exercise-20': ['The actual three-state min/max safety operator, margins2/1/-1 and discount1/2. The general interpolation statement assumes a discount in[0,1] and interpolates current and clipped future margin.']}
+    'barriers.html::exercise-20': ['The actual three-state min/max safety operator, margins2/1/-1 and discount1/2. The general interpolation statement assumes a discount in[0,1] and interpolates current and clipped future margin.'],
+    'barriers.html::exercise-21': ['The exact scalar source state/input intervals and two-step models with drift0 or3/5. First-order CBF recursion assumes the actual Euler lower bound and the stated step-size bound; exact sampled-data safety additionally requires a certified integration-error budget. Compact fallback assumes a nonempty compact admissible set and actual feasible input; minimum-norm fallback uses the nonempty closed convex affine CBF halfspace in a complete real inner product space.'],
+    'cmdp.html#exercise-8-p7': ['The genuine two-atom source PMF, costs0/10, confidence9/10 and upper10% fractional-selection convention.'],
+    'cmdp.html#exercise-8-p11': ['The genuine two-atom source PMF, costs0/100, failure probability1/100 and upper5% fractional-selection convention.'],
+    'policy-optimization.html#exercise-9-p12': ['A fixed selected update and probability measure. The two measurable confidence events apply to that update and bound its actual outcome-indexed reward improvement and cost errors. No independence is assumed.'],
+    'policy-optimization.html#exercise-9-p10': ['The exact real scalar polynomial cost residual, linearization at0 and nonnegative step domain.'],
+    'policy-optimization.html#exercise-9-p11': ['The actual finite data and candidate PMFs with their source probabilities. The general importance identity requires candidate support within data support. Unsupported-action division is totalized in Lean; the actual impossibility of a finite density weight and failed integral identity are proved explicitly.']}
 for review_name in ['two-input-projection-source-review.json',
                     'policy-mixing-source-review.json',
                     'discounted-flow-source-review.json',
-                    'safety-bellman-source-review.json']:
-    path = ROOT/'book/coverage/checks'/review_name
+                    'safety-bellman-source-review.json',
+                    'predictive-safety-source-review-v2.json',
+                    'tail-risk-p7-p11-source-review-v1.json',
+                    'policy-confidence-source-review-v1.json',
+                    'policy-boundary-source-review-v1.json',
+                    'policy-importance-source-review-v2.json']:
+    path = reviewed_path(review_name)
     if not path.exists():
         continue
     review = json.loads(path.read_text())
@@ -380,12 +402,31 @@ for review_name in ['two-input-projection-source-review.json',
     for name, expected in review['proof_sha256'].items():
         if sha(name) != expected:
             raise ValueError('Stale practice proof review: '+name)
+    for evidence in review.get('actual_standalone_compiler_evidence', []):
+        if (evidence.get('actual_exit_code', evidence.get('exit_code')) != 0 or
+                sha(evidence['metadata']) != evidence['metadata_sha256'] or
+                sha(evidence['raw_log']) != evidence['raw_log_sha256']):
+            raise ValueError('Changed actual practice compiler evidence: '+review_name)
+        actual = json.loads((ROOT/evidence['metadata']).read_text())
+        before = actual.get('source_sha256_before', actual.get('sha256_before'))
+        after = actual.get('source_sha256_after', actual.get('sha256_after'))
+        if (actual['exit_code'] != 0 or before != after or
+                sha(actual['source']) != after or
+                sha(actual['log']) != actual['log_sha256']):
+            raise ValueError('Stale actual practice compiler execution: '+review_name)
+    evidence = review.get('standalone_evidence')
+    if evidence:
+        if (evidence['actual_exit_code'] != 0 or
+                sha(evidence['file']) != evidence['sha256'] or
+                sha(evidence['log']) != evidence['log_sha256']):
+            raise ValueError('Changed actual practice compiler record: '+review_name)
     for record in review.get('exercises', [review]):
         key = record['exercise_key']
         original = next(e for e in INV['exercises'] if e['key']==key)
         if record['exercise_text_sha256'] != original['text_sha256']:
             raise ValueError('Stale practice text review: '+key)
-        clauses = record['reviewed_clauses']
+        clauses = record.get('reviewed_clauses', [c for c in review.get('reviewed_clauses', [])
+                            if c.get('exercise_key') == key])
         mathematical = [c for c in clauses if c['status']=='approved']
         gaps = record.get('missing_clauses', review['missing_clauses'])
         if (review['status']!='independent_source_correspondence_review_passed' or
@@ -477,12 +518,12 @@ MATERIAL_REVIEW = {
 # These approvals come from an independent, per-paragraph semantic review.
 # DOM containment proposes candidates; it does not establish correspondence.
 overlap_path = ROOT/'book/coverage/core-material-overlap-review.json'
-for checkpoint in (8, 9):
+for checkpoint in (8, 9, 10, 11, 12, 13):
     candidate_review = ROOT/f'book/coverage/core-material-overlap-review-{checkpoint}.json'
     if candidate_review.exists():
         overlap_path = candidate_review
 overlaps = {}
-if overlap_path.exists():
+if overlap_path.exists() and not args.without_overlap_review:
     review = json.loads(overlap_path.read_text())
     candidate_path = review['candidate_source']
     if sha(candidate_path) != review['candidate_sha256']:
@@ -566,7 +607,7 @@ for u in INV['material_source_units']:
     material.append(claim)
 
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
-        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences']
+        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),
