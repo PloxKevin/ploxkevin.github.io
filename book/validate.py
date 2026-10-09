@@ -340,10 +340,11 @@ def validate(allow_reviewed_corrections=False):
         documented=[c for c in corrections if c['source']=='SafeLearning/'+name]
         restored=stripped
         for c in reversed(documented):
-            if restored.count(c['after'])!=1 or original.count(c['before'])!=1:
-                error('correction_source_mismatch',name,'Documented mathematical correction is not an exact unique source replacement',line=c['line'])
-            else:
-                restored=restored.replace(c['after'],c['before'],1)
+            for replacement in reversed(c.get('replacements', [c])):
+                if restored.count(replacement['after'])!=1 or original.count(replacement['before'])!=1:
+                    error('correction_source_mismatch',name,'Documented mathematical correction is not an exact unique source replacement',line=c['line'])
+                else:
+                    restored=restored.replace(replacement['after'],replacement['before'],1)
         reviewed_equal=restored==original
         base_items = exercises(Document(original).root)
         total_baseline_exercises += len(base_items)

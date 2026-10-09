@@ -55,7 +55,7 @@ files += ['verification/lean/' + name for name in
 files += [str(p.relative_to(ROOT)) for p in (ROOT / 'book/coverage').rglob('*')
           if p.is_file() and p.suffix in {'.py', '.json', '.md', '.log'}
           and '__pycache__' not in p.parts]
-files += ['book/inventory_claims.py']
+files += ['book/inventory_claims.py', 'book/validate.py']
 files = sorted(set(files))
 initial_hashes = {name: sha(ROOT / name) for name in files}
 for name in files:

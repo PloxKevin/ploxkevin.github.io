@@ -100,6 +100,16 @@ BBN = "SafeLearning.CompleteModulesBarrierBoundary."
 CYN = "SafeLearning.CompleteModulesCayley."
 EPN = "SafeLearning.CompleteModulesEigenProduct."
 CCN = "SafeLearning.CompleteModulesComplexCayleyCounterexample."
+CYIN = "SafeLearning.CompleteModulesCayleyInverse."
+CYPN = "SafeLearning.CompleteModulesCayleyPlane."
+CYRN = "SafeLearning.CompleteModulesCayleyRange."
+CLCN = "SafeLearning.CompleteModulesComplexCayley."
+CLIN = "SafeLearning.CompleteModulesComplexCayleyInverse."
+CLBN = "SafeLearning.CompleteModulesComplexBasics."
+SGN = "SafeLearning.CompleteModulesScaledGram."
+SLLN = "SafeLearning.CompleteModulesSLL."
+SLCN = "SafeLearning.CompleteModulesSLLConsequences."
+SLEN = "SafeLearning.CompleteModulesSLLExamples."
 
 # These mappings are intentionally granular. A proved component is appended to
 # the requirements queue; the exercise is not marked complete merely because it
@@ -169,7 +179,31 @@ component("lipsdp.html::exercise-18", "For every actual finite complex matrix X 
 component("lipschitz-by-design.html::exercise-15", "For every actual finite real skew-symmetric matrix A, I+A and I-A are invertible. The actual rational transform Q=(I-A)(I+A)inv satisfies Q-transpose*Q=I and determinant one. Q+I is exactly twice the denominator inverse and is itself invertible, so Q has no nonzero eigenvector with eigenvalue -1.",
           [CYN+"actualCayley",CYN+"actual_skew_cayley_denominator_gram_is_positive",CYN+"actual_skew_cayley_denominator_is_invertible",CYN+"actual_skew_cayley_numerator_is_transposed_denominator",CYN+"actual_skew_cayley_numerator_is_invertible",CYN+"actual_cayley_is_orthogonal",CYN+"actual_cayley_has_determinant_one",CYN+"actual_cayley_plus_identity_is_twice_inverse",CYN+"actual_cayley_plus_identity_is_invertible",CYN+"actual_cayley_has_no_negative_one_eigenvector"],
           ["An arbitrary finite real matrix with actual transpose equal to its negative."],
-          ["The two-dimensional rotation formula/angle, a=1/2 substitution, and exact characterization of omitted two-dimensional orthogonal matrices remain separate source requirements."])
+          [])
+
+component("lipschitz-by-design.html::exercise-15", "For the actual two-dimensional skew matrix [[0,a],[-a,0]], the denominator inverse is [[1,-a],[a,1]]/(1+a^2), and its actual Cayley transform is [[1-a^2,-2a],[2a,1-a^2]]/(1+a^2). This is exactly the actual rotation matrix at angle2*arctan(a), with angle strictly between -pi and pi. At a=1/2 the actual matrix is [[3/5,-4/5],[4/5,3/5]]. The exact angle in degrees differs from53.13 by at most.005, proved through actual alternating arctan sums and analytic pi bounds.",
+          [CYPN+"actualPlaneSkew",CYPN+"actualPlaneRotation",CYPN+"actual_plane_matrix_is_skew",CYPN+"actual_plane_denominator_inverse",CYPN+"actual_plane_cayley_formula",CYPN+"actual_arctan_rotation_coordinates",CYPN+"actual_plane_cayley_is_rotation",CYPN+"actual_plane_cayley_angle_is_in_open_pi_interval",CYPN+"actual_half_parameter_cayley_matrix",CYPN+"actualHalfArctanTerm",CYPN+"actual_half_arctan_terms_are_antitone",CYPN+"actual_half_parameter_angle_rounds_to_53_13_degrees"],
+          ["An arbitrary real scalar parameter in the actual source two-by-two skew matrix. Degrees are180/pi times the actual real angle; the printed two-decimal approximation is controlled by an analytic half-decimal-unit error bound."],[])
+
+component("lipschitz-by-design.html::exercise-15", "The range of the actual scalar two-dimensional Cayley parameterization is exactly the two-dimensional orthogonal determinant-one matrices except -I. Every orthogonal determinant-minus-one matrix has an actual nonzero eigenvector of eigenvalue -1. Thus the omitted two-dimensional orthogonal matrices are precisely the pi rotation and every reflection.",
+          [CYRN+"actual_every_plane_skew_matrix_has_scalar_form",CYRN+"actual_plane_rotation_denominator_is_invertible",CYRN+"actual_plane_cayley_range_is_exact",CYRN+"actual_every_orthogonal_reflection_has_negative_one_eigenvector",CYPN+"actual_plane_cayley_never_produces_reflection",CYPN+"actual_plane_cayley_never_produces_pi_rotation"],
+          ["Actual finite real matrices. The exact range classification is two-dimensional; the reflection eigenvector conclusion holds in arbitrary finite dimension."],[])
+
+component("lipschitz-by-design.html::exercise-16", "For every actual finite real matrix W and every strictly positive coordinate scaling q, the source diagonal Tii=sum_j |(W-transpose W)ij|qj/qi satisfies actual T-W-transpose W positive semidefinite. More generally the same construction majorizes every actual real symmetric matrix. The proof derives a genuine weighted Young inequality and bounds its actual finite quadratic form by the diagonal sum; it does not assume nonnegative eigenvalues or the desired matrix inequality.",
+          [SGN+"actualMajorizerDiagonal",SGN+"actualScaledMajorizer",SGN+"actual_scaled_young_inequality",SGN+"actual_scaled_symmetric_pair_bound",SGN+"actual_symmetric_quadratic_is_bounded_by_scaled_majorizer",SGN+"actual_scaled_majorizer_difference_is_positive_semidefinite",SGN+"actual_weighted_gram_matrix_is_bounded_by_source_diagonal"],
+          ["Arbitrary actual finite real weights and strictly positive real coordinate scalings; no nonzero-column assumption is needed for this semidefinite majorization alone."],
+          ["The actual residual layer's energy/QC inequality and the two supplied scale examples are separate pending exercise clauses. The literal Gershgorin-disc proof in the answer is also a separate material-source correspondence."])
+
+component("lipschitz-by-design.html::exercise-16", "For the actual arbitrary finite residual layer h(x)=x-2WTinv phi(W-transpose x+b), actual positive diagonal T, actual T-W-transpose W PSD and actual globally[0,1]-slope-restricted phi, the exact energy gap is the nonnegative activation QC term plus4DeltaPhi-transpose Tinv(T-W-transpose W)Tinv DeltaPhi. Thus the literal source energy margin is nonnegative and the actual biased layer is Euclidean nonexpansive for every input pair.",
+          [SLLN+"actualSLL",SLLN+"actual_positive_diagonal_inverse",SLLN+"actual_positive_diagonal_is_invertible",SLLN+"actual_residual_step_energy_identity",SLLN+"actual_sll_energy_gap_is_qc_plus_certificate",SLLN+"actual_sll_incremental_quadratic_constraint",SLLN+"actual_sll_is_euclidean_nonexpansive",SLCN+"actualHiddenIncrement",SLCN+"actual_sll_input_output_increment",SLCN+"actual_inverse_certificate_pullback_is_source_quadratic",SLCN+"actual_sll_source_energy_margin",SLCN+"actual_majorizer_diagonal_is_nonnegative",SLCN+"actual_majorizer_diagonal_is_positive_for_nonzero_column",SLCN+"actual_positive_regularization_makes_majorizer_diagonal_positive",SLCN+"actual_source_scaled_sll_is_nonexpansive"],
+          ["Arbitrary actual finite real weights, actual positive diagonal, source PSD certificate and the source's full incremental slope restriction. The source-scaled specialization requires positive q and nonzero columns so its actual inverse exists."],
+          ["Whole Exercise13.2 remains partial until all source question/hint/answer clauses receive review; the literal Gershgorin-disc derivation, named tanh/sigmoid activations and epsilon-regularized certificate/corollary are not inferred from this component."])
+
+component("lipschitz-by-design.html::exercise-16", "For the actual source W=[[1,1],[0,1]], its actual Gram is[[1,1],[1,2]]. Actual weighted diagonal construction atq=(1,1) givesdiag(2,3) and atq=(1,2) givesdiag(3,5/2). The actual differences are[[1,-1],[-1,1]] and[[2,-1],[-1,1/2]], both PSD, with exact characteristic polynomialsX(X-2) andX(X-5/2) and actual spectral values exactly0,2 or0,5/2. Neither actual majorizer dominates the other in PSD order, witnessed by actual unit vectors.",
+          [SLEN+"actualSourceWeights",SLEN+"actualFirstMajorizer",SLEN+"actualSecondMajorizer",SLEN+"actual_source_gram_matrix",SLEN+"actual_first_scale_majorizer",SLEN+"actual_second_scale_majorizer",SLEN+"actual_first_certificate_matrix",SLEN+"actual_second_certificate_matrix",SLEN+"actual_both_source_certificates_are_positive_semidefinite",SLEN+"actual_first_certificate_characteristic_polynomial",SLEN+"actual_second_certificate_characteristic_polynomial",SLEN+"actual_first_certificate_eigenvalues",SLEN+"actual_second_certificate_eigenvalues",SLEN+"actual_source_majorizers_are_not_ordered"],
+          ["The literal two-by-two weights and both literal positive scale vectors from Exercise13.2(c). Spectrum is the actual matrix spectrum, not an assumed eigenvalue list."],
+          ["The final answer's SN spectral-norm-squared formula(3+sqrt5)/2 and its2.618 rounding are not part of this component and remain pending."])
+
 
 
 component("landscape.html#book-m1-b1", "Without independence, twenty measurable overheating events with probability at most 1/400 each have joint success probability at least 19/20.",
@@ -624,6 +658,34 @@ for e in INV["exercises"]:
         for c in claims:
             c['hypotheses']=["Arbitrary finite real layer matrices, actual elementwise activation with every chord slope in [0,1], arbitrary biases, and Euclidean induced operator norms."]
             c['correspondence']="The listed declarations establish this exact source atom using actual functions, actual quadratic forms and exact supplied matrices. Spectral norms are Euclidean induced norms. Actual globally slope-restricted linear functions realize the admissible scalar pairs; explicit actual ReLU pairs refute invalid coupled constraints. The product optimization proof bounds the infimum of actual feasible objectives. Further optimized walkthrough values remain separate material claims."
+    if e["key"] == "lipschitz-by-design.html::exercise-15":
+        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review.json"
+        cayley_review = json.loads((ROOT/cayley_review_rel).read_text())
+        assert cayley_review["exercise_key"] == e["key"]
+        assert cayley_review["exercise_text_sha256"] == e["text_sha256"]
+        for source, sha in {**cayley_review["source_sha256"],**cayley_review["proof_source_sha256"]}.items():
+            assert digest(source) == sha, source
+        cayley_evidence = {"file":cayley_review_rel,"sha256":digest(cayley_review_rel),
+            "reviewer":cayley_review["reviewer"],"status":cayley_review["status"]}
+        approved_components = {}
+        for reviewed in cayley_review["components"]:
+            c = next(c for c in claims if c["id"] == reviewed["id"])
+            assert c["statement_in_prose"] == reviewed["statement"]
+            assert c["lean_declarations"] == reviewed["lean_declarations"]
+            assert reviewed["status"] == "approved_precise_component"
+            c["independent_source_review"] = cayley_evidence
+            approved_components[int(c["id"].rsplit("-",1)[1])] = c
+        assert set(approved_components) == {1,2,3}
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="The clause supplies skew symmetry as the explicit premise of the following requested theorem.",
+            independent_source_review=cayley_evidence)
+        for index,components in [(1,[1]),(2,[2,3])]:
+            claims[index].update(status="proved",remaining_gaps=[],
+                lean_declarations=sorted({name for i in components for name in approved_components[i]["lean_declarations"]}),
+                hypotheses=[hyp for i in components for hyp in approved_components[i]["hypotheses"]],
+                correspondence="This exact source atom is discharged by the individually approved Cayley components. The source matrix is the actual rational transform, the angle has the correct sign, the decimal has an analytic error bound, and omitted matrices are characterized exactly.",
+                independent_source_review=cayley_evidence)
+        complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
                       "label": e["label"], "source_sha256": e["source_sha256"],
                       "source_text_sha256": e["text_sha256"], "claims": claims,
@@ -665,6 +727,39 @@ for u in INV["material_source_units"]:
             independent_source_review=review_evidence,
             scope_limits=source_review["limits"],
             nonformal_source_classifications=source_review["specific_nonformal_classifications"])
+    if u["key"] in {"lipschitz-by-design.html::node-310","lipschitz-by-design.html::node-312"}:
+        c.update(status="proved",kind="actual_cayley_bijection_theorem",remaining_gaps=[],
+            lean_declarations=COMPONENTS["lipschitz-by-design.html::exercise-15"][0][1]+[
+                CYIN+"actual_inverse_cayley_is_source_inverse_formula",CYIN+"actual_inverse_cayley_is_skew_symmetric",
+                CYIN+"actual_inverse_cayley_recovers_orthogonal",CYIN+"actual_inverse_cayley_recovers_skew",
+                CYIN+"actual_cayley_preimage_is_unique",CYIN+"actual_orthogonal_denominator_invertible_iff_no_negative_one_eigenvector",
+                CYIN+"actual_orthogonal_without_negative_one_has_unique_skew_preimage"],
+            hypotheses=["Arbitrary actual finite real square matrices; actual skew symmetry for the forward transform, actual orthogonality and exclusion of a nonzero -1 eigenvector for the inverse domain."],
+            correspondence="The actual transform has invertible denominator, orthogonal output and determinant one. The actual rational inverse is skew symmetric, both compositions are exact, and the preimage is unique. Eigenvector exclusion is proved equivalent to denominator invertibility. The bibliographic attribution is separate from these mathematical assertions.",
+            independent_source_review=cayley_evidence)
+    if u["key"] == "lipschitz-by-design.html::node-1328":
+        c.update(status="proved",kind="actual_two_dimensional_cayley_formula_angle_and_exact_range",remaining_gaps=[],
+            lean_declarations=COMPONENTS["lipschitz-by-design.html::exercise-15"][1][1]+COMPONENTS["lipschitz-by-design.html::exercise-15"][2][1],
+            hypotheses=["The actual real scalar two-dimensional skew matrix from the source. The angle is the principal real2*arctan(a); degrees are180/pi times this angle."],
+            correspondence="Exact matrix inversion/multiplication, trigonometric coordinates, open angle interval, a=1/2 sample matrix, analytic53.13-degree rounding and the exact omitted orthogonal matrices are individually approved by the independent Exercise13.1 review.",
+            independent_source_review=cayley_evidence)
+    if u["key"] == "lipschitz-by-design.html::node-335":
+        assert u["key"] in cayley_review["approved_complete_material_unit_keys"]
+        c.update(status="proved",kind="corrected_complex_background_and_actual_cayley_bijection",remaining_gaps=[],
+            lean_declarations=[CLBN+name for name in ["actual_imaginary_unit_squared","actual_complex_conjugate_coordinates",
+                "actual_complex_modulus_squared_coordinates","actual_complex_modulus_squared_is_conjugate_product",
+                "actual_matrix_adjoint_entries","actual_matrix_hermitian_definition","actual_matrix_unitarity_definition",
+                "actual_complex_vector_squared_norm_is_adjoint_product","actual_imaginary_matrix_is_skew_hermitian",
+                "actual_imaginary_matrix_is_unitary"]]+[
+                CLCN+"actual_complex_skew_denominator_is_invertible",CLCN+"actual_complex_cayley_is_unitary",
+                CLCN+"actual_complex_cayley_determinant_has_unit_norm",CLCN+"actual_complex_cayley_has_no_negative_one_eigenvector",
+                CLIN+"actual_inverse_cayley_is_source_inverse_formula",CLIN+"actual_inverse_cayley_is_skew_hermitian",
+                CLIN+"actual_inverse_cayley_recovers_unitary",CLIN+"actual_inverse_cayley_recovers_skew",
+                CLIN+"actual_unitary_without_negative_one_has_unique_skew_preimage",
+                CCN+"actual_imaginary_cayley_is_negative_imaginary",CCN+"actual_imaginary_cayley_determinant_is_not_one"],
+            hypotheses=["Actual finite complex matrices and Euclidean vector norm; arbitrary real scalar coordinates. The Cayley input is actually skew-Hermitian and the inverse domain is actually unitary with no nonzero -1 eigenvector."],
+            correspondence="The independent reviewer approves all corrected mathematical clauses: genuine complex conjugation, modulus and adjoint identities; actual vector norm-square product; typed Hermitian/unitary definitions; actual [i] example; generic Cayley invertibility/unitarity/exclusion/bijection and determinant norm1. The explicit [-i] determinant counterexample justifies restricting determinant+1 to the real theorem.",
+            independent_source_review=cayley_evidence)
     lipnode=u['key'].removeprefix('lipsdp.html::node-')
     if lipnode.isdigit() and int(lipnode) in LIPSDP_UNIT_MAP:
         c.update(kind="actual_incremental_quadratic_constraint_and_matrix_correspondence",status="proved",
@@ -758,7 +853,11 @@ material_groups = [
     ("toolkit-gp", "posterior variance", "For the actual solved finite kernel posterior, variance is the global minimum of the feature residual quadratic and is nondecreasing in regularization.", [PN+"residual_objective_at_solution",PN+"residual_objective_gap",PN+"residual_objective_global_minimum",PN+"actual_posterior_regularization_monotone"]),
     ("toolkit-gp", "lambda", "The actual fixed finite matrix posterior has zero-regularization interpolation-formula limits for nonsingular Gram matrices, infinite-regularization mean/variance limits, and an O(lambda^-3) inverse remainder.", [MN+"posterior_mean_zero_regularization_limit",MN+"posterior_variance_zero_regularization_limit",MN+"posterior_mean_infinite_regularization_limit",MN+"posterior_variance_infinite_regularization_limit",MN+"inverse_infinite_regularization_second_order_remainder",FFN+"posterior_mean_leading_term",FFN+"posterior_mean_second_order_remainder",FFN+"posterior_variance_second_order_remainder"]),
 ]
+material_groups.append(("lipschitz-by-design", "T^{-1}", "The exact finite residual-layer energy identity and literal source QC margin imply actual Euclidean nonexpansiveness whenever the actual source diagonal is strictly positive, the actual certificate is PSD and the actual activation has incremental slopes[0,1]. The analytic source diagonal is nonnegative and strictly positive for nonzero weight columns; its source-scaled residual layer then inherits the actual bound. Named activation wrappers, literal Gershgorin similarity/discs and the full epsilon-regularized certificate remain distinct pending claims.", COMPONENTS["lipschitz-by-design.html::exercise-16"][1][1]))
+material_groups.append(("lipschitz-by-design", "eigenvalues $0,2$", "The actual source two-by-two weights yield both literal scaled diagonals and actual PSD certificate differences, their exact characteristic polynomials and spectral values, and actual unit-vector witnesses that neither diagonal majorizes the other. The final printed SN spectral-norm formula and decimal remain pending.", COMPONENTS["lipschitz-by-design.html::exercise-16"][2][1]))
 material_groups.append(("lipschitz-by-design", "Complex matrices", "The actual 1-by-1 complex skew-Hermitian matrix [i] has actual unitary Cayley transform [-i], with determinant -i rather than1. Thus the real determinant-one conclusion cannot be carried over verbatim to the complex theorem. This exact counterexample supports correction10; the corrected generic complex invertibility/unitarity/exclusion/bijection claims remain a separate pending source requirement.", [CCN+"actualImaginarySkew",CCN+"actualComplexCayley",CCN+"actual_imaginary_matrix_is_skew_hermitian",CCN+"actual_imaginary_cayley_denominator_inverse",CCN+"actual_imaginary_cayley_is_negative_imaginary",CCN+"actual_imaginary_cayley_is_unitary",CCN+"actual_imaginary_cayley_determinant_is_not_one",CCN+"actual_complex_skew_cayley_does_not_preserve_real_determinant_claim"]))
+material_groups.append(("lipschitz-by-design", "Cayley transform of a skew-symmetric matrix", "Every actual finite real orthogonal matrix Q without a nonzero eigenvector of eigenvalue -1 has exactly one actual skew-symmetric preimage under the Cayley transform. The actual inverse is (I+Q)inv*(I-Q), equal to (I-Q)*(I+Q)inv, and both actual inverse compositions recover the original matrix. Denominator invertibility is proved equivalent to the exact eigenvector exclusion.", [CYIN+"actualInverseCayley",CYIN+"actual_inverse_cayley_right_denominator_identity",CYIN+"actual_inverse_cayley_left_denominator_identity",CYIN+"actual_inverse_cayley_is_source_inverse_formula",CYIN+"actual_inverse_cayley_is_skew_symmetric",CYIN+"actual_inverse_cayley_recovers_orthogonal",CYIN+"actual_inverse_cayley_recovers_skew",CYIN+"actual_cayley_preimage_is_unique",CYIN+"actual_orthogonal_denominator_invertible_iff_no_negative_one_eigenvector",CYIN+"actual_orthogonal_without_negative_one_has_unique_skew_preimage"]))
+material_groups.append(("lipschitz-by-design", "For skew-Hermitian $A$", "For every actual finite complex skew-Hermitian matrix A, I+A and I-A are invertible, the actual Cayley matrix is unitary, its actual determinant has norm1, and it has no nonzero eigenvector of eigenvalue -1. Every actual unitary matrix with this exclusion has exactly one actual skew-Hermitian Cayley preimage. The literal inverse formula and both actual compositions are proved, without claiming complex determinant1.", [CLCN+"actualComplexCayley",CLCN+"actual_complex_skew_denominator_gram_is_positive",CLCN+"actual_complex_skew_denominator_is_invertible",CLCN+"actual_complex_skew_numerator_is_adjoint_denominator",CLCN+"actual_complex_skew_numerator_is_invertible",CLCN+"actual_complex_cayley_is_unitary",CLCN+"actual_complex_cayley_determinant_has_unit_norm",CLCN+"actual_complex_cayley_plus_identity_is_twice_inverse",CLCN+"actual_complex_cayley_plus_identity_is_invertible",CLCN+"actual_complex_cayley_has_no_negative_one_eigenvector",CLIN+"actualComplexInverseCayley",CLIN+"actual_inverse_cayley_is_source_inverse_formula",CLIN+"actual_inverse_cayley_is_skew_hermitian",CLIN+"actual_inverse_cayley_recovers_unitary",CLIN+"actual_inverse_cayley_recovers_skew",CLIN+"actual_cayley_preimage_is_unique",CLIN+"actual_unitary_denominator_invertible_iff_no_negative_one_eigenvector",CLIN+"actual_unitary_without_negative_one_has_unique_skew_preimage"]))
 for i, (page, needle, statement, names) in enumerate(material_groups):
     units = [u["key"] for u in INV["material_source_units"] if
              u["source"] == f"SafeLearning/{page}.html" and needle.lower() in u["source_text"].lower()]

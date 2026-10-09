@@ -847,3 +847,106 @@ REVIEWED_PARTIAL_MATERIAL['primer-linalg.html::node-755'] = dict(
   'The exact breakdown iffAx=0, all-after-first range and nullspace-orthogonal invariants, exclusion of later breakdown, and the probabilistic random-start qualifier.',
   'Every displayed walkthrough iterate/estimate2.236,2.765,2.824,2.8282 and actual limit2sqrt2 for the walkthrough matrix from(1,0).',
   'The generic spectral bound sqrt(L1 operator norm timesL-infinity operator norm) and the actual walkthrough sqrt12 and rounded3.46.'])
+
+# Actual Hilbert-space/RKHS models reviewed after checkpoint8 was frozen.
+COMPLETE_EXERCISES['la-ex-functions-1'] = [
+ claim('In the actual real L2([0,1]) space, constant1 and identityx are square-integrable and represented by genuine Lp classes; their inner product is1/2 and squared norms1 and1/3, with norms1 and1/sqrt3.',
+       'CompleteFoundationsL2Models','constant_mem_l2','linear_mem_l2','actual_classes_have_source_representatives','actual_l2_inner_is_interval_integral','actual_source_inner_products','actual_source_squared_norms','actual_source_norms',
+       hypotheses='Lebesgue measure restricted to the exact closed unit interval; actual equivalence classes modulo almost-everywhere equality.',
+       correspondence='The actual L2 inner product is proved equal to the source interval integral using the source representatives almost everywhere; the Hilbert norms follow from its actual inner product.'),
+ claim('For every realc, the actual L2 inner product of1 withx-c equals1/2-c and vanishes iff c=1/2. The actual residual is perpendicular with squared norm1/12, and the actual Hilbert norms obey the displayed Pythagorean identity.',
+       'CompleteFoundationsL2Models','actual_projection_characterization','actual_residual_orthogonality_and_norm',
+       hypotheses='The actual classes and every real scalarc.',
+       correspondence='Actual Hilbert subtraction, scalar multiplication and inner products encode the projection; the existing raw interval integrals explicitly verify every printed integral.')]
+COMPLETE_EXERCISES['la-ex-functions-1'][1]['lean_declarations'] += refs(
+ 'CompleteFoundationsFunctionExamples','projection_integrals','projection_norms','constant_projection_characterization')
+
+COMPLETE_EXERCISES['la-ex-functions-2'] = [
+ claim('The actual Euclidean feature vectors(1,x) have inner product1+xy. At samples0,1 their actual Gram matrix is[[1,1],[1,2]]. Every weighted feature sum is(alpha1+alpha2,alpha2), whose actual squared norm equals both the displayed sum of squares andalpha transposeKalpha.',
+       'CompleteFoundationsAffineRKHS','actual_feature_inner','actual_sample_gram','actual_feature_sum','actual_gram_sum_of_squares',
+       hypotheses='All real inputs and real coefficient pairs; actual Euclidean inner product and norm.',
+       correspondence='The matrix is the actual Matrix.gram of the actual feature family. The feature vector, its actual norm and the actual matrix quadratic are identified, rather than relying only on scalar arithmetic.'),
+ claim('The actual sample Gram matrix is PSD and PD, has determinant1, and the actual two sample features are linearly independent.',
+       'CompleteFoundationsAffineRKHS','actual_sample_gram_positive',
+       hypotheses='The exact sample inputs0 and1.',
+       correspondence='Actual Matrix.PosSemidef, PosDef and LinearIndependent objects establish all source strictness and independence conclusions. The actual Gram quadratic is the sum of squares for every coefficient pair.')]
+
+COMPLETE_EXERCISES['la-ex-functions-3'] = [
+ claim('A genuine RKHS over all real inputs has kernel1+xy, actual evaluationw1+w2x, actual kernel sections(1,x), and the reproducing identity. Its unique interpolant satisfyingf(0)=1 andf(1)=3 is coefficient vector(1,2), givingf(x)=1+2x and actual squared RKHS norm5.',
+       'CompleteFoundationsAffineRKHS','affineRKHS','actual_rkhs_evaluation','actual_rkhs_kernel','actual_kernel_section','actual_reproducing_identity','actual_interpolation_unique','actual_fitted_function','actual_fitted_rkhs_squared_norm',
+       hypotheses='The exact scalar kernel over the whole real domain; the RKHS is the actual complete Euclidean coefficient space with an injective pointwise-continuous evaluation map.',
+       correspondence='An actual RKHS class instance identifies the kernel and Hilbert norm. The interpolation iff proves uniqueness among every member of this RKHS, rather than merely among unexplained affine functions.'),
+ claim('The actual Gram inverse is[[2,-1],[-1,1]], its product with(1,3) is(-1,2), andy transposeK inversey equals5. The fitted RKHS vector is the actual kernel-section combination-k(0,.)+2k(1,.), so the matrix and feature calculations give the same squared Hilbert norm.',
+       'CompleteFoundationsAffineRKHS','actual_sample_gram','actual_fitted_kernel_representer','actual_fitted_representer','actual_fitted_rkhs_squared_norm',
+       hypotheses='The exact sample vector and actual Gram matrix.',
+       correspondence='The representer identity holds in the actual Hilbert space and uses actual RKHS.kerFun sections; the actual matrix inverse and all displayed products are linked explicitly below.'),
+ claim('Actual reproducing Cauchy-Schwarz gives|f(x)|≤||f||sqrt(1+x²). The finite-norm fitted function and kernel diagonal are unbounded on the whole real line; on[-1,1] the fitted function has the valid uniform boundsqrt10.',
+       'CompleteFoundationsAffineRKHS','actual_reproducing_cauchy_schwarz','actual_feature_norm','actual_domain_conclusions','actual_fitted_rkhs_squared_norm',
+       hypotheses='Every real input for the pointwise bound; the exact closed interval only for the uniform bound.',
+       correspondence='The bound comes from the actual reproducing inner product. Explicit all-real nonexistence of finite bounds proves the domain caveat, including the independently unbounded diagonal.')]
+COMPLETE_EXERCISES['la-ex-functions-3'][1]['lean_declarations'] += refs(
+ 'CompleteFoundationsFunctionExamples','affine_gram_inverse','affine_interpolation_norm','affine_representer')
+
+for node in [1153,1172,1190]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-linalg.html::node-{node}'] = (
+   'This exact paragraph is only the labelled Review link to the function-space section; it adds no mathematical assertion.')
+REVIEWED_NONFORMAL_MATERIAL['primer-linalg.html::node-1148'] = (
+ 'The paragraph gives practice-order and review-link advice only; it asserts no mathematical theorem or model property.')
+
+for node in [1152,1157,1161]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-linalg.html::node-{node}'] = [COMPLETE_EXERCISES['la-ex-functions-1'][0]]
+for node in [1164,1166]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-linalg.html::node-{node}'] = [COMPLETE_EXERCISES['la-ex-functions-1'][1]]
+for node in [1171,1176,1180,1182]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-linalg.html::node-{node}'] = [COMPLETE_EXERCISES['la-ex-functions-2'][0]]
+REVIEWED_COMPLETE_MATERIAL['primer-linalg.html::node-1184'] = [COMPLETE_EXERCISES['la-ex-functions-2'][1],
+ claim('Every Gram matrix of real Hilbert feature vectors is PSD, and its quadratic form is the actual squared norm of their weighted sum.',
+       'CompleteFoundationsFeatures','feature_gram_psd','feature_norm_quadratic','feature_null_quadratic_iff',
+       hypotheses='Any finite real Hilbert feature family.',
+       correspondence='The general feature-inner-product explanation is supported by actual Gram positivity and the actual Hilbert weighted-sum norm, beyond the two-sample numeric model.')]
+for node in [1189,1194,1198]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-linalg.html::node-{node}'] = [COMPLETE_EXERCISES['la-ex-functions-3'][0]]
+for node in [1200,1202]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-linalg.html::node-{node}'] = [COMPLETE_EXERCISES['la-ex-functions-3'][1]]
+REVIEWED_COMPLETE_MATERIAL['primer-linalg.html::node-1204'] = [COMPLETE_EXERCISES['la-ex-functions-3'][2]]
+
+for node in [599,601]:
+ REVIEWED_PARTIAL_MATERIAL[f'primer-linalg.html::node-{node}'] = dict(
+  proved=[
+   claim('Every finite real PD matrix has a unique lower-triangular factor with positive diagonal andP=LL transpose.',
+         'CompleteFoundationsCholeskyRecursion','actual_cholesky_factor_exists_uniquely','actual_positive_triangular_factor_unique',
+         hypotheses='Arbitrary finite real squareP that is genuinely Matrix.PosDef.',
+         correspondence='Actual generic existence is reused from ModulesCholesky, and strong induction over each finite column proves uniqueness of the actual matrix factor.'),
+   claim('The actual Cholesky diagonal equals the positive square root ofPjj minus the sum of prior squared entries, and each lower off-diagonal entry is(Pij minus the prior product sum)/Ljj. For a symmetricP, existence of exactly this positive-pivot recursion is equivalent to actualPD.',
+         'CompleteFoundationsCholeskyRecursion','priorProduct','pivotArgument','positiveRecursion','actual_diagonal_recursion','actual_off_diagonal_recursion','actual_factor_gives_positive_recursion','actual_positive_recursion_gives_factor','actual_positive_recursion_iff_positive_definite',
+         hypotheses='Any finite real symmetricP; a candidate lower factor obeys the actual source recurrence, with strict positive pivots and positive square-root choices.',
+         correspondence='The prior sums run over exactlyk<j. Both directions prove equivalence between the actual source recursion and the genuine positive-diagonal triangular factor, including strict positivity of every source square-root argument.')],
+  pending=['The computational operation-count model and leading approximate costn³/3 for the stated Cholesky recursion. A mathematical factor-existence or scalar polynomial identity alone is not a complexity proof.'])
+
+COMPLETE_EXERCISES['primer-optimization.html::exercise-33'] = [
+ claim('For the actual Euclidean quadratic1/2(x1²+10x2²), the genuine Frechet gradient isdiag(1,10)x and its actual derivative is that Hessian. Actual gradient updates equal the source coordinate recurrences, with the exact source factors at steps0.1,0.21 and2/11; Hessian operator norm10, inverse norm1, and condition number10 are identified.',
+       'CompleteFoundationsConditionedQuadratic','objective','actual_frechet_derivative','actual_gradient','gradient_identification','actual_hessian_derivative','actual_hessian_coordinates','actual_gradient_step','actual_source_trajectory','actual_source_step_factors','actual_source_condition_number','actual_source_curvature_bounds',
+       hypotheses='The exact real Euclidean source model; general parameter theorems retain their explicit positivity or nonzero conditions.',
+       correspondence='The source algorithm acts on the actual gradient, and the actual functional iterates are identified with the prior coordinate trajectory. Both matrix and analytic curvature/condition statements are encoded.'),
+ claim('From(10,1), step0.1 has objective50*(.81)^k after the first step and first meets1e-6 exactly atk85; step2/11 has objective55*(81/121)^k and first meets it exactly atk45. The exact logarithmic threshold equivalences hold, with genuine rounding enclosures84.1 and44.4. Step0.21 multiplies the second-coordinate magnitude by1.1 each time and that magnitude diverges.',
+       'CompleteFoundationsConditionedQuadratic','actual_source_objective','actual_source_iteration_budgets','source_logarithmic_thresholds','actual_slow_log_threshold_decimal','actual_balanced_log_threshold_decimal','actual_unstable_ten_percent','actual_source_trajectory',
+       hypotheses='Every natural iteration index, withk≥1 explicitly required for the first objective/log formula; exact start and source steps.',
+       correspondence='Universal integer iff gives the genuine minimal budgets including index-zero handling. Logarithm series with rigorous remainders certify the printed approximations, and the exact actual-coordinate recurrence supports the10% statement and divergence.'),
+ claim('For any finite real symmetric quadratic Hessian with actual positive minimum eigenvalueμ and maximumL, eta2/(L+μ) uniquely minimizes the actual gradient update operator norm to(L-μ)/(L+μ); this yields factors9/11 and optimal step2/11 in the source model. The genuine Newton linear equation has unique correction-x for every nonzero diagonal curvature, giving source gradient(10,10), correction(-10,-1), and a zero point after one full step independently of the condition ratio.',
+       'CompleteFoundationsConditionedQuadratic','generic_best_constant_step','generic_interval_factor_bound','generic_actual_diagonal_update_norm','generic_quadratic_optimal_step','actual_symmetric_quadratic_optimal_step','actual_diagonal_update_norm','actual_newton_correction','actual_newton_step_solves','actual_source_newton_data',
+       hypotheses='The actual symmetric matrix eigenvalues lie in[μ,L] and attain both positive endpoints; the Newton conclusion requires both diagonal curvatures nonzero, as true for the stated strictly convex source.',
+       correspondence='Genuine unitary spectral diagonalization bridges the generic symmetric matrix update to its actual diagonal operator norm; optimality is an iff for every real candidate step. Actual gradient/Hessian objects and the actual matrix solve establish the full Newton statement.')]
+COMPLETE_EXERCISES['primer-optimization.html::exercise-33'][1]['lean_declarations'] += refs(
+ 'CompleteFoundationsAlgorithms','slow_coordinate_objective','balanced_step_objective','diagonal_iteration','unstable_diagonal_coordinate')
+for node in [1697,1701]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['primer-optimization.html::exercise-33']
+
+# Every clause of these theorem bodies is now supported, including an actual
+# arithmetic-expression/loop cost model rather than a standalone cubic number.
+for node in [599,601]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-linalg.html::node-{node}'] = (
+  REVIEWED_PARTIAL_MATERIAL[f'primer-linalg.html::node-{node}']['proved'] + [
+   claim('In the exact-arithmetic source recurrence, each lower entry at columnj evaluatesj multiply/subtract pairs followed by one square root or division, for2j+1 arithmetic operations. Evaluating each lower entry once has totalC satisfying6C=n(n+1)(2n+1), andC/n³ tends to1/3.',
+         'CompleteFoundationsCholeskyCost','Expression','evaluate','arithmeticCost','subtractProducts','sourceCell','actual_accumulator_evaluation','actual_accumulator_operation_count','actual_cell_evaluation','actual_positive_recursion_cell_is_factor_entry','actual_cell_operation_count','sourceProgramCost','actual_row_operation_count','actual_program_cost_as_squares','actual_program_cost_polynomial','actual_cost_independent_of_entries','actual_cubic_leading_term',
+         hypotheses='Dense exact arithmetic with matrix-entry reads uncounted and each multiplication, subtraction, division and square root assigned unit cost. Every row evaluates exactlycolumns0 throughits row index; positive-recursion assumptions are required for those expression values to equal the actual Cholesky factor entries.',
+         correspondence='The arithmetic-expression evaluator is proved equal to the source diagonal/off-diagonal recurrence and to actual factor entries. Its syntactic operation count is summed over the actual lower-triangular row/column indexing. The exact polynomial and actual asymptotic limit substantiate the printed approximate cost; no wall-clock or floating-point stability assertion is inferred.')])

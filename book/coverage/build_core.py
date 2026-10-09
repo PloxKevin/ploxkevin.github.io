@@ -361,6 +361,82 @@ for review_name in ['lyapunov-exercise-models-source-review.json',
 def sha(p):
     return hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
 
+practice_hypotheses = {
+    'barriers.html#exercise-10-p5': ['The actual real two-input objective and half-space constraint; KKT stationarity uses the actual coordinate derivatives.'],
+    'cmdp.html#exercise-8-p6': ['One self-looping state and the stated stationary two-action marginal PMF, with deterministic reward/cost given the action, discount1/2 and budget1. The expectation of the infinite random return is derived without intertime independence.'],
+    'cmdp.html#exercise-8-p9': ['The same actual policy-probability domain[0,1], reward2+6p and cost4p. The unique dual minimum belongs to the nonnegative multiplier domain.'],
+    'cmdp.html#exercise-8-p5': ['The actual deterministic two-state path starts at0, moves to1 and stays there; discount1/2 and rewards0,2.'],
+    'barriers.html::exercise-20': ['The actual three-state min/max safety operator, margins2/1/-1 and discount1/2. The general interpolation statement assumes a discount in[0,1] and interpolates current and clipped future margin.']}
+for review_name in ['two-input-projection-source-review.json',
+                    'policy-mixing-source-review.json',
+                    'discounted-flow-source-review.json',
+                    'safety-bellman-source-review.json']:
+    path = ROOT/'book/coverage/checks'/review_name
+    if not path.exists():
+        continue
+    review = json.loads(path.read_text())
+    if review['source_sha256'] != INV['source_sha256'][review['source']]:
+        raise ValueError('Stale practice source review: '+review_name)
+    for name, expected in review['proof_sha256'].items():
+        if sha(name) != expected:
+            raise ValueError('Stale practice proof review: '+name)
+    for record in review.get('exercises', [review]):
+        key = record['exercise_key']
+        original = next(e for e in INV['exercises'] if e['key']==key)
+        if record['exercise_text_sha256'] != original['text_sha256']:
+            raise ValueError('Stale practice text review: '+key)
+        clauses = record['reviewed_clauses']
+        mathematical = [c for c in clauses if c['status']=='approved']
+        gaps = record.get('missing_clauses', review['missing_clauses'])
+        if (review['status']!='independent_source_correspondence_review_passed' or
+                any(c['status'] not in ('approved','not_a_formal_claim') for c in clauses) or
+                not mathematical):
+            raise ValueError('Unapproved practice source clauses: '+key)
+        names = list(dict.fromkeys(n for c in mathematical for n in c['lean_declarations']))
+        if not names or any(not c['reason'] for c in clauses):
+            raise ValueError('Missing practice correspondence: '+key)
+        add(key, names, ' '.join(c['reason'] for c in mathematical),
+            practice_hypotheses[key], gaps)
+        MAP[key]['source_review'] = dict(file=str(path.relative_to(ROOT)),
+            sha256=sha(str(path.relative_to(ROOT))),
+            nonformal_scope_clauses=[c for c in clauses if c['status']=='not_a_formal_claim'])
+
+confidence_path = ROOT/'book/coverage/checks/lyapunov-confidence-source-review.json'
+if confidence_path.exists():
+    review = json.loads(confidence_path.read_text())
+    if review['status']!='approved_complete_source' or review['missing_clauses']:
+        raise ValueError('Unresolved independent validation-confidence review.')
+    for name, expected in review['source_sha256'].items():
+        if INV['source_sha256'][name] != expected:
+            raise ValueError('Stale confidence teaching source: '+name)
+    for name, expected in review['proof_source_sha256'].items():
+        if sha(name) != expected:
+            raise ValueError('Stale confidence proof review: '+name)
+    for evidence in review['actual_compiler_evidence']:
+        if (evidence['actual_exit_code'] != 0 or
+                sha(evidence['standalone_manifest']) != evidence['standalone_manifest_sha256'] or
+                sha(evidence['raw_log']) != evidence['raw_log_sha256']):
+            raise ValueError('Changed actual confidence compiler evidence.')
+    for key, expected in review['exercise_text_sha256'].items():
+        original = next(e for e in INV['exercises'] if e['key']==key)
+        if original['text_sha256'] != expected:
+            raise ValueError('Stale confidence question/hint/answer: '+key)
+        components = [c for c in review['components'] if c['exercise_key']==key]
+        if not components or any(c['status']!='approved_precise_component' or
+                c['missing_clauses'] or not c['scope_and_reason'] for c in components):
+            raise ValueError('Unapproved confidence source component: '+key)
+        names = list(dict.fromkeys(n for c in components for n in c['lean_declarations']))
+        hypotheses = {
+            '8': 'A fixed controller and sample size1000; actual IID measurable Bernoulli failure trials with common population probabilityp. The confidence event is over repeated validation samples, and no posterior interpretation is inferred.',
+            '11': 'Actual IID Bernoulli trials for each fixed controller. The twenty-controller family is fixed before validation; within-controller IID sampling is required, while independence across controllers is not. Outcome-based selection is restricted to that fixed family.',
+            '12': 'Actual robust safety holds for every model in the learned uncertainty set and every relevant state; the true-model membership event then implies actual safety. The two-event bound needs no independence. The counterexample constructs actual random learned function sets under the uniform Fin100 law.'}
+        add(key, names, ' '.join(c['scope_and_reason'] for c in components),
+            [hypotheses[key.rsplit('-p',1)[1]]])
+        MAP[key]['source_review'] = dict(file=str(confidence_path.relative_to(ROOT)),
+            sha256=sha(str(confidence_path.relative_to(ROOT))),
+            nonformal_scope_clauses=[c for c in review['individual_scope_and_nonformal_classifications']
+                                    if c['exercise_key']==key])
+
 rows=[]
 for e in INV['exercises']:
     if e['source'] not in SOURCES:
@@ -401,8 +477,10 @@ MATERIAL_REVIEW = {
 # These approvals come from an independent, per-paragraph semantic review.
 # DOM containment proposes candidates; it does not establish correspondence.
 overlap_path = ROOT/'book/coverage/core-material-overlap-review.json'
-if (ROOT/'book/coverage/core-material-overlap-review-8.json').exists():
-    overlap_path = ROOT/'book/coverage/core-material-overlap-review-8.json'
+for checkpoint in (8, 9):
+    candidate_review = ROOT/f'book/coverage/core-material-overlap-review-{checkpoint}.json'
+    if candidate_review.exists():
+        overlap_path = candidate_review
 overlaps = {}
 if overlap_path.exists():
     review = json.loads(overlap_path.read_text())
@@ -488,7 +566,7 @@ for u in INV['material_source_units']:
     material.append(claim)
 
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
-        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels']
+        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),
