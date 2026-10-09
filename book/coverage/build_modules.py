@@ -17,8 +17,8 @@ PAGES = ["landscape", "toolkit-lmi", "toolkit-gp", "safe-bo", "safe-bo-theory",
          "gosafe", "viability", "lipsdp", "lipschitz-by-design", "nn-in-the-loop", "verification"]
 SOURCES = {f"SafeLearning/{p}.html" for p in PAGES}
 
-REBASE_CONFIRMATION_REL="book/coverage/checks/modules-correction16-independent-source-rebase-confirmation.json"
-REBASE_CONFIRMATION_SHA="ac91ff5486e963d2bc761f0f705748eea168cdd447e6ff71a312145a684b0f96"
+REBASE_CONFIRMATION_REL="book/coverage/checks/modules-correction18-independent-source-rebase-confirmation.json"
+REBASE_CONFIRMATION_SHA="e0617dab077a37fdc0cf16584edaa3183dbb0800c5439dce73da2a18a4c2e457"
 
 
 def digest(path):
@@ -28,7 +28,7 @@ def digest(path):
 def current_rebase_confirmation(review_rel):
     assert digest(REBASE_CONFIRMATION_REL)==REBASE_CONFIRMATION_SHA
     confirmation=json.loads((ROOT/REBASE_CONFIRMATION_REL).read_text())
-    assert confirmation["status"]=="passed" and confirmation["correction_id"]==16
+    assert confirmation["status"]=="passed" and confirmation["correction_id"]==18
     row=next(row for row in confirmation["records"] if row["rebased_review"]==review_rel)
     assert row["status"]=="passed" and row["rebased_review_sha256"]==digest(review_rel)
     assert digest(confirmation["source"])==confirmation["source_sha256_after"]
@@ -748,7 +748,7 @@ for e in INV["exercises"]:
             c['hypotheses']=["Arbitrary finite real layer matrices, actual elementwise activation with every chord slope in [0,1], arbitrary biases, and Euclidean induced operator norms."]
             c['correspondence']="The listed declarations establish this exact source atom using actual functions, actual quadratic forms and exact supplied matrices. Spectral norms are Euclidean induced norms. Actual globally slope-restricted linear functions realize the admissible scalar pairs; explicit actual ReLU pairs refute invalid coupled constraints. The product optimization proof bounds the infimum of actual feasible objectives. Further optimized walkthrough values remain separate material claims."
     if e["key"] == "lipschitz-by-design.html::exercise-15":
-        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review-correction16.json"
+        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review-correction18.json"
         cayley_review = json.loads((ROOT/cayley_review_rel).read_text())
         assert cayley_review["exercise_key"] == e["key"]
         assert cayley_review["exercise_text_sha256"] == e["text_sha256"]
@@ -777,7 +777,7 @@ for e in INV["exercises"]:
                 independent_source_review=cayley_evidence)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-16":
-        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-correction16.json"
+        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-correction18.json"
         sll_review = json.loads((ROOT/sll_review_rel).read_text())
         assert sll_review["status"] == "independent_source_correspondence_review_passed"
         assert sll_review["exercise_key"] == e["key"] and sll_review["exercise_text_sha256"] == e["text_sha256"]
@@ -822,7 +822,7 @@ for e in INV["exercises"]:
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-17":
-        sandwich_review_rel = "book/coverage/checks/modules-sandwich-source-review-correction16.json"
+        sandwich_review_rel = "book/coverage/checks/modules-sandwich-source-review-correction18.json"
         sandwich_review = json.loads((ROOT/sandwich_review_rel).read_text())
         assert sandwich_review["status"] == "independent_source_correspondence_review_passed"
         assert sandwich_review["exercise_key"] == e["key"] and sandwich_review["exercise_text_sha256"] == e["text_sha256"]
@@ -857,7 +857,7 @@ for e in INV["exercises"]:
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-18":
-        fir_review_rel = "book/coverage/checks/modules-fir-source-review-correction16.json"
+        fir_review_rel = "book/coverage/checks/modules-fir-source-review-correction18.json"
         fir_review = json.loads((ROOT/fir_review_rel).read_text())
         assert fir_review["status"] == "independent_source_correspondence_review_passed"
         assert fir_review["exercise_key"] == e["key"] and fir_review["exercise_text_sha256"] == e["text_sha256"]
@@ -964,8 +964,8 @@ for e in INV["exercises"]:
             claims.append(c)
         complete=False
     if e["key"] == "lipschitz-by-design.html::exercise-19":
-        classification_review_rel="book/coverage/checks/modules-classification-source-review-v1.json"
-        assert digest(classification_review_rel)=="17f071b70bf4712ca01ba32737cf1944e206f23bd96f6a43cd6d24e725e82f87"
+        classification_review_rel="book/coverage/checks/modules-classification-source-review-correction18.json"
+        assert digest(classification_review_rel)=="d9aa913f4a229647b3fbf9f81737f99f9e7c240985e00d4d27ddb2e01f696d26"
         classification_review=json.loads((ROOT/classification_review_rel).read_text())
         assert classification_review["status"]=="independent_source_correspondence_review_passed" and not classification_review["missing_clauses"]
         assert classification_review["exercise_key"]==e["key"] and classification_review["exercise_text_sha256"]==e["text_sha256"]
@@ -977,6 +977,7 @@ for e in INV["exercises"]:
             assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
         classification_evidence={"file":classification_review_rel,"sha256":digest(classification_review_rel),
             "reviewer":classification_review["reviewer"],"status":classification_review["status"]}
+        classification_evidence["source_version_rebase_confirmation"]=current_rebase_confirmation(classification_review_rel)
         classification_approved=[row for row in classification_review["reviewed_clauses"] if row["status"]=="approved"]
         claims[0].update(status="proved",remaining_gaps=[],lean_declarations=classification_approved[0]["lean_declarations"],
             hypotheses=["The actual finite source logits are stipulated."],correspondence=classification_approved[0]["reason"],
@@ -1002,10 +1003,67 @@ for e in INV["exercises"]:
                 c.update(remaining_gaps=[],independent_source_review=classification_evidence)
                 claims.append(c)
         complete=all(c["status"]!="pending" and not c["remaining_gaps"] for c in claims)
+    if e["key"] == "lipsdp.html::exercise-20":
+        roesser_review_rel="book/coverage/checks/modules-roesser-12-6-source-review-v1.json"
+        assert digest(roesser_review_rel)=="0a527de30da6d1a0d8a60669ac940ac2e845be8d96f5a66ac8582cb03a201eb2"
+        roesser_review=json.loads((ROOT/roesser_review_rel).read_text())
+        assert roesser_review["status"]=="approved_precise_components_whole_source_partial"
+        assert roesser_review["exercise_key"]==e["key"] and roesser_review["exercise_text_sha256"]==e["text_sha256"]
+        for section in ["source_sha256","proof_source_sha256"]:
+            for path,sha in roesser_review[section].items():assert digest(path)==sha,path
+        for record in roesser_review["actual_standalone_evidence"]:
+            assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+            assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+        fixture=roesser_review["empirical_fixture_evidence"]
+        assert fixture["actual_exit_code"]==0 and digest(fixture["file"])==fixture["sha256"]
+        for path,sha in [(fixture["script"],fixture["script_sha256"]),(fixture["result"],fixture["result_sha256"]),(fixture["raw_log"],fixture["raw_log_sha256"])]:assert digest(path)==sha,path
+        roesser_evidence={"file":roesser_review_rel,"sha256":digest(roesser_review_rel),"reviewer":roesser_review["reviewer"],"status":roesser_review["status"]}
+        roesser_approved=roesser_review["components"]
+        assert all(row["status"]=="approved_precise_component" for row in roesser_approved)
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],correspondence="This exact source clause supplies the actual zero-padded three-tap convolutional model and finite kernel dimensions.",independent_source_review=roesser_evidence)
+        for index,rows in [(1,[0]),(2,[0]),(3,[1]),(4,[2,3]),(5,[4,5])]:
+            claims[index].update(status="proved",remaining_gaps=[],lean_declarations=sorted({name for i in rows for name in roesser_approved[i]["lean_declarations"]}),hypotheses=[hyp for i in rows for hyp in roesser_approved[i]["hypotheses"]],correspondence="Every mathematical request in this exact question atom is independently reviewed against actual block matrices, genuine trajectories/padding/transfer or true source Roesser dynamics. Actual positive semidefinite source matrices and actual slope QCs derive the storage and all-horizon inequalities. The answer's separate generic kernel-size construction and conditional all-realizations minimality theorem remain pending mathematical claims.",independent_source_review=roesser_evidence)
+        for number,row in enumerate(roesser_approved,1):
+            c=claim(e["key"]+f"::independently-reviewed-component-{number}",row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["review_reason"])
+            c.update(independent_source_review=roesser_evidence,scope_limits=roesser_review["limits"])
+            claims.append(c)
+        for number,row in enumerate(roesser_review["missing_clauses"],1):
+            c=claim(e["key"]+f"::pending-background-clause-{number}",row["source_clause"],gaps=[row["reason"]],units=["lipsdp.html::node-1342"])
+            c.update(independent_source_review=roesser_evidence)
+            claims.append(c)
+        for number,row in enumerate(roesser_review["nonformal_clauses"],1):
+            c=claim(e["key"]+f"::specific-source-classification-{number}",row["text"],status="not_a_formal_claim",kind=row.get("classification","navigation_labels_and_reading_reference"),correspondence=row["reason"])
+            c.update(remaining_gaps=[],independent_source_review=roesser_evidence)
+            if row.get("classification")=="explicitly_scoped_empirical_observation":c["independent_empirical_evidence"]=fixture
+            claims.append(c)
+        complete=False
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
                       "label": e["label"], "source_sha256": e["source_sha256"],
                       "source_text_sha256": e["text_sha256"], "claims": claims,
-                      "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) or e["key"]=="toolkit-lmi.html::exercise-20" else "pending"})
+                      "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) or e["key"] in ["toolkit-lmi.html::exercise-20","lipsdp.html::exercise-20"] else "pending"})
+
+generic_margin_review_rel="book/coverage/checks/modules-generic-margin-source-review-v1.json"
+assert digest(generic_margin_review_rel)=="831801c4231159a74d036c05ed829fcfff4525e79bd221f892b4f2f9c5416dc7"
+generic_margin_review=json.loads((ROOT/generic_margin_review_rel).read_text())
+assert generic_margin_review["status"]=="independent_source_correspondence_review_passed" and not generic_margin_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in generic_margin_review[section].items():assert digest(path)==sha,path
+for record in generic_margin_review["actual_standalone_evidence"]:
+    assert record["actual_exit_code"]==0 and record["source_unchanged"]
+    assert digest(record["file"])==record["sha256"] and digest(record["source"])==record["source_sha256"]
+    assert digest(record["log"])==record["log_sha256"]
+generic_margin_evidence={"file":generic_margin_review_rel,"sha256":digest(generic_margin_review_rel),"reviewer":generic_margin_review["reviewer"],"status":generic_margin_review["status"]}
+
+weighted_cascade_review_rel="book/coverage/checks/modules-weighted-cascade-source-review-v1.json"
+assert digest(weighted_cascade_review_rel)=="dba00ca5cfb00c2d41be10d784474934d6325433dbe2a39a763a0b259b3fbf02"
+weighted_cascade_review=json.loads((ROOT/weighted_cascade_review_rel).read_text())
+assert weighted_cascade_review["status"]=="independent_precise_supplemental_component_review_passed_whole_node646_partial"
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in weighted_cascade_review[section].items():assert digest(path)==sha,path
+for record in weighted_cascade_review["actual_standalone_evidence"]:
+    assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+weighted_cascade_evidence={"file":weighted_cascade_review_rel,"sha256":digest(weighted_cascade_review_rel),"reviewer":weighted_cascade_review["reviewer"],"status":weighted_cascade_review["status"]}
 
 material = []
 LOGDET_REVIEW_UNIT_COMPONENTS = {
@@ -1147,6 +1205,20 @@ for u in INV["material_source_units"]:
             correspondence="The exact named unit belongs to the independent whole corrected Exercise13.5 review. Every mathematical question/answer clause is discharged by the listed actual classifier/norm/ratio/rounding theorems. The approximate external 4.1gamma sentence is explicitly reviewed primary-source attribution, while the exercise exact factor4 is formally proved. Failing the larger normalized radius criteria is not an adversarial-existence claim.",
             independent_source_review=classification_evidence,scope_limits=classification_review["limits"],
             nonformal_source_classifications=[row for row in classification_review["reviewed_clauses"] if row["status"]!="approved"])
+    roesser_unit=next((row for row in roesser_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if roesser_unit:
+        assert roesser_unit["unit_text_sha256"]==u["text_sha256"] and roesser_unit["source_sha256"]==u["source_sha256"]
+        c.update(status="not_a_formal_claim" if roesser_unit["material_status"]=="not_formalizable" else roesser_unit["material_status"],kind=roesser_unit["semantic_kind"],remaining_gaps=[gap["reason"] if isinstance(gap,dict) else gap for gap in roesser_unit["missing_clauses"]],lean_declarations=roesser_unit["lean_declarations"],hypotheses=["Actual finite dynamic model, actual matrix certificates, true slope-restricted biased activations and actual trajectory recursions/equal initial states for the zero-initial result. Actual Roesser statements use the separate directional boundaries and3x3 kernels."],correspondence=roesser_unit["per_unit_reason"],independent_source_review=roesser_evidence,scope_limits=roesser_review["limits"])
+        if u["key"]=="lipsdp.html::node-1339":c["independent_empirical_evidence"]=fixture
+    weighted_cascade_unit=next((row for row in weighted_cascade_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if weighted_cascade_unit:
+        assert weighted_cascade_unit["unit_text_sha256"]==u["text_sha256"] and weighted_cascade_unit["source_sha256"]==u["source_sha256"]
+        c.update(status=weighted_cascade_unit["material_status"],kind=weighted_cascade_unit["semantic_kind"],remaining_gaps=weighted_cascade_unit["missing_clauses"],lean_declarations=weighted_cascade_unit["lean_declarations"],hypotheses=weighted_cascade_unit["hypotheses"],correspondence=weighted_cascade_unit["per_unit_reason"],independent_source_review=weighted_cascade_evidence,scope_limits=weighted_cascade_review["limits"])
+    generic_margin_unit=next((row for row in generic_margin_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if generic_margin_unit:
+        assert generic_margin_unit["unit_text_sha256"]==u["text_sha256"] and generic_margin_unit["source_sha256"]==u["source_sha256"]
+        assert not generic_margin_unit["missing_clauses"]
+        c.update(status="proved",kind=generic_margin_unit["semantic_kind"],remaining_gaps=[],lean_declarations=generic_margin_unit["lean_declarations"],hypotheses=generic_margin_unit["hypotheses"],correspondence=generic_margin_unit["per_unit_reason"],independent_source_review=generic_margin_evidence,scope_limits=generic_margin_review["limits"],reviewed_mathematical_clauses=generic_margin_review["reviewed_clauses"],verified_primary_source_attribution=generic_margin_review["primary_source_attribution"])
     lipnode=u['key'].removeprefix('lipsdp.html::node-')
     if lipnode.isdigit() and int(lipnode) in LIPSDP_UNIT_MAP:
         c.update(kind="actual_incremental_quadratic_constraint_and_matrix_correspondence",status="proved",

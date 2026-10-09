@@ -461,7 +461,10 @@ for review_name in ['two-input-projection-source-review.json',
 
 DIRECT_MATERIAL = {}
 for review_name in ['alternating-cmdp-source-review-v1.json',
-                    'core-guide-material-source-review-v1.json']:
+                    'core-guide-material-source-review-v1.json',
+                    'lyapunov-interpolation-source-review-v1.json',
+                    'policy-metric-price-b1-source-review-v1.json',
+                    'policy-metric-price-b2-source-review-v1.json']:
     path = ROOT/'book/coverage/checks'/review_name
     if not path.exists():
         continue
@@ -474,11 +477,16 @@ for review_name in ['alternating-cmdp-source-review-v1.json',
     for name, expected in review['proof_source_sha256'].items():
         if sha(name) != expected:
             raise ValueError('Changed directly reviewed proof: '+name)
+    for name, expected in review.get('metadata_evidence_sha256', {}).items():
+        if sha(name) != expected:
+            raise ValueError('Changed directly reviewed metadata evidence: '+name)
     for evidence in review['actual_standalone_evidence']:
-        if (evidence['actual_exit_code'] != 0 or sha(evidence['file']) != evidence['sha256']
+        evidence_file = evidence.get('file', evidence.get('compiler_manifest'))
+        evidence_sha = evidence.get('sha256', evidence.get('compiler_manifest_sha256'))
+        if (evidence['actual_exit_code'] != 0 or sha(evidence_file) != evidence_sha
                 or sha(evidence['log']) != evidence['log_sha256']):
             raise ValueError('Changed direct review compiler evidence: '+review_name)
-        actual = json.loads((ROOT/evidence['file']).read_text())
+        actual = json.loads((ROOT/evidence_file).read_text())
         if (actual['exit_code'] != 0 or
                 actual['source_sha256_before'] != actual['source_sha256_after'] or
                 sha(actual['source']) != actual['source_sha256_after'] or
@@ -500,14 +508,15 @@ for review_name in ['alternating-cmdp-source-review-v1.json',
             hypotheses, [])
         MAP[key]['source_review'] = dict(file=str(path.relative_to(ROOT)),
             sha256=sha(str(path.relative_to(ROOT))),
-            nonformal_scope_clauses=review['nonformal_clauses'])
+            nonformal_scope_clauses=review.get('nonformal_clauses', []))
     units = {u['key']: u for u in INV['material_source_units']}
     for record in review['material_units']:
         if record['material_status'] == 'pending':
             continue
         key = record['source_unit_key']
         unit = units[key]
-        if (key in DIRECT_MATERIAL or unit['source_sha256'] != record['source_sha256']
+        if (record['review_status'] not in ('approved_complete_source','independently_approved')
+                or key in DIRECT_MATERIAL or unit['source_sha256'] != record['source_sha256']
                 or unit['text_sha256'] != record['unit_text_sha256'] or record['missing_clauses']
                 or not record['per_unit_reason']):
             raise ValueError('Stale or incomplete direct source unit: '+key)
@@ -520,6 +529,52 @@ for review_name in ['alternating-cmdp-source-review-v1.json',
             raise ValueError('Nonformal direct unit has mathematical proof references: '+key)
         DIRECT_MATERIAL[key] = dict(record=record, path=str(path.relative_to(ROOT)),
                                    review_sha256=sha(str(path.relative_to(ROOT))))
+
+component_path = ROOT/'book/coverage/checks/barrier-ac-issf-component-source-review-v1.json'
+if component_path.exists():
+    review = json.loads(component_path.read_text())
+    if review['status'] != 'independent_precise_component_source_review_passed_whole_exercises_partial':
+        raise ValueError('Unapproved AC/ISSf component source review.')
+    for name, expected in review['source_sha256'].items():
+        if INV['source_sha256'][name] != expected:
+            raise ValueError('Changed AC/ISSf component source: '+name)
+    for name, expected in review['proof_source_sha256'].items():
+        if sha(name) != expected:
+            raise ValueError('Changed AC/ISSf component proof: '+name)
+    for evidence in review['actual_standalone_evidence']:
+        metadata = evidence['compiler_manifest']
+        if (sha(metadata) != evidence['compiler_manifest_sha256']
+                or evidence['exit_code'] != 0 or not evidence['source_unchanged']
+                or evidence['source_sha256_before'] != evidence['source_sha256_after']
+                or sha(evidence['source']) != evidence['source_sha256_after']
+                or sha(evidence['log']) != evidence['log_sha256']):
+            raise ValueError('Changed actual AC/ISSf compiler evidence.')
+        actual = json.loads((ROOT/metadata).read_text())
+        for field in ('source','source_sha256_before','source_sha256_after',
+                      'exit_code','source_unchanged','command','actual_workdir','log','log_sha256'):
+            if actual[field] != evidence[field]:
+                raise ValueError('AC/ISSf compiler execution mismatch: '+field)
+    for record in review['records']:
+        key = record['exercise_key']
+        original = next(e for e in INV['exercises'] if e['key']==key)
+        components = [c for c in review['components'] if c['exercise_key']==key]
+        if (original['text_sha256'] != record['exercise_text_sha256']
+                or not record['missing_clauses'] or not components
+                or set(record['approved_component_ids']) != {c['id'] for c in components}
+                or any(c['status'] != 'approved_precise_component'
+                       or not c['lean_declarations'] or not c['per_clause_reason'] for c in components)):
+            raise ValueError('Stale or incomplete AC/ISSf component correspondence: '+key)
+        old = MAP[key]
+        names = list(dict.fromkeys(old['lean_declarations'] +
+            [n for c in components for n in c['lean_declarations']]))
+        hypotheses = list(dict.fromkeys(old['hypotheses'] +
+            [h for c in components for h in c['hypotheses']]))
+        add(key,names,old['statement_in_prose']+' '+' '.join(c['per_clause_reason'] for c in components),
+            hypotheses,record['missing_clauses'])
+        MAP[key]['source_review'] = dict(file=str(component_path.relative_to(ROOT)),
+            sha256=sha(str(component_path.relative_to(ROOT))),
+            component_ids=record['approved_component_ids'],
+            nonformal_scope_clauses=review['nonformal_clauses'])
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
@@ -698,7 +753,11 @@ proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','Comple
         'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance','CompleteExponentialBarrier','CompleteExponentialBarrierSafety','CompleteExponentialBarrierConsequences','CompleteExponentialBarrierClassK','CompletePolicyGeometry','CompletePolicyChecks','CompletePolicyAdvantages','CompletePolicyDivergence','CompletePolicyPracticeConsequences','CompletePolicyTrustStep','CompletePolicyDiskStep']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
 for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
-             'CompleteAlternatingCMDPGeometry','CompleteStudyGuideModels']:
+             'CompleteAlternatingCMDPGeometry','CompleteStudyGuideModels',
+             'CompleteLyapunovInterpolation','CompleteLyapunovSmallStep',
+             'CompleteLyapunovBoundComparison','CompleteLyapunovNormBridges',
+             'CompletePolicyMetricPrices','CompletePolicyLagrangianPrices',
+             'CompleteBarrierAbsolutelyContinuous','CompleteBarrierISSf']:
     source = f'verification/lean/SafeLearning/{name}.lean'
     proof_files[source] = sha(source)
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',

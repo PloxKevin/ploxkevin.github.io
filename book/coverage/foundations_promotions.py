@@ -1216,3 +1216,44 @@ REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107'] = {
   'Supply the actual rho2 augmented-Lagrangian minimization/update model, the three printed iterate pairs, genuine all-time convergence to(1,2), and the exact positive-part proportional violation correction.',
   'Classify the MPC recursive-feasibility claim under exact hard-domain/nonempty and softened-constraint assumptions; a finite given-point slack construction alone does not prove arbitrary hard-constrained MPC recursion.',
   'The instruction to keep safety constraints hard and reserve slack for performance is modeling advice supported by the actual relaxed-original counterexample; any further mathematical safety/recursive-feasibility guarantee requires its own precise model proof.']}
+
+# These two future modules have actual standalone EXIT0 and a separate
+# independent component review. Keep the complete paragraph partial.
+_augmented_review = 'book/coverage/checks/foundations-augmented-generic-penalty-source-review-v1.json'
+REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107']['proved'] += [
+ claim('The actual quadratic-penalty candidates are exactly1.5,1.1,1.01 at rho2,18,198. Its actual second derivatives on the open branchesx<1 andx>1 are respectively2 and2+rho.',
+       'CompleteFoundationsAugmentedModels','actual_quad_source_candidates','actual_quadratic_penalty_both_open_branch_curvatures',
+       hypotheses='The actual running positive-part penalty and its two open branches; no second derivative at the branch boundary is inferred.',
+       correspondence='True derivatives of the actual derivative function give both source curvatures. Exact rational source values are tied to the genuine global candidate. Independently reviewed in '+_augmented_review+'.'),
+ claim('For arbitrary finite real inequality constraints on a nonempty feasible domain, an actual attained nonnegative optimal multiplier with a bounded-below Lagrangian and strong duality makes the positive-part sum penalty exact whenever rho exceeds the multiplier infinity norm. Its actual infimum equals the primal infimum; its true argmin set is exactly the original constrained argmin set, and every infeasible point has penalty strictly above the common optimal value.',
+       'CompleteFoundationsGenericPenalty','feasible','lagrangian','primalValues','primalValue','dualValue','admissibleMultiplier','dualValues','dualSupremum','attainedOptimalMultiplier','exactPenalty','actual_weak_duality','actual_dual_supremum_weak_bound','actual_strong_duality_and_attainment','actual_sup_norm_weight_bounds_every_multiplier','actual_penalty_lagrangian_gap','actual_infeasible_penalty_strictly_dominates_lagrangian','actual_exact_penalty_optimal_value_and_feasibility','actual_exact_penalty_infimum_and_argmin',
+       hypotheses='Finite inequality family; genuine nonempty feasible set; the actual admissible multiplier attains the true dual supremum; true primal infimum equals that supremum; rho>the actual finite-Pi infinity norm. These are the explicit strong-duality/attainment premises, not assumed penalty optimality.',
+       correspondence='Actual primal/Lagrangian infima and dual supremum supply the source mathematical objects. Strict positive penalty-Lagrangian gaps force feasibility at the optimal value and yield exact argmin-set equality. Convexity is not needed once the source duality/attainment hypotheses hold. Independently reviewed in '+_augmented_review+'.'),
+ claim('The actual rho2 augmented Lagrangian has the source positive-part objective, global unique minimizer(6-lambda)/4 for every nonnegative multiplier, actual zero derivative at that point, and true projected update max(lambda+2*(x-1),0)=(lambda+2)/2 there.',
+       'CompleteFoundationsAugmentedModels','augmentedObjective','augmentedCandidate','multiplierUpdate','actual_augmented_branches','actual_augmented_upper_completed_square','actual_augmented_global_unique','actual_augmented_candidate_and_update','actual_augmented_candidate_true_stationarity',
+       hypotheses='Exactly the running objective(x-2)^2, constraintx-1, fixed penaltyrho2 and arbitrary nonnegative multiplier.',
+       correspondence='Both real branches of the actual augmented objective are compared globally; the minimizer and its genuine derivative are derived. The update is the actual positive part of multiplier plus proportional violation. Independently reviewed in '+_augmented_review+'.'),
+ claim('Starting at multiplier0, every actual primal iterate globally minimizes its augmented objective and the multiplier obeys the actual projected recurrence. The exact pairs(1.5,1),(1.25,1.5),(1.125,1.75) belong to the all-time sequence, which genuinely tends to(1,2) with the fixed finite penaltyrho2.',
+       'CompleteFoundationsAugmentedModels','actualMultiplier','actualPrimalStep','actual_multiplier_range','actual_primal_step_formula','actual_running_iteration','actual_source_three_pairs','actual_running_primal_and_multiplier_limits','actual_source_paired_iteration_limit',
+       hypotheses='The true primal-minimization/projected-update sequence for the source rho2 model, initialized with lambda0=0.',
+       correspondence='The all-time closed formula and its actual recurrence identify the optimization algorithm; filter Tendsto proves paired convergence. Finite-penalty sufficiency is established for this running model, without asserting arbitrary augmented-Lagrangian convergence. Independently reviewed in '+_augmented_review+'.')]
+REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107']['pending'] = [
+ 'Supply the source large-rho step-size scaling1/rho, conditioning interpretation and amplification of approximate-objective errors with precise norms, hypotheses and genuine algorithm/error conclusions.',
+ 'Classify the MPC recursive-feasibility claim under exact hard-domain/nonempty and softened-constraint assumptions; a finite given-point slack construction alone does not prove arbitrary hard-constrained MPC recursion.',
+ 'The instruction to keep safety constraints hard and reserve slack for performance is modeling advice supported by the actual relaxed-original counterexample; any further mathematical safety/recursive-feasibility guarantee requires its own precise model proof.']
+
+# Finite exact semantic review of isolated headings and prerequisite links.
+# No surrounding definition/application/theorem is closed by these leaf labels.
+import json as _review_json
+import hashlib as _review_hashlib
+from pathlib import Path as _ReviewPath
+_labels_path = _ReviewPath('book/coverage/checks/foundations-material-label-source-review-v1.json')
+assert _review_hashlib.sha256(_labels_path.read_bytes()).hexdigest() == 'e9dd322efefcfe5067d91b6280715d517e1f2feca5a31cafd6c103192c5d5874'
+_label_review = _review_json.loads(_labels_path.read_text())
+_live_label_units = {u['key']: u for u in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['material_source_units']}
+for _label_unit in _label_review['material_units']:
+ _live_label = _live_label_units[_label_unit['source_unit_key']]
+ assert _label_unit['material_status'] == 'not_a_formal_claim'
+ assert _live_label['text_sha256'] == _label_unit['unit_text_sha256']
+ assert _live_label['source_sha256'] == _label_unit['source_sha256']
+ REVIEWED_NONFORMAL_MATERIAL[_label_unit['source_unit_key']] = _label_unit['per_unit_reason'] + ' Exact semantic record: ' + str(_labels_path) + '.'
