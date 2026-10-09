@@ -281,6 +281,43 @@ for number, names, statement in barrier_groups:
                            ['Independent atomwise review of every question and answer clause remains.'])
     add(key, names, statement, ['The exact real-valued, actuator or finite-state model in the source. Continuous ODE statements assume the encoded differentiability/continuity on the actual interval; predictive statements require the predicted first successor to match the realized one.'], gaps)
 
+lyapunov_review_path = ROOT/'book/coverage/checks/compact-lyapunov-source-review.json'
+lyapunov_full = False
+if lyapunov_review_path.exists():
+    lr = json.loads(lyapunov_review_path.read_text())
+    if lr['source_sha256']['SafeLearning/lyapunov-mpc.html'] != INV['source_sha256']['SafeLearning/lyapunov-mpc.html']:
+        raise ValueError('Stale compact Lyapunov teaching-source review.')
+    original = next(e for e in INV['exercises'] if e['key']=='lyapunov-mpc.html::exercise-16')
+    if lr['exercise_text_sha256'] != original['text_sha256']:
+        raise ValueError('Stale compact Lyapunov exercise review.')
+    for name, expected in lr['proof_source_sha256'].items():
+        if hashlib.sha256((ROOT/name).read_bytes()).hexdigest() != expected:
+            raise ValueError('Stale compact Lyapunov proof review: '+name)
+    lyapunov_full = lr['status']=='approved_complete_source' and not lr['remaining_gaps']
+add('lyapunov-mpc.html::exercise-16',
+    ['SafeLearning.CompleteCompactLyapunov.'+n for n in
+     ['sublevel_forward_invariance','trajectory_values_antitone',
+      'compact_strict_lyapunov_convergence','actual_lyapunov_values_converge_to_zero']]+[
+     'SafeLearning.CompleteLyapunovMargins.'+n for n in
+     ['uniform_strict_descent_on_compact','positive_minimum_on_compact',
+      'compact_positive_value_slice','linear_lyapunov_descent_bound',
+      'uniform_descent_incompatible_with_nonnegative_values']]+[
+     'SafeLearning.CompleteLyapunovCounterexample.'+n for n in
+     ['square_positive_definite','all_square_sublevels_compact','bad_map_fixes_zero',
+      'strict_square_decrease_everywhere_off_zero','actual_orbit_initial',
+      'actual_orbit_strictly_above_one','actual_orbit_step','actual_orbit_converges_to_one',
+      'actual_images_converge_to_one','actual_orbit_does_not_converge_to_zero',
+      'actual_map_discontinuous_at_one','actual_orbit_in_annulus',
+      'increments_strictly_negative_on_annulus','actual_annulus_compact',
+      'actual_increment_sequence_converges_to_zero','actual_increment_supremum_is_zero',
+      'actual_increment_supremum_not_attained','actual_boundary_increment']],
+    'Actual sublevel trajectories are invariant with antitone nonnegative values; compactness, continuity and strict decrease imply state convergence to0and, whenV(0)=0,value convergence to0. Actual compact positive slices admit a uniform negative decrement and positive minimum; finite telescoping contradicts all-time nonnegativity. The exact source discontinuous piecewiseF fixes0and strictly decreasesV=x²off0with all sublevels compact, yet its actual trajectory from2is1+2^-nwith limit1. Its increments have actual least upper bound0on1<=|x|<=2, with no attaining point and boundary increment-3/4.',
+    ['A continuous map and continuous nonnegative realV on a normed additive group; compact source sublevel, equilibriumF(0)=0, actual successor recurrence, initial sublevel membership and strict decrease off0. Source positive definiteness implies these sufficient assumptions. Uniform-margin and positive-minimum statements use the actual compact nonempty slices and their pointwise strict signs; no uniform margin is assumed.',
+     'The counterexample is the exact scalar source model, without a continuity assumption; its discontinuity and nonzero limit are proved.'],
+    [] if lyapunov_full else (lr['remaining_gaps'] if lyapunov_review_path.exists()
+                             and lr['remaining_gaps'] else
+                             ['Independent complete question/answer correspondence review remains.']))
+
 def sha(p):
     return hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
 
@@ -395,7 +432,7 @@ for u in INV['material_source_units']:
     material.append(claim)
 
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
-        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories']
+        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),

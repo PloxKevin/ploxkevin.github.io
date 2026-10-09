@@ -43,18 +43,22 @@ old_prefix = 'reports/lean-verification/'
 new_prefix = str(output.relative_to(ROOT)) + '/'
 
 
-def relocate(value):
-    if isinstance(value, list):
-        return [relocate(item) for item in value]
-    if isinstance(value, dict):
-        return {key: (item.replace(old_prefix, new_prefix, 1)
-                      if key in {'output_file', 'report'} and isinstance(item, str)
-                      and item.startswith(old_prefix) else relocate(item))
-                for key, item in value.items()}
-    return value
+# Only the current audit's files were copied. Historical original_check paths
+# identify prior executions and must retain their recorded locations.
+def relocate_check(check):
+    name = check.get('output_file')
+    if isinstance(name, str) and name.startswith(old_prefix):
+        check['output_file'] = name.replace(old_prefix, new_prefix, 1)
+    reused = check.get('reused_from')
+    if isinstance(reused, dict):
+        name = reused.get('report')
+        if isinstance(name, str) and name.startswith(old_prefix):
+            reused['report'] = name.replace(old_prefix, new_prefix, 1)
 
 
-relocated = relocate(report)
+relocated = json.loads(json.dumps(report))
+for check in relocated['checks']:
+    relocate_check(check)
 relocated['audit_origin'] = {
     'original_report': str((output / 'verification-original.json').relative_to(ROOT)),
     'original_report_sha256': sha(output / 'verification-original.json'),
@@ -63,7 +67,10 @@ relocated['audit_origin'] = {
 (output / 'verification.json').write_text(json.dumps(relocated, indent=2) + '\n')
 progress = output / 'kernel-progress.json'
 if progress.exists():
-    progress.write_text(json.dumps(relocate(json.loads(progress.read_text())), indent=2) + '\n')
+    progress_data = json.loads(progress.read_text())
+    for check in progress_data['checks'].values():
+        relocate_check(check)
+    progress.write_text(json.dumps(progress_data, indent=2) + '\n')
 manifest['status'] = 'formal_verification_passed_partial_coverage'
 manifest['successful_verification'] = {
     'proof_file_count': report['proof_file_count'], 'theorem_count': report['theorem_count'],

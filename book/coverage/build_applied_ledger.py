@@ -138,12 +138,15 @@ def build():
  grouped={}
  for u in inv['material_source_units']:
   if u['source'] not in PAGES: continue
-  sig=(u['source'],u['text_sha256'])
+  needs_surrounding_review=u.get('inventory_kind')=='surrounding_prose_needs_semantic_classification'
+  # Newly inventoried surrounding prose requires its own semantic review.
+  # Identical text is not enough to transfer a prior exercise correspondence.
+  sig=(u['source'],u['text_sha256'],needs_surrounding_review)
   if sig in grouped:
    grouped[sig]['source_unit_keys'].append(u['key']);continue
   record=dict(id='material.'+u['key'],source=u['source'],source_unit_keys=[u['key']],source_sha256=u['source_sha256'],text_sha256=u['text_sha256'],statement_in_prose=u['source_text'],kind='source_unit_pending_claim_split',status='pending',lean_declarations=[],hypotheses=['Read surrounding section definitions and assumptions; source unit may overlap other recorded units.'],correspondence='Canonical material queue retained. This record is not a claim that the unit is one theorem or that prior manual review is a formal proof.',remaining_gaps=[pending_gap(u['source_text'])],source_clauses=clauses(u['source_text']))
   owners=[e for e in out if e['source']==u['source'] and clean_text(u['source_text']) in clean_text(e['source_text'])]
-  if owners:
+  if owners and not needs_surrounding_review:
    owner=min(owners,key=lambda e:len(e['source_text']))
    record.update(kind='exercise_claim_correspondence',exercise_inventory_key=owner['inventory_key'],claim_ids=[c['id'] for c in owner['claims']],lean_declarations=sorted({d for c in owner['claims'] for d in c['lean_declarations']}),status='proved' if owner['status']=='complete_math' else 'pending',correspondence='This exact nested question/hint/solution unit belongs to the linked exercise. Its mathematical premises and conclusions use the reviewed granular exercise records; overlap does not create another proof obligation.',remaining_gaps=[g for c in owner['claims'] for g in c['remaining_gaps']])
   if u['key'] in promotions['material']:
@@ -151,10 +154,27 @@ def build():
    assert promoted['source_text_sha256']==u['text_sha256'],u['key']
    record.update(promoted['claim'])
   # Explicit syllabus language is a curriculum statement, not a mathematical assertion.
-  if u['source_text'].startswith('A first course in linear algebra'):
+  if not needs_surrounding_review and u['source_text'].startswith('A first course in linear algebra'):
    record.update(kind='pedagogical_prerequisite',status='not_a_formal_claim',hypotheses=[],correspondence='This sentence specifies prerequisite study topics; it asserts no mathematical result about them.',remaining_gaps=[])
   grouped[sig]=record;material.append(record)
- files=sorted((ROOT/'verification/lean/SafeLearning').glob('CompleteApplied*.lean'))
+ # Working files enter proof metadata only after actual source-matching success.
+ verified_hashes={}
+ for report_path in (ROOT/'reports/full-coverage').glob('lean-*/verification*.json'):
+  report=json.loads(report_path.read_text())
+  if report.get('status')=='passed' and report.get('checks') and all(c.get('exit_code')==0 for c in report['checks']):
+   for rel,digest in report.get('proof_sha256',{}).items():
+    verified_hashes.setdefault(rel,set()).add(digest)
+ for manifest_path in (ROOT/'book/coverage/checks').rglob('*.json'):
+  record=json.loads(manifest_path.read_text())
+  if not isinstance(record,dict) or record.get('exit_code')!=0 or not record.get('source','').endswith('.lean'): continue
+  before=record.get('sha256_before',record.get('source_sha256_before'))
+  after=record.get('sha256_after',record.get('source_sha256_after'))
+  if not before or before!=after or 'lean' not in record.get('command',[]): continue
+  log=ROOT/record.get('log','missing-log')
+  if not log.is_file() or sha(log)!=record.get('log_sha256'): continue
+  verified_hashes.setdefault(record['source'],set()).add(after)
+ files=[p for p in sorted((ROOT/'verification/lean/SafeLearning').glob('CompleteApplied*.lean'))
+        if sha(p) in verified_hashes.get(str(p.relative_to(ROOT)),set())]
  report=dict(schema_version=1,generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=PAGES,source_sha256={p:sha(ROOT/p) for p in PAGES},proof_files={str(p.relative_to(ROOT)):sha(p) for p in files},status='partial_completion_work_in_progress',exercises=out,material_claims=material,corrections=[dict(id='historical-C2-Bayes-map',source='SafeLearning/primer-probability.html',inventory_key='primer-probability.html::exercise-39',defect='Earlier applied ledger mapped another detector law to original C.2.',source_fraction='(.9*.02)/(.9*.02+.01*.98)=90/139',rejected_declaration='SafeLearning.PrimersApplied.bayes_alarm_legacy',replacement_arithmetic='SafeLearning.CompleteAppliedProbability.original_c2_bayes',status='mapping_corrected; model and multi-step claims remain separately pending')],limits=['Every canonical applied exercise and material source unit is retained, including pending work.','Historical candidates and numerical scripts do not promote exact clauses to proved.','All newly proved claims require independent source-to-proposition review and final build/kernel/axiom audit by the root.','Surrounding mathematical prose without TeX still requires a fresh exhaustive semantic pass.','A pedagogical or physical-model classification must name the particular statement; no blanket exemption is applied.'])
  report['counts']={'exercises':len(out),'complete_math':sum(e['status']=='complete_math' for e in out),'partial':sum(e['status']=='partial' for e in out),'pending':sum(e['status']=='pending' for e in out),'exercise_claims':sum(len(e['claims']) for e in out),'material_claim_records':len(material),'material_source_units':sum(len(m['source_unit_keys']) for m in material)}
  (ROOT/'book/coverage/applied.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')

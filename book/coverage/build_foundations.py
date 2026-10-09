@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0,'book')
 from validate import Document,clean_text
 from foundations_review import EXTRA,FULL,ATOMS,NONFORMAL,topic,clauses
-from foundations_promotions import COMPLETE_EXERCISES,FULL_MATERIAL,PARTIAL_MATERIAL,PARTIAL_EXERCISES,REVIEWED_COMPLETE_MATERIAL,SURROUNDING_PROSE
+from foundations_promotions import COMPLETE_EXERCISES,FULL_MATERIAL,PARTIAL_MATERIAL,PARTIAL_EXERCISES,REVIEWED_COMPLETE_MATERIAL,SURROUNDING_PROSE,REVIEWED_PARTIAL_MATERIAL
 FULL.update(FULL_MATERIAL)
 for key,rows in PARTIAL_MATERIAL.items():ATOMS.setdefault(key,[]).extend(rows)
 root=Path('.')
@@ -11,6 +11,7 @@ inv=json.load(open('book/coverage/inventory.json'))
 old=json.load(open('reports/lean-verification/primers-foundations-coverage.json'))
 pages=['primer-basics.html','primer-linalg.html','primer-optimization.html']
 source={f'SafeLearning/{p}' for p in pages}|{f'book/chapters/{p}' for p in pages}
+source_documents={f'SafeLearning/{p}':Document(Path('SafeLearning',p).read_text()) for p in pages}
 sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
 oldby={x['summary']:x for x in old['exercises']}
 newmap={
@@ -86,11 +87,29 @@ for u in inv['material_source_units']:
  if owners:
   owner_rows=[e for e in exercises if e['inventory_key'] in owners]
   closed=all(e['status']=='complete_math' for e in owner_rows)
+  newly_retained=u.get('inventory_kind')=='surrounding_prose_needs_semantic_classification'
+  if newly_retained:closed=False
   rs=sorted({r for e in owner_rows for c in e['claims'] for r in c['lean_declarations']})
   gaps=[] if closed else sorted({g for e in owner_rows for c in e['claims'] for g in c['remaining_gaps']})
+  if newly_retained:gaps.append('This newly retained surrounding-prose unit needs its own semantic classification. Exact exercise containment supplies related proofs but does not automatically classify this new unit.')
   material.append(dict(**common,id=u['key']+'::exercise-overlap',statement_in_prose=u['source_text'],kind='exact_exercise_source_overlap',lean_declarations=rs,status='proved' if closed else 'pending',hypotheses='Exactly the mathematical domains and assumptions of the source exercise and its cited declarations.',correspondence='This exact excerpt is contained in exercise source(s) '+', '.join(owners)+'. Nested prompts/hints/solutions share those mathematical conclusions; no independent theorem is inferred from duplication.',remaining_gaps=gaps))
   continue
- page=Path(u['source']).name;node=int(u['key'].split('node-')[-1]);subject,gap=topic(page,node)
+ page=Path(u['source']).name
+ if '::node-' in u['key']:node=int(u['key'].split('node-')[-1])
+ else:
+  anchor=u['locator'].removeprefix('#')
+  node=next(i for i,n in enumerate(source_documents[u['source']].nodes,1) if n.attrs.get('id')==anchor)
+ subject,gap=topic(page,node)
+ if u['key'] in SURROUNDING_PROSE or u['key'] in REVIEWED_PARTIAL_MATERIAL:
+  review=(SURROUNDING_PROSE|REVIEWED_PARTIAL_MATERIAL)[u['key']]
+  for i,row in enumerate(review['proved'],1):
+   material.append(dict(**common,**row,id=u['key']+f'::surrounding-reviewed-{i}',
+     kind='reviewed_mathematical_subclaim',status='proved',remaining_gaps=[]))
+  for i,st in enumerate(review['pending'],1):
+   material.append(dict(**common,id=u['key']+f'::surrounding-pending-{i}',statement_in_prose=st,
+     kind='reviewed_mathematical_clause',lean_declarations=[],status='pending',hypotheses='Exact source context and all assumptions still require a complete correspondence.',
+     correspondence='This exact reviewed source claim remains mathematical work; the other explicitly mapped conclusions do not establish it.',remaining_gaps=[st]))
+  continue
  if u['key'] in REVIEWED_COMPLETE_MATERIAL:
   for i,row in enumerate(REVIEWED_COMPLETE_MATERIAL[u['key']],1):
    material.append(dict(**common,**row,id=u['key']+f'::reviewed-claim-{i}',kind='reviewed_mathematical_assertion',status='proved',remaining_gaps=[]))
@@ -111,12 +130,14 @@ surrounding=[]
 for key,review in SURROUNDING_PROSE.items():
  page,node_index=key.split('::node-');path='SafeLearning/'+page
  node=Document(Path(path).read_text()).nodes[int(node_index)-1]
- text=node.text();assert text and not any(u['key']==key for u in inv['material_source_units'])
+ text=node.text();assert text
+ in_inventory=any(u['key']==key for u in inv['material_source_units'])
  claims=[dict(**row,status='proved',remaining_gaps=[]) for row in review['proved']]
  claims += [dict(statement_in_prose=st,lean_declarations=[],status='pending',remaining_gaps=[st]) for st in review['pending']]
  surrounding.append(dict(source=path,locator='::node-'+node_index,line=node.line,
    source_sha256=sha(path),source_text=text,source_text_sha256=hashlib.sha256(text.encode()).hexdigest(),
-   scope='Explicit review beyond mechanically selected material-source units; no inventory unit is added or counted.',
+   inventory_key=key if in_inventory else None,
+   scope=('Historical outside-queue review identity retained; its claims are now ordinary material_claims and are not counted twice.' if in_inventory else 'Explicit review beyond mechanically selected material-source units; no inventory unit is added or counted.'),
    claims=claims,status='partial' if review['pending'] else 'complete_math'))
  used_modules.update(d.split('.')[1] for c in claims for d in c['lean_declarations'])
 # In-progress unpublished modules are not formal evidence merely because a

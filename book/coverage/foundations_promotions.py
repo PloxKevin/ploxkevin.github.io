@@ -325,6 +325,216 @@ PARTIAL_MATERIAL['primer-optimization.html::node-838'].append(
   refs('CompleteFoundationsShiftedQuadratic','gradient_actual_hessian','hessian_positive_definite',
        'quadratic_taylor_model_exact','newton_equation_unique','full_newton_step_solves','unique_global_minimum')))
 
+COMPLETE_EXERCISES['opt-ex-descent-3'] = [
+ claim('On the positive domain, the actual derivatives ofx-logx are1-1/x and1/x^2. The Newton direction solves the actual Hessian equation and is a strict descent direction except at the unique global minimizer1.',
+       'CompleteFoundationsLogBacktracking','actual_derivative','derivative_identification',
+       'actual_second_derivative','second_derivative_identification','positive_hessian',
+       'unique_global_minimum','newton_equation','newton_direction_formula','actual_descent_direction',
+       hypotheses='The source logarithmic function onx>0; strict descent requiresx≠1.',
+       correspondence='The second derivative is proved for the actual first derivative using its local positive-domain identity. The real logarithm tangent inequality establishes the unique global minimum.'),
+ claim('At4, the derivatives are3/4 and1/16, the Newton direction is-12 and directional derivative-9. Full and half steps give-8 and-2 and are rejected by the domain test; a quarter step gives1 and satisfies Armijo withconstant1/4.',
+       'CompleteFoundationsLogBacktracking','source_four_numerics','source_larger_steps_rejected',
+       'source_quarter_step_accepted','source_first_accepted_backtracking_index',
+       hypotheses='Exactly the source start4, backtracking factors(1/2)^k and Armijo constant1/4.',
+       correspondence='The actual derivatives drive the update, and an IsLeast statement proves the quarter step is the first accepted candidate. The acceptance predicate explicitly requires positivity before the finite decrease inequality.'),
+ claim('The Armijo left side is1, its right side rounds to2.051206 within half a unit of the last printed decimal, and the accepted point is the unique global minimizer.',
+       'CompleteFoundationsLogBacktracking','source_armijo_decimal','log_four_bounds',
+       'source_accepted_step_is_global_optimum','unique_global_minimum',
+       hypotheses='The same source candidate and exact Armijo expression; decimal tolerance is1/(2*10^6).',
+       correspondence='Proven rational enclosures for actual log4 establish the decimal assertion and the exact inequality; no floating point approximation is used as evidence.')]
+
+PARTIAL_MATERIAL.setdefault('primer-optimization.html::node-843',[]).extend([
+ ('For the positive-domain functionx-logx, the actual Newton full step is2x-x^2 and squares the error1-x; from1/2, every iterate stays in(0,1], has error(1/2)^(2^n), and tends to the unique minimizer1. All four printed iterates are evaluated or enclosed to their displayed precision.',
+  refs('CompleteFoundationsLogBacktracking','unique_global_minimum','full_newton_step_formula',
+       'source_half_initial_iterations','source_half_iteration_in_domain','source_half_error_closed_form',
+       'source_half_iteration_converges')),
+ ('From3, the actual Newton full and half steps leave the positive domain; the quarter step gives3/2 and is accepted by Armijo. The actual objective and right side are within0.0005 of the displayed1.095 and1.651.',
+  refs('CompleteFoundationsLogBacktracking','source_three_domain_checks',
+       'source_three_quarter_accepted_and_decimals','log_three_bounds'))])
+
+COMPLETE_EXERCISES['la-ex-spectral-1'] = [
+ claim('The actual Euclidean vectors(1,1)/sqrt2 and(1,-1)/sqrt2 are orthonormal eigenvectors with eigenvalues4 and2 and span the full real plane.',
+       'CompleteFoundationsSpectralModels','source_eigenvectors','source_orthonormal',
+       'source_eigenbasis_spans','norm_squared_coordinates','source_all_eigenvalues',
+       hypotheses='Exactly sourceA=[[3,1],[1,3]] and the specified normalized vectors in EuclideanSpace.',
+       correspondence='The actual matrix linear map and Orthonormal predicate are proved, with every vector reconstructed from its two inner-product coefficients. Original squared lengths follow from the proved coordinate norm identity.'),
+ claim('The source matrix equals4qPlusqPlus^T+2qMinusqMinus^T.',
+       'CompleteFoundationsSpectralModels','source_spectral_matrix_decomposition',
+       hypotheses='The same actual matrix and normalized eigenvectors.',
+       correspondence='An actual Matrix equality verifies all four entries of the spectral outer-product decomposition; it is not a detached eigenvalue calculation.')]
+
+COMPLETE_EXERCISES['la-ex-spectral-2'] = [
+ claim('For every Euclidean vector the actual quadratic form is between2 and4 times its squared length. Lower equality holds exactly whenx1=-x2, and upper equality exactly whenx1=x2.',
+       'CompleteFoundationsSpectralModels','source_all_eigenvalues','source_quadratic_expansion',
+       'rayleigh_bounds_and_equality',
+       hypotheses='The exact sourceA and arbitrary Euclidean vectors, including0 for the undivided form.',
+       correspondence='Actual inner product with the matrix linear map and actual Euclidean norm are related by a coordinate identity. Sum/difference squares prove both sharp bounds and equality iff statements.'),
+ claim('At(1,2) the actual image is(5,7), form19, squared length5 and quotient19/5=3.8, with strict bounds10<19<20 and nonzero components in both normalized eigendirections.',
+       'CompleteFoundationsSpectralModels','source_rayleigh_numerics','source_both_eigencomponents_nonzero',
+       hypotheses='Exactly the stated vector and source matrix.',
+       correspondence='The actual linear-map image, inner-product form, norm and quotient are evaluated; both eigencomponents and both strict inequalities are proved.'),
+ claim('Every nonzero multiple of(1,-1) has quotient2 and every nonzero multiple of(1,1) has quotient4.',
+       'CompleteFoundationsSpectralModels','source_rayleigh_attainers',
+       hypotheses='An arbitrary nonzero real multiple; nonzero is needed for a genuine Rayleigh quotient.',
+       correspondence='Both actual quotient expressions are proved for every permitted multiple, so endpoint attainment is universal in the stated directions.')]
+
+COMPLETE_EXERCISES['la-ex-spectral-3'] = [
+ claim('The actual nonsymmetric matrixN=[[1,4],[0,1]] has characteristic polynomial(X-1)^2 and every nonzero eigenvector has eigenvalue1 and second coordinate0. Its image of(1,-1) is(-3,-1), with actual quadratic form-2.',
+       'CompleteFoundationsSpectralModels','source_N_characteristic_polynomial',
+       'source_N_eigenvector_characterization','source_N_negative_form',
+       hypotheses='The exact sourceN and actual Euclidean matrix map.',
+       correspondence='The actual characteristic polynomial records both repeated eigenvalues, while an eigenvector iff proves the full real eigenspace statement. The counterexample evaluates the actual quadratic form.'),
+ claim('The symmetric part is[[1,2],[2,1]] with exactly eigenvalues3 and-1 along(1,1) and(1,-1). The actual skew part transposes to its negative and contributeszero to every quadratic form, so the N and symmetric-part forms coincide.',
+       'CompleteFoundationsSpectralModels','source_symmetric_and_skew_parts','symmetric_part_eigenvalues',
+       'general_real_skew_quadratic_zero','source_forms_equal','norm_squared_coordinates',
+       hypotheses='The specified real symmetric/skew decomposition; the zero-skew theorem also covers arbitrary finite real matrices.',
+       correspondence='Actual matrix identities and all-and-only eigenvalues are proved. The general transpose argument proves vanishing of real skew forms, with an explicit bridge to the Euclidean inner-product forms.'),
+ claim('N is not symmetric and has no orthonormal eigenbasis; its nonzero eigenvectors cannot even be pairwise orthogonal.',
+       'CompleteFoundationsSpectralModels','source_N_not_symmetric',
+       'source_N_eigenvectors_never_orthogonal','source_N_has_no_orthonormal_eigenbasis',
+       hypotheses='The exact sourceN over the real Euclidean plane.',
+       correspondence='The missing spectral-theorem hypothesis is explicit, and failure of an actual OrthonormalBasis consisting of eigenvectors is proved rather than inferred solely from nonsymmetry.')]
+
+COMPLETE_EXERCISES['la-ex-psd-1'] = [
+ claim('The actual diagonalP=diag(2,0) has form2x1^2 and is positive semidefinite, with determinant0 and nonzero zero-form witness(0,1), so it is singular and not positive definite.',
+       'CompleteFoundationsDefinitenessModels','singular_P_positive_semidefinite',
+       'singular_P_actual_form','singular_P_failure_witness',
+       hypotheses='The source matrix on the whole real Euclidean plane.',
+       correspondence='The actual Matrix.PosSemidef object and explicit Euclidean form identity establish all-direction nonnegativity. Actual determinant and nonzero witness establish singularity and PD failure.'),
+ claim('Q=[[2,3],[3,2]] has positive entries but its actual forms at(1,1) and(1,-1) are10 and-2; hence both signs occur and Q is indefinite and not PSD.',
+       'CompleteFoundationsDefinitenessModels','indefinite_Q_both_signs',
+       hypotheses='The exact sourceQ and the displayed real witness vectors.',
+       correspondence='Both actual inner-product forms, all-entry positivity and failure of the actual Matrix.PosSemidef predicate are proved. The positive-versus-zero witness distinction follows from these two actual classified matrices.')]
+
+COMPLETE_EXERCISES['la-ex-psd-2'] = [
+ claim('The actual factorL=[[2,0],[1,1]] is lower triangular with positive diagonal and P=LL^T; the sourceP is positive definite.',
+       'CompleteFoundationsDefinitenessModels','cholesky_actual_factor','cholesky_positive_definite',
+       hypotheses='Exactly sourceP=[[4,2],[2,2]] and factorL.',
+       correspondence='Actual matrix equality and entries establish the factor properties, and the actual Matrix.PosDef predicate is proved through strict quadratic positivity in every nonzero direction.'),
+ claim('The forward equationLy=(6,4) has unique solution(3,1), the backward equationL^Tx=y has unique solution(1,1), and actualPx=(6,4).',
+       'CompleteFoundationsDefinitenessModels','forward_triangular_solve_unique',
+       'backward_triangular_solve_unique','cholesky_source_solution',
+       hypotheses='All candidate vectors for each specified triangular equation.',
+       correspondence='Both complete solution iff statements use actual matrix linear maps; they verify the two-solve method and the source direct check without assuming an inverse.'),
+ claim('ActualdetL=2 anddetP=(detL)^2=4, with actuallogdetP=2(log2+log1)=log4.',
+       'CompleteFoundationsDefinitenessModels','cholesky_actual_log_determinant',
+       hypotheses='The same two actual matrices and ordinary real logarithm.',
+       correspondence='Actual determinant evaluations and the true logarithm power identity establish every displayed determinant and logdet equality.')]
+
+COMPLETE_EXERCISES['la-ex-psd-3'] = [
+ claim('For the actualP=diag(4,1) ellipsoid, the changeu=(2x1,x2) makes its constraint the Euclidean unit ball and objective the inner product with(1/2,2), whose true norm issqrt17/2.',
+       'CompleteFoundationsDefinitenessModels','ellipsoid_actual_form',
+       'ellipsoid_change_of_variables','ellipsoid_coefficient_norm',
+       hypotheses='The full real plane and exact source ellipsoid/objective.',
+       correspondence='Actual Euclidean norm, actual matrix quadratic form and actual inner product are connected by identities, including a constraint iff.'),
+ claim('The linear objective has actual maximumsqrt17/2, attained at(1/(2sqrt17),4/sqrt17); its actual quadratic form and transformed Euclidean norm areboth1.',
+       'CompleteFoundationsDefinitenessModels','ellipsoid_margin_upper_bound',
+       'ellipsoid_attains','ellipsoid_actual_maximum',
+       hypotheses='Every real point in the source ellipsoid; maximum is over its whole image under the source linear objective.',
+       correspondence='Cauchy–Schwarz derives the universal bound and an explicit feasible vector attains it. IsGreatest of the actual set image states a genuine maximum.'),
+ claim('The two semi-axis lengths are1/2 and1. The actual maximizer is a positive multiple ofP^-1(1,2) and is not a multiple of(1,2).',
+       'CompleteFoundationsDefinitenessModels','ellipsoid_semiaxes','ellipsoid_inverse_direction',
+       hypotheses='The exact source ellipsoid and nonzero positive sqrt17.',
+       correspondence='Exact all-real axis-section iff statements establish the lengths. The actual matrix inverse and actual transformed vector identify the direction, with a proved failure of Euclidean alignment.')]
+
+REVIEWED_COMPLETE_MATERIAL['primer-linalg.html::node-520'] = [
+ claim('Every finite real matrix quadratic formx^TPx equals the stated double sum, and replacingP by(P+P^T)/2 preserves its value for every real vector.',
+       'CompleteFoundationsQuadraticForms','real_quadratic_double_sum','real_quadratic_transpose',
+       'real_quadratic_only_symmetric_part','symmetric_part_is_symmetric',
+       hypotheses='Arbitrary finite index type, real matrixP and real vectorx; no symmetry is presumed for the reduction.',
+       correspondence='The actual matrix-vector/dot-product expression is expanded, and its actual transpose and symmetrized matrix values agree for every vector.'),
+ claim('For every symmetric two-dimensional real matrix with nonzero first pivota, the exact completed-square expression has second coefficientc-b^2/a.',
+       'CompleteFoundationsQuadraticForms','plane_actual_form','plane_completed_square',
+       'all_real_symmetric_plane_matrices',
+       hypotheses='All symmetric2x2 real matrices; the source positive-pivot hypothesis implies the nonzero pivot required for the identity.',
+       correspondence='Every symmetric source matrix is identified with the generic(a,b,c) model; the exact matrix quadratic identity, with its actual division, is proved.'),
+ claim('A real symmetric2x2 matrix is positive definite exactly when its first diagonal entry and actual determinant arebothpositive.',
+       'CompleteFoundationsQuadraticForms','plane_actual_determinant','plane_pd_criterion',
+       'plane_pd_iff_positive_pivot_and_determinant','generic_symmetric_plane_criterion',
+       hypotheses='Every real symmetric2x2 matrix, including zero/negative pivots and singular matrices.',
+       correspondence='The actual Matrix.PosDef predicate is characterized inbothdirections. Necessity uses actual nonzero vectors, while sufficiency uses the completed square. Actualdet=ac-b^2 gives the printed Schur/pivot criterion.')]
+
+REVIEWED_COMPLETE_MATERIAL['primer-linalg.html::node-523'] = [
+ claim('For a finite real symmetric matrix, actualPSD means a nonnegative quadratic form in every direction, and actualPD means a strictly positive form in every nonzero direction.',
+       'CompleteFoundationsQuadraticForms','real_psd_definition','real_pd_definition',
+       hypotheses='Arbitrary finite real symmetric matrix; all real coordinate vectors are quantified.',
+       correspondence='Actual Matrix.PosSemidef and Matrix.PosDef objects are equivalent to precisely the source quadratic predicates. The strict and nonstrict distinctions remain explicit.'),
+ claim('Negative semidefiniteness/definiteness is PSD/PD of-P, equivalently nonpositive/strictly negative values of the original quadratic form.',
+       'CompleteFoundationsQuadraticForms','real_negative_semidefinite_definition',
+       'real_negative_definite_definition',
+       hypotheses='The same arbitrary finite real symmetric matrix.',
+       correspondence='Negating the actual matrix negates its actual quadratic values, yielding the stated two negative classifications.'),
+ claim('A real symmetric matrix that is neitherPSD nornegativePSD hasbotha positive and a negative quadratic direction, and conversely.',
+       'CompleteFoundationsQuadraticForms','real_indefinite_iff_both_signs',
+       hypotheses='Arbitrary finite real symmetric matrix; witnesses quantify actual real coordinate vectors.',
+       correspondence='The otherwise-indefinite classification is exactly the failure of both semidefinite predicates, characterized by actual opposing-sign witnesses. Nonnegative-definite is source terminology forPSD, not an additional empirical claim.')]
+
+PARTIAL_MATERIAL.setdefault('primer-linalg.html::node-529',[]).append(
+ ('For every finite real diagonal matrix, actual positive semidefiniteness is equivalent to nonnegative diagonal entries.',
+  refs('CompleteFoundationsQuadraticForms','real_diagonal_psd_iff')))
+
+REVIEWED_COMPLETE_MATERIAL['primer-linalg.html::node-562'] = [
+ claim('For every finite real matrixM and square or rectangularT, the actual congruence quadratic equals the original form atTx. PSD ofM implies PSD ofT^TMT.',
+       'CompleteFoundationsCongruence','congruence_quadratic_identity','congruence_psd',
+       hypotheses='Arbitrary finite real matrix dimensions, sourceM PSD only for the PSD implication.',
+       correspondence='The actual matrix product and matrix-vector quadratic expressions agree for every real vector; the actual Matrix.PosSemidef predicate is preserved without assumingT is square.'),
+ claim('WhenM ispositive definite, T^TMT ispositive definite exactly whenT isinjective on coordinate vectors, equivalently when its columns are linearly independent.',
+       'CompleteFoundationsCongruence','congruence_pd_iff_injective',
+       'congruence_pd_iff_independent_columns','singular_congruence_counterexample',
+       hypotheses='Arbitrary finite real dimensions and actualPD ofM; no invertibility assumption is imposed on rectangularT.',
+       correspondence='A genuine iff proves the strict condition and its necessity. The exactI2/diag(1,0) example has PSD but singular and non-PD congruence.'),
+ claim('For square invertibleT, congruence preserves and reflectsbothPSD andPD.',
+       'CompleteFoundationsCongruence','inverse_congruence_identity',
+       'invertible_congruence_psd_iff','invertible_congruence_pd_iff',
+       hypotheses='Any finite real squareM/T, with actualdetT a unit, which is precisely finite matrix invertibility.',
+       correspondence='Congruence by the actual inverse recoversM. Both actual matrix definiteness predicates are proved equivalent, including the reverse directions.'),
+ claim('The rectangular columnT=(1,0) withM=diag(1,-1) hasPD congruence1 althoughM hasopposing-sign quadratic directions and isnotPSD.',
+       'CompleteFoundationsCongruence','rectangular_congruence_counterexample',
+       hypotheses='Exactly the displayed2x1T and2x2M.',
+       correspondence='The exact actual rectangular matrix product equalsI1 and isPD; actual forms1/-1 and non-PSD establish that the converse can fail.'),
+ claim('The complex version uses conjugate transposeT*: its actual Hermitian quadratic identity andPSD preservation hold, strict definiteness is equivalent to independent columns, and invertible congruence worksbothways forPSD/PD.',
+       'CompleteFoundationsCongruence','complex_congruence_quadratic_identity','complex_congruence_psd',
+       'complex_congruence_pd_iff_independent_columns','complex_inverse_congruence_identity',
+       'complex_invertible_congruence_iff',
+       hypotheses='Arbitrary finite complex dimensions; positive-definiteM for the strict column criterion and unitdetT for invertible square equivalences.',
+       correspondence='The source complex replacement isencoded using actual conjugate transpose and actual complex Hermitian definiteness predicates; all corresponding implications and equivalences areproved.')]
+
+PARTIAL_MATERIAL.setdefault('primer-linalg.html::node-552',[]).extend([
+ ('For every finite real rectangularR, bothR^TR andRR^T areactualPSD matrices.',
+  refs('CompleteFoundationsCongruence','real_gram_psd')),
+ ('For every finite real rectangularR, actualPD ofR^TR is equivalent to linearly independent columns.',
+  refs('CompleteFoundationsCongruence','real_gram_pd_iff_independent_columns'))])
+
+REVIEWED_PARTIAL_MATERIAL = {
+ 'primer-linalg.html::node-552':dict(
+  proved=[
+   claim('Every finite real Gram matrixR^TR andRR^T isPSD; its actual quadratic form equals the squared Euclidean norm ofRx, andR^TR isPD exactly for independent columns.',
+         'CompleteFoundationsCongruence','real_gram_psd','real_gram_pd_iff_independent_columns',
+         hypotheses='Arbitrary finite real rectangularR and every compatible real vectorx.',
+         correspondence='Actual Matrix PSD/PD predicates and LinearIndependent columns encode the general statements. GramRegularization.gram_actual_quadratic_norm proves the actual Euclidean norm equality.'),
+   claim('For epsilon>0, epsilonI+R^TR has actual formepsilon||x||²+||Rx||², isPD and invertible, and its actualL1 image ofxi-xiStar has positive norm wheneverxi≠xiStar.',
+         'CompleteFoundationsGramRegularization','regularized_gram_exact_quadratic',
+         'regularized_gram_strict_quad_and_invertible','actual_regularized_l1_certificate',
+         hypotheses='Arbitrary finite realR, strictly positiveepsilon, and distinct real coordinate states for theL1 conclusion.',
+         correspondence='The actual matrix expression, actual Euclidean squared norms, actual IsUnit matrix and actual PiLp1 norm are linked. Injectivity of the actual matrix map proves the nonzero image certificate.'),
+   claim('For everyPSDK andlambda>0, K+lambdaI isPD and invertible.',
+         'CompleteFoundationsGramRegularization','positive_regularization_pd','positive_regularization_is_invertible',
+         hypotheses='Arbitrary finite real squareK with its actual Matrix.PosSemidef object and positivelambda.',
+         correspondence='The actual ridge matrix has an actualPD certificate and an actual IsUnit witness; the separate generic Cholesky algorithm claim remains pending.'),
+   claim('The actual outer productaa^T isPSD and has rank1 fornonzeroa and rank0 fora0. Its quadratic form is(a^Tv)^2, its action ona has eigenvalue||a||², and it vanishes on every direction orthogonal toa.',
+         'CompleteFoundationsGramRegularization','outer_psd','outer_zero','outer_actual_rank',
+         'outer_actual_quadratic','outer_eigen_direction','outer_orthogonal_directions',
+         hypotheses='Arbitrary finite real coordinate vectors; nonzeroa only for the rank1 assertion.',
+         correspondence='Actual Matrix.rank is bounded above by1 and below by a genuine nonzero1x1 minor. Actual matrix-vector actions and actual Euclidean norm give the source eigen-directions and form.'),
+   claim('Forbeta>=0, betaaa^T isPSD and adding it changes every actual quadratic value bybeta(a^Tv)^2, so the value cannot decrease.',
+         'CompleteFoundationsGramRegularization','outer_psd_increase',
+         hypotheses='Arbitrary finite realM/a, any nonnegativebeta and every real vectorv; no convergence-speed conclusion is inferred.',
+         correspondence='The exact actual matrix increment has aPSD certificate and a quantified exact quadratic increase. The parenthetical performance distinction asserts no further mathematical guarantee.')],
+  pending=['For every real positive definite ridge/kernel matrix, the standard Cholesky construction succeeds in exact arithmetic and yields a lower triangular factor with positive diagonal; the generic construction and all pivot conditions are not yet proved.'])
+}
+REVIEWED_PARTIAL_MATERIAL['primer-linalg.html::node-552']['proved'][0]['lean_declarations'] += refs(
+ 'CompleteFoundationsGramRegularization','gram_actual_quadratic_norm')
+
 COMPLETE_EXERCISES['opt-ex-lipschitz-3'] = [
  claim('The entire recurrence is bounded by the actual finite geometric sum; from the common start its envelope equals0.05(1.2^t-1).',
        'CompleteFoundationsModelErrors','errorEnvelope','recurrence_envelope','envelope_geometric_form','exact_source_error_envelope',

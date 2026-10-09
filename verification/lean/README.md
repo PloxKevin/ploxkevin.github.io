@@ -61,11 +61,13 @@ always runs a fresh replay.
 
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its 1,999 theorems in 100 files passed the local build, source-exact kernel checks
-and a fresh standard-axiom audit. The latest batch freshly replayed nine modules
-and reused 91 passing replays only after validating identical source/import and
-compiled dependency fingerprints. It preserves the full 556-exercise inventory and explicitly pending
-claims; it does not establish complete book coverage.
+Its 2,213 theorems in 122 files passed the local build, source-exact kernel checks
+and a fresh standard-axiom audit. Twenty-two modules were freshly replayed;
+100 actual passing replays were reused only after identical source/import and
+compiled dependency fingerprints were validated. The inventory contains 556
+exercises and 12,774 overlapping material review units. Source correspondence
+review can reopen coverage entries while their existing formal proofs remain
+valid. The current published ledgers keep every outstanding clause explicit.
 
 The separate numerical recomputation can be rerun from the repository root with
 `python3 verification/numerical.py` (NumPy and SciPy required). Browser QA uses

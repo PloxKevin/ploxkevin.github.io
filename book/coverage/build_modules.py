@@ -85,6 +85,13 @@ LCN = "SafeLearning.CompleteModulesLipSDPConvex."
 IQN = "SafeLearning.CompleteModulesInvalidQC."
 CSN = "SafeLearning.CompleteModulesChords."
 SECN = "SafeLearning.CompleteModulesSectorExamples."
+LDN = "SafeLearning.CompleteModulesLogDet."
+BGN = "SafeLearning.CompleteModulesBarrierGradient."
+ISN = "SafeLearning.CompleteModulesInverseSpectrum."
+CHN = "SafeLearning.CompleteModulesCholesky."
+SYN = "SafeLearning.CompleteModulesSylvester."
+DTN = "SafeLearning.CompleteModulesDeterminantTaylor."
+MEN = "SafeLearning.CompleteModulesMatrixError."
 
 # These mappings are intentionally granular. A proved component is appended to
 # the requirements queue; the exercise is not marked complete merely because it
@@ -94,6 +101,34 @@ COMPONENTS = {}
 
 def component(key, statement, names, hypotheses=(), gaps=()):
     COMPONENTS.setdefault(key, []).append((statement, names, hypotheses, gaps))
+
+component("lipsdp.html::exercise-18", "For arbitrary finite real matrices, the actual determinant Frechet derivative is trace(adjugate(N)*dN), hence the actual logdet derivative at every nonsingular matrix is trace(Ninv*dN). Applying this to the actual source block certificate gives its actual W0 Frobenius gradient -2 Lambda (Ninv)21 and the training objective gradient gradLoss+2 mu Lambda (Ninv)21.",
+          [LDN+"determinantAlternating",LDN+"actual_determinant_multilinear_derivative",LDN+"actual_determinant_has_frechet_derivative",LDN+"actual_logdet_has_frechet_derivative",LDN+"actual_logdet_curve_derivative",BGN+"barrierMatrix",BGN+"barrierVariation",BGN+"actual_barrier_matrix_weight_derivative",BGN+"actual_symmetric_variation_trace_is_gradient",BGN+"actual_logdet_barrier_weight_gradient",BGN+"actual_barrier_training_weight_gradient"],
+          ["The actual source finite block matrix is positive definite; the loss has its stated actual Frechet gradient at the current weight matrix."],
+          ["The reported finite-difference agreement needs a reproducible empirical fixture or its own empirical classification. The finite-step, varying-mu path, joint trained-multiplier nonconvexity, local/global training-optimum and accepted-iterate certificate discussion remain separately pending."])
+
+component("lipsdp.html::exercise-18", "For every actual positive-definite finite real matrix, its Euclidean induced inverse norm is exactly the reciprocal of its actual smallest eigenvalue. Along every positive-definite matrix family whose actual smallest eigenvalue tends to zero, this inverse norm tends to positive infinity.",
+          [ISN+"minimumEigenvalue",ISN+"actual_inverse_eigen_diagonalization",ISN+"actual_inverse_spectral_norm_is_eigen_inverse_norm",ISN+"actual_minimum_eigenvalue_is_positive",ISN+"actual_minimum_eigenvalue_is_attained",ISN+"actual_inverse_spectral_norm_is_exact_reciprocal",ISN+"actual_inverse_norm_blows_up_at_singular_boundary"],
+          ["The actual matrix is positive definite and has a nonempty finite coordinate type. Boundary divergence is conditional on its actual smallest eigenvalue tending to zero, exactly as in the source's explanation of approaching singularity."],
+          ["The source's training trajectory itself is not asserted to approach this boundary; roundoff acceptance remains pending."])
+
+component("lipsdp.html::exercise-18", "Every actual finite real positive-definite matrix has a lower triangular Cholesky factor with strictly positive diagonal, constructed through its actual Gram representation and Gram-Schmidt basis. Such a factor implies positive definiteness. Thus nonexistence of such an exact factor is equivalent to failure of positive definiteness. All leading principal minors of a positive-definite matrix are positive, and the factor yields the exact reused inverse (Ginv)-transpose*Ginv.",
+          [CHN+"triangularGramFactor",CHN+"actual_gram_factor_is_lower_triangular",CHN+"actual_gram_factor_product",CHN+"actual_gram_schmidt_diagonal_is_norm",CHN+"actual_gram_factor_diagonal_is_positive",CHN+"actual_positive_definite_matrix_has_cholesky",CHN+"actual_positive_triangular_factor_implies_positive_definite",CHN+"actual_cholesky_existence_iff_positive_definite",CHN+"actual_exact_cholesky_failure_iff_not_positive_definite",CHN+"actual_positive_definite_leading_principal_minors_are_positive",CHN+"actual_cholesky_factor_reuses_inverse"],
+          ["Exact finite real matrix arithmetic; the theorem concerns existence of the exact source-specified positive-diagonal triangular factor, without making claims about an unspecified implementation or rounded computation."],
+          ["Floating-point test behavior remains a separate pending requirement."])
+
+component("lipsdp.html::exercise-18", "For every actual finite symmetric real matrix, all its actual leading principal minors are strictly positive iff it is positive definite. The reverse direction is proved by induction through the actual final scalar Schur complement and actual determinant factorization.",
+          [SYN+"positiveLeadingPrincipalMinors",SYN+"actual_scalar_matrix_positive_definite_of_positive_determinant",SYN+"actual_last_schur_block_is_positive_definite",SYN+"actual_symmetric_matrix_with_positive_leading_minors_is_positive_definite",SYN+"actual_sylvester_criterion"],
+          ["The actual matrix is symmetric; leading minors are actual determinant submatrices at every size, including the empty minor."],[])
+
+component("lipsdp.html::exercise-18", "For every actual finite real direction matrix, det(I+epsilon E)=1+epsilon trace(E)+an explicit polynomial remainder times epsilon squared. Consequently the remainder is O(epsilon squared) as epsilon tends to zero. For every nonsingular actual matrix, det(N+epsilon E)=det(N)det(I+epsilon Ninv E), yielding its corresponding exact first-order coefficient and O(epsilon squared) remainder.",
+          [DTN+"actualDeterminantRemainder",DTN+"actual_determinant_exact_second_order_expansion",DTN+"actual_determinant_second_order_remainder_is_bigO",DTN+"actual_determinant_perturbation_factorization",DTN+"actual_general_determinant_second_order_expansion"],
+          ["The unperturbed actual finite real matrix is nonsingular for the factorized expansion; the unit-matrix expansion has no symmetry or eigenvalue assumptions."],[])
+
+component("lipsdp.html::exercise-18", "Arbitrarily small absolute spectral-norm perturbations can reverse positive-definiteness in either direction: explicit actual scalar matrices are positive definite and indefinite within every positive tolerance. A genuine validated margin theorem proves that an actual symmetric matrix is positive definite whenever its spectral-norm error from a computed matrix is bounded by margin and computed-minus-margin-I is positive definite. The proof bounds actual quadratic-form error by the actual Euclidean matrix norm.",
+          [MEN+"actualQuadratic",MEN+"actual_quadratic_error_is_bounded_by_spectral_norm",MEN+"actual_quadratic_shift",MEN+"actual_validated_matrix_margin_certifies_positive_definiteness",MEN+"positiveNearSingular",MEN+"indefiniteNearSingular",MEN+"actual_near_singular_matrix_is_positive",MEN+"actual_near_singular_matrix_is_not_positive",MEN+"actual_opposite_feasibility_matrices_are_arbitrarily_close",MEN+"actual_small_absolute_error_can_reverse_both_feasibility_decisions"],
+          ["The actual finite matrix is symmetric. A validated spectral-norm error bound and an actual shifted computed-matrix positive-definiteness certificate provide the mathematical safety margin."],
+          ["These genuine norm-error certificates and perturbation counterexamples support the source's qualitative finite-precision warning; they do not assert verified behavior of an unspecified IEEE format, Cholesky implementation, or floating-point training pipeline."])
 
 
 component("landscape.html#book-m1-b1", "Without independence, twenty measurable overheating events with probability at most 1/400 each have joint success probability at least 19/20.",
@@ -519,6 +554,9 @@ for u in INV["material_source_units"]:
                  lean_declarations=LIPSDP_UNIT_MAP[int(lipnode)],
                  hypotheses=["Ordered real slope bounds alpha<=beta, actual finite real scalar/diagonal quadratic forms, actual slope-restricted elementwise activations and nonnegative diagonal weights where required."],
                  correspondence="The scalar factorization, zero-coordinate case and admissible-chord equivalence establish the displayed scalar formulas. The actual block matrix equals the exact weighted coordinate sum, proving the diagonal lemma and its converse with independent admissible slopes. The explicit actual ReLU counterexample establishes the danger of coupling. The displayed network LMI is encoded as the exact canonical block matrix and its negative semidefiniteness implies the actual network gain; it is not asserted feasible for arbitrary parameters.",remaining_gaps=[])
+        if int(lipnode)==302:
+            c['hypotheses']=["A genuine slope-restricted scalar activation with activation(0)=0 for the forward implication; the explicit real function x/(1+x²) for the converse counterexample."]
+            c['correspondence']="Taking the actual increment against zero proves the static sector condition. The scalar factorization identifies the source's sector product with its 2-by-2 quadratic form. The actual function x/(1+x²) has zero origin and satisfies this sector inequality at every real input, while its values at1 and2 decrease, proving it is not monotone and not [0,1] slope-restricted."
     if u['key']=='toolkit-gp.html::node-164':
         c.update(kind="established_mathematical_theorem_and_proof",status="proved",
                  lean_declarations=[RN+"every_regularized_minimizer_has_finite_representation",RN+"actual_rkhs_representer_theorem"],
@@ -575,6 +613,7 @@ for u in INV["material_source_units"]:
 
 # Additional proved material claims are tied to exact current units by phrase.
 material_groups = [
+    ("lipsdp", "log", "The actual determinant and logdet Frechet derivatives on arbitrary finite real matrices are proved through the continuous alternating determinant, its actual row-update derivative, Cramer's identity and the actual matrix inverse. The actual source neural barrier matrix has the exact W0 Frobenius gradient -2 Lambda (Ninv)21; composing an actual differentiable training loss gives gradLoss+2 mu Lambda (Ninv)21.", [LDN+"actual_determinant_multilinear_derivative",LDN+"actual_determinant_has_frechet_derivative",LDN+"actual_logdet_has_frechet_derivative",LDN+"actual_logdet_curve_derivative",BGN+"barrierMatrix",BGN+"actual_barrier_matrix_weight_derivative",BGN+"actual_variation_trace_splits_into_weight_blocks",BGN+"actual_symmetric_variation_trace_is_gradient",BGN+"actual_logdet_barrier_weight_gradient",BGN+"actual_barrier_training_weight_gradient"]),
     ("lipsdp", "MaxMin", "Actual two-coordinate MaxMin preserves the coordinate sum and squared Euclidean norm and is Euclidean nonexpansive. Its actual input/output increments nevertheless violate the elementwise [0,1] diagonal neuron QC at the explicit pair (0,1),(0,0), so that certificate assumption cannot be transferred to this activation.", [SECN+"maxMin",SECN+"actual_maxmin_violates_elementwise_diagonal_qc",SECN+"maxmin_preserves_sum",SECN+"maxmin_preserves_squared_norm",SECN+"maxmin_is_euclidean_nonexpansive"]),
     ("lipsdp", "semidefinite program", "The actual arbitrary-dimensional one-hidden-network certificate is affine in the squared gain and diagonal multipliers. Its actual nonnegative and negative-semidefinite feasible parameter set is convex; the squared-gain objective is convex on this set and every actual local minimum on the feasible set is a global minimum.", [LCN+"actual_block_certificate_is_affine",LCN+"feasibleNeuronParameters",LCN+"actual_neuron_sdp_feasible_set_is_convex",LCN+"actual_neuron_sdp_objective_is_convex",LCN+"actual_neuron_sdp_has_no_nonglobal_local_minimum",LCN+"diagonal_multiplier_cone_is_convex"]),
     ("lipsdp", "What the QC knows", "The actual diagonal quadratic constraints hold for every nonnegative diagonal multiplier exactly when the hidden increment equals D times the preactivation increment for some independent diagonal slopes in [alpha,beta]. The proof handles zero increments explicitly and derives every coordinate condition by singleton multipliers. The block form is proved equal to the scalar-coordinate sum, and actual possibly different elementwise activations satisfy it.", [DQN+"scalar_qc_factorization",DQN+"scalar_qc_iff_admissible_chord",DQN+"diagonal_qc_from_actual_activations",DQN+"all_diagonal_qcs_iff_coordinate_qcs",DQN+"all_diagonal_qcs_iff_independent_diagonal_slopes",DQN+"diagonal_qc_matrix_is_stated_block",DQN+"diagonal_qc_is_actual_block_quadratic"]),

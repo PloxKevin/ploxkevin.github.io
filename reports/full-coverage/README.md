@@ -1,36 +1,40 @@
 # Continuing full mathematical coverage
 
-The verified checkpoint contains 1,999 theorems in 100 Lean files. Its local build,
-kernel checks and standard-axiom audit passed with Lean 4.34.1 and
-the pinned Mathlib revision. See
-[the publication-source audit](lean-publication-6/verification.json). Nine modules
-received fresh kernel replays. The other 91 reuse actual passing results with identical
-module sources, transitive local imports and compiled dependency fingerprints.
-Every theorem received a fresh axiom audit, and the aggregate was freshly built.
+The verified checkpoint contains 2,213 theorems in 122 Lean files. Its local build,
+kernel checks and standard-axiom audit passed with Lean 4.34.1 and the pinned
+Mathlib revision. See [the formal audit](lean-checkpoint-7/verification.json).
+Twenty-two modules received fresh kernel replays. The other 100 retain actual
+passing replays after identical module sources, transitive local imports and
+compiled dependency fingerprints were checked. Every theorem received a fresh
+axiom audit and the aggregate was freshly built. Commands, actual execution
+directories and original logs are retained. The prior-report index relocation
+in [the reuse record](reuse-basis-publication-6/relocation.json) executed no checks.
 
-Coverage is still partial. The frozen ledgers account for all 556 exercises and
-6,373 overlapping material review units. At this checkpoint, 173 exercises are
-marked mathematically complete, 114 partial and 269 pending; 5,766 material units
-remain pending review. These author classifications are separately recorded in
-[the ledger integrity audit](lean-checkpoint-6/ledger-audit.json). The validator
-checks source fingerprints and references; it does not prove semantic coverage.
+Coverage remains partial. All 556 exercises and 12,774 overlapping material
+review units are inventoried. The expanded queue includes ordinary surrounding
+prose, hints and table rows even when they contain no TeX. At this publication,
+183 exercises are author-classified mathematically complete, 110 partial and
+263 pending; 12,113 material units remain pending review. These classifications
+are recorded in [the current ledger audit](publication-checks/ledger-checkpoint-7.json).
+The validator checks source fingerprints and references; it does not establish
+semantic completeness.
 
-The checkpoint includes eight documented corrections: zero Lipschitz constants,
-nonlinear integrating-factor wording, nonzero starting points for quadratic
-step-size claims, bounded/nonempty infimum hypotheses, a falsely rounded error
-bound, and explicit grid endpoint and spacing conventions. Exact changes
+Additional source review reopened two entries after the frozen audit: a barrier
+hint asserts an unconstrained minimizer, and a Lyapunov answer asserts an actual
+one-sided function limit. The proved constrained optimum and orbit-sequence
+limit remain valid. The exact outstanding clauses are pending in the published
+ledger; [the correspondence corrections](publication-ledger-corrections-7.json)
+record this change. The frozen historical ledger retains its original author
+classifications. No audited proof, site asset or project input changed.
+
+The book contains eight documented teaching corrections. Exact replacements
 and reasons are in [material-corrections.json](../../book/coverage/material-corrections.json).
-[Static validation](integration-6.json) and
-[source-exact browser evidence](browser-checkpoint-6.json) passed. The browser
-evidence retains prior actual checks for unchanged pages and reruns the latest
-optimization page at five widths; it does not claim a new run of every page.
-The [checkpoint manifest](checkpoint-6-manifest.json) identifies frozen inputs.
-The publication copy has an additional passing audit after exactly two trailing
-spaces were removed; [the formatting record](publication-formatting-6.json)
-records that delta and the fresh checks of the changed import closure.
-Historical checkpoint 4's author correspondences required subsequent fixes;
-those are documented in [the follow-up notes](checkpoint-4-correspondence-notes.json)
-and resolved in the current core ledger.
+[Static validation](integration-7.json) passed on the publication copy.
+[Source-exact browser evidence](browser-checkpoint-7.json) retains the actual
+prior page checks because all 31 site assets are byte-identical; it asserts no
+new browser run. [The checkpoint manifest](checkpoint-7-manifest.json) identifies
+frozen inputs. Historical checkpoint 4's correspondence fixes remain documented
+in [the follow-up notes](checkpoint-4-correspondence-notes.json).
 
 From the repository root, reproduce the checks with:
 
@@ -40,9 +44,8 @@ python3 book/coverage/validate.py --output reports/full-coverage/ledger-reproduc
 python3 verification/lean/verify.py --output reports/full-coverage/lean-reproduction
 ```
 
-Use `--resume-kernel` only to resume a report directory with matching saved
-fingerprints. `python3 book/coverage/validate.py --require-complete` remains a
-failing gate until every established mathematical subclaim has been addressed.
-The objective includes the remaining material and exercises, exact stated
-assumptions, source-to-statement review, complete local verification and final
-GitHub publication. Publishing this checkpoint does not close that objective.
+Use `--resume-kernel` only with matching saved fingerprints.
+`python3 book/coverage/validate.py --require-complete` remains a failing gate.
+The ongoing objective includes every remaining mathematical material and
+exercise claim, exact assumptions and source correspondence, local Lean
+verification and GitHub publication. This checkpoint does not complete it.

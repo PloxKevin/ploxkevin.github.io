@@ -45,24 +45,36 @@ def inventory():
                 label=row['summary'], level=row['level'], source_sha256=sources[relative],
                 source_text=text, text_sha256=hashlib.sha256(text.encode()).hexdigest()))
 
-        # Record every math-bearing prose/box unit and every displayed formula.
+        # Retain the original math units, and also queue surrounding ordinary
+        # prose and coherent table rows. A false mathematical assertion can be
+        # written without TeX or occur in an unclassified warning/pitfall div.
         # Units can overlap (for example a paragraph within a theorem box).
         # Owners must split each unit into actual claims and explain exclusions.
         for ordinal, node in enumerate(document.nodes, 1):
-            if node.tag not in {'p','li','div','dt','dd'}:
+            if node.tag not in {'p','li','div','dt','dd','tr','caption'}:
                 continue
             classes=node.attrs.get('class','').split()
             text=node.text()
             is_formula='math-block' in classes
             is_claim_box=any(c in classes for c in ('theorem-box','definition-box','proof-box'))
             is_math_prose=node.tag in {'p','li','dt','dd'} and ('$' in text or '\\(' in text or '\\[' in text)
-            if not (is_formula or is_claim_box or is_math_prose):
+            original_math_unit = is_formula or is_claim_box or is_math_prose
+            surrounding_prose = node.tag in {'p','li','dt','dd','tr','caption'}
+            # Containers with their own prose descendants are represented by
+            # those descendants; retain leaf divs with direct/inline text.
+            if node.tag == 'div':
+                surrounding_prose = not any(child.tag in
+                    {'p','li','dt','dd','tr','caption','div','details','section','table'}
+                    for child in node.descendants())
+            if not clean_text(text) or not (original_math_unit or surrounding_prose):
                 continue
             locator='#'+node.attrs['id'] if node.attrs.get('id') else f'::node-{ordinal}'
             material_rows.append(dict(key=path.name+locator, source=relative,
                 locator=locator, line=node.line, tag=node.tag, classes=classes,
                 source_text=text, text_sha256=hashlib.sha256(text.encode()).hexdigest(),
-                source_sha256=sources[relative], inventory_kind='source_unit_needs_claim_review'))
+                source_sha256=sources[relative], inventory_kind=(
+                    'source_unit_needs_claim_review' if original_math_unit else
+                    'surrounding_prose_needs_semantic_classification')))
     assert len(exercise_rows)==556, len(exercise_rows)
     assert len({row['key'] for row in exercise_rows})==len(exercise_rows)
     report=dict(schema_version=1, generated_at_utc=datetime.now(timezone.utc).isoformat(),
@@ -70,9 +82,10 @@ def inventory():
         counts=dict(exercises=len(exercise_rows),material_source_units=len(material_rows),
                     exercises_by_page=dict(Counter(row['source'] for row in exercise_rows))),
         exercises=exercise_rows, material_source_units=material_rows,
-        limits=['Source units are an exhaustive mechanically selected review queue, not automatically extracted mathematical propositions.',
+        limits=['Source units form a mechanically selected review queue, not automatically extracted mathematical propositions.',
                 'Overlapping units must be linked to shared claims, not counted as independent proofs.',
-                'Reviewers must also inspect surrounding math-free prose for mathematical assertions.',
+                'Surrounding prose/table rows are retained regardless of TeX; their mathematical content or nonformal status still needs explicit review.',
+                'Reviewers must inspect the whole page for assertions outside the selected element types.',
                 'Definitions, empirical assumptions, open problems and pedagogical judgments require explicit classification.'])
     OUT.mkdir(parents=True,exist_ok=True)
     (OUT/'inventory.json').write_text(json.dumps(report,indent=2)+'\n')
