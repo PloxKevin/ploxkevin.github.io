@@ -18,6 +18,8 @@ ROOT = PROJECT.parent.parent
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output', type=Path, default=ROOT / 'reports/lean-verification',
                     help='Report directory; use a separate directory for a new source revision.')
+parser.add_argument('--resume-kernel', action='store_true',
+                    help='Reuse completed per-module kernel checks only when all input and log hashes match.')
 args = parser.parse_args()
 OUT = args.output.resolve()
 if not OUT.is_relative_to(ROOT):
@@ -27,14 +29,17 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 def run(args, filename):
     start = time.monotonic()
-    result = subprocess.run(args, cwd=PROJECT, text=True, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, check=False)
-    (OUT / filename).write_text(result.stdout)
+    # Keep evidence while long kernel replay is running, including interrupted
+    # attempts. A successful report still requires the actual returned exit code.
+    with (OUT / filename).open('w') as logfile:
+        result = subprocess.run(args, cwd=PROJECT, text=True, stdout=logfile,
+                                stderr=subprocess.STDOUT, check=False)
     record = {'command': args, 'exit_code': result.returncode,
               'elapsed_seconds': round(time.monotonic() - start, 3),
               'output_file': str((OUT / filename).relative_to(ROOT))}
     if result.returncode:
-        raise RuntimeError(f'{args} failed; see {OUT / filename}\n{result.stdout[-5000:]}')
+        tail = (OUT / filename).read_text()[-5000:]
+        raise RuntimeError(f'{args} failed; see {OUT / filename}\n{tail}')
     return record
 
 
@@ -81,7 +86,39 @@ for package in manifest['packages']:
         raise RuntimeError(f'Dependency revision mismatch: {package["name"]}')
     dependencies.append({'name': package['name'], 'revision': revision})
 checks.append(run(['lake', 'build'], 'build.log'))
-checks.append(run(['lake', 'env', 'leanchecker', '-v', 'SafeLearning'], 'kernel-replay.log'))
+# leanchecker starts one task per target module. Explicit single-module targets
+# keep the same replay coverage while avoiding dozens of simultaneous copies of
+# the imported Mathlib environment. Save each actual exit so interrupted runs
+# can resume without treating an unfinished command as a pass.
+kernel_progress_path = OUT / 'kernel-progress.json'
+kernel_identity = {'input_sha256': initial_hashes, 'dependency_revisions': dependencies,
+                   'lean_version': (OUT / 'lean-version.txt').read_text().strip()}
+kernel_progress = {'identity': kernel_identity, 'checks': {}}
+if args.resume_kernel and kernel_progress_path.exists():
+    previous = json.loads(kernel_progress_path.read_text())
+    if previous.get('identity') != kernel_identity:
+        raise RuntimeError('Cannot resume kernel replay: source or dependency identity changed.')
+    kernel_progress = previous
+modules = ['SafeLearning.' + p.stem for p in proof_files]
+aggregator_lines = [line.strip() for line in (PROJECT / 'SafeLearning.lean').read_text().splitlines()
+                    if line.strip()]
+if sorted(aggregator_lines) != sorted('import ' + module for module in modules):
+    raise RuntimeError('Aggregator must import every audited proof module exactly once and contain no declarations.')
+for module in modules:
+    filename = 'kernel-' + module.replace('.', '-') + '.log'
+    saved = kernel_progress['checks'].get(module)
+    if saved is not None:
+        logfile = ROOT / saved['output_file']
+        if saved.get('exit_code') != 0 or not logfile.exists() or sha(logfile) != saved.get('log_sha256'):
+            raise RuntimeError(f'Invalid saved kernel evidence for {module}')
+        checks.append(saved)
+        continue
+    record = run(['lake', 'env', 'leanchecker', '-v', module], filename)
+    record.update(module=module, log_sha256=sha(OUT / filename))
+    kernel_progress['checks'][module] = record
+    kernel_progress_path.write_text(json.dumps(kernel_progress, indent=2) + '\n')
+    checks.append(record)
+    print(f'Kernel replay passed: {module}', flush=True)
 
 axiom_source = PROJECT / 'AxiomAudit.lean'
 axiom_source.write_text('import SafeLearning\n\n' + '\n'.join(

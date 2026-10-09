@@ -28,16 +28,32 @@ python3 verify.py --output ../../reports/book/lean-verification
 ```
 
 The runner also checks that the local Git revision of every cached dependency
-matches the pinned manifest. Run `python3 book/check_coverage.py` from the
-repository root after the book's static validator and formal runner pass.
+matches the pinned manifest. The historical `book/check_coverage.py` checks the
+earlier published source revision. For the continuing full-coverage work, run
+`python3 book/coverage/validate.py` from the repository root. Add
+`--require-complete` to check whether every remaining mathematical claim is
+finished; that gate currently fails because coverage remains partial.
 
-The runner builds the proof modules, replays their declarations with
-`lake env leanchecker -v SafeLearning`, and prints every theorem's transitive
+The runner builds the proof modules, replays each module's declarations with
+`lake env leanchecker -v SafeLearning.ModuleName`, and prints every theorem's transitive
 axiom dependencies. It rejects `sorry`, custom axioms and native evaluation proof
 shortcuts. Dependencies are restricted to Lean's standard `propext`,
 `Classical.choice` and `Quot.sound` axioms; individual results may use fewer.
 Logs and source/proof SHA-256 fingerprints are written to
 `reports/lean-verification/verification.json` and adjacent files.
+
+Per-module replay avoids starting every imported Mathlib environment at once.
+The aggregator must contain exactly one import for every audited module and no
+declarations. Each completed replay saves its actual exit code and log hash in
+`kernel-progress.json`. After an interrupted run, `--resume-kernel` reuses those
+results only if all source, project, dependency and log fingerprints still match.
+An interrupted or missing result is never treated as a pass.
+
+The expanded checkpoint is documented in
+[`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
+Its 1,195 theorems in 37 files passed the local build, kernel replay and standard
+axiom audit. It preserves the full 556-exercise inventory and explicitly pending
+claims; it does not establish complete book coverage.
 
 The separate numerical recomputation can be rerun from the repository root with
 `python3 verification/numerical.py` (NumPy and SciPy required). Browser QA uses

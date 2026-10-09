@@ -188,12 +188,15 @@ def build_idempotence():
                     files_compared=len(after_second))
 
 
-def validate():
+def validate(allow_reviewed_corrections=False):
     errors = []
     warnings = []
     checks = []
     pages = {}
     source_reports = []
+    corrections_path=ROOT/'book/coverage/material-corrections.json'
+    corrections=(json.loads(corrections_path.read_text())['corrections']
+                 if allow_reviewed_corrections else [])
 
     def error(category, file, message, **extra):
         errors.append(dict(category=category, file=file, message=message, **extra))
@@ -334,6 +337,14 @@ def validate():
         original = baseline_path.read_text()
         stripped = remove_insertions(doc.source)
         equal = stripped == original
+        documented=[c for c in corrections if c['source']=='SafeLearning/'+name]
+        restored=stripped
+        for c in reversed(documented):
+            if restored.count(c['after'])!=1 or original.count(c['before'])!=1:
+                error('correction_source_mismatch',name,'Documented mathematical correction is not an exact unique source replacement',line=c['line'])
+            else:
+                restored=restored.replace(c['after'],c['before'],1)
+        reviewed_equal=restored==original
         base_items = exercises(Document(original).root)
         total_baseline_exercises += len(base_items)
         current_items = exercises(doc.root)
@@ -342,8 +353,12 @@ def validate():
                   baseline=len(base_items), new=len(new_items), current=len(current_items))
         p = dict(file=name, original_sha256=digest(original), stripped_current_sha256=digest(stripped),
                  original_teaching_body_byte_identical=equal)
+        if documented:
+            p.update(documented_mathematical_corrections=len(documented),
+                     documented_corrections_record=str(corrections_path.relative_to(ROOT)),
+                     after_reversing_documented_corrections_matches_baseline=reviewed_equal)
         preservation.append(p)
-        if not equal:
+        if not equal and not (documented and reviewed_equal):
             diff = list(difflib.unified_diff(original.splitlines(),stripped.splitlines(),fromfile='baseline/'+name,tofile='stripped-current/'+name,n=1))
             error('original_body_changed', name, 'Original teaching-page source differs after removing only book insertions', diff_excerpt=diff[:35])
         lab_reports.append(dict(file=name, fragment=str(source_path.relative_to(ROOT)),
@@ -487,6 +502,9 @@ def validate():
                             local_references=local_reference_count),
                 checks=checks,errors=errors,warnings=warnings,
                 teaching_page_preservation=preservation,untouched_reference_preservation=untouched,
+                mathematical_correction_exceptions=dict(enabled=allow_reviewed_corrections,
+                    record=str(corrections_path.relative_to(ROOT)) if allow_reviewed_corrections else None,
+                    count=len(corrections),scope='Only exact recorded replacements are allowed; all other baseline changes fail.'),
                 build_idempotence=idempotence,
                 inherited_page_local_exercise_label_reuse=collisions,
                 chapter_labs=lab_reports,new_reference_source_documents=source_reports,
@@ -501,12 +519,16 @@ def validate():
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check-only',action='store_true',help='Print the result without writing the review report.')
+    parser.add_argument('--output',type=Path,default=REPORT,help='Write a new report without replacing historical evidence.')
+    parser.add_argument('--allow-reviewed-corrections',action='store_true',help='Allow only the exact mathematical source replacements recorded in book/coverage/material-corrections.json.')
     args=parser.parse_args()
-    report=validate()
+    args.output=args.output.resolve()
+    report=validate(args.allow_reviewed_corrections)
     if not args.check_only:
-        REPORT.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
+        args.output.parent.mkdir(parents=True,exist_ok=True)
+        args.output.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
     print(json.dumps(dict(status=report['status'],counts=report['counts'],errors=report['errors'],warnings=report['warnings'],
-                          report=None if args.check_only else str(REPORT.relative_to(ROOT))),indent=2,ensure_ascii=False))
+                          report=None if args.check_only else str(args.output.relative_to(ROOT))),indent=2,ensure_ascii=False))
     return 0 if report['status']=='PASS' else 1
 
 
