@@ -27,8 +27,9 @@ For the expanded book's current audit, preserve the historical report directory:
 python3 verify.py --output ../../reports/book/lean-verification
 ```
 
-The runner also checks that the local Git revision of every cached dependency
-matches the pinned manifest. The historical `book/check_coverage.py` checks the
+The runner also checks that every dependency's Git revision matches the pinned
+manifest and its working tree is clean. It fingerprints compiled dependency
+artifacts before and after verification. The historical `book/check_coverage.py` checks the
 earlier published source revision. For the continuing full-coverage work, run
 `python3 book/coverage/validate.py` from the repository root. Add
 `--require-complete` to check whether every remaining mathematical claim is
@@ -49,10 +50,21 @@ declarations. Each completed replay saves its actual exit code and log hash in
 results only if all source, project, dependency and log fingerprints still match.
 An interrupted or missing result is never treated as a pass.
 
+For a later frozen batch, `--reuse-kernel-from /absolute/path/to/prior/snapshot`
+can reuse a prior actual passing kernel result. The module and every transitive
+local import must have identical source hashes, and Lean, project pins and the
+compiled dependency environment must match. Reused checks retain the original
+command, actual working directory and raw log provenance. The new aggregate
+build and every theorem's axiom audit still run. Older reports without dependency
+artifact fingerprints cause a fresh replay of all modules. Omitting this option
+always runs a fresh replay.
+
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its 1,195 theorems in 37 files passed the local build, kernel replay and standard
-axiom audit. It preserves the full 556-exercise inventory and explicitly pending
+Its 1,999 theorems in 100 files passed the local build, source-exact kernel checks
+and a fresh standard-axiom audit. The latest batch freshly replayed nine modules
+and reused 91 passing replays only after validating identical source/import and
+compiled dependency fingerprints. It preserves the full 556-exercise inventory and explicitly pending
 claims; it does not establish complete book coverage.
 
 The separate numerical recomputation can be rerun from the repository root with

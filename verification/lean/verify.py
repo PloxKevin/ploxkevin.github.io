@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import time
 
@@ -20,6 +21,8 @@ parser.add_argument('--output', type=Path, default=ROOT / 'reports/lean-verifica
                     help='Report directory; use a separate directory for a new source revision.')
 parser.add_argument('--resume-kernel', action='store_true',
                     help='Reuse completed per-module kernel checks only when all input and log hashes match.')
+parser.add_argument('--reuse-kernel-from', type=Path,
+                    help='Prior frozen checkout with a passing reports/lean-verification/verification.json; reuse only identical module/import inputs, with explicit provenance.')
 args = parser.parse_args()
 OUT = args.output.resolve()
 if not OUT.is_relative_to(ROOT):
@@ -44,7 +47,11 @@ def run(args, filename):
 
 
 def sha(p):
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with p.open('rb') as source:
+        for block in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 proof_files = sorted((PROJECT / 'SafeLearning').glob('*.lean'))
@@ -86,13 +93,42 @@ for package in manifest['packages']:
         raise RuntimeError(f'Dependency revision mismatch: {package["name"]}')
     dependencies.append({'name': package['name'], 'revision': revision})
 checks.append(run(['lake', 'build'], 'build.log'))
+
+
+def dependency_environment():
+    identity = {}
+    for package in manifest['packages']:
+        checkout = PROJECT / manifest['packagesDir'] / package['name']
+        dirty = subprocess.check_output(['git', '-C', str(checkout), 'status', '--porcelain'],
+                                        text=True)
+        if dirty:
+            raise RuntimeError('Dependency working tree is dirty: ' + package['name'])
+        tree = subprocess.check_output(['git', '-C', str(checkout), 'rev-parse', 'HEAD^{tree}'],
+                                       text=True).strip()
+        artifacts = sorted(p for p in (checkout / '.lake/build/lib/lean').rglob('*')
+                           if p.is_file() and (p.name.endswith('.olean') or '.olean.' in p.name))
+        digest = hashlib.sha256()
+        byte_count = 0
+        for path in artifacts:
+            digest.update(str(path.relative_to(checkout)).encode() + b'\0')
+            digest.update(sha(path).encode() + b'\0')
+            byte_count += path.stat().st_size
+        identity[package['name']] = {
+            'git_tree': tree, 'git_worktree_clean': True,
+            'compiled_artifact_count': len(artifacts), 'compiled_artifact_bytes': byte_count,
+            'compiled_environment_sha256': digest.hexdigest()}
+    return identity
+
+
+dependency_environment_identity = dependency_environment()
 # leanchecker starts one task per target module. Explicit single-module targets
 # keep the same replay coverage while avoiding dozens of simultaneous copies of
 # the imported Mathlib environment. Save each actual exit so interrupted runs
 # can resume without treating an unfinished command as a pass.
 kernel_progress_path = OUT / 'kernel-progress.json'
 kernel_identity = {'input_sha256': initial_hashes, 'dependency_revisions': dependencies,
-                   'lean_version': (OUT / 'lean-version.txt').read_text().strip()}
+                   'lean_version': (OUT / 'lean-version.txt').read_text().strip(),
+                   'dependency_environment_identity': dependency_environment_identity}
 kernel_progress = {'identity': kernel_identity, 'checks': {}}
 if args.resume_kernel and kernel_progress_path.exists():
     previous = json.loads(kernel_progress_path.read_text())
@@ -104,6 +140,86 @@ aggregator_lines = [line.strip() for line in (PROJECT / 'SafeLearning.lean').rea
                     if line.strip()]
 if sorted(aggregator_lines) != sorted('import ' + module for module in modules):
     raise RuntimeError('Aggregator must import every audited proof module exactly once and contain no declarations.')
+
+# A kernel result proves the encoded module against its imported environment.
+# HTML edits and unrelated new modules do not change that result. Reuse is
+# optional and preserves the original actual command, cwd and raw log; it never
+# substitutes a filename or theorem count for source identity.
+prior_root = None
+prior_report = None
+prior_checks = {}
+if args.reuse_kernel_from:
+    prior_root = args.reuse_kernel_from.resolve()
+    prior_path = prior_root / 'reports/lean-verification/verification.json'
+    prior_report = json.loads(prior_path.read_text())
+    if prior_report.get('status') != 'passed':
+        raise RuntimeError('Prior kernel evidence has no passing final aggregate report.')
+    if (prior_report.get('lean_version') != kernel_identity['lean_version'] or
+            prior_report.get('dependency_revisions') != dependencies):
+        raise RuntimeError('Prior kernel evidence uses different Lean or dependency revisions.')
+    for name in ['lean-toolchain', 'lakefile.toml', 'lake-manifest.json']:
+        key = 'verification/lean/' + name
+        if prior_report['project_sha256'].get(key) != initial_hashes[key]:
+            raise RuntimeError('Prior kernel project identity differs: ' + key)
+    if any(set(ds) - {'propext', 'Classical.choice', 'Quot.sound'}
+           for ds in prior_report['axiom_dependencies'].values()):
+        raise RuntimeError('Prior aggregate report contains unsupported axioms.')
+    if prior_report.get('dependency_environment_identity') == dependency_environment_identity:
+        prior_checks = {c['module']: c for c in prior_report['checks'] if 'module' in c}
+    else:
+        print('Prior dependency artifact identity is missing or differs; all modules require fresh replay.', flush=True)
+    shutil.copyfile(prior_path, OUT / 'reused-verification-original.json')
+
+
+def local_import_closure(module):
+    seen = set()
+    def visit(name):
+        key = 'verification/lean/' + name.replace('.', '/') + '.lean'
+        if key in seen:
+            return
+        if key not in initial_hashes:
+            raise RuntimeError('Unaudited local dependency: ' + name)
+        seen.add(key)
+        for line in re.findall(r'^import[^\n]*', (ROOT / key).read_text(), re.M):
+            for dep in line.split()[1:]:
+                if dep == 'SafeLearning':
+                    raise RuntimeError('Proof modules must not import the aggregate SafeLearning module.')
+                if dep.startswith('SafeLearning.'):
+                    visit(dep)
+    visit(module)
+    return {key: initial_hashes[key] for key in sorted(seen)}
+
+
+def reusable_check(module, filename):
+    if prior_report is None or module not in prior_checks:
+        return None
+    closure = local_import_closure(module)
+    if any(prior_report['proof_sha256'].get(key) != value for key, value in closure.items()):
+        return None
+    original = prior_checks[module]
+    logfile = (prior_root / original['output_file']).resolve()
+    if (original.get('exit_code') != 0 or
+            original.get('command') != ['lake', 'env', 'leanchecker', '-v', module] or
+            not logfile.is_relative_to(prior_root) or not logfile.is_file() or
+            sha(logfile) != original.get('log_sha256')):
+        raise RuntimeError('Invalid prior actual kernel evidence: ' + module)
+    shutil.copyfile(logfile, OUT / filename)
+    record = dict(original)
+    actual_workdir = (original.get('actual_workdir') or
+                      original.get('reused_from', {}).get('actual_workdir') or
+                      str(prior_root / 'verification/lean'))
+    record.update(output_file=str((OUT / filename).relative_to(ROOT)),
+                  actual_workdir=actual_workdir,
+                  evidence_mode='reused_identical_module_and_transitive_local_imports',
+                  reused_from={
+                      'report': str((OUT / 'reused-verification-original.json').relative_to(ROOT)),
+                      'report_sha256': sha(OUT / 'reused-verification-original.json'),
+                      'actual_workdir': actual_workdir,
+                      'prior_report_workdir': str(prior_root / 'verification/lean'),
+                      'original_check': original,
+                      'verified_local_import_sha256': closure})
+    return record
+
 for module in modules:
     filename = 'kernel-' + module.replace('.', '-') + '.log'
     saved = kernel_progress['checks'].get(module)
@@ -113,12 +229,16 @@ for module in modules:
             raise RuntimeError(f'Invalid saved kernel evidence for {module}')
         checks.append(saved)
         continue
-    record = run(['lake', 'env', 'leanchecker', '-v', module], filename)
-    record.update(module=module, log_sha256=sha(OUT / filename))
+    record = reusable_check(module, filename)
+    if record is None:
+        record = run(['lake', 'env', 'leanchecker', '-v', module], filename)
+        record.update(module=module, log_sha256=sha(OUT / filename),
+                      evidence_mode='fresh_kernel_replay', actual_workdir=str(PROJECT))
     kernel_progress['checks'][module] = record
     kernel_progress_path.write_text(json.dumps(kernel_progress, indent=2) + '\n')
     checks.append(record)
-    print(f'Kernel replay passed: {module}', flush=True)
+    label = 'Kernel evidence reused (identical imports)' if record.get('reused_from') else 'Kernel replay passed'
+    print(f'{label}: {module}', flush=True)
 
 axiom_source = PROJECT / 'AxiomAudit.lean'
 axiom_source.write_text('import SafeLearning\n\n' + '\n'.join(
@@ -142,6 +262,8 @@ final_hashes = {str(p.relative_to(ROOT)): sha(p)
                 for p in proof_files + site_files + project_files}
 if initial_hashes != final_hashes:
     raise RuntimeError('Proof, project or site source changed during verification; rerun after edits finish.')
+if dependency_environment() != dependency_environment_identity:
+    raise RuntimeError('Imported dependency source or compiled artifacts changed during verification.')
 site_hashes = {str(p.relative_to(ROOT)): sha(p) for p in site_files}
 proof_hashes = {str(p.relative_to(ROOT)): sha(p) for p in proof_files}
 report = {
@@ -150,6 +272,7 @@ report = {
     'lean_version': (OUT / 'lean-version.txt').read_text().strip(),
     'mathlib_revision': next(p['rev'] for p in manifest['packages'] if p['name'] == 'mathlib'),
     'dependency_revisions': dependencies,
+    'dependency_environment_identity': dependency_environment_identity,
     'checks': checks,
     'proof_file_count': len(proof_files),
     'theorem_count': len(declarations),
@@ -163,7 +286,8 @@ report = {
         'Kernel replay uses Lean\u0027s own kernel; it is not an independent theorem prover.',
         'Imported Mathlib declarations remain dependency artifacts; replay here targets course proof modules.',
         'This audit verifies the encoded statements. The coverage ledgers record correspondence and limits for the HTML.',
-        'A passing report does not mean every exercise subclaim or cited research theorem is formalized.'
+        'A passing report does not mean every exercise subclaim or cited research theorem is formalized.',
+        'Optional reused kernel checks retain actual prior command/cwd/log provenance and require identical module and transitive local-import source hashes, Lean and dependency pins; build and all-theorem axiom audit are fresh.'
     ]
 }
 (OUT / 'verification.json').write_text(json.dumps(report, indent=2) + '\n')
