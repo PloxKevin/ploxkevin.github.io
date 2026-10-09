@@ -63,6 +63,109 @@ def claim(cid, statement, names=(), status="pending", kind="mathematical_require
             "source_unit_keys": list(units)}
 
 
+general_roesser_review_rel="book/coverage/checks/modules-general-roesser-material-components-source-review-v1.json"
+assert digest(general_roesser_review_rel)=="78cf2d3a4028c397f42a29c8a25fc76d170e3a92ce89f5c214a3be3a536ec141"
+general_roesser_review=json.loads((ROOT/general_roesser_review_rel).read_text())
+assert general_roesser_review["status"]=="approved_precise_components_full_source_unit_partial"
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in general_roesser_review[section].items():assert digest(path)==sha,path
+for record in general_roesser_review["actual_standalone_evidence"]:
+    assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+general_roesser_evidence={"file":general_roesser_review_rel,"sha256":digest(general_roesser_review_rel),"reviewer":general_roesser_review["reviewer"],"status":general_roesser_review["status"]}
+
+whole_toolkit_reviews=[]
+for review_rel,review_sha in [
+    ("book/coverage/checks/modules-quadratic-dual-source-review-v1.json","f4eb5e12751329e2e4a1b7bd5b192464ef5361f1d414cb8aab6248c4c94083b8"),
+    ("book/coverage/checks/modules-scalar-activation-source-review-v1.json","cd4113e48d28b43b92f051319c26ee7db3f01ca0fdea4efc44f5cad93c0d7a2a"),
+    ("book/coverage/checks/modules-scalar-lyapunov-source-review-v1.json","dfb5ccd7e6d2bfde5ce18d49061f4b710cf8966c1d72cd9ffdecbc63a0c04b85")]:
+    assert digest(review_rel)==review_sha
+    reviewed=json.loads((ROOT/review_rel).read_text())
+    assert reviewed["status"]=="approved_complete_source" and not reviewed["missing_clauses"]
+    for section in ["source_sha256","proof_source_sha256","definition_dependency_source_sha256"]:
+        for path,sha in reviewed[section].items():assert digest(path)==sha,path
+    assert reviewed["actual_exit_code"]==0 and digest(reviewed["actual_standalone_evidence"])==reviewed["actual_standalone_evidence_sha256"]
+    assert digest(reviewed["raw_log"])==reviewed["raw_log_sha256"]
+    for row in json.loads((ROOT/reviewed["actual_standalone_evidence"]).read_text())["files"]:
+        assert row["exit_code"]==0 and row["source_unchanged"] and digest(row["file"])==row["sha256"]
+        assert digest(row["log"])==row["log_sha256"]
+    whole_toolkit_reviews.append((reviewed,{"file":review_rel,"sha256":review_sha,"reviewer":reviewed["reviewer"],"status":reviewed["status"]}))
+
+matrix_practice_review_rel="book/coverage/checks/modules-matrix-practice-source-review-v1.json"
+matrix_practice_review_sha="d6211978f9ab8dcfc05a40672c009176951f8dbb1d7b2ef6d9af97150c83bb8f"
+assert digest(matrix_practice_review_rel)==matrix_practice_review_sha
+matrix_practice_review=json.loads((ROOT/matrix_practice_review_rel).read_text())
+assert matrix_practice_review["status"]=="independent_whole_source_reviews_passed" and not matrix_practice_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in matrix_practice_review[section].items():assert digest(path)==sha,path
+for record in matrix_practice_review["actual_standalone_evidence"]:
+    assert record["actual_exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+matrix_practice_review["records"]=[]
+for exercise in matrix_practice_review["exercises"]:
+    assert exercise["review_status"]=="approved_complete_source" and not exercise["missing_clauses"]
+    parts=[]
+    for row in exercise["reviewed_clauses"]:
+        assert row["status"]=="approved" and not row["missing_clauses"]
+        parts.append({**row,"id":exercise["exercise_key"]+"::"+row["id"],"status":"approved_precise_component"})
+    matrix_practice_review["records"].append({**exercise,"components":parts,
+        "lean_declarations":sorted({name for row in parts for name in row["lean_declarations"]}),
+        "per_exercise_reason":"The independent entire question/hint/answer review approves every literal mathematical clause against the actual source matrices, complex characteristic roots, true matrix definiteness and actual Euclidean storage norm; general matrix theorems outside this source remain separately scoped."})
+whole_toolkit_reviews.append((matrix_practice_review,{"file":matrix_practice_review_rel,"sha256":matrix_practice_review_sha,
+    "reviewer":matrix_practice_review["reviewer"],"status":matrix_practice_review["status"]}))
+
+epigraph_review_rel="book/coverage/checks/modules-epigraph-source-review-v1.json"
+epigraph_review_sha="29f1b13a26b9aebe46b030d50c790bb986f9798e48a42bc9953abb6a6a78a420"
+assert digest(epigraph_review_rel)==epigraph_review_sha
+epigraph_review=json.loads((ROOT/epigraph_review_rel).read_text())
+assert epigraph_review["status"]=="independent_whole_source_reviews_passed" and not epigraph_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in epigraph_review[section].items():assert digest(path)==sha,path
+for record in epigraph_review["actual_standalone_evidence"]:
+    assert record["actual_exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+epigraph_review["records"]=[]
+for exercise in epigraph_review["exercises"]:
+    assert exercise["review_status"]=="approved_complete_source" and not exercise["missing_clauses"]
+    parts=[]
+    for row in exercise["reviewed_clauses"]:
+        assert row["status"]=="approved" and not row["missing_clauses"]
+        parts.append({**row,"id":exercise["exercise_key"]+"::"+row["id"],"status":"approved_precise_component"})
+    epigraph_review["records"].append({**exercise,"components":parts,
+        "lean_declarations":sorted({name for row in parts for name in row["lean_declarations"]}),
+        "per_exercise_reason":"The independent entire question/hint/answer review approves every literal mathematical clause against the actual source matrices, complete Schur quadratic identities, genuine positive semidefinite/definite equivalences, singular boundaries and the true affine matrix epigraph; general matrix theorems outside this source remain separately scoped."})
+whole_toolkit_reviews.append((epigraph_review,{"file":epigraph_review_rel,"sha256":epigraph_review_sha,
+    "reviewer":epigraph_review["reviewer"],"status":epigraph_review["status"]}))
+
+# New whole-source reviews retain their independently saved semantic decisions.
+for review_rel,review_sha in [
+    ("book/coverage/checks/modules-policy-dual-source-review-v1.json","5349ec74c928072854c3de6109365cd82eb2297463c3899f5f0a717dd54d07d5"),
+    ("book/coverage/checks/modules-linear-program-source-review-v1.json","f09ca2585962ecd86a90775acad338e4b09cf59eb4b92e09f4772ae4fd4a7c6c")]:
+    assert digest(review_rel)==review_sha
+    reviewed=json.loads((ROOT/review_rel).read_text())
+    assert reviewed["status"]=="approved_complete_source" and not reviewed["missing_clauses"]
+    for section in ["source_sha256","proof_source_sha256"]:
+        for path,sha in reviewed[section].items():assert digest(path)==sha,path
+    for evidence_record in reviewed["actual_standalone_evidence"]:
+        record=evidence_record["raw_execution_record"]
+        assert evidence_record["actual_exit_code"]==record["exit_code"]==0
+        assert record["source_unchanged"] and digest(record["file"])==record["sha256"]
+        assert digest(evidence_record["compiler_manifest"])==evidence_record["compiler_manifest_sha256"]
+        assert digest(record["log"])==record["log_sha256"]
+        assert evidence_record["raw_log"]==record["log"] and evidence_record["raw_log_sha256"]==record["log_sha256"]
+    whole_toolkit_reviews.append((reviewed,{"file":review_rel,"sha256":review_sha,
+        "reviewer":reviewed["reviewer"],"status":reviewed["status"]}))
+
+structural_labels_review_rel="book/coverage/checks/modules-structural-label-material-source-review-v1.json"
+structural_labels_review_sha="fd880b2cbf968c1b1b0e7acd2cc8178a487533b14845c8997e27bae9fb8b69a6"
+assert digest(structural_labels_review_rel)==structural_labels_review_sha
+structural_labels_review=json.loads((ROOT/structural_labels_review_rel).read_text())
+assert structural_labels_review["status"]=="independent_exact_structural_material_units_review_passed" and not structural_labels_review["missing_clauses"]
+assert len(structural_labels_review["material_units"])==67
+for path,sha in structural_labels_review["source_sha256"].items():assert digest(path)==sha,path
+structural_labels_evidence={"file":structural_labels_review_rel,"sha256":structural_labels_review_sha,
+    "reviewer":structural_labels_review["reviewer"],"status":structural_labels_review["status"]}
+
 BN = "SafeLearning.CompleteModulesBook."
 TN = "SafeLearning.CompleteModulesTheory."
 FN = "SafeLearning.CompleteModulesFinite."
@@ -1036,7 +1139,33 @@ for e in INV["exercises"]:
             c.update(remaining_gaps=[],independent_source_review=roesser_evidence)
             if row.get("classification")=="explicitly_scoped_empirical_observation":c["independent_empirical_evidence"]=fixture
             claims.append(c)
+        assert general_roesser_review["exercise_key"]==e["key"] and general_roesser_review["exercise_text_sha256"]==e["text_sha256"]
+        general_names=sorted({name for row in general_roesser_review["reviewed_clauses"] for name in row["lean_declarations"]})
+        general_pending=next(c for c in claims if c["id"]==e["key"]+"::pending-background-clause-1")
+        general_pending.update(status="proved",remaining_gaps=[],lean_declarations=general_names,
+            hypotheses=general_roesser_review["reviewed_clauses"][0]["hypotheses"],
+            correspondence="The supplemental independent review approves an actual arbitrary finite-kernel Roesser realization, both true matrix recursions, correct separate zero-axis boundaries, exact output equal to the finite zero-padded source convolution, and actual3x5 state counts128 versus swapped160. The separate generic all-realizations minimality theorem remains pending.",independent_source_review=general_roesser_evidence)
+        for number,row in enumerate(general_roesser_review["reviewed_clauses"],1):
+            assert row["review_status"]=="approved_precise_component" and not row["missing_clauses"]
+            c=claim(e["key"]+f"::general-roesser-reviewed-component-{number}",row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"],units=[general_roesser_review["source_unit_key"]])
+            c.update(independent_source_review=general_roesser_evidence,scope_limits=general_roesser_review["limits"])
+            claims.append(c)
         complete=False
+    for reviewed,evidence in whole_toolkit_reviews:
+        whole=next((row for row in reviewed["records"] if row["exercise_key"]==e["key"]),None)
+        if whole:
+            assert whole["review_status"]=="approved_complete_source" and not whole["missing_clauses"]
+            assert whole["exercise_text_sha256"]==e["text_sha256"]
+            for c in claims:
+                c.update(status="proved",remaining_gaps=[],lean_declarations=whole["lean_declarations"],
+                    hypotheses=sorted({h for row in whole["components"] for h in row["hypotheses"]}),
+                    correspondence=whole["per_exercise_reason"],independent_source_review=evidence,scope_limits=reviewed["limits"])
+            for row in whole["components"]:
+                assert row["status"]=="approved_precise_component" and not row["missing_clauses"]
+                c=claim(row["id"],row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"])
+                c.update(independent_source_review=evidence,scope_limits=reviewed["limits"])
+                claims.append(c)
+            complete=True
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
                       "label": e["label"], "source_sha256": e["source_sha256"],
                       "source_text_sha256": e["text_sha256"], "claims": claims,
@@ -1065,6 +1194,74 @@ for record in weighted_cascade_review["actual_standalone_evidence"]:
     assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
 weighted_cascade_evidence={"file":weighted_cascade_review_rel,"sha256":digest(weighted_cascade_review_rel),"reviewer":weighted_cascade_review["reviewer"],"status":weighted_cascade_review["status"]}
 
+normalization_review_rel="book/coverage/checks/modules-normalization-material-source-review-v1.json"
+assert digest(normalization_review_rel)=="f902d4ffddc5072672ba944077eb2aabcbb56674344a1e1bca44c2e7af96e991"
+normalization_review=json.loads((ROOT/normalization_review_rel).read_text())
+assert normalization_review["status"]=="independent_source_correspondence_review_passed" and not normalization_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in normalization_review[section].items():assert digest(path)==sha,path
+for record in normalization_review["actual_standalone_evidence"]:
+    assert record["actual_exit_code"]==0 and digest(record["file"])==record["sha256"]
+    assert digest(record["source"])==record["source_sha256"] and digest(record["log"])==record["log_sha256"]
+    evidence=json.loads((ROOT/record["file"]).read_text())
+    assert evidence["status"]=="passed" and evidence["all_sources_still_match"] and all(row["exit_code"]==0 and row["source_unchanged"] for row in evidence["files"])
+for pathkey,shakey in [("saved_reference","saved_reference_sha256"),("independent_attribution_review","independent_attribution_review_sha256")]:
+    assert digest(normalization_review["primary_source_attribution"][pathkey])==normalization_review["primary_source_attribution"][shakey]
+normalization_evidence={"file":normalization_review_rel,"sha256":digest(normalization_review_rel),"reviewer":normalization_review["reviewer"],"status":normalization_review["status"]}
+
+cascade646_review_rel="book/coverage/checks/modules-dynamic-cascade-646-source-review-v2.json"
+assert digest(cascade646_review_rel)=="92260f6054ac7d698b149afbd4c82306541c6c381a77783243611d432f5dfcf8"
+cascade646_review=json.loads((ROOT/cascade646_review_rel).read_text())
+assert cascade646_review["status"]=="independent_whole_source_unit_review_passed_with_formal_mathematical_and_reproduced_empirical_evidence" and not cascade646_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in cascade646_review[section].items():assert digest(path)==sha,path
+for record in cascade646_review["actual_standalone_evidence"]:
+    assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+cascade646_empirical=cascade646_review["empirical_evidence"]
+for key in ["original_actual_execution","independent_actual_rerun","independent_raw_log_copy","independent_result_copy"]:
+    assert digest(cascade646_empirical[key])==cascade646_empirical[key+"_sha256"]
+original_execution=json.loads((ROOT/cascade646_empirical["original_actual_execution"]).read_text())
+assert original_execution["status"]=="passed" and original_execution["actual_exit_code"]==0 and original_execution["script_unchanged"]
+for key in ["script","result","raw_log"]:assert digest(original_execution[key])==original_execution[key+"_sha256"]
+independent_execution=json.loads((ROOT/cascade646_empirical["independent_actual_rerun"]).read_text())
+assert independent_execution["actual_exit_code"]==0 and independent_execution["all_original_source_evidence_bytes_unchanged"]
+assert cascade646_empirical["actual_exit_code"]==0 and cascade646_empirical["pair_count"]==200
+assert digest(cascade646_review["prior_component_source_review"])==cascade646_review["prior_component_source_review_sha256"]
+cascade646_evidence={"file":cascade646_review_rel,"sha256":digest(cascade646_review_rel),"reviewer":cascade646_review["reviewer"],"status":cascade646_review["status"]}
+
+pooling_fc_review_rel="book/coverage/checks/modules-pooling-fc-material-components-source-review-v1.json"
+assert digest(pooling_fc_review_rel)=="8f22af975c3ea30fd323aea2a050f48a7d57e9a990787b2e39e4e58ae657f673"
+pooling_fc_review=json.loads((ROOT/pooling_fc_review_rel).read_text())
+assert pooling_fc_review["status"]=="approved_precise_components_full_source_unit_partial" and pooling_fc_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in pooling_fc_review[section].items():assert digest(path)==sha,path
+for manifest in pooling_fc_review["actual_standalone_evidence"]:
+    assert manifest["status"]=="passed" and manifest["all_sources_still_match"]
+    assert digest(manifest["compiler_manifest"])==manifest["compiler_manifest_sha256"]
+    for record in manifest["files"]:
+        assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+        assert digest(record["log"])==record["log_sha256"]
+pooling_fc_evidence={"file":pooling_fc_review_rel,"sha256":digest(pooling_fc_review_rel),"reviewer":pooling_fc_review["reviewer"],"status":pooling_fc_review["status"]}
+
+sdp_material_review_rel="book/coverage/checks/modules-sdp-cone-duality-material-source-review-v1.json"
+sdp_material_review_sha="728ad01d6bf0f32b9f110343f9a2c11c95cf9c7b8dcf07cf3c090b45de9202f4"
+assert digest(sdp_material_review_rel)==sdp_material_review_sha
+sdp_material_review=json.loads((ROOT/sdp_material_review_rel).read_text())
+assert sdp_material_review["status"]=="approved_precise_components_seven_whole_source_units_two_partial"
+assert len(sdp_material_review["approved_complete_source_unit_keys"])==7
+assert len(sdp_material_review["pending_source_unit_keys"])==2
+for section in ["source_sha256","proof_source_sha256"]:
+    for path,sha in sdp_material_review[section].items():assert digest(path)==sha,path
+for evidence_record in sdp_material_review["actual_standalone_evidence"]:
+    record=evidence_record["raw_execution_record"]
+    assert evidence_record["actual_exit_code"]==record["exit_code"]==0
+    assert record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(evidence_record["compiler_manifest"])==evidence_record["compiler_manifest_sha256"]
+    assert digest(record["log"])==record["log_sha256"]
+sdp_material_evidence={"file":sdp_material_review_rel,"sha256":sdp_material_review_sha,
+    "reviewer":sdp_material_review["reviewer"],"status":sdp_material_review["status"]}
+
 material = []
 LOGDET_REVIEW_UNIT_COMPONENTS = {
     "lipsdp.html::node-1312": [1,5,12],
@@ -1091,6 +1288,38 @@ for u in INV["material_source_units"]:
         continue
     c=claim(u["key"]+"::claim-review", u["source_text"],
             kind="mathematical_source_unit_needs_granular_review", units=[u["key"]])
+    for reviewed,evidence in whole_toolkit_reviews:
+        unit=next((row for row in reviewed["material_units"] if row["source_unit_key"]==u["key"]),None)
+        if unit:
+            assert unit["unit_text_sha256"]==u["text_sha256"] and unit["source_sha256"]==u["source_sha256"]
+            assert not unit["missing_clauses"] and unit["material_status"] in ["proved","not_formalizable","not_a_formal_claim"]
+            c.update(status="proved" if unit["material_status"]=="proved" else "not_a_formal_claim",kind=unit["semantic_kind"],remaining_gaps=[],
+                lean_declarations=unit["lean_declarations"],correspondence=unit["per_unit_reason"],
+                hypotheses=["The exact actual scalar source model and hypotheses stated by the individually reviewed declarations."],
+                independent_source_review=evidence,scope_limits=reviewed["limits"])
+    sdp_unit=next((row for row in sdp_material_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if sdp_unit:
+        assert sdp_unit["unit_text_sha256"]==u["text_sha256"] and sdp_unit["source_sha256"]==u["source_sha256"]
+        if sdp_unit["material_status"]=="proved":
+            assert sdp_unit["review_status"]=="approved_complete_source" and not sdp_unit["missing_clauses"]
+            c.update(status="proved",kind=sdp_unit["semantic_kind"],remaining_gaps=[],
+                lean_declarations=sdp_unit["lean_declarations"],hypotheses=sdp_unit["hypotheses"],
+                correspondence=sdp_unit["per_unit_reason"],independent_source_review=sdp_material_evidence,
+                scope_limits=sdp_material_review["limits"])
+        else:
+            assert sdp_unit["material_status"]=="pending" and sdp_unit["missing_clauses"]
+            c.update(status="pending",kind=sdp_unit["semantic_kind"],lean_declarations=[],
+                remaining_gaps=[row["source_clause"]+" "+row["reason"] for row in sdp_unit["missing_clauses"]],
+                hypotheses=sdp_unit["hypotheses"],correspondence=sdp_unit["per_unit_reason"],
+                independent_source_review=sdp_material_evidence,scope_limits=sdp_material_review["limits"])
+            for row in sdp_material_review["reviewed_clauses"]:
+                if row["id"] not in sdp_unit["approved_component_ids"]:continue
+                assert row["status"]=="approved_precise_component" and not row["missing_clauses"]
+                sc=claim(u["key"]+"::independent-sdp-component::"+row["id"],row["source_clause"],
+                    row["lean_declarations"],"proved",hypotheses=row["hypotheses"],
+                    correspondence=row["per_clause_reason"],units=[u["key"]])
+                sc.update(independent_source_review=sdp_material_evidence,scope_limits=sdp_material_review["limits"])
+                material.append(sc)
     if u["key"] in LOGDET_REVIEW_UNIT_COMPONENTS and source_review["status"] == "approved_complete_source":
         component_indices = LOGDET_REVIEW_UNIT_COMPONENTS[u["key"]]
         components = [source_review["components"][i-1] for i in component_indices]
@@ -1210,10 +1439,39 @@ for u in INV["material_source_units"]:
         assert roesser_unit["unit_text_sha256"]==u["text_sha256"] and roesser_unit["source_sha256"]==u["source_sha256"]
         c.update(status="not_a_formal_claim" if roesser_unit["material_status"]=="not_formalizable" else roesser_unit["material_status"],kind=roesser_unit["semantic_kind"],remaining_gaps=[gap["reason"] if isinstance(gap,dict) else gap for gap in roesser_unit["missing_clauses"]],lean_declarations=roesser_unit["lean_declarations"],hypotheses=["Actual finite dynamic model, actual matrix certificates, true slope-restricted biased activations and actual trajectory recursions/equal initial states for the zero-initial result. Actual Roesser statements use the separate directional boundaries and3x3 kernels."],correspondence=roesser_unit["per_unit_reason"],independent_source_review=roesser_evidence,scope_limits=roesser_review["limits"])
         if u["key"]=="lipsdp.html::node-1339":c["independent_empirical_evidence"]=fixture
+    if u["key"]==general_roesser_review["source_unit_key"]:
+        unit=general_roesser_review["material_units"][0]
+        assert unit["unit_text_sha256"]==u["text_sha256"] and unit["source_sha256"]==u["source_sha256"]
+        c.update(status="pending",kind=unit["semantic_kind"],remaining_gaps=[gap["reason"] for gap in unit["missing_clauses"]],
+            lean_declarations=sorted(set(c["lean_declarations"]+unit["lean_declarations"])),hypotheses=unit["hypotheses"],
+            correspondence=unit["per_unit_reason"],independent_source_review=general_roesser_evidence,
+            previous_independent_source_review=roesser_evidence,scope_limits=general_roesser_review["limits"])
+        for number,row in enumerate(general_roesser_review["reviewed_clauses"],1):
+            extra=claim(u["key"]+f"::general-roesser-component-{number}",row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"],units=[u["key"]])
+            extra.update(independent_source_review=general_roesser_evidence,scope_limits=general_roesser_review["limits"])
+            material.append(extra)
     weighted_cascade_unit=next((row for row in weighted_cascade_review["material_units"] if row["source_unit_key"]==u["key"]),None)
     if weighted_cascade_unit:
         assert weighted_cascade_unit["unit_text_sha256"]==u["text_sha256"] and weighted_cascade_unit["source_sha256"]==u["source_sha256"]
         c.update(status=weighted_cascade_unit["material_status"],kind=weighted_cascade_unit["semantic_kind"],remaining_gaps=weighted_cascade_unit["missing_clauses"],lean_declarations=weighted_cascade_unit["lean_declarations"],hypotheses=weighted_cascade_unit["hypotheses"],correspondence=weighted_cascade_unit["per_unit_reason"],independent_source_review=weighted_cascade_evidence,scope_limits=weighted_cascade_review["limits"])
+    normalization_unit=next((row for row in normalization_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if normalization_unit:
+        assert normalization_unit["unit_text_sha256"]==u["text_sha256"] and normalization_unit["source_sha256"]==u["source_sha256"]
+        assert not normalization_unit["missing_clauses"]
+        c.update(status="proved",kind=normalization_unit["semantic_kind"],remaining_gaps=[],lean_declarations=normalization_unit["lean_declarations"],hypotheses=normalization_unit["hypotheses"],correspondence=normalization_unit["per_unit_reason"],independent_source_review=normalization_evidence,scope_limits=normalization_review["limits"],reviewed_mathematical_clauses=normalization_review["reviewed_clauses"],verified_primary_source_attribution=normalization_review["primary_source_attribution"])
+    cascade646_unit=next((row for row in cascade646_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if cascade646_unit:
+        assert cascade646_unit["unit_text_sha256"]==u["text_sha256"] and cascade646_unit["source_sha256"]==u["source_sha256"]
+        assert not cascade646_unit["missing_clauses"]
+        c.update(status="proved",kind=cascade646_unit["semantic_kind"],remaining_gaps=[],lean_declarations=cascade646_unit["lean_declarations"],hypotheses=cascade646_unit["hypotheses"],correspondence=cascade646_unit["per_unit_reason"],independent_source_review=cascade646_evidence,scope_limits=cascade646_review["limits"],independent_empirical_evidence=cascade646_empirical)
+    pooling_fc_unit=next((row for row in pooling_fc_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if pooling_fc_unit:
+        assert pooling_fc_unit["unit_text_sha256"]==u["text_sha256"] and pooling_fc_unit["source_sha256"]==u["source_sha256"]
+        c.update(status="pending",kind=pooling_fc_unit["semantic_kind"],remaining_gaps=[row["reason"] for row in pooling_fc_unit["missing_clauses"]],lean_declarations=pooling_fc_unit["lean_declarations"],hypotheses=pooling_fc_unit["hypotheses"],correspondence=pooling_fc_unit["per_unit_reason"],independent_source_review=pooling_fc_evidence,scope_limits=pooling_fc_review["limits"],precisely_reviewed_components=pooling_fc_review["reviewed_clauses"])
+        for row in pooling_fc_review["reviewed_clauses"]:
+            component=claim(u["key"]+"::independently-approved-component-"+row["id"],row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"],units=[u["key"]])
+            component.update(independent_source_review=pooling_fc_evidence,scope_limits=pooling_fc_review["limits"])
+            material.append(component)
     generic_margin_unit=next((row for row in generic_margin_review["material_units"] if row["source_unit_key"]==u["key"]),None)
     if generic_margin_unit:
         assert generic_margin_unit["unit_text_sha256"]==u["text_sha256"] and generic_margin_unit["source_sha256"]==u["source_sha256"]
@@ -1280,6 +1538,14 @@ for u in INV["material_source_units"]:
                  lean_declarations=[GN+"information_gain_determinant",GDN+"actual_first_design_information",NGN+"log_fifteen_fourths_enclosure",NGN+"information_gain_printed_rounding"],
                  hypotheses=["The displayed unit-noise two-point Gram matrix and the given natural-log information formula."],
                  correspondence="The determinant is exactly15/4, the realized information is one-half the natural logarithm of that number, and the printed six-decimal number has error at most half its final decimal unit by analytic exponential-series enclosure.",remaining_gaps=[])
+    structural_unit=next((row for row in structural_labels_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if structural_unit:
+        assert structural_unit["unit_text_sha256"]==u["text_sha256"] and structural_unit["source_sha256"]==u["source_sha256"]
+        assert c["status"]=="pending" and structural_unit["material_status"]=="not_a_formal_claim"
+        assert not structural_unit["lean_declarations"] and not structural_unit["missing_clauses"]
+        c.update(status="not_a_formal_claim",kind=structural_unit["semantic_kind"],remaining_gaps=[],
+            lean_declarations=[],correspondence=structural_unit["per_unit_reason"],independent_source_review=structural_labels_evidence,
+            scope_limits=structural_labels_review["limits"])
     material.append(c)
 
 # Additional proved material claims are tied to exact current units by phrase.

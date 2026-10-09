@@ -72,8 +72,11 @@ files += [str(p.relative_to(ROOT)) for p in (ROOT / 'SafeLearning').iterdir()
 files += ['verification/lean/' + name for name in
           ['lean-toolchain', 'lakefile.toml', 'lake-manifest.json', 'verify.py']]
 files += [str(p.relative_to(ROOT)) for p in (ROOT / 'book/coverage').rglob('*')
-          if p.is_file() and p.suffix in {'.py', '.json', '.md', '.log'}
+          if p.is_file() and p.suffix in {'.py', '.json', '.md', '.log', '.html'}
           and '__pycache__' not in p.parts]
+for metadata in (ROOT / 'book/coverage').rglob('*.json'):
+    files += re.findall(r'"(reports/full-coverage/inventory[^"\n]+\.json)"',
+                        metadata.read_text())
 files += ['book/inventory_claims.py', 'book/validate.py']
 files = sorted(set(files))
 initial_hashes = {name: sha(ROOT / name) for name in files}

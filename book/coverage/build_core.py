@@ -21,7 +21,7 @@ args = parser.parse_args()
 def reviewed_path(name):
     original = ROOT/'book/coverage/checks'/name
     selected = original
-    for correction in (12, 14, 15):
+    for correction in (12, 14, 15, 20, 22, 24, 25):
         rebased = original.with_name(original.stem+f'-correction{correction}-rebase.json')
         if rebased.exists():
             selected = rebased
@@ -298,7 +298,7 @@ for number, names, statement in barrier_groups:
                            ['Independent atomwise review of every question and answer clause remains.'])
     add(key, names, statement, ['The exact real-valued, actuator or finite-state model in the source. Continuous ODE statements assume the encoded differentiability/continuity on the actual interval; predictive statements require the predicted first successor to match the realized one.'], gaps)
 
-lyapunov_review_path = ROOT/'book/coverage/checks/compact-lyapunov-source-review.json'
+lyapunov_review_path = reviewed_path('compact-lyapunov-source-review.json')
 lyapunov_full = False
 if lyapunov_review_path.exists():
     lr = json.loads(lyapunov_review_path.read_text())
@@ -464,8 +464,10 @@ for review_name in ['alternating-cmdp-source-review-v1.json',
                     'core-guide-material-source-review-v1.json',
                     'lyapunov-interpolation-source-review-v1.json',
                     'policy-metric-price-b1-source-review-v1.json',
-                    'policy-metric-price-b2-source-review-v1.json']:
-    path = ROOT/'book/coverage/checks'/review_name
+                    'policy-metric-price-b2-source-review-v1.json',
+                    'dual-pi-exercise84-whole-source-review-v1.json',
+                    'policy-cdt-exercise96-whole-source-review-v1.json']:
+    path = reviewed_path(review_name)
     if not path.exists():
         continue
     review = json.loads(path.read_text())
@@ -481,8 +483,8 @@ for review_name in ['alternating-cmdp-source-review-v1.json',
         if sha(name) != expected:
             raise ValueError('Changed directly reviewed metadata evidence: '+name)
     for evidence in review['actual_standalone_evidence']:
-        evidence_file = evidence.get('file', evidence.get('compiler_manifest'))
-        evidence_sha = evidence.get('sha256', evidence.get('compiler_manifest_sha256'))
+        evidence_file = evidence.get('compiler_manifest', evidence.get('file'))
+        evidence_sha = evidence.get('compiler_manifest_sha256', evidence.get('sha256'))
         if (evidence['actual_exit_code'] != 0 or sha(evidence_file) != evidence_sha
                 or sha(evidence['log']) != evidence['log_sha256']):
             raise ValueError('Changed direct review compiler evidence: '+review_name)
@@ -530,11 +532,20 @@ for review_name in ['alternating-cmdp-source-review-v1.json',
         DIRECT_MATERIAL[key] = dict(record=record, path=str(path.relative_to(ROOT)),
                                    review_sha256=sha(str(path.relative_to(ROOT))))
 
-component_path = ROOT/'book/coverage/checks/barrier-ac-issf-component-source-review-v1.json'
-if component_path.exists():
+for component_name in [('barrier-ac-issf-component-source-review-v6.json'
+                        if (ROOT/'book/coverage/checks/barrier-ac-issf-component-source-review-v6.json').exists()
+                        else 'barrier-ac-issf-component-source-review-v5.json'),
+                       'lyapunov-validation-11-3-component-source-review-v3.json']:
+    component_path = ROOT/'book/coverage/checks'/component_name
+    if not component_path.exists():
+        continue
     review = json.loads(component_path.read_text())
-    if review['status'] != 'independent_precise_component_source_review_passed_whole_exercises_partial':
-        raise ValueError('Unapproved AC/ISSf component source review.')
+    if review['status'] not in ('independent_precise_component_source_review_passed_whole_exercises_partial',
+                                'independent_precise_component_source_review_passed_whole_11_3_partial',
+                                'independent_whole_10_4_source_review_passed_10_1_components_only',
+                                'independent_whole_10_4_and_linear_10_1_material_review_passed_other_10_1_components_partial',
+                                'independent_whole_10_4_and_10_1_linear_nonlinear_units_passed_discontinuous_components_partial'):
+        raise ValueError('Unapproved precise component source review: '+component_name)
     for name, expected in review['source_sha256'].items():
         if INV['source_sha256'][name] != expected:
             raise ValueError('Changed AC/ISSf component source: '+name)
@@ -554,17 +565,30 @@ if component_path.exists():
                       'exit_code','source_unchanged','command','actual_workdir','log','log_sha256'):
             if actual[field] != evidence[field]:
                 raise ValueError('AC/ISSf compiler execution mismatch: '+field)
-    for record in review['records']:
+    if 'records' in review:
+        records = review['records']
+        all_components = review['components']
+    else:
+        records = [dict(exercise_key=review['exercise_key'],
+                        exercise_text_sha256=review['exercise_text_sha256'],
+                        missing_clauses=review['missing_clauses'],
+                        approved_component_ids=[c['id'] for c in review['components']])]
+        all_components = [dict(c,exercise_key=review['exercise_key'],
+                               per_clause_reason=c['reason']) for c in review['components']]
+    for record in records:
         key = record['exercise_key']
         original = next(e for e in INV['exercises'] if e['key']==key)
-        components = [c for c in review['components'] if c['exercise_key']==key]
+        components = [c for c in all_components if c['exercise_key']==key]
+        whole_approved = (record.get('review_status') == 'approved_complete_source'
+                          and not record['missing_clauses']
+                          and bool(record.get('per_exercise_reason')))
         if (original['text_sha256'] != record['exercise_text_sha256']
-                or not record['missing_clauses'] or not components
+                or (not record['missing_clauses'] and not whole_approved) or not components
                 or set(record['approved_component_ids']) != {c['id'] for c in components}
                 or any(c['status'] != 'approved_precise_component'
                        or not c['lean_declarations'] or not c['per_clause_reason'] for c in components)):
             raise ValueError('Stale or incomplete AC/ISSf component correspondence: '+key)
-        old = MAP[key]
+        old = MAP.get(key, dict(lean_declarations=[],hypotheses=[],statement_in_prose=''))
         names = list(dict.fromkeys(old['lean_declarations'] +
             [n for c in components for n in c['lean_declarations']]))
         hypotheses = list(dict.fromkeys(old['hypotheses'] +
@@ -575,6 +599,20 @@ if component_path.exists():
             sha256=sha(str(component_path.relative_to(ROOT))),
             component_ids=record['approved_component_ids'],
             nonformal_scope_clauses=review['nonformal_clauses'])
+    units = {u['key']:u for u in INV['material_source_units']}
+    for record in review['material_units']:
+        if record['material_status'] == 'pending':
+            continue
+        key = record['source_unit_key']
+        unit = units[key]
+        if (record['review_status'] != 'approved_complete_source'
+                or key in DIRECT_MATERIAL or unit['source_sha256'] != record['source_sha256']
+                or unit['text_sha256'] != record['unit_text_sha256']
+                or record['missing_clauses'] or not record['per_unit_reason']
+                or record['material_status'] != 'proved' or not record['lean_declarations']):
+            raise ValueError('Stale or incomplete component-reviewed whole material unit: '+key)
+        DIRECT_MATERIAL[key] = dict(record=record,path=str(component_path.relative_to(ROOT)),
+                                   review_sha256=sha(str(component_path.relative_to(ROOT))))
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
@@ -652,7 +690,7 @@ MATERIAL_REVIEW = {
 # These approvals come from an independent, per-paragraph semantic review.
 # DOM containment proposes candidates; it does not establish correspondence.
 overlap_path = ROOT/'book/coverage/core-material-overlap-review.json'
-for checkpoint in (8, 9, 10, 11, 12, 13, 14, 15):
+for checkpoint in (8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
     candidate_review = ROOT/f'book/coverage/core-material-overlap-review-{checkpoint}.json'
     if candidate_review.exists():
         overlap_path = candidate_review
@@ -757,7 +795,21 @@ for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
              'CompleteLyapunovInterpolation','CompleteLyapunovSmallStep',
              'CompleteLyapunovBoundComparison','CompleteLyapunovNormBridges',
              'CompletePolicyMetricPrices','CompletePolicyLagrangianPrices',
-             'CompleteBarrierAbsolutelyContinuous','CompleteBarrierISSf']:
+             'CompleteBarrierAbsolutelyContinuous','CompleteBarrierISSf',
+             'CompleteBarrierFiniteEscape','CompleteBarrierAEComparison','CompleteBarrierLocalISSf',
+             'CompleteBarrierNonlinearComparison','CompleteBarrierVectorChainRule',
+             'CompleteBarrierDiscontinuousSign',
+             'CompleteBarrierControlAffine','CompleteBarrierNonlinearDomainComparison',
+             'CompleteBarrierNonuniqueSolutions','CompleteBarrierFilippovHalfspaces',
+             'CompleteBarrierFilippovC1','CompleteBarrierDomainControl',
+             'CompleteBarrierDegenerateControl','CompleteBarrierDegenerateCBF',
+             'CompleteBarrierSignFilippov',
+             'CompleteDualPILinearModel','CompleteDualPIJury','CompleteDualPINumerics',
+             'CompleteDualPIOscillation','CompleteDualPIRecurrenceDecay','CompleteDualPIStability',
+             'CompleteDualPIAmplitude','CompleteDualPIHalfEnvelope',
+             'CompletePolicyCDTTokens','CompletePolicyCDTDomain',
+             'CompleteLyapunovValidationNumbers','CompleteLyapunovValidationConfidence',
+             'CompleteLyapunovAdaptiveValidation','CompleteLyapunovTrajectoryValidation']:
     source = f'verification/lean/SafeLearning/{name}.lean'
     proof_files[source] = sha(source)
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',

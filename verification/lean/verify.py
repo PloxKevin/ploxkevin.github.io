@@ -204,8 +204,20 @@ def reusable_check(module, filename):
             sha(logfile) != original.get('log_sha256')):
         raise RuntimeError('Invalid prior actual kernel evidence: ' + module)
     shutil.copyfile(logfile, OUT / filename)
-    record = dict(original)
-    actual_workdir = (original.get('actual_workdir') or
+    # The complete prior report is copied verbatim above. Keep the execution
+    # record here flat, instead of repeatedly embedding its full reuse ancestry.
+    execution = original
+    while execution.get('reused_from', {}).get('original_check'):
+        ancestor = execution['reused_from']['original_check']
+        if (ancestor.get('exit_code') != 0 or
+                ancestor.get('command') != original['command'] or
+                ancestor.get('log_sha256') != original['log_sha256'] or
+                ancestor.get('elapsed_seconds') != original.get('elapsed_seconds')):
+            raise RuntimeError('Inconsistent prior execution ancestry: ' + module)
+        execution = ancestor
+    record = dict(execution)
+    actual_workdir = (execution.get('actual_workdir') or
+                      original.get('actual_workdir') or
                       original.get('reused_from', {}).get('actual_workdir') or
                       str(prior_root / 'verification/lean'))
     record.update(output_file=str((OUT / filename).relative_to(ROOT)),
@@ -216,7 +228,8 @@ def reusable_check(module, filename):
                       'report_sha256': sha(OUT / 'reused-verification-original.json'),
                       'actual_workdir': actual_workdir,
                       'prior_report_workdir': str(prior_root / 'verification/lean'),
-                      'original_check': original,
+                      'original_check': execution,
+                      'prior_check_evidence_mode': original.get('evidence_mode'),
                       'verified_local_import_sha256': closure})
     return record
 

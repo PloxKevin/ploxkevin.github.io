@@ -1247,8 +1247,8 @@ REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107']['pending'] = [
 import json as _review_json
 import hashlib as _review_hashlib
 from pathlib import Path as _ReviewPath
-_labels_path = _ReviewPath('book/coverage/checks/foundations-material-label-source-review-v1.json')
-assert _review_hashlib.sha256(_labels_path.read_bytes()).hexdigest() == 'e9dd322efefcfe5067d91b6280715d517e1f2feca5a31cafd6c103192c5d5874'
+_labels_path = _ReviewPath('book/coverage/checks/foundations-material-label-source-review-v1-correction23-rebase.json')
+assert _review_hashlib.sha256(_labels_path.read_bytes()).hexdigest() == '6283841c6e20ac690b92b71334253944ba883ad03db0e4ead96ca861cc8f46cd'
 _label_review = _review_json.loads(_labels_path.read_text())
 _live_label_units = {u['key']: u for u in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['material_source_units']}
 for _label_unit in _label_review['material_units']:
@@ -1257,3 +1257,254 @@ for _label_unit in _label_review['material_units']:
  assert _live_label['text_sha256'] == _label_unit['unit_text_sha256']
  assert _live_label['source_sha256'] == _label_unit['source_sha256']
  REVIEWED_NONFORMAL_MATERIAL[_label_unit['source_unit_key']] = _label_unit['per_unit_reason'] + ' Exact semantic record: ' + str(_labels_path) + '.'
+
+
+# Working checkpoint14: exact independent whole-source review of original0.7c.
+# This finite source-bound loader preserves per-clause and per-unit scopes.
+_regret_path = _ReviewPath('book/coverage/checks/foundations-regret-0-7c-source-review-v1-correction23-rebase.json')
+assert _review_hashlib.sha256(_regret_path.read_bytes()).hexdigest() == '506dc8db9908f327c5851fa481970c88a3224e345f92b76239c274bd1fa64825'
+_regret_review = _review_json.loads(_regret_path.read_text())
+assert _regret_review['status'] == 'independent_whole_source_review_passed' and not _regret_review['missing_clauses']
+_live_regret_ex = next(e for e in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['exercises'] if e['key'] == _regret_review['exercise_key'])
+assert _live_regret_ex['text_sha256'] == _regret_review['exercise_text_sha256']
+for _regret_file,_regret_hash in _regret_review['proof_source_sha256'].items():
+ assert _review_hashlib.sha256(_ReviewPath(_regret_file).read_bytes()).hexdigest() == _regret_hash
+for _regret_evidence in _regret_review['actual_standalone_evidence']:
+ assert _regret_evidence['exit_code'] == 0 and _regret_evidence['unchanged']
+ assert _review_hashlib.sha256(_ReviewPath(_regret_evidence['compiler_manifest']).read_bytes()).hexdigest() == _regret_evidence['compiler_manifest_sha256']
+ assert _review_hashlib.sha256(_ReviewPath(_regret_evidence['log']).read_bytes()).hexdigest() == _regret_evidence['log_sha256']
+COMPLETE_EXERCISES['mb-ex-asymptotics-3'] = [dict(
+ statement_in_prose=c['source_clause'],lean_declarations=c['lean_declarations'],
+ hypotheses=c['hypotheses'],correspondence=c['reason']+' Exact independent whole review: '+str(_regret_path)+'.')
+ for c in _regret_review['components'] if c['status']=='approved']
+for _regret_unit in _regret_review['material_units']:
+ _regret_live = _live_label_units[_regret_unit['source_unit_key']]
+ assert _regret_live['text_sha256']==_regret_unit['unit_text_sha256'] and _regret_live['source_sha256']==_regret_unit['source_sha256']
+ assert not _regret_unit['missing_clauses']
+ if _regret_unit['material_status']=='proved':
+  REVIEWED_COMPLETE_MATERIAL[_regret_unit['source_unit_key']] = [dict(
+   statement_in_prose=_regret_unit['source_text'],lean_declarations=_regret_unit['lean_declarations'],
+   hypotheses='The exact cumulative-regret source inequality for natural budgets at least2; nonnegative sparse trial counterexample; natural logarithms and the source finite budget where stated.',
+   correspondence=_regret_unit['per_unit_reason']+' Exact independent whole review: '+str(_regret_path)+'.')]
+ else:
+  assert _regret_unit['material_status']=='not_formalizable'
+  REVIEWED_NONFORMAL_MATERIAL[_regret_unit['source_unit_key']] = _regret_unit['per_unit_reason']+' Exact independent whole review: '+str(_regret_path)+'.'
+
+# Working14: actual finite backup table and continuous nested interval game.
+_backup_path = _ReviewPath('book/coverage/checks/foundations-backup-games-b8b-b8c-source-review-v1.json')
+assert _review_hashlib.sha256(_backup_path.read_bytes()).hexdigest() == 'e3f5fb440c8b2a137eb9223a5e561a41958f0a17dc03c773052ada62d302204f'
+_backup_review = _review_json.loads(_backup_path.read_text())
+assert _backup_review['status']=='independent_whole_source_reviews_passed' and not _backup_review['missing_clauses']
+for _backup_file,_backup_hash in _backup_review['proof_source_sha256'].items():
+ assert _review_hashlib.sha256(_ReviewPath(_backup_file).read_bytes()).hexdigest()==_backup_hash
+for _backup_evidence in _backup_review['actual_standalone_evidence']:
+ assert _backup_evidence['exit_code']==0 and _backup_evidence['unchanged']
+ assert _review_hashlib.sha256(_ReviewPath(_backup_evidence['compiler_manifest']).read_bytes()).hexdigest()==_backup_evidence['compiler_manifest_sha256']
+ assert _review_hashlib.sha256(_ReviewPath(_backup_evidence['log']).read_bytes()).hexdigest()==_backup_evidence['log_sha256']
+_live_backup_exercises = {e['key']:e for e in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['exercises']}
+for _backup_exercise in _backup_review['exercises']:
+ assert _backup_exercise['review_status']=='approved_complete_source' and not _backup_exercise['missing_clauses']
+ assert _live_backup_exercises[_backup_exercise['exercise_key']]['text_sha256']==_backup_exercise['exercise_text_sha256']
+ COMPLETE_EXERCISES[_backup_exercise['exercise_key'].split('#')[1]] = [dict(
+  statement_in_prose=c['source_clause'],lean_declarations=c['lean_declarations'],hypotheses=c['hypotheses'],
+  correspondence=c['reason']+' Exact independent whole review: '+str(_backup_path)+'.')
+  for c in _backup_exercise['reviewed_clauses'] if c['status']=='approved']
+for _backup_unit in _backup_review['material_units']:
+ _backup_live = _live_label_units[_backup_unit['source_unit_key']]
+ assert _backup_live['text_sha256']==_backup_unit['unit_text_sha256'] and _backup_live['source_sha256']==_backup_unit['source_sha256']
+ assert not _backup_unit['missing_clauses']
+ if _backup_unit['material_status']=='proved':
+  REVIEWED_COMPLETE_MATERIAL[_backup_unit['source_unit_key']] = [dict(
+   statement_in_prose=_backup_unit['source_text'],lean_declarations=_backup_unit['lean_declarations'],
+   hypotheses='The exact source three-controller/two-constraint real margin table; or the actual real interval game X=[0,2],Y=[-3,0],L=(x-1)^2-(y+2)^2, according to this exact unit.',
+   correspondence=_backup_unit['per_unit_reason']+' Exact independent whole review: '+str(_backup_path)+'.')]
+ else:
+  assert _backup_unit['material_status']=='not_formalizable'
+  REVIEWED_NONFORMAL_MATERIAL[_backup_unit['source_unit_key']] = _backup_unit['per_unit_reason']+' Exact independent whole review: '+str(_backup_path)+'.'
+
+# Working14: independently reviewed genuine finite induction, triangular exchange and random horizon.
+_discount_path = _ReviewPath('book/coverage/checks/foundations-discount-horizons-0-3-source-review-v1-correction23-rebase.json')
+assert _review_hashlib.sha256(_discount_path.read_bytes()).hexdigest() == 'baf989daec673fac49cbc4bc4fe2cf28ab640a1d4777604e257e251420e9d08c'
+_discount_review = _review_json.loads(_discount_path.read_text())
+assert _discount_review['status']=='independent_whole_source_review_passed' and all(not e['missing_clauses'] for e in _discount_review['exercises'])
+for _discount_file,_discount_hash in _discount_review['proof_source_sha256'].items():
+ assert _review_hashlib.sha256(_ReviewPath(_discount_file).read_bytes()).hexdigest()==_discount_hash
+for _discount_evidence in _discount_review['actual_standalone_evidence']:
+ assert _discount_evidence['exit_code']==0 and _discount_evidence['unchanged']
+ assert _review_hashlib.sha256(_ReviewPath(_discount_evidence['compiler_manifest']).read_bytes()).hexdigest()==_discount_evidence['compiler_manifest_sha256']
+ assert _review_hashlib.sha256(_ReviewPath(_discount_evidence['log']).read_bytes()).hexdigest()==_discount_evidence['log_sha256']
+_live_discount_exercises = {e['key']:e for e in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['exercises']}
+for _discount_exercise in _discount_review['exercises']:
+ assert _discount_exercise['review_status']=='approved_complete_source' and not _discount_exercise['missing_clauses']
+ assert _live_discount_exercises[_discount_exercise['exercise_key']]['text_sha256']==_discount_exercise['exercise_text_sha256']
+ COMPLETE_EXERCISES[_discount_exercise['exercise_key']] = [dict(
+  statement_in_prose=c['source_clause'],lean_declarations=c['lean_declarations'],hypotheses=c['hypotheses'],
+  correspondence=c['reason']+' Exact independent whole review: '+str(_discount_path)+'.')
+  for c in _discount_exercise['reviewed_clauses'] if c['status']=='approved']
+for _discount_unit in _discount_review['material_units']:
+ _discount_live = _live_label_units[_discount_unit['source_unit_key']]
+ assert _discount_live['text_sha256']==_discount_unit['unit_text_sha256'] and _discount_live['source_sha256']==_discount_unit['source_sha256']
+ assert not _discount_unit['missing_clauses']
+ if _discount_unit['material_status']=='proved':
+  REVIEWED_COMPLETE_MATERIAL[_discount_unit['source_unit_key']] = [dict(
+   statement_in_prose=_discount_live['source_text'],lean_declarations=_discount_unit['lean_declarations'],
+   hypotheses='Actual realq!=1 for finite geometric induction, 0<=q<1 for genuine infinite nonnegative sums and the actual horizon law; exact sourceq=.9 for the numeric values.',
+   correspondence=_discount_unit['per_unit_reason']+' Exact independent whole review: '+str(_discount_path)+'.')]
+ else:
+  assert _discount_unit['material_status']=='not_formalizable'
+  REVIEWED_NONFORMAL_MATERIAL[_discount_unit['source_unit_key']] = _discount_unit['per_unit_reason']+' Exact independent whole review: '+str(_discount_path)+'.'
+
+# Working14: exact whole geometric-series lesson and its two overlapping units.
+_lesson_series_path = _ReviewPath('book/coverage/checks/foundations-lesson-geometric-material-source-review-v1-correction23-rebase.json')
+assert _review_hashlib.sha256(_lesson_series_path.read_bytes()).hexdigest() == '2341319fd9025606651a453111d585f937c36f718d709929db85d014cbd45ab1'
+_lesson_series_review = _review_json.loads(_lesson_series_path.read_text())
+assert _lesson_series_review['status']=='independent_source_correspondence_review_passed' and not _lesson_series_review['missing_clauses']
+for _lesson_series_file,_lesson_series_hash in _lesson_series_review['proof_source_sha256'].items():
+ assert _review_hashlib.sha256(_ReviewPath(_lesson_series_file).read_bytes()).hexdigest()==_lesson_series_hash
+for _lesson_series_evidence in _lesson_series_review['actual_standalone_evidence']:
+ assert _lesson_series_evidence['exit_code']==0 and _lesson_series_evidence['unchanged']
+ assert _review_hashlib.sha256(_ReviewPath(_lesson_series_evidence['compiler_manifest']).read_bytes()).hexdigest()==_lesson_series_evidence['compiler_manifest_sha256']
+ assert _review_hashlib.sha256(_ReviewPath(_lesson_series_evidence['log']).read_bytes()).hexdigest()==_lesson_series_evidence['log_sha256']
+_lesson_series_clauses={c['id']:c for c in _lesson_series_review['reviewed_clauses']}
+for _lesson_series_unit in _lesson_series_review['material_units']:
+ _lesson_series_live=_live_label_units[_lesson_series_unit['source_unit_key']]
+ assert _lesson_series_live['text_sha256']==_lesson_series_unit['unit_text_sha256']
+ assert _lesson_series_live['source_sha256']==_lesson_series_review['source_sha256'][_lesson_series_live['source']]
+ assert not _lesson_series_unit['missing_clauses']
+ if _lesson_series_unit['review_status']=='approved_complete_source':
+  REVIEWED_COMPLETE_MATERIAL[_lesson_series_unit['source_unit_key']]=[dict(
+   statement_in_prose=_lesson_series_clauses[cid]['source_clause'],
+   lean_declarations=_lesson_series_clauses[cid]['lean_declarations'],
+   hypotheses='The actual real geometric ratio q!=1 for the finite quotient; |q|<1 for the signed infinite series and tails; arbitrary rewards with |r_t|<=Rmax and 0<=q<1 for the discount inequalities. Effective horizon means actual geometric mass, with exact q=.99 in the example.',
+   correspondence=_lesson_series_clauses[cid]['per_clause_reason']+' Exact independent whole review: '+str(_lesson_series_path)+'.')
+   for cid in _lesson_series_unit['clause_ids']]
+ else:
+  assert _lesson_series_unit['review_status']=='approved_specific_nonformalizable_label'
+  REVIEWED_NONFORMAL_MATERIAL[_lesson_series_unit['source_unit_key']]=_lesson_series_unit['reason']+' Exact independent whole review: '+str(_lesson_series_path)+'.'
+
+# Working14: independently reviewed actual finite reachability closure and genuine threshold jump.
+_reachability_path = _ReviewPath('book/coverage/checks/foundations-reachability-0-2-source-review-v1-correction23-rebase.json')
+assert _review_hashlib.sha256(_reachability_path.read_bytes()).hexdigest() == '00160405420ebcd3f4c89f0b26d69c4dc628d77f18e81732e1b220be8d2fdad1'
+_reachability_review = _review_json.loads(_reachability_path.read_text())
+assert _reachability_review['status']=='independent_whole_source_review_passed' and all(not e['missing_clauses'] for e in _reachability_review['exercises'])
+for _reachability_file,_reachability_hash in _reachability_review['proof_source_sha256'].items():
+ assert _review_hashlib.sha256(_ReviewPath(_reachability_file).read_bytes()).hexdigest()==_reachability_hash
+for _reachability_evidence in _reachability_review['actual_standalone_evidence']:
+ assert _reachability_evidence['exit_code']==0 and _reachability_evidence['unchanged']
+ assert _review_hashlib.sha256(_ReviewPath(_reachability_evidence['compiler_manifest']).read_bytes()).hexdigest()==_reachability_evidence['compiler_manifest_sha256']
+ assert _review_hashlib.sha256(_ReviewPath(_reachability_evidence['log']).read_bytes()).hexdigest()==_reachability_evidence['log_sha256']
+_live_reachability_exercises = {e['key']:e for e in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['exercises']}
+for _reachability_exercise in _reachability_review['exercises']:
+ assert _reachability_exercise['review_status']=='approved_complete_source' and not _reachability_exercise['missing_clauses']
+ assert _live_reachability_exercises[_reachability_exercise['exercise_key']]['text_sha256']==_reachability_exercise['exercise_text_sha256']
+ COMPLETE_EXERCISES[_reachability_exercise['exercise_key']] = [dict(
+  statement_in_prose=c['source_clause'],lean_declarations=c['lean_declarations'],hypotheses=c['hypotheses'],
+  correspondence=c['reason']+' Exact independent whole review: '+str(_reachability_path)+'.')
+  for c in _reachability_exercise['reviewed_clauses'] if c['status']=='approved']
+for _reachability_unit in _reachability_review['material_units']:
+ _reachability_live = _live_label_units[_reachability_unit['source_unit_key']]
+ assert _reachability_live['text_sha256']==_reachability_unit['unit_text_sha256'] and _reachability_live['source_sha256']==_reachability_unit['source_sha256']
+ assert not _reachability_unit['missing_clauses']
+ if _reachability_unit['material_status']=='proved':
+  REVIEWED_COMPLETE_MATERIAL[_reachability_unit['source_unit_key']] = [dict(
+   statement_in_prose=_reachability_live['source_text'],lean_declarations=_reachability_unit['lean_declarations'],
+   hypotheses='Actual source Fin9 fitness vector, absolute coordinate distance, initial singleton0, epsilon=.5 or0 for the computed closures; arbitrary finite domains for the strict-increase cardinality theorem, and .4<epsilon<=.5 for the genuine gateway jump.',
+   correspondence=_reachability_unit['per_unit_reason']+' Exact independent whole review: '+str(_reachability_path)+'.')]
+ else:
+  assert _reachability_unit['material_status']=='not_formalizable'
+  REVIEWED_NONFORMAL_MATERIAL[_reachability_unit['source_unit_key']] = _reachability_unit['per_unit_reason']+' Exact independent whole review: '+str(_reachability_path)+'.'
+
+
+# Working14: exact independent full review of original0.5, including every sublevel case.
+_minima_path = _ReviewPath('book/coverage/checks/foundations-minima-0-5-source-review-v1-correction23-rebase.json')
+assert _review_hashlib.sha256(_minima_path.read_bytes()).hexdigest() == '76d80fd9306c830218f6efa7d06fde619f2b9a9b360fcfdc62233da8921a1b2d'
+_minima_review = _review_json.loads(_minima_path.read_text())
+assert _minima_review['status']=='approved_complete_source' and not _minima_review['missing_clauses']
+_live_minima_ex = next(e for e in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['exercises'] if e['key']==_minima_review['exercise_key'])
+assert _live_minima_ex['text_sha256']==_minima_review['exercise_text_sha256']
+for _minima_file,_minima_hash in _minima_review['proof_source_sha256'].items():
+ assert _review_hashlib.sha256(_ReviewPath(_minima_file).read_bytes()).hexdigest()==_minima_hash
+for _minima_evidence in _minima_review['actual_standalone_evidence']:
+ assert _minima_evidence['exit_code']==0 and _minima_evidence['unchanged']
+ assert _review_hashlib.sha256(_ReviewPath(_minima_evidence['compiler_manifest']).read_bytes()).hexdigest()==_minima_evidence['compiler_manifest_sha256']
+ assert _review_hashlib.sha256(_ReviewPath(_minima_evidence['log']).read_bytes()).hexdigest()==_minima_evidence['log_sha256']
+COMPLETE_EXERCISES[_minima_review['exercise_key']] = [dict(
+ statement_in_prose=c['source_clause'],lean_declarations=c['lean_declarations'],hypotheses=c['hypotheses'],
+ correspondence=c['per_clause_reason']+' Exact independent whole review: '+str(_minima_path)+'.')
+ for c in _minima_review['reviewed_clauses'] if c['status']=='approved_precise_component' and not c['missing_clauses']]
+for _minima_unit in _minima_review['material_units']:
+ _minima_live = _live_label_units[_minima_unit['source_unit_key']]
+ assert _minima_live['text_sha256']==_minima_unit['unit_text_sha256'] and _minima_live['source_sha256']==_minima_unit['source_sha256']
+ assert _minima_unit['review_status']=='approved_complete_source' and _minima_unit['material_status']=='proved' and not _minima_unit['missing_clauses']
+ REVIEWED_COMPLETE_MATERIAL[_minima_unit['source_unit_key']] = [dict(
+  statement_in_prose=_minima_live['source_text'],lean_declarations=_minima_unit['lean_declarations'],
+  hypotheses='The five exact original0.5 real models and domains: exp(-x) on nonnegative reals; x²-x on[0,1]; Euclidean norm² on the closed halfspace sum>=1; sum u1+u2 on real²; and x²/(1+x²) sublevels for every real threshold.',
+  correspondence=_minima_unit['per_unit_reason']+' Exact independent whole review: '+str(_minima_path)+'.')]
+
+# Working15: load only independently approved whole literal exercises/units.
+# Each caller pins its actual review bytes; historical reviews and execution
+# records stay untouched. Unapproved or incomplete records cannot enter here.
+def _load_independent_full_foundation_review(path, expected_sha256):
+ review_path = _ReviewPath(path)
+ assert _review_hashlib.sha256(review_path.read_bytes()).hexdigest()==expected_sha256
+ review = _review_json.loads(review_path.read_text())
+ assert not review['missing_clauses']
+ for source, fingerprint in review['source_sha256'].items():
+  assert _review_hashlib.sha256(_ReviewPath(source).read_bytes()).hexdigest()==fingerprint
+ for source, fingerprint in review['proof_source_sha256'].items():
+  assert _review_hashlib.sha256(_ReviewPath(source).read_bytes()).hexdigest()==fingerprint
+ for source, fingerprint in review.get('definition_dependency_source_sha256', {}).items():
+  assert _review_hashlib.sha256(_ReviewPath(source).read_bytes()).hexdigest()==fingerprint
+ for evidence in review['actual_standalone_evidence']:
+  assert _review_hashlib.sha256(_ReviewPath(evidence['compiler_manifest']).read_bytes()).hexdigest()==evidence['compiler_manifest_sha256']
+  raw = evidence.get('raw_execution_record', evidence)
+  assert raw['exit_code']==0
+  assert raw['source_sha256_before']==raw['source_sha256_after']
+  assert _review_hashlib.sha256(_ReviewPath(raw['source']).read_bytes()).hexdigest()==raw['source_sha256_after']
+  assert _review_hashlib.sha256(_ReviewPath(raw['log']).read_bytes()).hexdigest()==raw['log_sha256']
+ inventory = _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())
+ live_exercises = {entry['key']:entry for entry in inventory['exercises']}
+ live_units = {entry['key']:entry for entry in inventory['material_source_units']}
+ exercise_reviews = review.get('exercises', [review])
+ for exercise in exercise_reviews:
+  key = exercise['exercise_key']
+  assert live_exercises[key]['text_sha256']==exercise['exercise_text_sha256']
+  assert not exercise.get('missing_clauses', [])
+  clauses = exercise['reviewed_clauses']
+  assert clauses and all(clause['status'] in ['approved','approved_precise_component'] and not clause['missing_clauses'] for clause in clauses)
+  COMPLETE_EXERCISES[key] = [dict(
+   statement_in_prose=clause['source_clause'], lean_declarations=clause['lean_declarations'],
+   hypotheses=clause['hypotheses'],
+   correspondence=clause.get('per_clause_reason',clause.get('reason',''))+' Exact independent whole review: '+path+'.') for clause in clauses]
+ for unit in review['material_units']:
+  key = unit['source_unit_key']
+  assert live_units[key]['text_sha256']==unit['unit_text_sha256']
+  assert live_units[key]['source_sha256']==unit['source_sha256']
+  assert not unit['missing_clauses']
+  if unit['material_status']=='proved':
+   assert unit['review_status']=='approved_complete_source' and unit['lean_declarations']
+   related_clauses = [clause for exercise in exercise_reviews for clause in exercise['reviewed_clauses']
+     if set(clause['lean_declarations']) & set(unit['lean_declarations'])]
+   hypotheses = unit.get('hypotheses', sorted({h for clause in related_clauses for h in clause['hypotheses']}))
+   assert hypotheses
+   REVIEWED_COMPLETE_MATERIAL[key] = [dict(
+    statement_in_prose=live_units[key]['source_text'], lean_declarations=unit['lean_declarations'],
+    hypotheses=hypotheses,
+    correspondence=unit['per_unit_reason']+' Exact independent whole review: '+path+'.')]
+  else:
+   assert unit['material_status'] in ['not_a_formal_claim','not_formalizable']
+   assert unit['review_status'] in ['approved_complete_source','approved_pedagogical_classification']
+   assert not unit['lean_declarations']
+   REVIEWED_NONFORMAL_MATERIAL[key] = unit['per_unit_reason']+' Exact independent whole review: '+path+'.'
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-convex-sets-b4a-source-review-v1.json',
+ '56d28ae2b44a0936d542986d6bd645fc0e5e5670d41be4d33468d71b46c8b96a')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-rates-costs-0-6-source-review-v1.json',
+ '88898c755cd5fe11a6f7b545619efee2b2d8d02b68cd9b9375648fc1b6df1ecc')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-parameterized-convex-b4b-source-review-v1.json',
+ '1fc3cdb7ea74d8f2e4cda30f2137aad5622033d89f918e5c194698c8295bde44')
