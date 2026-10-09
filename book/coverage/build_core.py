@@ -20,8 +20,12 @@ args = parser.parse_args()
 
 def reviewed_path(name):
     original = ROOT/'book/coverage/checks'/name
-    rebased = original.with_name(original.stem+'-correction12-rebase.json')
-    return rebased if rebased.exists() else original
+    selected = original
+    for correction in (12, 14, 15):
+        rebased = original.with_name(original.stem+f'-correction{correction}-rebase.json')
+        if rebased.exists():
+            selected = rebased
+    return selected
 
 INV = json.loads((ROOT/'book/coverage/inventory.json').read_text())
 PAGES = {'barriers','case-studies','cmdp','lyapunov-mpc','policy-optimization',
@@ -373,6 +377,14 @@ def sha(p):
     return hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
 
 practice_hypotheses = {
+    'policy-optimization.html#exercise-9-p1': ['The source one-state two-action values and actual normalized old/new PMFs. All averages are genuine integrals under those laws; no discounted whole-controller return is identified with a single-state advantage average.'],
+    'policy-optimization.html#exercise-9-p2': ['The exact two strictly positive finite PMFs and natural logarithms. The forward/reverse KL witnesses are genuine log density-ratio integrals; no unsupported-action density or global equivalence between KL and total variation is inferred.'],
+    'policy-optimization.html#exercise-9-p3': ['The actual real two-dimensional matrix diag(4,1), half-quadratic objective and radius1/2.'],
+    'policy-optimization.html#exercise-9-p4': ['The exact real affine residual and supplied cost gradient. The counterexample uses an actual nonlinear polynomial; transfer to another true residual needs its stated error bound.'],
+    'policy-optimization.html#exercise-9-p6': ['The actual Euclidean norm on the real two-dimensional space and the source closed half-space. The unique global minimum is proved over every feasible point.'],
+    'policy-optimization.html#exercise-9-p7': ['The source bound expression, with its validity supplied by the question, and fixed advantage/variation bounds. The calculations evaluate the envelope and do not assert an attained true return error.'],
+    'policy-optimization.html#exercise-9-p8': ['The stated true-cost upper bound for this fixed policy evaluation. Probability transfer uses a probability measure and the confidence event for those same true/estimated quantities; no extra data-dependent selection guarantee is inferred.'],
+    'barriers.html::exercise-18': ['The source real double-integrator model with position barrier1-p, actual two-dimensional companion matrices and positive real pole magnitudes. Forward invariance assumes continuous position/velocity on each finite interval, their actual ODE derivatives on its interior, the enforced ECBF input inequality and both nonnegative initial margins. The ratio form is used only for a strictly positive previous margin; zero requires the rate condition.'],
     'barriers.html#exercise-10-p5': ['The actual real two-input objective and half-space constraint; KKT stationarity uses the actual coordinate derivatives.'],
     'cmdp.html#exercise-8-p6': ['One self-looping state and the stated stationary two-action marginal PMF, with deterministic reward/cost given the action, discount1/2 and budget1. The expectation of the infinite random return is derived without intertime independence.'],
     'cmdp.html#exercise-8-p9': ['The same actual policy-probability domain[0,1], reward2+6p and cost4p. The unique dual minimum belongs to the nonnegative multiplier domain.'],
@@ -392,7 +404,9 @@ for review_name in ['two-input-projection-source-review.json',
                     'tail-risk-p7-p11-source-review-v1.json',
                     'policy-confidence-source-review-v1.json',
                     'policy-boundary-source-review-v1.json',
-                    'policy-importance-source-review-v2.json']:
+                    'policy-importance-source-review-v2.json',
+                    'exponential-barrier-source-review-v1.json',
+                    'policy-geometry-checks-source-review-v1.json']:
     path = reviewed_path(review_name)
     if not path.exists():
         continue
@@ -442,7 +456,7 @@ for review_name in ['two-input-projection-source-review.json',
             sha256=sha(str(path.relative_to(ROOT))),
             nonformal_scope_clauses=[c for c in clauses if c['status']=='not_a_formal_claim'])
 
-confidence_path = ROOT/'book/coverage/checks/lyapunov-confidence-source-review.json'
+confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
     review = json.loads(confidence_path.read_text())
     if review['status']!='approved_complete_source' or review['missing_clauses']:
@@ -518,7 +532,7 @@ MATERIAL_REVIEW = {
 # These approvals come from an independent, per-paragraph semantic review.
 # DOM containment proposes candidates; it does not establish correspondence.
 overlap_path = ROOT/'book/coverage/core-material-overlap-review.json'
-for checkpoint in (8, 9, 10, 11, 12, 13):
+for checkpoint in (8, 9, 10, 11, 12, 13, 14):
     candidate_review = ROOT/f'book/coverage/core-material-overlap-review-{checkpoint}.json'
     if candidate_review.exists():
         overlap_path = candidate_review
@@ -607,7 +621,7 @@ for u in INV['material_source_units']:
     material.append(claim)
 
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
-        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance']
+        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance','CompleteExponentialBarrier','CompleteExponentialBarrierSafety','CompleteExponentialBarrierConsequences','CompleteExponentialBarrierClassK','CompletePolicyGeometry','CompletePolicyChecks','CompletePolicyAdvantages','CompletePolicyDivergence','CompletePolicyPracticeConsequences']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),

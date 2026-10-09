@@ -50,7 +50,7 @@ theorem actual_similarity_row_dominance_implies_positive_semidefinite
     (matrix : Matrix N N ℝ) (hhermitian : matrix.IsHermitian)
     (scale : N → ℝ) (hscale : ∀ coordinate,0 < scale coordinate)
     (hdominant : ∀ row,
-      (∑ column ∈ Finset.univ.erase row,‖actualSourceSimilarity matrix scale row column‖) ≤ 
+      (∑ column ∈ Finset.univ.erase row,‖actualSourceSimilarity matrix scale row column‖) ≤
         actualSourceSimilarity matrix scale row row) : matrix.PosSemidef := by
   apply hhermitian.posSemidef_iff_eigenvalues_nonneg.mpr
   intro coordinate

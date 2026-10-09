@@ -48,6 +48,25 @@ for name, record in selected.items():
             raise ValueError('Selected evidence changed: ' + evidence)
 
 files = list(selected)
+for record in selected.values():
+    revision = record.get('deliberate_source_revision')
+    if not revision:
+        continue
+    history_name = revision['preserved_history']
+    history_path = ROOT / history_name
+    if not history_path.resolve().is_relative_to(ROOT / 'reports/full-coverage/source-history'):
+        raise ValueError('Historical revision evidence must stay inside source-history.')
+    if sha(history_path) != revision['preserved_history_sha256']:
+        raise ValueError('Historical revision provenance changed: ' + history_name)
+    history = json.loads(history_path.read_text())
+    files.append(history_name)
+    for preserved in history['preserved_files']:
+        path = ROOT / preserved['preserved']
+        if not path.resolve().is_relative_to(history_path.parent.resolve()):
+            raise ValueError('Historical preserved file escapes its provenance directory.')
+        if sha(path) != preserved['sha256']:
+            raise ValueError('Historical preserved bytes changed: ' + preserved['preserved'])
+        files.append(preserved['preserved'])
 files += [str(p.relative_to(ROOT)) for p in (ROOT / 'SafeLearning').iterdir()
           if p.suffix in {'.html', '.css', '.js'}]
 files += ['verification/lean/' + name for name in

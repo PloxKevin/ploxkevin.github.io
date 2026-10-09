@@ -115,6 +115,15 @@ SWLN = "SafeLearning.CompleteModulesSandwichLMI."
 SWHN = "SafeLearning.CompleteModulesSandwichHalf."
 GAMN = "SafeLearning.CompleteModulesGammaLMI."
 SWCN = "SafeLearning.CompleteModulesSandwichConsequences."
+FIRBN = "SafeLearning.CompleteModulesFIRBase."
+FIRNN = "SafeLearning.CompleteModulesFIRNumbers."
+FIRON = "SafeLearning.CompleteModulesFIROperator."
+FIRGN = "SafeLearning.CompleteModulesFIRGain."
+FIRIN = "SafeLearning.CompleteModulesFIRInfinite."
+FIRPN = "SafeLearning.CompleteModulesFIRParameterization."
+FIRTN = "SafeLearning.CompleteModulesFIRTightness."
+FIRCN = "SafeLearning.CompleteModulesFIRCorollaries."
+FIRBTN = "SafeLearning.CompleteModulesFIRBoundaryTightness."
 
 # These mappings are intentionally granular. A proved component is appended to
 # the requirements queue; the exercise is not marked complete merely because it
@@ -592,6 +601,41 @@ component("lipschitz-by-design.html::exercise-17", "The actual unit-gain LipSDP 
           ["Actual finite real matrix/function values, source row identity, positive diagonal scaling, actual[0,1] activation slopes; actual strictly positive hidden Gram lower bound for the conditional half-multiplier failure, and nonempty hidden coordinates for strict negative-definiteness failure."],
           ["Whole Exercise13.3 independent source review remains pending; the theorem proves a conditional failure, not that every half multiplier fails for every source block."])
 
+component("lipschitz-by-design.html::exercise-18", "The actual two-tap FIR output uses the previous input as its genuine scalar state, with zero state matrix nilpotent of index one. Its actual one-term matrix controllability Gramian equals(1/rho squared+h squared+epsilon)I, its actual matrix inverse has storageP=rho squared/(1+rho squared(h squared+epsilon)), and its actual dissipation matrix is diag(P,rho squared-P). Positive rho and h squared+epsilon>0 give strictly interiorP and actual positive-definiteF; h=epsilon=0 gives the exact semidefinite endpoint. The actual unit fixture hasX=2,P=1/2,F=I/2.",
+          [FIRBN+name for name in ["actualFIRMemory","actualFIROutput","actualFIRResponse","actual_fir_state_space_realization","actualFIRStateMatrix","actual_fir_state_matrix_is_nilpotent_of_index_one","actualFIRGramian","actual_fir_controllability_gramian_formula","actualFIRStorage","actual_fir_inverse_gramian_storage_formula","actual_fir_storage_is_actual_matrix_inverse","actual_fir_storage_strictly_between_zero_and_gain_squared","actualFIRDissipationMatrix","actual_fir_dissipation_matrix_is_source_diagonal","actual_fir_dissipation_matrix_is_positive_definite","actual_fir_zero_free_parameter_storage_endpoint","actual_fir_zero_free_parameter_certificate_is_only_semidefinite","actual_fir_source_unit_parameters"]],
+          ["Actual scalar FIR dynamics, actual finite matrix Gramian/inverse/dissipation form, rho>0, epsilon>=0, and h squared+epsilon>0 for the strict positive-definiteness claim."],
+          ["Whole corrected Exercise13.4 correspondence, parameterized certificate/gain tightness and source gain tightness remain separate pending requirements."])
+component("lipschitz-by-design.html::exercise-18", "For the exact source theta=pi/3 unit fixture, actual cos(theta)/sqrt2 and sin(theta)/sqrt2 equal sqrt2/4 and sqrt6/4. The actual positive diagonal factor isI/sqrt2, and the actualF-minus-kernel-Gram certificate is exactly[[3/8,-sqrt3/8],[-sqrt3/8,1/8]], with determinant0 and trace1/2. Every corrected decimal kernel/factor/off-diagonal/gain value has a rigorous error strictly below.00005; the exact positive coefficient sum is(sqrt2+sqrt6)/4<1.",
+          [FIRNN+name for name in ["actualDelayedKernel","actualCurrentKernel","actualSourceKernelRow","actualSourceCholesky","actual_source_cholesky_is_exact_positive_factor","actual_source_trigonometric_kernel_is_exact_radical","actual_corrected_kernel_decimal_bounds","actualExactCertificate","actual_source_certificate_is_exact_radical_matrix","actual_source_certificate_determinant_and_trace","actual_certificate_off_diagonal_decimal_bound","actual_source_frequency_gain_value_and_rounding"]],
+          ["Actual corrected exact radical source kernels and genuine finite matrix products; quoted four-decimal values use error<1/20000."],
+          ["The certificate actual PSD/spectrum, Cayley-produced unit-vector bridge, general parameterization, energy and tightness remain separate pending requirements."])
+component("lipschitz-by-design.html::exercise-18", "Every actual finite real unit vectoru has actualI-u u-transpose PSD by genuine Cauchy-Schwarz. For every actual factorL, the literalF-minus-kernel-Gram equalsL-transpose(I-u u-transpose)L and is PSD. The actual scalar FIR certificate quadratic equalsP x squared+(rho squared-P)w squared-y squared, so an actual PSD certificate gives the source storage dissipation inequality and the exact zero-initial finite-horizon output-energy bound for every actual input sequence and horizon.",
+          [FIRON+name for name in ["actualUnitRow","actual_unit_vector_complement_is_positive_semidefinite","actual_unit_row_cholesky_certificate_identity","actual_unit_row_cholesky_certificate_is_positive_semidefinite","actualFIRKernelRow","actual_fir_certificate_has_literal_dissipation_quadratic","actual_fir_certificate_implies_storage_dissipation","actual_zero_initial_fir_finite_horizon_energy_bound","actual_zero_initial_fir_output_energy_bound"]],
+          ["Actual unit vector and actual matrix factor; scalar energy conclusions use the actual PSD dissipation certificate and nonnegative storage, with genuine zero initial delayed-input state."],
+          ["Parameterized kernels must still be bridged to this actual certificate; the infinite-horizon energy theorem is separately mapped; full corrected source review remains pending."])
+component("lipschitz-by-design.html::exercise-18", "For every actual angle and nonnegative rho with0<=P<=rho squared, the actual kernels sin(theta)sqrt(rho squared-P),cos(theta)sqrtP satisfy absolute coefficient sum<=rho by actual Cauchy-Schwarz. Their genuine complex FIR transfer has norm bounded by this sum at every real frequency. For nonnegative coefficients its actual frequency supremum equals that sum and is attained at frequencyzero. The exact squared Cauchy-Schwarz gap is the squared source alignment difference.",
+          [FIRGN+name for name in ["actualParameterizedCurrentKernel","actualParameterizedDelayedKernel","actual_parameterized_kernel_absolute_gain_bound","actualFIRTransfer","actual_fir_frequency_bound","actual_positive_fir_frequency_bound_is_attained_at_zero","actual_positive_fir_frequency_supremum","actual_parameterized_fir_frequency_gain_bound","actual_parameterized_gain_squared_gap"]],
+          ["Actual real angles and genuine complex exponentials/frequency norm; rho>=0 and0<=P<=rho squared. Actual supremum/zero-frequency attainment statement assumes both real coefficients nonnegative as in the source unit fixture."],
+          ["Literal tangent-ratio equality characterization and theta=pi/4 exact tight example still require their own proofs; full source review remains pending."])
+
+component("lipschitz-by-design.html::exercise-18", "For every actual square-summable real FIR input sequence with zero initial delayed state, nonnegative actual storage and the actual PSD source dissipation certificate imply a genuinely square-summable actual FIR output and the infinite energy inequality sum_y_squared<=rho_squared sum_w_squared. The proof passes the actual finite-horizon certificate bounds to the infinite sums; summability is proved rather than assumed for the output.",
+          [FIRIN+"actual_fir_square_summable_input_has_bounded_square_summable_output"],
+          ["Actual scalar FIR state/output functions; square-summability of input squared, nonnegative actual storage and the actual PSD source dissipation matrix."],
+          ["Actual parameterized certificate/example spectral bridge and source tightness characterization remain separate pending components; full corrected Exercise13.4 independent review remains pending."])
+
+component("lipschitz-by-design.html::exercise-18", "The actual diagonal square-root factor of admissibleF has Gram exactlyF; the actual unit trigonometric row times this factor equals the actual parameterized kernel row, proving its actual PSD dissipation certificate. The source pi/3 unit vector is literally a column of the actual Cayley transform at parameter1/sqrt3. The exact source radical certificate is genuinely PSD with actual characteristic polynomialX(X-1/2) and all actual spectral values exactly0 and1/2; its actual complex frequency supremum is the exact corrected radical coefficient sum.",
+          [FIRPN+name for name in ["actualParameterFactor","actualParameterUnitVector","actual_parameter_vector_is_unit","actual_parameter_factor_gram_is_source_dissipation_matrix","actual_parameterized_row_is_the_actual_kernel_row","actual_parameterized_fir_certificate_is_positive_semidefinite","actual_source_unit_vector_is_produced_by_actual_cayley","actual_source_kernel_row_is_the_unit_factor_parameterization","actual_source_exact_certificate_is_positive_semidefinite","actual_source_certificate_characteristic_polynomial","actual_source_certificate_eigenvalues","actual_source_frequency_supremum_is_exact_gain"]],
+          ["Actual real angle,0<=P<=rho squared, actual diagonal factor and unit vector; exact source unit fixture for radical/spectral/Cayley conclusions."],
+          ["Whole corrected Exercise13.4 independent question/answer review remains pending."])
+component("lipschitz-by-design.html::exercise-18", "Actual parameterized coefficient gain is tight iff the genuine nonnegative Cauchy-Schwarz products align, equivalently sin squared(theta)P=cos squared(theta)(rho squared-P). For interior0<P<rho squared this is exactly the source tangent-squared ratio, including the zero-cosine case. At any actual allowed positiveP the same tangent iff holds on the ordinary defined tangent domain; actual tightness itself forces that domain. The endpointP=rho squared is tight exactly when sin(theta)=0. The actual half-storage pi/4 kernels are both1/2 with actual frequency supremum1.",
+          [FIRTN+name for name in ["actual_parameterized_gain_is_tight_iff_alignment","actual_alignment_iff_squared_source_weights","actual_interior_parameterized_gain_tight_iff_source_tangent_ratio","actual_half_storage_quarter_pi_kernels_are_exactly_one_half","actual_half_storage_quarter_pi_frequency_gain_is_exactly_one"]]+[FIRBTN+name for name in ["actual_nonnegative_regularizer_storage_is_positive_and_at_most_gain_squared","actual_defined_tangent_parameterized_gain_tight_iff","actual_endpoint_parameterized_gain_tight_iff_sine_zero","actual_tight_positive_storage_has_defined_tangent"]],
+          ["rho>=0 and actual0<P<=rho squared; ordinary tangent equation requires cos(theta)!=0 at the semidefinite endpoint, while the all-angle interior theorem handles every angle. The actual source Gramian yields0<P<=rho squared for rho>0 and epsilon>=0."],
+          ["Whole corrected Exercise13.4 independent review remains pending; pi/4 is a genuine attaining example, not a claim that every equivalent angle is excluded."])
+component("lipschitz-by-design.html::exercise-18", "The exact sourceI/sqrt2 factor is both lower and upper triangular with positive diagonal and actual GramI/2. Positive epsilon or nonzero freeh derives strictly interior sourceP and actual positive-definiteF. The source half-storage factor equals this exact factor, so the actual parameterized kernels equal the corrected radicals. Those literal source kernels and literal Gramian storage give the actual PSD certificate, exact storage dissipation, every finite-horizon output-energy inequality and the genuine square-summable infinite-energy bound.",
+          [FIRCN+name for name in ["actual_source_cholesky_is_lower_and_upper_triangular","actual_positive_regularizer_or_nonzero_free_parameter_gives_interior_storage","actual_source_half_factor_is_exact_cholesky","actual_source_radical_kernels_are_actual_parameterized_kernels","actual_source_unit_storage_radical_kernel_certificate","actual_source_radical_filter_has_actual_storage_dissipation","actual_source_radical_filter_has_actual_finite_energy_bound","actual_source_radical_filter_has_actual_infinite_energy_bound"]],
+          ["Actual corrected source unit parameters and actual FIR dynamics/input sequences; source positivity premises for the generic interior theorem; infinite energy assumes genuinely square-summable input squared."],
+          ["Whole corrected Exercise13.4 independent source review remains pending."])
+
 COMPLETE_REQUIREMENTS = {
     "safe-bo.html#book-m4-b1", "safe-bo.html#book-m4-b2",
     "safe-bo-theory.html#book-m5-b1", "gosafe.html#book-m6-b1",
@@ -719,7 +763,7 @@ for e in INV["exercises"]:
                 independent_source_review=cayley_evidence)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-16":
-        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-correction13.json"
+        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-formatting11.json"
         sll_review = json.loads((ROOT/sll_review_rel).read_text())
         assert sll_review["status"] == "independent_source_correspondence_review_passed"
         assert sll_review["exercise_key"] == e["key"] and sll_review["exercise_text_sha256"] == e["text_sha256"]
@@ -760,6 +804,74 @@ for e in INV["exercises"]:
                     status="not_a_formal_claim",kind="navigation_and_parameter_design_motivation",correspondence=row["reason"])
                 c["remaining_gaps"] = []
                 c["independent_source_review"] = sll_evidence
+                claims.append(c)
+        complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
+    if e["key"] == "lipschitz-by-design.html::exercise-17":
+        sandwich_review_rel = "book/coverage/checks/modules-sandwich-source-review.json"
+        sandwich_review = json.loads((ROOT/sandwich_review_rel).read_text())
+        assert sandwich_review["status"] == "independent_source_correspondence_review_passed"
+        assert sandwich_review["exercise_key"] == e["key"] and sandwich_review["exercise_text_sha256"] == e["text_sha256"]
+        assert digest(sandwich_review["source"]) == sandwich_review["source_sha256"] and not sandwich_review["missing_clauses"]
+        for section in ["proof_sha256","compiler_evidence_sha256","dependency_source_sha256"]:
+            for path,sha in sandwich_review[section].items():
+                assert digest(path) == sha, path
+        sandwich_evidence = {"file":sandwich_review_rel,"sha256":digest(sandwich_review_rel),
+            "reviewer":sandwich_review["reviewer"],"status":sandwich_review["status"]}
+        sandwich_approved = [row for row in sandwich_review["reviewed_clauses"] if row["status"] == "approved"]
+        for c in claims:
+            if "::proved-component-" in c["id"]:
+                c["remaining_gaps"] = []
+                c["scope_limits"] = sandwich_review["limits"]
+                c["independent_source_review"] = sandwich_evidence
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="This clause supplies actual row orthogonality, positive diagonal scale and actual layer definitions as premises for the requested conclusions.",
+            independent_source_review=sandwich_evidence)
+        for index,rows in [(1,[0,1,2,3]),(2,[4,5,6]),(3,[7,8])]:
+            claims[index].update(status="proved",remaining_gaps=[],
+                lean_declarations=sorted({name for r in rows for name in sandwich_approved[r]["lean_declarations"]}),
+                hypotheses=["The precise source row-orthogonality/positive-diagonal givens and actual activation slopes[0,1] for network conclusions. Gamma equivalence assumes gamma>0; conditional half-multiplier failure requires its actual strict Gram condition and nonempty hidden coordinates."],
+                correspondence="Every question and worked-answer mathematical clause of this exact atom has an independent whole-source correspondence review. The identities use actual matrices, the literal QC margin uses actual biased network increments, the wrong-half failure is conditional, and the gamma scaling is exact.",
+                independent_source_review=sandwich_evidence)
+        for number,row in enumerate(sandwich_review["reviewed_clauses"],1):
+            if row["status"] == "not_a_formal_claim":
+                c=claim(e["key"]+f"::specific-source-classification-{number}",row["source_clause"],
+                    status="not_a_formal_claim",kind="navigation_and_disclosure",correspondence=row["reason"])
+                c["remaining_gaps"] = []
+                c["independent_source_review"] = sandwich_evidence
+                claims.append(c)
+        complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
+    if e["key"] == "lipschitz-by-design.html::exercise-18":
+        fir_review_rel = "book/coverage/checks/modules-fir-source-review-v1.json"
+        fir_review = json.loads((ROOT/fir_review_rel).read_text())
+        assert fir_review["status"] == "independent_source_correspondence_review_passed"
+        assert fir_review["exercise_key"] == e["key"] and fir_review["exercise_text_sha256"] == e["text_sha256"]
+        assert digest(fir_review["source"]) == fir_review["source_sha256"] and not fir_review["missing_clauses"]
+        for section in ["proof_sha256","compiler_evidence_sha256"]:
+            for path,sha in fir_review[section].items():
+                assert digest(path) == sha, path
+        fir_evidence={"file":fir_review_rel,"sha256":digest(fir_review_rel),
+            "reviewer":fir_review["reviewer"],"status":fir_review["status"]}
+        fir_approved=[row for row in fir_review["reviewed_clauses"] if row["status"]=="approved"]
+        for c in claims:
+            if "::proved-component-" in c["id"]:
+                c["remaining_gaps"] = []
+                c["scope_limits"] = fir_review["limits"]
+                c["independent_source_review"] = fir_evidence
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="This clause supplies the actual scalar two-tap FIR input/output equation and absence of activation as the source model.",
+            independent_source_review=fir_evidence)
+        for index,rows in [(1,[0]),(2,[1,2]),(3,[3,4,6]),(4,[5,6,7,8]),(5,[2,9,10])]:
+            claims[index].update(status="proved",remaining_gaps=[],
+                lean_declarations=sorted({name for i in rows for name in fir_approved[i]["lean_declarations"]}),
+                hypotheses=["The exact actual scalar FIR source model/finite matrix Gramian, rho>0 and epsilon>=0; exact unit fixture for displayed numbers. Infinite ordinary sums assume square-summable inputs and prove output summability. The tangent equation uses its ordinary cos(theta)!=0 domain at the semidefinite endpoint; actual tightness itself implies that domain."],
+                correspondence="The independent whole corrected Exercise13.4 question/answer review approves each exact mathematical clause of this atom. Actual dynamics, matrix inverse/factor/certificate, complex transfer/supremum, decimal error bounds, infinite energy and exact tightness/endpoint statements are retained. The pi/4 value is an attaining example and rounded matrices serve only as approximations.",
+                independent_source_review=fir_evidence)
+        for number,row in enumerate(fir_review["reviewed_clauses"],1):
+            if row["status"] == "not_a_formal_claim":
+                c=claim(e["key"]+f"::specific-source-classification-{number}",row["source_clause"],
+                    status="not_a_formal_claim",kind="navigation_and_mathematical_provenance_labels",correspondence=row["reason"])
+                c["remaining_gaps"] = []
+                c["independent_source_review"] = fir_evidence
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
@@ -853,6 +965,32 @@ for u in INV["material_source_units"]:
             correspondence="Every mathematical clause of this exact Exercise13.2 question/answer unit has the independent full-source review: actual energy/QC identities, literal Gershgorin similarity/discs and actual matrix/spectral/decimal details. The phrase motivating learningq and the answer-disclosure label are individually classified separately.",
             independent_source_review=sll_evidence,
             nonformal_source_classifications=[row for row in sll_review["reviewed_clauses"] if row["status"]=="not_a_formal_claim"])
+    if u["key"] in sandwich_review["material_source_units"]:
+        recorded=sandwich_review["material_source_units"][u["key"]]
+        assert recorded["locator"] == u["locator"] and recorded["text_sha256"] == u["text_sha256"]
+        indices={"lipschitz-by-design.html::node-1346":list(range(9)),
+            "lipschitz-by-design.html::node-1350":[0,1,2,3],
+            "lipschitz-by-design.html::node-1352":[4,5,6],
+            "lipschitz-by-design.html::node-1354":[7,8]}[u["key"]]
+        c.update(status="proved",kind="independently_reviewed_actual_sandwich_matrix_function_clauses",remaining_gaps=[],
+            lean_declarations=sorted({name for i in indices for name in sandwich_approved[i]["lean_declarations"]}),
+            hypotheses=["Actual finite real source matrices, positive diagonal scale and source row identity; genuine[0,1]-slope-restricted activation for energy/Lipschitz conclusions; gamma>0 for equivalence and stated strict Gram/nonempty hypotheses for half-multiplier failure."],
+            correspondence="The full independent Exercise13.3 review approves each mathematical clause of this exact question/answer unit, including literal matrix Schur identities, exact QC-energy margin, conditional wrong-half failure and positive-gamma scaling/equivalence.",
+            independent_source_review=sandwich_evidence,scope_limits=sandwich_review["limits"],
+            nonformal_source_classifications=[row for row in sandwich_review["reviewed_clauses"] if row["status"]=="not_a_formal_claim"])
+    if u["key"] in fir_review["material_source_units"]:
+        recorded=fir_review["material_source_units"][u["key"]]
+        assert recorded["locator"] == u["locator"] and recorded["text_sha256"] == u["text_sha256"]
+        indices={"lipschitz-by-design.html::node-1359":list(range(11)),
+            "lipschitz-by-design.html::node-1363":[0],"lipschitz-by-design.html::node-1365":[1,2],
+            "lipschitz-by-design.html::node-1367":[3,4],"lipschitz-by-design.html::node-1369":[5,6,7,8],
+            "lipschitz-by-design.html::node-1371":[2,9,10]}[u["key"]]
+        c.update(status="proved",kind="independently_reviewed_corrected_actual_fir_mathematical_clauses",remaining_gaps=[],
+            lean_declarations=sorted({name for i in indices for name in fir_approved[i]["lean_declarations"]}),
+            hypotheses=["Actual scalar FIR source dynamics/Gramian/certificate with rho>0,epsilon>=0 and exact displayed unit fixture; genuine unit/factor/complex transfer values. Infinite energy uses square-summable input squared. Ordinary tangent domain is explicit at the semidefinite endpoint."],
+            correspondence="Every mathematical clause of this exact corrected Exercise13.4 source unit is independently approved: actual realization and nilpotence, inverse/PD versus endpoint, exact radical/factor/Cayley/certificate/spectrum/rounding, storage energy and complex frequency bound/supremum or exact gain tightness as appropriate. No activation multiplier is needed for the actual linear factor certificate.",
+            independent_source_review=fir_evidence,scope_limits=fir_review["limits"],
+            nonformal_source_classifications=[row for row in fir_review["reviewed_clauses"] if row["status"]=="not_a_formal_claim"])
     lipnode=u['key'].removeprefix('lipsdp.html::node-')
     if lipnode.isdigit() and int(lipnode) in LIPSDP_UNIT_MAP:
         c.update(kind="actual_incremental_quadratic_constraint_and_matrix_correspondence",status="proved",

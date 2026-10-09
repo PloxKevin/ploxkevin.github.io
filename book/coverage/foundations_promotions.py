@@ -1070,8 +1070,67 @@ PARTIAL_EXERCISES['primer-optimization.html::exercise-30'] = [
  claim('For every finite rectangular real W and real beta, the genuine Frobenius-norm objective beta/4*||WW transpose-I||F² has actual Hilbert gradient beta*(WW transpose-I)*W.',
        'CompleteFoundationsParsevalModels','Space','toMatrix','fromMatrix','errorMatrix','objective','actual_frobenius_squared','actual_error_entries','actual_objective_expansion','actual_error_is_symmetric','actual_entry_differential','actual_symmetric_trace_identity','actual_inner_coordinates','actual_parseval_gradient','actual_gradient_matrix',
        hypotheses='Arbitrary finite row and column types and arbitrary real beta; the actual matrix entries are a complete finite-dimensional Euclidean Hilbert space.',
-       correspondence='The actual Frobenius norm and actual matrix Gram error are retained. Genuine entry differentials and an all-matrix symmetric finite-sum identity produce HasGradientAt and the exact actual matrix-gradient formula. The source literal matrix-trace intermediate identities remain separate pending work.'),
+       correspondence='The actual Frobenius norm and actual matrix Gram error are retained. Genuine entry differentials and an all-matrix symmetric finite-sum identity produce HasGradientAt and the exact actual matrix-gradient formula. The literal matrix-trace proof route is separately covered by the source-specific ParsevalTrace declarations below.'),
  claim('For actual W=[[1,1],[0,1]] and beta1, WW transpose-I=[[1,1],[1,0]], objective3/4 and actual gradient[[1,2],[1,1]]. The genuine gradient step0.1 is[[.9,.8],[-.1,.9]]; its actual cost10287/40000=.257175 strictly decreases and rounds to.257.',
        'CompleteFoundationsParsevalModels','sourceW','sourcePoint','sourceStep','actual_source_data','actual_source_gradient_step','actual_source_step_decreases',
        hypotheses='The exact source matrix and actual step size1/10.',
        correspondence='The matrix is the actual image of a genuine Hilbert gradient, and the update subtracts that gradient. Exact actual Frobenius cost and a rigorous nearest-thousandth enclosure support the printed approximation; no scalar surrogate replaces the source objective.')]
+
+
+# The generic trace bridge closes every displayed source proof-route clause,
+# rather than upgrading the earlier correct gradient merely by theorem count.
+COMPLETE_EXERCISES['primer-optimization.html::exercise-30'] = PARTIAL_EXERCISES.pop('primer-optimization.html::exercise-30') + [
+ claim('For every matrix direction H, the genuine Gram-error derivative is H W transpose+W H transpose. The genuine Frobenius squared-norm derivative is 2 tr(E dE); symmetry and actual trace cyclicity give tr(E H W transpose)=tr(E W H transpose)=tr(W transpose E H), and dR=beta tr(W transpose E H)=inner(beta E W,H). Actual finite differences converge to this value in every direction.',
+       'CompleteFoundationsParsevalTrace','actual_trace_pair_coordinates','actual_trace_pair_is_hilbert_inner','actual_symmetric_source_trace_equalities','actual_symmetric_trace_pair_is_inner','actual_parseval_differential_is_source_inner','actual_error_along_matrix_direction','actual_error_matrix_directional_differential','actual_parseval_directional_trace_derivative','actual_squared_frobenius_directional_trace_derivative','actual_parseval_finite_differences_converge','actual_source_gram_matrix',
+       hypotheses='Arbitrary finite real rectangular W and perturbation H, arbitrary real beta, genuine complete Euclidean space of matrix entries and the actual Frobenius norm. The Gram error is symmetric by its actual definition.',
+       correspondence='The full Gram-error matrix is differentiated in its actual Hilbert representation, not just an assumed coordinate differential. Actual Matrix.trace identities retain each displayed product factor. HasDerivAt and genuine punctured-neighborhood Tendsto establish the source finite-difference agreement in the derivative sense. The exact source Gram [[2,1],[1,1]] is also explicitly computed; all printed step costs and rounding are covered by the retained actual model.')]
+for node in [1667]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['primer-optimization.html::exercise-30']
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-1671'] = [COMPLETE_EXERCISES['primer-optimization.html::exercise-30'][0],COMPLETE_EXERCISES['primer-optimization.html::exercise-30'][2]]
+REVIEWED_COMPLETE_MATERIAL['primer-optimization.html::node-1672'] = [COMPLETE_EXERCISES['primer-optimization.html::exercise-30'][1],COMPLETE_EXERCISES['primer-optimization.html::exercise-30'][2]]
+
+# Source-specific actual objective derivatives/KKT conditions and all-domain
+# optima close these complete questions and every worked-solution clause.
+COMPLETE_EXERCISES['opt-ex-constraints-1'] = [
+ claim('For the actual scalar Lagrangian (x-3)^2+lambda*(x-bound), the true derivative is2(x-3)+lambda. All four actual KKT conditions hold at(bound1,x1,lambda4) and(bound4,x3,lambda0), and at the latter point complementary slackness forces lambda0.',
+       'CompleteFoundationsConstrainedModels','scalarLagrangian','scalarKKT','actual_scalar_lagrangian_derivative','actual_scalar_kkt_certificates',
+       hypotheses='The exact source real scalar objective and one affine upper-bound inequality; KKT includes actual deriv, feasibility, nonnegative multiplier and complementary product.',
+       correspondence='Stationarity is the genuine derivative of the actual Lagrangian. The full four-condition conjunction is explicitly proved, and the looser-bound multiplier has an exact iff characterization.'),
+ claim('The unconstrained unique minimizer is3 and forbidden by bound1; the objective strictly decreases up to3. On x<=1 its unique global minimum is4 at1; with bound4 the unconstrained point3 is strictly feasible. The objective is ConvexOn and the bound function is affine with a convex feasible set.',
+       'CompleteFoundationsConstrainedModels','actual_scalar_global_optima','actual_scalar_objective_decreases_until_three','actual_scalar_objective_is_convex','actual_scalar_constraint_is_affine','actual_scalar_feasible_set_is_convex',
+       hypotheses='Arbitrary real feasible points for each source bound, not only the displayed candidate.',
+       correspondence='Actual all-point inequalities and iff equality cases prove both optima; genuine StrictAntiOn/ConvexOn and an exact affine-combination identity cover the displayed proof route. The observation about a present inactive constraint is supported by the complete looser-bound calculation.')]
+COMPLETE_EXERCISES['opt-ex-constraints-2'] = [
+ claim('The actual Euclidean half squared-distance objective is weightedDistance(1,1,2,2), with genuine gradient x-(2,2), true Hessian identity, StrictConvexOn, and unique unconstrained zero at(2,2). Its actual feasible set x0+x1<=1,x0>=0 is convex and excludes that point.',
+       'CompleteFoundationsConstrainedModels','weightedDistance','actual_weighted_distance_gradient','actual_weighted_distance_hessian','actual_weighted_distance_strict_convex','actual_weighted_distance_unconstrained_minimum','halfspaceFeasible','actual_halfspace_norm_objective','actual_halfspace_hessian_is_identity','actual_halfspace_feasible_set_is_convex','actual_halfspace_source_kkt',
+       hypotheses='The actual complete Euclidean two-coordinate space, with unit positive weights and target(2,2).',
+       correspondence='The norm is genuine Euclidean norm, not a product-space maximum norm. The gradient and Hessian differentiate the actual objective; global strict convexity and all-coordinate feasible convexity are proved.'),
+ claim('Actual affine constraints g1=x0+x1-1 and g2=-x0 have their true normals. Actual Lagrangian stationarity with lambda2=0 plus g1=0 is equivalent to lambda1=3/2,x=(1/2,1/2); all KKT signs/products/gradient cancellation and strict inactivity of g2 hold.',
+       'CompleteFoundationsConstrainedModels','affineConstraint','actual_affine_constraint_gradient','halfspaceLagrangian','actual_halfspace_lagrangian_gradient','actual_halfspace_stationarity_iff','actual_halfspace_active_constraint_solves_candidate','actual_halfspace_source_kkt',
+       hypotheses='The exact two source constraints, their sign convention and nonnegative multipliers.',
+       correspondence='The actual HasGradientAt Lagrangian gives the displayed vector stationarity; an iff derives the active-set candidate rather than assuming it. Every source feasibility/complementarity/sign check is retained.'),
+ claim('Every actual feasible point has cost>=9/4, with equality exactly at(1/2,1/2); hence the KKT candidate is the unique global minimum and also the closest point on the active line.',
+       'CompleteFoundationsConstrainedModels','actual_halfspace_global_unique_optimum','actual_halfspace_source_kkt',
+       hypotheses='Every point satisfying both inequalities; points on the source active line are included in this comparison and the minimizer lies on that line.',
+       correspondence='The full source norm objective and all-domain iff optimality establish uniqueness independently of an unchecked active-set guess. Teaching advice to check guesses is reflected in the explicit complete KKT certificate.')]
+COMPLETE_EXERCISES['opt-ex-programs-1'] = [
+ claim('The actual two-dimensional QP has Q=diag(2,4),c=(-2,4) and objective1/2 inner(x,Qx)+inner(c,x); adding the omitted constant3 gives exactly(x0-1)^2+2(x1+1)^2 and the expanded source polynomial.',
+       'CompleteFoundationsConstrainedModels','sourceQ','sourceC','qpObjective','actual_source_qp_expansion',
+       hypotheses='The genuine Euclidean matrix operator and inner product on the actual two-coordinate space.',
+       correspondence='The true matrix action and Hilbert inner product retain the convention factor1/2; equality holds for every point, rather than only at the optimizer.'),
+ claim('The actual row-matrix constraints A=[[1,1],[-1,0]],b=(2,0) are equivalent to x0+x1<=2 and x0>=0. Q is actual Matrix.PosDef and the squared-distance objective is genuinely strictly convex.',
+       'CompleteFoundationsConstrainedModels','sourceA','sourceB','qpFeasible','actual_source_qp_constraints','actual_source_q_is_positive_definite','actual_weighted_distance_strict_convex',
+       hypotheses='The source positive weights2,4 and every real two-coordinate point.',
+       correspondence='The exact matrix-vector inequalities are proved equivalent to both original scalar constraints. PosDef is the actual all-vector matrix predicate, and StrictConvexOn is proved for arbitrary positive weights.'),
+ claim('For every point the original cost is>=0, with equality iff x=(1,-1); the QP without its constant is>=-3 with the identical equality case. The actual optimizer is feasible, so both constrained and unconstrained minimizers are the same unique point.',
+       'CompleteFoundationsConstrainedModels','actual_source_qp_unique_global_optimum','actual_source_qp_expansion',
+       hypotheses='All real points, hence all points in the actual source feasible set.',
+       correspondence='Both actual objective values and all-point iff equality conditions are retained. Constant omission changes exactly the optimal value and preserves the optimizer, as the source says.')]
+for node in [1204,1209,1213,1215,1217]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-constraints-1']
+for node in [1222,1227,1231,1233,1235,1237]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-constraints-2']
+for node in [1318,1323,1327,1329,1331]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-programs-1']
+for node in [1205,1223,1319]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-optimization.html::node-{node}'] = 'This exact unit is only a labelled Review link to the prerequisite section; it adds no mathematical conclusion.'
