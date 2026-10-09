@@ -1,9 +1,9 @@
 # Continuing full mathematical coverage
 
-The verified checkpoint contains 3,196 theorems in 227 Lean files. Its local build,
+The verified checkpoint contains 3,474 theorems in 264 Lean files. Its local build,
 kernel checks and standard-axiom audit passed with Lean 4.34.1 and the pinned
-Mathlib revision. See [the formal audit](lean-checkpoint-11/verification.json).
-Twenty-seven modules received fresh kernel replays. The other 200 retain actual
+Mathlib revision. See [the formal audit](lean-checkpoint-12/verification.json).
+Thirty-eight modules received fresh kernel replays. The other 226 retain actual
 passing replays after identical module sources, transitive local imports and
 compiled dependency fingerprints were checked. Every theorem received a fresh
 axiom audit and the aggregate was freshly built. Commands, actual execution
@@ -11,9 +11,9 @@ directories and original logs are retained.
 
 Coverage remains partial. All 556 exercises and 12,774 overlapping material
 review units are inventoried, including ordinary surrounding prose, hints and
-table rows. The frozen publication ledgers classify 255 exercises as
-mathematically complete, 84 partial and 217 pending; 11,657 material units remain
-pending review. See [the ledger audit](publication-checks/ledger-checkpoint-11.json).
+table rows. The frozen publication ledgers classify 266 exercises as
+mathematically complete, 82 partial and 208 pending; 11,465 material units remain
+pending review. See [the ledger audit](publication-checks/ledger-checkpoint-12.json).
 The validator checks source fingerprints and references; it does not establish
 semantic completeness. Further working additions are outside this checkpoint.
 
@@ -22,15 +22,15 @@ the barrier hint's unconstrained minimizer and the Lyapunov answer's one-sided
 function limit. Their full sources were independently reviewed again. Earlier
 reports and their recorded classifications remain historical evidence.
 
-The book contains fifteen documented teaching corrections. Exact replacements and
+The book contains seventeen documented teaching corrections. Exact replacements and
 reasons are in [material-corrections.json](../../book/coverage/material-corrections.json).
-The newest corrections handle zero barrier margins without division and correct
-the Bayes posterior to the exact ratio 90/139 and its three-decimal approximation.
-[Static validation](publication-checks/integration-checkpoint-11.json) passed on
-the publication copy. [Browser evidence](browser-checkpoint-11.json) combines
+The newest corrections distinguish exact classification radii from rounded
+approximations and replace a strict alarm union bound with the sharp non-strict bound.
+[Static validation](publication-checks/integration-checkpoint-12.json) passed on
+the publication copy. [Browser evidence](browser-checkpoint-12.json) combines
 actual prior checks for 27 byte-identical pages with actual new five-width runs
-for the corrected barrier and probability-primer pages. It asserts no new manual screenshot inspection.
-[The checkpoint manifest](checkpoint-11-manifest.json) identifies frozen inputs.
+for the corrected Lipschitz-by-design and probability-primer pages. It asserts no new manual screenshot inspection.
+[The checkpoint manifest](checkpoint-12-manifest.json) identifies frozen inputs.
 Historical checkpoint 4 correspondence fixes remain in
 [the follow-up notes](checkpoint-4-correspondence-notes.json).
 

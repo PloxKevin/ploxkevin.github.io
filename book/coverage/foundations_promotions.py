@@ -1134,3 +1134,85 @@ for node in [1318,1323,1327,1329,1331]:
  REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-programs-1']
 for node in [1205,1223,1319]:
  REVIEWED_NONFORMAL_MATERIAL[f'primer-optimization.html::node-{node}'] = 'This exact unit is only a labelled Review link to the prerequisite section; it adds no mathematical conclusion.'
+
+# Actual source norm/gradient/KKT models, whole-domain minima and genuine
+# boundary/infeasibility witnesses close these three previously partial rows.
+COMPLETE_EXERCISES['opt-ex-programs-3'] = [
+ claim('The actual objective is half the squared Euclidean norm, with true gradient u and StrictConvexOn. The actual full feasible set is the safety half-space intersected with both actuator intervals, and is Convex. Without the box, the unique all-feasible half-space projection is(4/5,8/5), which violates the second actuator bound.',
+       'CompleteFoundationsBoxedQP','objective','feasible','constraint','actual_norm_objective','actual_objective_gradient','actual_objective_strictly_convex','actual_constraints_iff','actual_boxed_feasible_set_convex','actual_halfspace_only_zero_projection','actual_zero_projection_violates_box',
+       hypotheses='The genuine two-coordinate Euclidean space, zero reference, source safety RHS4 and box radius3/2. Every actual feasible input is quantified.',
+       correspondence='Actual Euclidean norm and actual derivative are retained. An all-point objective bound with equality iff identifies the true half-space projection; exact safety equality and failed box inequality show why that candidate is not a permitted output.'),
+ claim('The actual full-box candidate(1,3/2) has cost13/8=1.625. Multipliers1 for4-u0-2u1 and1/2 foru1-3/2, with the other three bounds at multiplier0, satisfy every primal/dual/complementarity condition and the genuine Lagrangian gradient equation. All other box bounds are strictly inactive. Every feasible input has cost>=13/8, with equality iff this candidate.',
+       'CompleteFoundationsBoxedQP','lagrangian','zeroMultipliers','actual_lagrangian_gradient','actual_zero_source_kkt','actual_zero_boxed_unique_global_optimum',
+       hypotheses='The complete five-inequality source QP with its displayed sign convention, including every lower and upper actuator bound.',
+       correspondence='Stationarity differentiates the actual objective-plus-five-constraint Lagrangian. The entire KKT conjunction and all-point unique global comparison establish the answer independently of an unchecked active-set guess.'),
+ claim('The actuator box limits u0+2u1 to at most9/2<5, so the actual feasible set at RHS5 is empty. A nonnegative slack can make u0=u1=0 feasible for the softened RHS5 inequality while violating the original safety requirement.',
+       'CompleteFoundationsBoxedQP','actual_box_maximum_and_infeasibility','relaxedFeasible','actual_slack_restores_solvability_without_original_guarantee',
+       hypotheses='Both true actuator bounds remain imposed; the relaxed witness changes only the safety inequality by adding nonnegative slack.',
+       correspondence='Actual set equality with the empty set proves infeasibility, not just failure of one candidate. The softened-feasible/original-infeasible witness proves that adding slack changes the requirement and does not recover its original guarantee.')]
+COMPLETE_EXERCISES['primer-optimization.html::exercise-34'] = [
+ claim('For the actual reference(2,1) and RHS21/5, the unique half-space-only projection is(51/25,27/25), with exact cost1/250. Its coordinate clipping is(3/2,27/25), yielding safety value183/50=3.66<4.2, so sequential half-space projection and box clipping fail the intersection.',
+       'CompleteFoundationsBoxedQP','actual_norm_objective','actual_halfspace_only_reference_projection','clip','actual_reference_projection_and_clipping',
+       hypotheses='The genuine source Euclidean tracking objective, exact half-space RHS4.2 and actuator radius1.5.',
+       correspondence='The half-space projection is proved by an all-point unique global comparison. The actual coordinate max/min clip is evaluated exactly, with original reference normal product4 and projection increment(1/25)*(1,2) retained.'),
+ claim('The full-box point(3/2,27/20) has objective149/800=.18625. Actual five-constraint KKT holds with safety multiplier7/40=.175 and first-upper-bound multiplier27/40=.675, others0; objective gradient(-1/2,7/20) cancels the actual normals. The feasible set is convex and objective StrictConvexOn. Every feasible point has objective>=149/800 with equality iff this point.',
+       'CompleteFoundationsBoxedQP','actual_objective_gradient','actual_objective_strictly_convex','actual_boxed_feasible_set_convex','actual_lagrangian_gradient','referenceMultipliers','actual_reference_source_kkt','actual_reference_boxed_unique_global_optimum',
+       hypotheses='Every input satisfying all five actual source inequalities; all inactive box bounds and multiplier signs are included.',
+       correspondence='The true Euclidean objective and actual Lagrangian derivatives match the displayed source stationarity. A quantified all-feasible unique minimum proves global optimality and exact cost, retaining the full model rather than numeric checks alone.'),
+ claim('A genuine finite box grid with spacing1/20 has the actual optimal grid point at indices(60,57)=(3/2,27/20); its objective is no larger than any other feasible grid point. RHS5 is genuinely infeasible on the box, while an actual slack-feasible zero command need not satisfy the original safety inequality.',
+       'CompleteFoundationsBoxedQP','gridPoint','actual_grid_search_agrees','actual_box_maximum_and_infeasibility','actual_slack_restores_solvability_without_original_guarantee',
+       hypotheses='The source does not specify a grid spacing; the explicit 61-by61 grid includes the exact source optimizer. Infeasibility quantifies the full continuous actuator box.',
+       correspondence='The grid agreement is an actual all-grid comparison with candidate attainment, not an empirical claim from an unrecorded simulation. Continuous infeasibility and a softened counterexample establish the exact bounded-input/slack conclusions.')]
+COMPLETE_EXERCISES['opt-ex-constraints-3'] = [
+ claim('The actual positive-part quadratic penalty has the two displayed branches. On the lower branch the objective strictly decreases toward1 with value1. The actual upper-branch derivative is8x-10 and actual second derivative8>0; its stationary candidate5/4 has penalized cost3/4, smaller than1, and violation1/4.',
+       'CompleteFoundationsPenaltyModels','objective','constraint','quadraticPenalty','candidate','actual_objective_derivative','actual_constraint_derivative','actual_penalty_branch_formulas','actual_right_polynomial_derivative','actual_penalty_derivative_below_one','actual_penalty_derivative_above_one','actual_right_polynomial_curvature','actual_objective_decreases_to_branch_endpoint','actual_practice_penalty_derivative_and_curvature','actual_penalty_second_derivative_above_one','actual_candidate_true_stationarity','actual_practice_penalty_values_and_infeasibility',
+       hypotheses='Practice coefficient3 corresponds to generic penalty weight rho6. Branch polynomial derivative formulas hold universally; genuine full-penalty derivatives and second derivative on the upper open branch require x>1, including the stationary source candidate.',
+       correspondence='Derivatives are true HasDerivAt objects. The source Hessian refers to the branch polynomial, with actual full-objective second derivative also established throughout its open branch. Exact objective and penalty terms support the displayed .75²+3(.25)² value.'),
+ claim('For every finite nonnegative rho, the actual penalty uniquely globally minimizes at(4+rho)/(2+rho), with strictly positive violation2/(2+rho). In particular the source rho6 optimizer5/4 uniquely minimizes the entire piecewise objective and violates the original bound.',
+       'CompleteFoundationsPenaltyModels','actual_penalty_candidate_violation','actual_right_branch_completed_square','actual_penalty_generic_unique_global_optimum',
+       hypotheses='Arbitrary finite nonnegative real weight rho and every real input x; no branch is omitted from the global comparison.',
+       correspondence='The exact completed square on the upper branch and strict lower-branch separation prove full all-point lower bound/equality iff. This substantiates the claimed trade of feasibility for lower penalized objective, not only local stationarity.'),
+ claim('The actual epsilon-KKT definition includes original feasibility, nonnegative multiplier, genuine objective/constraint gradient norm residual and complementary residual. Atx9/10,lambda11/5, g=-1/10<0, stationarity norm0 and complementary residual11/50=.22. It holds iff epsilon>=11/50, and exact KKT fails despite zero stationarity.',
+       'CompleteFoundationsPenaltyModels','epsilonKKT','actual_gradients_and_stationarity_residual','actual_practice_approximate_kkt_numbers','actual_practice_minimal_epsilon','actual_practice_not_exact_kkt_despite_zero_stationarity',
+       hypotheses='The exact real scalar objective and one affine constraint, with the page norm/complementarity definition retained.',
+       correspondence='The residual is the actual gradient norm, identified with the real absolute value using genuine derivative-to-gradient conversion. The whole definition has an exact iff threshold, preserving feasibility and multiplier signs. Positive inactive-constraint multiplier explicitly violates complementarity.')]
+for node in [1354,1359,1363,1365,1367,1369]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-programs-3']
+for node in [1705,1710,1711,1712]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['primer-optimization.html::exercise-34']
+for node in [1242,1247,1251,1254,1256,1258]:
+ REVIEWED_COMPLETE_MATERIAL[f'primer-optimization.html::node-{node}'] = COMPLETE_EXERCISES['opt-ex-constraints-3']
+for node in [1243,1355]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-optimization.html::node-{node}'] = 'This exact paragraph is only a labelled Review link to the prerequisite topic; it adds no mathematical assertion.'
+
+# One broad lesson paragraph is split into exact proved model conclusions and
+# its still-unproved generic/rate/algorithm clauses. It is not a full-unit closure.
+REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107'] = {
+ 'proved': [
+  claim('For every finite nonnegative weight rho, the actual quadratic-penalty running example uniquely globally minimizes at(4+rho)/(2+rho), with strictly positive original-constraint violation2/(2+rho).',
+        'CompleteFoundationsPenaltyModels','quadraticPenalty','candidate','actual_penalty_candidate_violation','actual_penalty_generic_unique_global_optimum',
+        hypotheses='The exact running objective(x-2)^2 and constraintx<=1 on the whole real line, with finite realrho>=0.',
+        correspondence='The actual positive-part penalty and all-real-point equality iff establish the genuine global optimizer. Positive violation proves infeasibility for every finite weight, rather than only for several printed numbers.'),
+  claim('The actual scalar L1 positive-part penalty has unique global minimizer1 exactly whenrho>=2. For0<=rho<2 its unique minimizer is2-rho/2 with costrho-rho^2/4. At weight>=2 the actual penalty has unequal left/right derivatives and is genuinely nondifferentiable at1.',
+        'CompleteFoundationsExactPenaltyModels','exactPenalty','actual_exact_penalty_branches','actual_exact_penalty_upper_weight_global_unique','actual_exact_penalty_below_weight_global_unique','actual_exactness_threshold','actual_exact_penalty_one_sided_derivatives','actual_exact_penalty_is_nondifferentiable_at_threshold',
+        hypotheses='The exact running real objective and affine upper-bound constraint, with nonnegative real weight for the iff threshold.',
+        correspondence='Both real branches are compared globally with iff equality cases. True one-sided derivatives and uniqueness of derivatives on the two half-lines prove the actual kink, not merely a plotted corner.'),
+  claim('For the source linear slack model, every relaxed-feasible cost is bounded below by the actual exact penalty. For0<=p<2 an actual global optimum isx=2-p/2,s=1-p/2; forp>=2 the actual global optimum isx1,s0. In particularp1 gives the actual globally optimal relaxed-feasible pointx1.5,s.5, which violates the originalx<=1 constraint.',
+        'CompleteFoundationsExactPenaltyModels','slackObjective','slackFeasible','actual_slack_objective_dominates_exact_penalty','actual_slack_lower_price_optimum','actual_slack_upper_price_optimum','actual_source_slack_violation',
+        hypotheses='The whole real scalar decision/slack space, slack>=0 andx<=1+slack; nonnegative linear slack price.',
+        correspondence='The true two-variable objective is compared against every relaxed-feasible pair. Actual optimized violation shows why relaxed feasibility cannot establish the original constraint; no unique slack claim is inferred at zero price.'),
+  claim('For every given point in any domain and finite family of real inequalities, nonnegative slacksmax(g_i(x),0) make every softened inequalityg_i(x)<=s_i feasible.',
+        'CompleteFoundationsExactPenaltyModels','actual_finite_softening_feasible',
+        hypotheses='A given underlying decision point exists; the finite inequality family under consideration is softened. Other hard constraints and nonempty hard domains are not supplied by slack.',
+        correspondence='The actual coordinate slack construction is proved for arbitrary types and finite families. It substantiates solvability of fully softened finite constraints on a nonempty decision domain, without asserting solvability of an independently infeasible hard part.'),
+  claim('The actual constrained nonconvex objective-x^4 onx^2<=1 has global minima exactly at+-1 with value-1; both satisfy actual derivative-based KKT with multiplier2. Its actual L1 penalty-x^4+rho*max(x^2-1,0) is unbounded below for every finite realrho.',
+        'CompleteFoundationsExactPenaltyModels','nonconvexObjective','nonconvexConstraint','nonconvexPenalty','actual_nonconvex_constrained_global_minima','actual_nonconvex_lagrangian_derivative','actual_nonconvex_source_kkt','actual_nonconvex_penalty_unbounded_below',
+        hypotheses='The actual nonconvex polynomial objective and scalar inequality; every realpenalty weight and every proposed finite lower bound are quantified.',
+        correspondence='A full constrained all-point lower bound/equality iff identifies both genuine optima. True Lagrangian derivatives verify their KKT multipliers. A sqrt-based actual point violates every proposed penalized lower bound, establishing genuine unboundedness rather than one finite failure.')],
+ 'pending': [
+  'Supply exact source quadratic-penalty valuesx=1.5,1.1,1.01 atrho2,18,198 and both actual open-branch second derivatives2 and2+rho in explicitly source-bound wrappers.',
+  'Supply the source large-rho step-size scaling1/rho, conditioning interpretation and amplification of approximate-objective errors with precise norms, hypotheses and genuine algorithm/error conclusions.',
+  'Supply the generic finite-constraint convex exact-penalty theorem forrho>||lambda-star||infinity from actual attained optimal multiplier and strong-duality definitions, preserving feasibility/nonempty/boundedness requirements.',
+  'Supply the actual rho2 augmented-Lagrangian minimization/update model, the three printed iterate pairs, genuine all-time convergence to(1,2), and the exact positive-part proportional violation correction.',
+  'Classify the MPC recursive-feasibility claim under exact hard-domain/nonempty and softened-constraint assumptions; a finite given-point slack construction alone does not prove arbitrary hard-constrained MPC recursion.',
+  'The instruction to keep safety constraints hard and reserve slack for performance is modeling advice supported by the actual relaxed-original counterexample; any further mathematical safety/recursive-feasibility guarantee requires its own precise model proof.']}

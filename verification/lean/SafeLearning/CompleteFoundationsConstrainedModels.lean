@@ -75,7 +75,7 @@ theorem actual_weighted_distance_strict_convex (q₀ q₁ a b : ℝ)
     rw [ht']
     ring
   have hpositive := mul_pos (show 0 < s*t/2 by positivity) hp
-  change weightedDistance q₀ q₁ a b (s • x+t • y) < 
+  change weightedDistance q₀ q₁ a b (s • x+t • y) <
     s*weightedDistance q₀ q₁ a b x+t*weightedDistance q₀ q₁ a b y
   linarith
 

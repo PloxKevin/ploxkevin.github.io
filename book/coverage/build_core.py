@@ -387,6 +387,8 @@ practice_hypotheses = {
     'barriers.html::exercise-18': ['The source real double-integrator model with position barrier1-p, actual two-dimensional companion matrices and positive real pole magnitudes. Forward invariance assumes continuous position/velocity on each finite interval, their actual ODE derivatives on its interior, the enforced ECBF input inequality and both nonnegative initial margins. The ratio form is used only for a strictly positive previous margin; zero requires the rate condition.'],
     'barriers.html#exercise-10-p5': ['The actual real two-input objective and half-space constraint; KKT stationarity uses the actual coordinate derivatives.'],
     'cmdp.html#exercise-8-p6': ['One self-looping state and the stated stationary two-action marginal PMF, with deterministic reward/cost given the action, discount1/2 and budget1. The expectation of the infinite random return is derived without intertime independence.'],
+    'policy-optimization.html#exercise-9-p5': ['The actual real Fin2 gradient(1,2), positive definite metric diag(1,4), and trust radius delta1/2. Optimality concerns the printed quadratic surrogate constraint and linear reward objective.'],
+    'policy-optimization.html#exercise-9-p9': ['The actual real Fin2 unit disk, cost halfspace x1<=1/5, and linear objective x1+x2. The boundary derivative is asserted only on -1<t<=1/5; the global optimum includes all feasible disk points.'],
     'cmdp.html#exercise-8-p9': ['The same actual policy-probability domain[0,1], reward2+6p and cost4p. The unique dual minimum belongs to the nonnegative multiplier domain.'],
     'cmdp.html#exercise-8-p5': ['The actual deterministic two-state path starts at0, moves to1 and stays there; discount1/2 and rewards0,2.'],
     'barriers.html::exercise-20': ['The actual three-state min/max safety operator, margins2/1/-1 and discount1/2. The general interpolation statement assumes a discount in[0,1] and interpolates current and clipped future margin.'],
@@ -406,7 +408,8 @@ for review_name in ['two-input-projection-source-review.json',
                     'policy-boundary-source-review-v1.json',
                     'policy-importance-source-review-v2.json',
                     'exponential-barrier-source-review-v1.json',
-                    'policy-geometry-checks-source-review-v1.json']:
+                    'policy-geometry-checks-source-review-v1.json',
+                    'policy-trust-disk-source-review-v1.json']:
     path = reviewed_path(review_name)
     if not path.exists():
         continue
@@ -455,6 +458,68 @@ for review_name in ['two-input-projection-source-review.json',
         MAP[key]['source_review'] = dict(file=str(path.relative_to(ROOT)),
             sha256=sha(str(path.relative_to(ROOT))),
             nonformal_scope_clauses=[c for c in clauses if c['status']=='not_a_formal_claim'])
+
+DIRECT_MATERIAL = {}
+for review_name in ['alternating-cmdp-source-review-v1.json',
+                    'core-guide-material-source-review-v1.json']:
+    path = ROOT/'book/coverage/checks'/review_name
+    if not path.exists():
+        continue
+    review = json.loads(path.read_text())
+    if review['status'] != 'independent_source_correspondence_review_passed':
+        raise ValueError('Unapproved direct source review: '+review_name)
+    for name, expected in review['source_sha256'].items():
+        if INV['source_sha256'][name] != expected:
+            raise ValueError('Changed directly reviewed page: '+name)
+    for name, expected in review['proof_source_sha256'].items():
+        if sha(name) != expected:
+            raise ValueError('Changed directly reviewed proof: '+name)
+    for evidence in review['actual_standalone_evidence']:
+        if (evidence['actual_exit_code'] != 0 or sha(evidence['file']) != evidence['sha256']
+                or sha(evidence['log']) != evidence['log_sha256']):
+            raise ValueError('Changed direct review compiler evidence: '+review_name)
+        actual = json.loads((ROOT/evidence['file']).read_text())
+        if (actual['exit_code'] != 0 or
+                actual['source_sha256_before'] != actual['source_sha256_after'] or
+                sha(actual['source']) != actual['source_sha256_after'] or
+                sha(actual['log']) != actual['log_sha256']):
+            raise ValueError('Stale actual direct compiler execution: '+review_name)
+    if 'exercise_key' in review:
+        key = review['exercise_key']
+        original = next(e for e in INV['exercises'] if e['key']==key)
+        if (original['text_sha256'] != review['exercise_text_sha256']
+                or review['missing_clauses']
+                or any(c['review_status']!='approved_complete_source' or c['missing_clauses']
+                       for c in review['reviewed_clauses'])):
+            raise ValueError('Unresolved direct whole exercise: '+key)
+        names = list(dict.fromkeys(n for c in review['reviewed_clauses']
+                                   for n in c['lean_declarations']))
+        hypotheses = list(dict.fromkeys(h for c in review['reviewed_clauses']
+                                        for h in c['hypotheses']))
+        add(key, names, ' '.join(c['per_clause_reason'] for c in review['reviewed_clauses']),
+            hypotheses, [])
+        MAP[key]['source_review'] = dict(file=str(path.relative_to(ROOT)),
+            sha256=sha(str(path.relative_to(ROOT))),
+            nonformal_scope_clauses=review['nonformal_clauses'])
+    units = {u['key']: u for u in INV['material_source_units']}
+    for record in review['material_units']:
+        if record['material_status'] == 'pending':
+            continue
+        key = record['source_unit_key']
+        unit = units[key]
+        if (key in DIRECT_MATERIAL or unit['source_sha256'] != record['source_sha256']
+                or unit['text_sha256'] != record['unit_text_sha256'] or record['missing_clauses']
+                or not record['per_unit_reason']):
+            raise ValueError('Stale or incomplete direct source unit: '+key)
+        status = record['material_status']
+        if status not in ('proved','not_a_formal_claim'):
+            raise ValueError('Unsupported direct material status: '+key)
+        if status == 'proved' and not record['lean_declarations']:
+            raise ValueError('Missing direct material proof correspondence: '+key)
+        if status == 'not_a_formal_claim' and record['lean_declarations']:
+            raise ValueError('Nonformal direct unit has mathematical proof references: '+key)
+        DIRECT_MATERIAL[key] = dict(record=record, path=str(path.relative_to(ROOT)),
+                                   review_sha256=sha(str(path.relative_to(ROOT))))
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
@@ -532,7 +597,7 @@ MATERIAL_REVIEW = {
 # These approvals come from an independent, per-paragraph semantic review.
 # DOM containment proposes candidates; it does not establish correspondence.
 overlap_path = ROOT/'book/coverage/core-material-overlap-review.json'
-for checkpoint in (8, 9, 10, 11, 12, 13, 14):
+for checkpoint in (8, 9, 10, 11, 12, 13, 14, 15):
     candidate_review = ROOT/f'book/coverage/core-material-overlap-review-{checkpoint}.json'
     if candidate_review.exists():
         overlap_path = candidate_review
@@ -618,11 +683,24 @@ for u in INV['material_source_units']:
                 sha256=sha(str(overlap_path.relative_to(ROOT))),
                 exercise_key=record['exercise_key'],
                 parent_claims_sha256=record['reviewed_parent_claims_sha256']))
+    if u['key'] in DIRECT_MATERIAL:
+        entry = DIRECT_MATERIAL[u['key']]
+        record = entry['record']
+        claim.update(statement_in_prose=u['source_text'],
+            kind='independently_reviewed_literal_material_unit',
+            status=record['material_status'], lean_declarations=record['lean_declarations'],
+            hypotheses=record.get('hypotheses', []),
+            correspondence=record['per_unit_reason'], remaining_gaps=[],
+            independent_review=dict(source=entry['path'], sha256=entry['review_sha256']))
     material.append(claim)
 
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
-        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance','CompleteExponentialBarrier','CompleteExponentialBarrierSafety','CompleteExponentialBarrierConsequences','CompleteExponentialBarrierClassK','CompletePolicyGeometry','CompletePolicyChecks','CompletePolicyAdvantages','CompletePolicyDivergence','CompletePolicyPracticeConsequences']
+        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance','CompleteExponentialBarrier','CompleteExponentialBarrierSafety','CompleteExponentialBarrierConsequences','CompleteExponentialBarrierClassK','CompletePolicyGeometry','CompletePolicyChecks','CompletePolicyAdvantages','CompletePolicyDivergence','CompletePolicyPracticeConsequences','CompletePolicyTrustStep','CompletePolicyDiskStep']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
+for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
+             'CompleteAlternatingCMDPGeometry','CompleteStudyGuideModels']:
+    source = f'verification/lean/SafeLearning/{name}.lean'
+    proof_files[source] = sha(source)
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),
     source_sha256={s:INV['source_sha256'][s] for s in sorted(SOURCES)},proof_files=proof_files,

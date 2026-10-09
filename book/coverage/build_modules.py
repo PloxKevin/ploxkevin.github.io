@@ -17,9 +17,22 @@ PAGES = ["landscape", "toolkit-lmi", "toolkit-gp", "safe-bo", "safe-bo-theory",
          "gosafe", "viability", "lipsdp", "lipschitz-by-design", "nn-in-the-loop", "verification"]
 SOURCES = {f"SafeLearning/{p}.html" for p in PAGES}
 
+REBASE_CONFIRMATION_REL="book/coverage/checks/modules-correction16-independent-source-rebase-confirmation.json"
+REBASE_CONFIRMATION_SHA="ac91ff5486e963d2bc761f0f705748eea168cdd447e6ff71a312145a684b0f96"
+
 
 def digest(path):
     return hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+
+
+def current_rebase_confirmation(review_rel):
+    assert digest(REBASE_CONFIRMATION_REL)==REBASE_CONFIRMATION_SHA
+    confirmation=json.loads((ROOT/REBASE_CONFIRMATION_REL).read_text())
+    assert confirmation["status"]=="passed" and confirmation["correction_id"]==16
+    row=next(row for row in confirmation["records"] if row["rebased_review"]==review_rel)
+    assert row["status"]=="passed" and row["rebased_review_sha256"]==digest(review_rel)
+    assert digest(confirmation["source"])==confirmation["source_sha256_after"]
+    return {"file":REBASE_CONFIRMATION_REL,"sha256":REBASE_CONFIRMATION_SHA,"status":"passed"}
 
 
 def split_sentences(text):
@@ -735,7 +748,7 @@ for e in INV["exercises"]:
             c['hypotheses']=["Arbitrary finite real layer matrices, actual elementwise activation with every chord slope in [0,1], arbitrary biases, and Euclidean induced operator norms."]
             c['correspondence']="The listed declarations establish this exact source atom using actual functions, actual quadratic forms and exact supplied matrices. Spectral norms are Euclidean induced norms. Actual globally slope-restricted linear functions realize the admissible scalar pairs; explicit actual ReLU pairs refute invalid coupled constraints. The product optimization proof bounds the infimum of actual feasible objectives. Further optimized walkthrough values remain separate material claims."
     if e["key"] == "lipschitz-by-design.html::exercise-15":
-        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review-correction13.json"
+        cayley_review_rel = "book/coverage/checks/modules-cayley-source-review-correction16.json"
         cayley_review = json.loads((ROOT/cayley_review_rel).read_text())
         assert cayley_review["exercise_key"] == e["key"]
         assert cayley_review["exercise_text_sha256"] == e["text_sha256"]
@@ -743,6 +756,7 @@ for e in INV["exercises"]:
             assert digest(source) == sha, source
         cayley_evidence = {"file":cayley_review_rel,"sha256":digest(cayley_review_rel),
             "reviewer":cayley_review["reviewer"],"status":cayley_review["status"]}
+        cayley_evidence["source_version_rebase_confirmation"]=current_rebase_confirmation(cayley_review_rel)
         approved_components = {}
         for reviewed in cayley_review["components"]:
             c = next(c for c in claims if c["id"] == reviewed["id"])
@@ -763,7 +777,7 @@ for e in INV["exercises"]:
                 independent_source_review=cayley_evidence)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-16":
-        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-formatting11.json"
+        sll_review_rel = "book/coverage/checks/modules-sll-complete-source-review-correction16.json"
         sll_review = json.loads((ROOT/sll_review_rel).read_text())
         assert sll_review["status"] == "independent_source_correspondence_review_passed"
         assert sll_review["exercise_key"] == e["key"] and sll_review["exercise_text_sha256"] == e["text_sha256"]
@@ -775,6 +789,7 @@ for e in INV["exercises"]:
         assert digest(imported_general["path"]) == imported_general["sha256"]
         sll_evidence = {"file":sll_review_rel,"sha256":digest(sll_review_rel),
             "reviewer":sll_review["reviewer"],"status":sll_review["status"]}
+        sll_evidence["source_version_rebase_confirmation"]=current_rebase_confirmation(sll_review_rel)
         sll_approved = [row for row in sll_review["reviewed_clauses"] if row["status"] == "approved"]
         sll_names = sorted({name for row in sll_approved for name in row["lean_declarations"] if name.startswith("SafeLearning.")})
         # The generic imported theorem is also retained through a precise local
@@ -807,7 +822,7 @@ for e in INV["exercises"]:
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-17":
-        sandwich_review_rel = "book/coverage/checks/modules-sandwich-source-review.json"
+        sandwich_review_rel = "book/coverage/checks/modules-sandwich-source-review-correction16.json"
         sandwich_review = json.loads((ROOT/sandwich_review_rel).read_text())
         assert sandwich_review["status"] == "independent_source_correspondence_review_passed"
         assert sandwich_review["exercise_key"] == e["key"] and sandwich_review["exercise_text_sha256"] == e["text_sha256"]
@@ -817,6 +832,7 @@ for e in INV["exercises"]:
                 assert digest(path) == sha, path
         sandwich_evidence = {"file":sandwich_review_rel,"sha256":digest(sandwich_review_rel),
             "reviewer":sandwich_review["reviewer"],"status":sandwich_review["status"]}
+        sandwich_evidence["source_version_rebase_confirmation"]=current_rebase_confirmation(sandwich_review_rel)
         sandwich_approved = [row for row in sandwich_review["reviewed_clauses"] if row["status"] == "approved"]
         for c in claims:
             if "::proved-component-" in c["id"]:
@@ -841,7 +857,7 @@ for e in INV["exercises"]:
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "lipschitz-by-design.html::exercise-18":
-        fir_review_rel = "book/coverage/checks/modules-fir-source-review-v1.json"
+        fir_review_rel = "book/coverage/checks/modules-fir-source-review-correction16.json"
         fir_review = json.loads((ROOT/fir_review_rel).read_text())
         assert fir_review["status"] == "independent_source_correspondence_review_passed"
         assert fir_review["exercise_key"] == e["key"] and fir_review["exercise_text_sha256"] == e["text_sha256"]
@@ -851,6 +867,7 @@ for e in INV["exercises"]:
                 assert digest(path) == sha, path
         fir_evidence={"file":fir_review_rel,"sha256":digest(fir_review_rel),
             "reviewer":fir_review["reviewer"],"status":fir_review["status"]}
+        fir_evidence["source_version_rebase_confirmation"]=current_rebase_confirmation(fir_review_rel)
         fir_approved=[row for row in fir_review["reviewed_clauses"] if row["status"]=="approved"]
         for c in claims:
             if "::proved-component-" in c["id"]:
@@ -874,10 +891,121 @@ for e in INV["exercises"]:
                 c["independent_source_review"] = fir_evidence
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
+    if e["key"] == "toolkit-lmi.html#practice-8":
+        dissipation_review_rel="book/coverage/checks/modules-dissipation-p8-source-review.json"
+        dissipation_review=json.loads((ROOT/dissipation_review_rel).read_text())
+        assert dissipation_review["status"]=="approved_complete_source" and not dissipation_review["missing_clauses"]
+        assert dissipation_review["exercise_key"]==e["key"] and dissipation_review["exercise_text_sha256"]==e["text_sha256"]
+        for section in ["source_sha256","proof_source_sha256"]:
+            for path,sha in dissipation_review[section].items():assert digest(path)==sha,path
+        assert digest(dissipation_review["actual_standalone_evidence"])==dissipation_review["actual_standalone_evidence_sha256"]
+        assert digest(dissipation_review["raw_log"])==dissipation_review["raw_log_sha256"] and dissipation_review["actual_exit_code"]==0
+        dissipation_evidence={"file":dissipation_review_rel,"sha256":digest(dissipation_review_rel),
+            "reviewer":dissipation_review["reviewer"],"status":dissipation_review["status"]}
+        dissipation_approved=dissipation_review["components"]
+        assert all(row["status"]=="approved_precise_component" for row in dissipation_approved)
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="This clause supplies the actual storage/input/output sequences, pointwise dissipation, nonnegative storage and zero initial storage as the premises of the requested energy bound.",
+            independent_source_review=dissipation_evidence)
+        for index,rows in [(1,[0,1]),(2,[1])]:
+            claims[index].update(status="proved",remaining_gaps=[],
+                lean_declarations=sorted({name for i in rows for name in dissipation_approved[i]["lean_declarations"]}),
+                hypotheses=[hyp for i in rows for hyp in dissipation_approved[i]["hypotheses"]],
+                correspondence="The independently reviewed actual trajectory storage theorem proves this exact source request. It retains terminal and initial storage before deriving the output bound; the supplied energy3 is instantiated in the actual horizon sum.",
+                independent_source_review=dissipation_evidence)
+        for number,row in enumerate(dissipation_approved,1):
+            c=claim(e["key"]+f"::independently-reviewed-component-{number}",row["statement"],row["lean_declarations"],"proved",
+                hypotheses=row["hypotheses"],correspondence=row["review_reason"])
+            c.update(independent_source_review=dissipation_evidence,scope_limits=dissipation_review["limits"])
+            claims.append(c)
+        for number,row in enumerate(dissipation_review["nonformal_clauses"],1):
+            c=claim(e["key"]+f"::specific-source-classification-{number}",row["text"],status="not_a_formal_claim",
+                kind=row["classification"],correspondence=row["reason"])
+            c.update(remaining_gaps=[],independent_source_review=dissipation_evidence)
+            claims.append(c)
+        complete=all(c["status"]!="pending" and not c["remaining_gaps"] for c in claims)
+    if e["key"] == "toolkit-lmi.html::exercise-20":
+        scalar_bounded_review_rel="book/coverage/checks/modules-scalar-bounded-real-source-review-v1.json"
+        scalar_bounded_review=json.loads((ROOT/scalar_bounded_review_rel).read_text())
+        assert scalar_bounded_review["status"]=="approved_precise_components_whole_source_partial"
+        assert scalar_bounded_review["exercise_key"]==e["key"] and scalar_bounded_review["exercise_text_sha256"]==e["text_sha256"]
+        for section in ["source_sha256","proof_source_sha256"]:
+            for path,sha in scalar_bounded_review[section].items():assert digest(path)==sha,path
+        assert digest(scalar_bounded_review["checked_actual_standalone_batch"])==scalar_bounded_review["checked_actual_standalone_batch_sha256"]
+        for record in scalar_bounded_review["actual_standalone_evidence"]:
+            assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+            assert digest(record["compiler_manifest"])==record["compiler_manifest_sha256"] and digest(record["log"])==record["log_sha256"]
+        scalar_bounded_evidence={"file":scalar_bounded_review_rel,"sha256":digest(scalar_bounded_review_rel),
+            "reviewer":scalar_bounded_review["reviewer"],"status":scalar_bounded_review["status"]}
+        scalar_bounded_approved=scalar_bounded_review["components"]
+        assert all(row["status"]=="approved_precise_component" for row in scalar_bounded_approved)
+        claims[0].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="The clause supplies the actual scalar recurrence and output coefficients as premises of the requested dissipativity/gain calculation.",
+            independent_source_review=scalar_bounded_evidence)
+        for index,rows in [(1,[0]),(2,[1,2,3,4]),(3,list(range(5,15)))]:
+            claims[index].update(status="proved",remaining_gaps=[],
+                lean_declarations=sorted({name for i in rows for name in scalar_bounded_approved[i]["lean_declarations"]}),
+                hypotheses=[hyp for i in rows for hyp in scalar_bounded_approved[i]["hypotheses"]],
+                correspondence="This exact requested source atom is discharged by the independently approved actual scalar matrix/trajectory/complex function components. The true squared-gain optimum and literal calculus are derived, square-summable finite pulses prove the true signal lower bound, and the actual frequency supremum agrees. The final answer's general KYP and conservatism assertions remain separate pending mathematical clauses below.",
+                independent_source_review=scalar_bounded_evidence)
+        for number,row in enumerate(scalar_bounded_approved,1):
+            c=claim(e["key"]+f"::independently-reviewed-component-{number}",row["statement"],row["lean_declarations"],"proved",
+                hypotheses=row["hypotheses"],correspondence=row["review_reason"])
+            c.update(independent_source_review=scalar_bounded_evidence,scope_limits=scalar_bounded_review["limits"])
+            claims.append(c)
+        for number,row in enumerate(scalar_bounded_review["missing_clauses"],1):
+            c=claim(e["key"]+f"::pending-background-clause-{number}",row["source_clause"],gaps=[row["reason"]],units=["toolkit-lmi.html::node-1294"])
+            c.update(independent_source_review=scalar_bounded_evidence)
+            claims.append(c)
+        for number,row in enumerate(scalar_bounded_review["nonformal_clauses"],1):
+            c=claim(e["key"]+f"::specific-source-classification-{number}",row["text"],status="not_a_formal_claim",
+                kind=row["classification"],correspondence=row["reason"])
+            c.update(remaining_gaps=[],independent_source_review=scalar_bounded_evidence)
+            claims.append(c)
+        complete=False
+    if e["key"] == "lipschitz-by-design.html::exercise-19":
+        classification_review_rel="book/coverage/checks/modules-classification-source-review-v1.json"
+        assert digest(classification_review_rel)=="17f071b70bf4712ca01ba32737cf1944e206f23bd96f6a43cd6d24e725e82f87"
+        classification_review=json.loads((ROOT/classification_review_rel).read_text())
+        assert classification_review["status"]=="independent_source_correspondence_review_passed" and not classification_review["missing_clauses"]
+        assert classification_review["exercise_key"]==e["key"] and classification_review["exercise_text_sha256"]==e["text_sha256"]
+        assert digest(classification_review["source"])==classification_review["source_sha256"]
+        for section in ["proof_sha256","compiler_evidence_sha256"]:
+            for path,sha in classification_review[section].items():assert digest(path)==sha,path
+        assert digest(classification_review["stable_batch"])==classification_review["stable_batch_sha256"]
+        for record in json.loads((ROOT/classification_review["stable_batch"]).read_text())["proof_files"]:
+            assert record["exit_code"]==0 and record["source_unchanged"] and digest(record["file"])==record["sha256"]
+        classification_evidence={"file":classification_review_rel,"sha256":digest(classification_review_rel),
+            "reviewer":classification_review["reviewer"],"status":classification_review["status"]}
+        classification_approved=[row for row in classification_review["reviewed_clauses"] if row["status"]=="approved"]
+        claims[0].update(status="proved",remaining_gaps=[],lean_declarations=classification_approved[0]["lean_declarations"],
+            hypotheses=["The actual finite source logits are stipulated."],correspondence=classification_approved[0]["reason"],
+            independent_source_review=classification_evidence)
+        claims[1].update(status="not_a_formal_claim",kind="explicit_source_given",remaining_gaps=[],
+            correspondence="This source clause supplies the actual one-Lipschitz feature map and actual finite final layer with stipulated spectral and row gains as the exercise model hypotheses.",
+            independent_source_review=classification_evidence)
+        for index,rows in [(2,[1]),(3,[2,3,6]),(4,[4,5]),(5,[7,8]),(6,[9,10,11,12])]:
+            claims[index].update(status="proved",remaining_gaps=[],
+                lean_declarations=sorted({name for i in rows for name in classification_approved[i]["lean_declarations"]}),
+                hypotheses=["The actual finite real classifier has the stipulated logits, a one-Lipschitz feature map and actual final-layer norm/row-gain bounds. Quarter-scale normalization is the actual vector map; larger-level conclusions assert failure of these sufficient criteria only."],
+                correspondence="The independent corrected-source whole review approves every mathematical clause in this question atom, preserving exact quotient minima, rigorous decimal-error bounds, actual spectral/row norms, and actual prediction guarantees over the stated closed perturbation balls.",
+                independent_source_review=classification_evidence)
+        for number,row in enumerate(classification_approved,1):
+            c=claim(e["key"]+f"::independently-reviewed-component-{number}",row["source_clause"],row["lean_declarations"],"proved",
+                hypotheses=["The exact genuine classifier/norm/normalizer hypotheses and source constants stated by the referenced declarations."],correspondence=row["reason"])
+            c.update(independent_source_review=classification_evidence,scope_limits=classification_review["limits"])
+            claims.append(c)
+        for number,row in enumerate(classification_review["reviewed_clauses"],1):
+            if row["status"] in ["not_a_formal_claim","verified_primary_source_attribution"]:
+                c=claim(e["key"]+f"::specific-source-classification-{number}",row["source_clause"],status="not_a_formal_claim",
+                    kind=row["status"],correspondence=row["reason"])
+                c.update(remaining_gaps=[],independent_source_review=classification_evidence)
+                claims.append(c)
+        complete=all(c["status"]!="pending" and not c["remaining_gaps"] for c in claims)
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
                       "label": e["label"], "source_sha256": e["source_sha256"],
                       "source_text_sha256": e["text_sha256"], "claims": claims,
-                      "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) else "pending"})
+                      "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) or e["key"]=="toolkit-lmi.html::exercise-20" else "pending"})
 
 material = []
 LOGDET_REVIEW_UNIT_COMPONENTS = {
@@ -991,6 +1119,34 @@ for u in INV["material_source_units"]:
             correspondence="Every mathematical clause of this exact corrected Exercise13.4 source unit is independently approved: actual realization and nilpotence, inverse/PD versus endpoint, exact radical/factor/Cayley/certificate/spectrum/rounding, storage energy and complex frequency bound/supremum or exact gain tightness as appropriate. No activation multiplier is needed for the actual linear factor certificate.",
             independent_source_review=fir_evidence,scope_limits=fir_review["limits"],
             nonformal_source_classifications=[row for row in fir_review["reviewed_clauses"] if row["status"]=="not_a_formal_claim"])
+    dissipation_unit=next((row for row in dissipation_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if dissipation_unit:
+        assert dissipation_unit["unit_text_sha256"]==u["text_sha256"] and dissipation_unit["source_sha256"]==u["source_sha256"]
+        assert not dissipation_unit["missing_clauses"]
+        c.update(status="not_a_formal_claim" if dissipation_unit["material_status"]=="not_formalizable" else "proved",
+            kind=dissipation_unit["semantic_kind"],remaining_gaps=[],lean_declarations=dissipation_unit["lean_declarations"],
+            hypotheses=["The actual arbitrary-sequence storage and dissipation assumptions; the exact numerical specialization uses gain2 and zero initial storage, while the infinite horizon requires square-summable input."],
+            correspondence=dissipation_unit["per_unit_reason"],independent_source_review=dissipation_evidence,
+            scope_limits=dissipation_review["limits"])
+    scalar_bounded_unit=next((row for row in scalar_bounded_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if scalar_bounded_unit:
+        assert scalar_bounded_unit["unit_text_sha256"]==u["text_sha256"] and scalar_bounded_unit["source_sha256"]==u["source_sha256"]
+        c.update(status=scalar_bounded_unit["material_status"],kind="independently_reviewed_actual_scalar_bounded_real_components",
+            remaining_gaps=[gap["reason"] for gap in scalar_bounded_unit["missing_clauses"]],
+            lean_declarations=scalar_bounded_unit["lean_declarations"],
+            hypotheses=["The actual source scalar recurrence; storage nonnegative, ordinary nonnegative gain convention, and exact matrix/complex signal hypotheses. Infinite energy uses square-summable input and derives actual output summability."],
+            correspondence=scalar_bounded_unit["per_unit_reason"],independent_source_review=scalar_bounded_evidence,
+            scope_limits=scalar_bounded_review["limits"])
+    if u["key"] in classification_review["material_source_units"]:
+        reviewed_unit=classification_review["material_source_units"][u["key"]]
+        assert reviewed_unit["text_sha256"]==u["text_sha256"] and u["source_sha256"]==classification_review["source_sha256"]
+        classification_unit_rows={1377:list(range(13)),1381:[0,1],1383:[2,3,6],1385:[4,5],1387:[7,8,9,10,11,12]}[int(u["key"].rsplit("-",1)[1])]
+        c.update(status="proved",kind="independently_reviewed_complete_corrected_classifier_source_unit",remaining_gaps=[],
+            lean_declarations=sorted({name for i in classification_unit_rows for name in classification_approved[i]["lean_declarations"]}),
+            hypotheses=["Actual source classifier, finite real matrices and Euclidean/operator norms, one-Lipschitz feature map and stipulated source logits/gains; actual quarter-scale normalizer for normalized claims."],
+            correspondence="The exact named unit belongs to the independent whole corrected Exercise13.5 review. Every mathematical question/answer clause is discharged by the listed actual classifier/norm/ratio/rounding theorems. The approximate external 4.1gamma sentence is explicitly reviewed primary-source attribution, while the exercise exact factor4 is formally proved. Failing the larger normalized radius criteria is not an adversarial-existence claim.",
+            independent_source_review=classification_evidence,scope_limits=classification_review["limits"],
+            nonformal_source_classifications=[row for row in classification_review["reviewed_clauses"] if row["status"]!="approved"])
     lipnode=u['key'].removeprefix('lipsdp.html::node-')
     if lipnode.isdigit() and int(lipnode) in LIPSDP_UNIT_MAP:
         c.update(kind="actual_incremental_quadratic_constraint_and_matrix_correspondence",status="proved",
