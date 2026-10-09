@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0,'book')
 from validate import Document,clean_text
 from foundations_review import EXTRA,FULL,ATOMS,NONFORMAL,topic,clauses
-from foundations_promotions import COMPLETE_EXERCISES,FULL_MATERIAL,PARTIAL_MATERIAL,PARTIAL_EXERCISES,REVIEWED_COMPLETE_MATERIAL,SURROUNDING_PROSE,REVIEWED_PARTIAL_MATERIAL
+from foundations_promotions import COMPLETE_EXERCISES,FULL_MATERIAL,PARTIAL_MATERIAL,PARTIAL_EXERCISES,REVIEWED_COMPLETE_MATERIAL,SURROUNDING_PROSE,REVIEWED_PARTIAL_MATERIAL,REVIEWED_NONFORMAL_MATERIAL
 FULL.update(FULL_MATERIAL)
 for key,rows in PARTIAL_MATERIAL.items():ATOMS.setdefault(key,[]).extend(rows)
 root=Path('.')
@@ -84,6 +84,13 @@ for u in inv['material_source_units']:
  if u['source'] not in {f'SafeLearning/{p}' for p in pages}:continue
  owners=[x['inventory_key'] for x in exercises if u['source_text'] in x['source_text']]
  common=dict(source_unit_keys=[u['key']],source=u['source'],locator=u['locator'],source_text=u['source_text'],source_text_sha256=u['text_sha256'],source_sha256=u['source_sha256'])
+ if u['key'] in REVIEWED_COMPLETE_MATERIAL:
+  for i,row in enumerate(REVIEWED_COMPLETE_MATERIAL[u['key']],1):
+   material.append(dict(**common,**row,id=u['key']+f'::reviewed-claim-{i}',kind='reviewed_mathematical_assertion',status='proved',remaining_gaps=[]))
+  continue
+ if u['key'] in REVIEWED_NONFORMAL_MATERIAL:
+  material.append(dict(**common,id=u['key']+'::reviewed-interpretation',statement_in_prose=u['source_text'],kind='individually_reviewed_pedagogical_cross_reference',lean_declarations=[],status='not_a_formal_claim',hypotheses=[],correspondence=REVIEWED_NONFORMAL_MATERIAL[u['key']],remaining_gaps=[]))
+  continue
  if owners:
   owner_rows=[e for e in exercises if e['inventory_key'] in owners]
   closed=all(e['status']=='complete_math' for e in owner_rows)
@@ -109,10 +116,6 @@ for u in inv['material_source_units']:
    material.append(dict(**common,id=u['key']+f'::surrounding-pending-{i}',statement_in_prose=st,
      kind='reviewed_mathematical_clause',lean_declarations=[],status='pending',hypotheses='Exact source context and all assumptions still require a complete correspondence.',
      correspondence='This exact reviewed source claim remains mathematical work; the other explicitly mapped conclusions do not establish it.',remaining_gaps=[st]))
-  continue
- if u['key'] in REVIEWED_COMPLETE_MATERIAL:
-  for i,row in enumerate(REVIEWED_COMPLETE_MATERIAL[u['key']],1):
-   material.append(dict(**common,**row,id=u['key']+f'::reviewed-claim-{i}',kind='reviewed_mathematical_assertion',status='proved',remaining_gaps=[]))
   continue
  if u['key'] in FULL:
   material.append(dict(**common,id=u['key']+'::checked',statement_in_prose=u['source_text'],kind='reviewed_mathematical_assertions',lean_declarations=FULL[u['key']],status='proved',hypotheses='The cited declarations explicitly state the mathematical domains and any nonempty/positive/complete-space assumptions. Teaching advice in this excerpt is prose, not an added empirical conclusion.',correspondence='Exact correspondence reviewed for this source unit: '+subject+'. The named declarations prove all of its mathematical assertions.',remaining_gaps=[]))
@@ -143,7 +146,17 @@ for key,review in SURROUNDING_PROSE.items():
 # In-progress unpublished modules are not formal evidence merely because a
 # filename exists. Only modules actually referenced by this audited ledger are
 # listed; their actual compile evidence remains a separate required check.
-proofs=sorted(str(p) for p in Path('verification/lean/SafeLearning').glob('CompleteFoundations*.lean') if p.stem in used_modules)
+proofs=sorted(str(p) for p in Path('verification/lean/SafeLearning').glob('Complete*.lean') if p.stem in used_modules)
+reused_evidence=[]
+for module,evidence_path in [('CompleteModulesCholesky','book/coverage/checks/modules-cholesky-standalone.json')]:
+ if module not in used_modules:continue
+ evidence=json.load(open(evidence_path))
+ file='verification/lean/SafeLearning/'+module+'.lean'
+ record=next(r for r in evidence['files'] if r['file']==file)
+ assert record['exit_code']==0 and record['source_unchanged'] and record['sha256']==sha(file)
+ assert record['log_sha256']==sha(record['log'])
+ reused_evidence.append(dict(evidence_file=evidence_path,evidence_sha256=sha(evidence_path),**record))
 out=dict(schema_version=1,status='partial',scope_pages=['SafeLearning/'+p for p in pages],source_sha256={p:sha(p) for p in sorted(source)},proof_files=proofs,proof_sha256={p:sha(p) for p in proofs},exercises=exercises,material_claims=material,surrounding_prose_reviews=surrounding,counts=dict(exercises=len(exercises),exercise_statuses=dict(collections.Counter(x['status'] for x in exercises)),material_source_units=len({k for c in material for k in c['source_unit_keys']}),material_claim_statuses=dict(collections.Counter(c['status'] for c in material))),limits=['Standalone compilation is a separate evidence record; overall kernel replay and axiom audit are owned by the integrator.','Every pending unit or exercise remains a real gap; theorem count is not exercise coverage.','Nested overlapping excerpts share exact source keys and are not counted as independent theorems.','Pending clauses may overlap a proved subclaim; only the explicit reviewed atoms are promoted, while full clause equivalence remains conservative.'])
+out['reused_standalone_compile_evidence']=reused_evidence
 Path('book/coverage/foundations.json').write_text(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
 print(out['counts'])

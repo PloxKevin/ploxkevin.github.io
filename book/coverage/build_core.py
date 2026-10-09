@@ -227,8 +227,10 @@ barrier_groups = [
   'The actual superlevel set is[-1,1], its topological frontier is exactly{-1,1}, and the three barrier values are3/4,0,-3; the sign convention includes the zero-valued boundary.'),
  ('2', [M+'barrier_p2']+[J+n for n in ['allowed_input_at_half','allowed_input_at_boundary','approaching_boundary_restricts_inputs']],
   'The input inequality is exactlyu>=-2x, atx=.5it isu>=-1, and at0it isu>=0. Ordering the clearance orders the allowed input sets, establishing the shrinking admissible negative speed.'),
- ('3', [M+n for n in ['barrier_p3_optimal','barrier_p3_attained','barrier_p3_unique']],
-  'The actual half-squared objective overu>=-1has unique global minimizer-1, objective2and correction2from nominal-3.'),
+ ('3', [M+n for n in ['barrier_p3_optimal','barrier_p3_attained','barrier_p3_unique']]+
+       ['SafeLearning.CompleteCoreMaterialLimits.'+n for n in
+        ['barrier_nominal_objective_minimal','barrier_nominal_objective_unique']],
+  'The actual half-squared objective over all real inputs has unique global minimizer-3. Overu>=-1it has unique global minimizer-1, objective2and correction2from nominal-3.'),
  ('4', [M+'barrier_p4_interval']+[J+n for n in ['explicit_feedback_initial','explicit_feedback_derivative','boundary_inward']],
   'The actual displayed exponential trajectory has the specified initial state and derivative1-x(t). Its values remain in[0,2] for all nonnegative times; boundary velocities are1and-1.'),
  ('6', [J+n for n in ['scalar_actuator_set','infeasible_actuator_set','all_actuators_feasible_at_two','no_global_actuator_certificate']],
@@ -310,13 +312,51 @@ add('lyapunov-mpc.html::exercise-16',
       'actual_map_discontinuous_at_one','actual_orbit_in_annulus',
       'increments_strictly_negative_on_annulus','actual_annulus_compact',
       'actual_increment_sequence_converges_to_zero','actual_increment_supremum_is_zero',
-      'actual_increment_supremum_not_attained','actual_boundary_increment']],
-    'Actual sublevel trajectories are invariant with antitone nonnegative values; compactness, continuity and strict decrease imply state convergence to0and, whenV(0)=0,value convergence to0. Actual compact positive slices admit a uniform negative decrement and positive minimum; finite telescoping contradicts all-time nonnegativity. The exact source discontinuous piecewiseF fixes0and strictly decreasesV=x²off0with all sublevels compact, yet its actual trajectory from2is1+2^-nwith limit1. Its increments have actual least upper bound0on1<=|x|<=2, with no attaining point and boundary increment-3/4.',
+      'actual_increment_supremum_not_attained','actual_boundary_increment']]+
+     ['SafeLearning.CompleteCoreMaterialLimits.actual_increment_right_limit_at_one'],
+    'Actual sublevel trajectories are invariant with antitone nonnegative values; compactness, continuity and strict decrease imply state convergence to0and, whenV(0)=0,value convergence to0. Actual compact positive slices admit a uniform negative decrement and positive minimum; finite telescoping contradicts all-time nonnegativity. The exact source discontinuous piecewiseF fixes0and strictly decreasesV=x²off0with all sublevels compact, yet its actual trajectory from2is1+2^-nwith limit1. Its actual increment function has right-limit0at1, and least upper bound0on1<=|x|<=2, with no attaining point and boundary increment-3/4.',
     ['A continuous map and continuous nonnegative realV on a normed additive group; compact source sublevel, equilibriumF(0)=0, actual successor recurrence, initial sublevel membership and strict decrease off0. Source positive definiteness implies these sufficient assumptions. Uniform-margin and positive-minimum statements use the actual compact nonempty slices and their pointwise strict signs; no uniform margin is assumed.',
      'The counterexample is the exact scalar source model, without a continuity assumption; its discontinuity and nonzero limit are proved.'],
     [] if lyapunov_full else (lr['remaining_gaps'] if lyapunov_review_path.exists()
                              and lr['remaining_gaps'] else
                              ['Independent complete question/answer correspondence review remains.']))
+
+lyapunov_hypotheses = {
+    '1': 'The exact scalar functions F(x)=.6x and V(x)=x².',
+    '2': 'The exact two-coordinate real matrix diag(4,1), with its actual quadratic form.',
+    '3': 'The actual scalar successor .5x+w, with the stated absolute disturbance bound. The nonconverging counterexample supplies its actual constant disturbance and actual all-time trajectory.',
+    '4': 'The stated immediate expected cost, discount and expected next budget are supplied numbers; no state convergence or pathwise-cost conclusion is inferred.',
+    '5': 'An arbitrary pseudometric state space with the same distance throughout, actual5-Lipschitz decrease function, the stated sample error and upper estimate, and actual covering radius. The opposite-sign witnesses are actual compatible scalar decrease functions.',
+    '6': 'The actual scalar error recurrence and all-time disturbance bound, initial tube membership, actual state x=z+e and actual input v-.5e.',
+    '7': 'The exact finite-horizon real objective and input interval; no terminal, recursive-feasibility or infinite-horizon stability guarantee is inferred.',
+    '9': 'The actual scalar polynomial map x-x³ and V=x²; c>0 for the complete sublevel characterization. Convergence assumes the actual successor recurrence and initial membership of the unit sublevel.',
+    '10': 'The actual plant and approximate policy recurrence. Relative-error statements assume the supplied state-dependent pointwise error bound; the absolute-error counterexample supplies a genuine permitted constant error and its nonzero equilibrium trajectory.'}
+for review_name in ['lyapunov-exercise-models-source-review.json',
+                    'lyapunov-nonlinear-models-source-review.json']:
+    path = ROOT/'book/coverage/checks'/review_name
+    if not path.exists():
+        continue
+    review = json.loads(path.read_text())
+    expected = INV['source_sha256']['SafeLearning/lyapunov-mpc.html']
+    if review['source_sha256'] != expected:
+        raise ValueError('Stale Lyapunov exercise teaching-source review: '+review_name)
+    for name, value in review['proof_source_sha256'].items():
+        if hashlib.sha256((ROOT/name).read_bytes()).hexdigest() != value:
+            raise ValueError('Stale Lyapunov exercise proof review: '+name)
+    for record in review['records']:
+        key = record['exercise_key']
+        original = next(e for e in INV['exercises'] if e['key']==key)
+        if record['exercise_text_sha256'] != original['text_sha256']:
+            raise ValueError('Stale Lyapunov exercise text review: '+key)
+        full = (record['review_status']=='approved_complete_source' and
+                not record['missing_clauses'] and bool(record['per_exercise_reason']))
+        number = key.rsplit('-p',1)[1]
+        add(key, record['lean_declarations'], record['per_exercise_reason'],
+            [lyapunov_hypotheses[number]], [] if full else record['missing_clauses'])
+        MAP[key]['source_review'] = dict(
+            file=str(path.relative_to(ROOT)),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            nonformal_scope_clauses=record.get('nonformal_scope_clauses',[]))
 
 def sha(p):
     return hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
@@ -361,6 +401,8 @@ MATERIAL_REVIEW = {
 # These approvals come from an independent, per-paragraph semantic review.
 # DOM containment proposes candidates; it does not establish correspondence.
 overlap_path = ROOT/'book/coverage/core-material-overlap-review.json'
+if (ROOT/'book/coverage/core-material-overlap-review-8.json').exists():
+    overlap_path = ROOT/'book/coverage/core-material-overlap-review-8.json'
 overlaps = {}
 if overlap_path.exists():
     review = json.loads(overlap_path.read_text())
@@ -375,10 +417,16 @@ if overlap_path.exists():
         if sha(name) != expected:
             raise ValueError('Independently reviewed proof changed: '+name)
     for record in review['records']:
-        if record['review_status'] != 'approved_exact_overlap':
+        accepted = {
+            'approved_exact_overlap': ('approved_source_unit_keys', 'proved'),
+            'approved_pedagogical_classification':
+                ('classified_source_unit_keys', 'not_a_formal_claim'),
+        }
+        if record['review_status'] not in accepted:
             continue
+        approved_list, material_status = accepted[record['review_status']]
         key = record['source_unit_key']
-        if key in overlaps or key not in review['approved_source_unit_keys']:
+        if key in overlaps or key not in review[approved_list]:
             raise ValueError('Duplicate or unlisted overlap approval: '+key)
         candidate = candidates[key]
         unit = units[key]
@@ -397,11 +445,16 @@ if overlap_path.exists():
         if parent_hash != record['reviewed_parent_claims_sha256']:
             raise ValueError('Changed independently reviewed parent claims: '+key)
         parent_refs = {n for c in owner['claims'] for n in c['lean_declarations']}
-        if not record['lean_declarations'] or not set(record['lean_declarations']) <= parent_refs:
-            raise ValueError('Overlap names declarations outside its reviewed parent: '+key)
+        if material_status == 'proved':
+            if not record['lean_declarations'] or not set(record['lean_declarations']) <= parent_refs:
+                raise ValueError('Overlap names declarations outside its reviewed parent: '+key)
+        elif (record['lean_declarations'] or
+              record.get('semantic_kind') != 'pedagogical_navigation' or
+              record.get('material_status') != 'not_formalizable'):
+            raise ValueError('Invalid individual pedagogical classification: '+key)
         if not record['per_unit_reason']:
             raise ValueError('Overlap lacks a specific semantic reason: '+key)
-        overlaps[key] = dict(record=record, owner=owner)
+        overlaps[key] = dict(record=record, owner=owner, status=material_status)
 material=[]
 for u in INV['material_source_units']:
     if u['source'] not in SOURCES:
@@ -421,9 +474,12 @@ for u in INV['material_source_units']:
         entry = overlaps[u['key']]
         record, owner = entry['record'], entry['owner']
         claim.update(statement_in_prose=u['source_text'],
-            kind='independently_reviewed_exact_exercise_overlap', status='proved',
+            kind=('independently_reviewed_exact_exercise_overlap'
+                  if entry['status']=='proved' else 'reviewed_pedagogical_navigation'),
+            status=entry['status'],
             lean_declarations=record['lean_declarations'],
-            hypotheses=list(dict.fromkeys(h for c in owner['claims'] for h in c['hypotheses'])),
+            hypotheses=(list(dict.fromkeys(h for c in owner['claims'] for h in c['hypotheses']))
+                        if entry['status']=='proved' else []),
             correspondence=record['per_unit_reason'], remaining_gaps=[],
             independent_review=dict(source=str(overlap_path.relative_to(ROOT)),
                 sha256=sha(str(overlap_path.relative_to(ROOT))),
@@ -432,7 +488,7 @@ for u in INV['material_source_units']:
     material.append(claim)
 
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
-        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample']
+        'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),

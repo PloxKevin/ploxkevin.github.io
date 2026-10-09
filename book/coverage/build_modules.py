@@ -92,6 +92,14 @@ CHN = "SafeLearning.CompleteModulesCholesky."
 SYN = "SafeLearning.CompleteModulesSylvester."
 DTN = "SafeLearning.CompleteModulesDeterminantTaylor."
 MEN = "SafeLearning.CompleteModulesMatrixError."
+BTN = "SafeLearning.CompleteModulesBarrierTraining."
+BSN = "SafeLearning.CompleteModulesBarrierSoundness."
+BON = "SafeLearning.CompleteModulesBarrierObjective."
+BPN = "SafeLearning.CompleteModulesBarrierPath."
+BBN = "SafeLearning.CompleteModulesBarrierBoundary."
+CYN = "SafeLearning.CompleteModulesCayley."
+EPN = "SafeLearning.CompleteModulesEigenProduct."
+CCN = "SafeLearning.CompleteModulesComplexCayleyCounterexample."
 
 # These mappings are intentionally granular. A proved component is appended to
 # the requirements queue; the exercise is not marked complete merely because it
@@ -105,7 +113,7 @@ def component(key, statement, names, hypotheses=(), gaps=()):
 component("lipsdp.html::exercise-18", "For arbitrary finite real matrices, the actual determinant Frechet derivative is trace(adjugate(N)*dN), hence the actual logdet derivative at every nonsingular matrix is trace(Ninv*dN). Applying this to the actual source block certificate gives its actual W0 Frobenius gradient -2 Lambda (Ninv)21 and the training objective gradient gradLoss+2 mu Lambda (Ninv)21.",
           [LDN+"determinantAlternating",LDN+"actual_determinant_multilinear_derivative",LDN+"actual_determinant_has_frechet_derivative",LDN+"actual_logdet_has_frechet_derivative",LDN+"actual_logdet_curve_derivative",BGN+"barrierMatrix",BGN+"barrierVariation",BGN+"actual_barrier_matrix_weight_derivative",BGN+"actual_symmetric_variation_trace_is_gradient",BGN+"actual_logdet_barrier_weight_gradient",BGN+"actual_barrier_training_weight_gradient"],
           ["The actual source finite block matrix is positive definite; the loss has its stated actual Frechet gradient at the current weight matrix."],
-          ["The reported finite-difference agreement needs a reproducible empirical fixture or its own empirical classification. The finite-step, varying-mu path, joint trained-multiplier nonconvexity, local/global training-optimum and accepted-iterate certificate discussion remain separately pending."])
+          ["The source's algorithm-path language needs an explicit semantic review against the actual fixed-interior limit, exact minimizing barrier path and nonglobal-local-minimum counterexamples below; no unspecified training trajectory is asserted to converge. The source's finite-difference remark is classified separately as empirical evidence, with its own seeded reproduction rather than a Lean theorem."])
 
 component("lipsdp.html::exercise-18", "For every actual positive-definite finite real matrix, its Euclidean induced inverse norm is exactly the reciprocal of its actual smallest eigenvalue. Along every positive-definite matrix family whose actual smallest eigenvalue tends to zero, this inverse norm tends to positive infinity.",
           [ISN+"minimumEigenvalue",ISN+"actual_inverse_eigen_diagonalization",ISN+"actual_inverse_spectral_norm_is_eigen_inverse_norm",ISN+"actual_minimum_eigenvalue_is_positive",ISN+"actual_minimum_eigenvalue_is_attained",ISN+"actual_inverse_spectral_norm_is_exact_reciprocal",ISN+"actual_inverse_norm_blows_up_at_singular_boundary"],
@@ -129,6 +137,39 @@ component("lipsdp.html::exercise-18", "Arbitrarily small absolute spectral-norm 
           [MEN+"actualQuadratic",MEN+"actual_quadratic_error_is_bounded_by_spectral_norm",MEN+"actual_quadratic_shift",MEN+"actual_validated_matrix_margin_certifies_positive_definiteness",MEN+"positiveNearSingular",MEN+"indefiniteNearSingular",MEN+"actual_near_singular_matrix_is_positive",MEN+"actual_near_singular_matrix_is_not_positive",MEN+"actual_opposite_feasibility_matrices_are_arbitrarily_close",MEN+"actual_small_absolute_error_can_reverse_both_feasibility_decisions"],
           ["The actual finite matrix is symmetric. A validated spectral-norm error bound and an actual shifted computed-matrix positive-definiteness certificate provide the mathematical safety margin."],
           ["These genuine norm-error certificates and perturbation counterexamples support the source's qualitative finite-precision warning; they do not assert verified behavior of an unspecified IEEE format, Cholesky implementation, or floating-point training pipeline."])
+
+component("lipsdp.html::exercise-18", "For the literal source block matrix with scalar weights, gain one and zero last weight, the actual certificate has quadratic form (x-lambda*w*y)^2+lambda*(2-lambda*w^2)*y^2+z^2. Parameters (w,lambda)=(1,1) and (3,1/5) are each genuinely positive definite, whereas their midpoint (2,3/5) is not. Thus the actual joint trained-weight/multiplier feasible set is not convex. A finite weight step from w=1 to w=2 at fixed multiplier one leaves the actual positive-definite certificate region.",
+          [BTN+"scalarWeight",BTN+"actualTrainingMatrix",BTN+"scalarState",BTN+"actual_training_matrix_is_symmetric",BTN+"actual_training_matrix_quadratic_identity",BTN+"actual_training_matrix_is_positive_definite",BTN+"actual_joint_training_endpoints_are_feasible",BTN+"actual_joint_training_midpoint_is_infeasible",BTN+"actualJointTrainingFeasibleSet",BTN+"actual_jointly_trained_weight_and_multiplier_set_is_not_convex",BTN+"actual_finite_weight_step_can_leave_positive_definite_certificate"],
+          ["The actual source neural block certificate, with one scalar input, one scalar hidden neuron, one scalar output, gain one and last weight zero. The weight and positive diagonal multiplier are jointly variable."],
+          ["This proves nonconvexity and finite-step failure in the actual source model; it does not assert that any specific line-search rule or varying-mu trajectory follows the counterexample step."])
+
+component("lipsdp.html::exercise-18", "The literal source positive-definite three-block barrier matrix, after actual sum-index reassociation and actual output Schur elimination, implies negative semidefiniteness of the precise one-hidden-layer LipSDP block certificate. Positive definiteness also forces every actual diagonal multiplier positive. Therefore every accepted iterate satisfying this actual positive-definite barrier predicate certifies the actual biased network's Euclidean Lipschitz gain at the specified nonnegative gain, for every actual [0,1]-slope-restricted activation.",
+          [BSN+"leadingBarrierBlock",BSN+"outputBarrierCross",BSN+"actual_barrier_reassociates_to_output_schur_block",BSN+"actual_barrier_schur_complement_is_negative_lipsdp_certificate",BSN+"actual_positive_barrier_implies_lipsdp_feasibility",BSN+"actual_positive_barrier_has_positive_diagonal_multiplier",BSN+"actual_accepted_positive_barrier_certifies_actual_network"],
+          ["The actual source barrier matrix is positive definite; the claimed gain is nonnegative; the actual activation has the source's full incremental [0,1] restriction. The conclusion bounds every pair of actual network inputs and includes both biases."],
+          ["For a computed numerical acceptance test, its validated error margin must establish this actual positivity predicate. No optimization convergence or external training implementation is assumed proved."])
+
+component("lipsdp.html::exercise-18", "For the actual scalar source certificate at fixed positive multiplier, the determinant is lambda*(2-lambda*w^2). A fully specified training loss equals a quartic/cubic polynomial plus logdet of this actual certificate. At barrier parameter one its actual barrier objective has a genuinely feasible local minimum at w=-1 which is not global, since the feasible point w=1 has strictly lower value. The example training loss itself is not convex on the certified weight set.",
+          [BON+"actual_scalar_training_matrix_determinant",BON+"examplePolynomialObjective",BON+"exampleTrainingLoss",BON+"exampleBarrierObjective",BON+"actualFixedMultiplierFeasibleWeights",BON+"actual_example_barrier_objective_is_polynomial",BON+"actual_polynomial_objective_gap",BON+"actual_polynomial_negative_halfline_minimum",BON+"actual_barrier_objective_has_feasible_nonglobal_local_minimum",BON+"actual_training_loss_is_not_convex_on_certified_weights"],
+          ["The actual source scalar certificate at gain one, multiplier one and zero last weight, and the explicitly supplied smooth-inside-the-certified-set loss. Both comparison weights are actually certified."],
+          ["This constructive counterexample demonstrates the absence of a universal global-optimum guarantee. It does not identify or assume the behavior of any unspecified data loss, optimizer, or training trajectory."])
+
+component("lipsdp.html::exercise-18", "At every fixed actual interior source matrix, the W0 barrier-gradient term tends to zero as mu tends to zero. For the actual scalar source certificate and the explicit loss -w, the exact barrier minimizer is w(mu)=sqrt(mu^2+2)-mu for each mu>0: an actual log-inequality proof gives a nonnegative squared objective gap over every certified weight. This minimizing path stays positive definite at every positive mu and tends to sqrt(2), where the actual certificate is singular but positive semidefinite and globally minimizes the explicit loss on the closed certificate domain.",
+          [BPN+"actualBarrierPath",BPN+"actualLinearLossBarrierObjective",BPN+"actual_barrier_path_stationarity_identity",BPN+"actual_barrier_path_is_positive",BPN+"actual_barrier_path_stays_strictly_certified",BPN+"actual_barrier_path_objective_gap",BPN+"actual_barrier_path_is_global_minimum",BPN+"actual_barrier_path_tends_to_boundary",BPN+"actual_barrier_path_determinant_tends_to_zero",BPN+"actual_path_limit_is_singular_but_certified_semidefinite",BPN+"actual_path_limit_globally_minimizes_loss_on_closed_certificate",BPN+"actual_fixed_interior_weight_barrier_term_vanishes"],
+          ["The fixed-interior derivative limit holds for every finite source block matrix. The minimizing-path example uses the actual one-scalar source certificate at gain/multiplier one and zero last weight, and the explicitly defined loss -w with positive mu."],
+          ["These are actual conditional derivative limits and a fully derived illustrative barrier minimizer path. They establish that boundary approach can occur, not convergence of an unspecified nonconvex optimization algorithm or arbitrary parameter path."])
+
+component("lipsdp.html::exercise-18", "Along every actual finite real matrix family converging to an actual finite singular matrix, determinant tends to zero. If every family member is positive definite and mu is a fixed positive number, its actual barrier value -mu*log(det(matrix)) tends to positive infinity. The proof uses continuity of the actual determinant, actual determinant positivity, and the real logarithm's limit from above at zero.",
+          [BBN+"actual_determinant_tends_to_zero_at_finite_singular_boundary",BBN+"actual_logdet_barrier_blows_up_at_finite_singular_boundary",BBN+"actual_logdet_barrier_blows_up_at_noninvertible_finite_boundary"],
+          ["The actual positive-definite finite matrices converge to a finite singular matrix; the barrier parameter is fixed and strictly positive. No false inference is made from minimum-eigenvalue convergence alone when other eigenvalues can diverge."],[])
+
+component("lipsdp.html::exercise-18", "For every actual finite complex matrix X and scalar epsilon, det(I+epsilon X)=the product of1+epsilon omega over all actual characteristic roots, counted with algebraic multiplicity. Every root is in the actual matrix spectrum. Real matrices satisfy this identity after actual complexification, so the actual generally nonsymmetric Ninv*E is covered.",
+          [EPN+"actual_complex_characteristic_roots_count",EPN+"actual_complex_determinant_is_eigenvalue_product",EPN+"actual_real_determinant_is_actual_complex_eigenvalue_product",EPN+"actual_characteristic_root_is_actual_matrix_spectral_value"],
+          ["An arbitrary finite square real or complex matrix; no symmetry or diagonalizability premise."],[])
+
+component("lipschitz-by-design.html::exercise-15", "For every actual finite real skew-symmetric matrix A, I+A and I-A are invertible. The actual rational transform Q=(I-A)(I+A)inv satisfies Q-transpose*Q=I and determinant one. Q+I is exactly twice the denominator inverse and is itself invertible, so Q has no nonzero eigenvector with eigenvalue -1.",
+          [CYN+"actualCayley",CYN+"actual_skew_cayley_denominator_gram_is_positive",CYN+"actual_skew_cayley_denominator_is_invertible",CYN+"actual_skew_cayley_numerator_is_transposed_denominator",CYN+"actual_skew_cayley_numerator_is_invertible",CYN+"actual_cayley_is_orthogonal",CYN+"actual_cayley_has_determinant_one",CYN+"actual_cayley_plus_identity_is_twice_inverse",CYN+"actual_cayley_plus_identity_is_invertible",CYN+"actual_cayley_has_no_negative_one_eigenvector"],
+          ["An arbitrary finite real matrix with actual transpose equal to its negative."],
+          ["The two-dimensional rotation formula/angle, a=1/2 substitution, and exact characterization of omitted two-dimensional orthogonal matrices remain separate source requirements."])
 
 
 component("landscape.html#book-m1-b1", "Without independence, twenty measurable overheating events with probability at most 1/400 each have joint success probability at least 19/20.",
@@ -504,7 +545,66 @@ for e in INV["exercises"]:
         claims.append(claim(f"{e['key']}::proved-component-{i+1}", statement,
                             names, "proved", hypotheses=hypotheses,
                             correspondence="The declarations establish exactly this component under the listed hypotheses. They do not discharge the entire question by association.", gaps=gaps))
+    if e["key"] == "lipsdp.html::exercise-18":
+        review_rel = "book/coverage/checks/modules-logdet-source-review.json"
+        source_review = json.loads((ROOT/review_rel).read_text())
+        assert source_review["exercise_key"] == e["key"]
+        assert source_review["exercise_text_sha256"] == e["text_sha256"]
+        for source, sha in source_review["source_sha256"].items():
+            assert digest(source) == sha, source
+        for source, sha in source_review["proof_source_sha256"].items():
+            assert digest(source) == sha, source
+        review_evidence = {"file":review_rel,"sha256":digest(review_rel),
+            "status":source_review["status"],"reviewer":source_review["reviewer"]}
+        reviewed_claims = {c["id"]:c for c in claims}
+        for component_review in source_review["components"]:
+            component_id = component_review["id"]
+            if component_id == "actual-eigenvalue-product":
+                component_id = f"{e['key']}::proved-component-12"
+            c = reviewed_claims[component_id]
+            assert c["statement_in_prose"] == component_review["statement"], c["id"]
+            assert c["lean_declarations"] == component_review["lean_declarations"], c["id"]
+            assert component_review["status"] == "approved_precise_component", c["id"]
+            c["scope_limits"] = c["remaining_gaps"]
+            c["remaining_gaps"] = []
+            c["independent_source_review"] = review_evidence
+        for c in claims:
+            if c["status"] == "pending":
+                c["remaining_gaps"] = source_review["remaining_gaps"]
+                c["independent_source_review"] = review_evidence
+                if source_review["status"] == "approved_complete_source":
+                    assert len(source_review["components"]) == 12 and not source_review["remaining_gaps"]
+                    c.update(status="proved",lean_declarations=sorted({
+                        name for rc in source_review["components"] for name in rc["lean_declarations"]}),
+                        hypotheses=["The exact source finite real matrix, source block certificate, actual differentiability/positive-definiteness premises and stated conditional boundary limits. Explicit constructed loss/path examples support possibility and absence of universal global-optimum guarantees."],
+                        correspondence="The independent exact-source review discharges all mathematical clauses using its twelve individually approved components. Specific empirical, cost, numerical implementation and local-search descriptions are separately classified; no arbitrary training convergence, blockwise gradient divergence or IEEE pipeline guarantee is inferred.")
+        for number, classification in enumerate(source_review["specific_nonformal_classifications"],1):
+            c = claim(f"{e['key']}::specific-source-classification-{number}",
+                classification["source_clause"],status="not_a_formal_claim",
+                kind=classification["kind"],correspondence=classification["reason"])
+            c["remaining_gaps"] = []
+            c["independent_source_review"] = review_evidence
+            if "evidence" in classification:
+                c["independent_empirical_evidence"] = classification
+            claims.append(c)
+        report_rel = "book/coverage/checks/modules-logdet-finite-difference.json"
+        report = json.loads((ROOT/report_rel).read_text())
+        script_rel = report["script"]
+        assert report["status"] == "passed" and report["script_sha256"] == digest(script_rel)
+        empirical = claim(f"{e['key']}::empirical-finite-difference-review",
+            "The source's sentence about random finite differences agreeing to about 1e-9 is an empirical report, not a universal mathematical guarantee. The supplied reproduction independently checks 40 seeded source-block instances and 270 scalar derivatives in float64.",
+            status="not_a_formal_claim",kind="empirical_numerical_report",
+            correspondence="The exact gradient is proved in Lean separately. A reproducible NumPy float64 experiment on the literal block matrix reports maximum absolute error 1.1574808125858205e-10, below 1e-9. This supplies a new reproducible fixture; it does not recover an undocumented historical random run or validate a floating-point solver.",
+            units=["lipsdp.html::node-1313"])
+        empirical["remaining_gaps"] = []
+        empirical["empirical_evidence"] = {"script":script_rel,"script_sha256":digest(script_rel),
+            "report":report_rel,"report_sha256":digest(report_rel),"observed_max_absolute_error":report["max_absolute_error"],
+            "case_count":report["case_count"],"scalar_derivative_count":report["scalar_derivative_count"]}
+        claims.append(empirical)
     complete = e["key"] in COMPLETE_REQUIREMENTS
+    if e["key"] == "lipsdp.html::exercise-18":
+        complete = source_review["status"] == "approved_complete_source" and all(
+            c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if complete:
         names = sorted({name for _statement, ds, _hypotheses, _gaps in COMPONENTS[e["key"]] for name in ds})
         for c in claims:
@@ -530,6 +630,13 @@ for e in INV["exercises"]:
                       "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) else "pending"})
 
 material = []
+LOGDET_REVIEW_UNIT_COMPONENTS = {
+    "lipsdp.html::node-1312": [1,5,12],
+    "lipsdp.html::node-1313": [1],
+    "lipsdp.html::node-1314": [1,2,7,8,9,10,11],
+    "lipsdp.html::node-1315": [3,4],
+    "lipsdp.html::node-1316": [6],
+}
 LIPSDP_UNIT_MAP = {
     267: [DQN+"scalar_qc_factorization",DQN+"scalar_qc_iff_admissible_chord"],
     271: [DQN+"scalar_qc_factorization",LSN+"scalar_slope_quadratic_constraint"],
@@ -548,6 +655,16 @@ for u in INV["material_source_units"]:
         continue
     c=claim(u["key"]+"::claim-review", u["source_text"],
             kind="mathematical_source_unit_needs_granular_review", units=[u["key"]])
+    if u["key"] in LOGDET_REVIEW_UNIT_COMPONENTS and source_review["status"] == "approved_complete_source":
+        component_indices = LOGDET_REVIEW_UNIT_COMPONENTS[u["key"]]
+        components = [source_review["components"][i-1] for i in component_indices]
+        c.update(status="proved",kind="independently_reviewed_mathematical_clauses_with_explicit_nonformal_classification",
+            lean_declarations=sorted({name for component in components for name in component["lean_declarations"]}),
+            hypotheses=[hyp for component in components for hyp in component["hypotheses"]],
+            correspondence="The independently reviewed components discharge the mathematical clauses of this exact answer unit. Empirical checks and unspecified implementation/runtime/local-search descriptions remain explicitly classified, without claiming a universal numerical experiment, optimizer convergence or floating-point pipeline theorem.",remaining_gaps=[],
+            independent_source_review=review_evidence,
+            scope_limits=source_review["limits"],
+            nonformal_source_classifications=source_review["specific_nonformal_classifications"])
     lipnode=u['key'].removeprefix('lipsdp.html::node-')
     if lipnode.isdigit() and int(lipnode) in LIPSDP_UNIT_MAP:
         c.update(kind="actual_incremental_quadratic_constraint_and_matrix_correspondence",status="proved",
@@ -641,6 +758,7 @@ material_groups = [
     ("toolkit-gp", "posterior variance", "For the actual solved finite kernel posterior, variance is the global minimum of the feature residual quadratic and is nondecreasing in regularization.", [PN+"residual_objective_at_solution",PN+"residual_objective_gap",PN+"residual_objective_global_minimum",PN+"actual_posterior_regularization_monotone"]),
     ("toolkit-gp", "lambda", "The actual fixed finite matrix posterior has zero-regularization interpolation-formula limits for nonsingular Gram matrices, infinite-regularization mean/variance limits, and an O(lambda^-3) inverse remainder.", [MN+"posterior_mean_zero_regularization_limit",MN+"posterior_variance_zero_regularization_limit",MN+"posterior_mean_infinite_regularization_limit",MN+"posterior_variance_infinite_regularization_limit",MN+"inverse_infinite_regularization_second_order_remainder",FFN+"posterior_mean_leading_term",FFN+"posterior_mean_second_order_remainder",FFN+"posterior_variance_second_order_remainder"]),
 ]
+material_groups.append(("lipschitz-by-design", "Complex matrices", "The actual 1-by-1 complex skew-Hermitian matrix [i] has actual unitary Cayley transform [-i], with determinant -i rather than1. Thus the real determinant-one conclusion cannot be carried over verbatim to the complex theorem. This exact counterexample supports correction10; the corrected generic complex invertibility/unitarity/exclusion/bijection claims remain a separate pending source requirement.", [CCN+"actualImaginarySkew",CCN+"actualComplexCayley",CCN+"actual_imaginary_matrix_is_skew_hermitian",CCN+"actual_imaginary_cayley_denominator_inverse",CCN+"actual_imaginary_cayley_is_negative_imaginary",CCN+"actual_imaginary_cayley_is_unitary",CCN+"actual_imaginary_cayley_determinant_is_not_one",CCN+"actual_complex_skew_cayley_does_not_preserve_real_determinant_claim"]))
 for i, (page, needle, statement, names) in enumerate(material_groups):
     units = [u["key"] for u in INV["material_source_units"] if
              u["source"] == f"SafeLearning/{page}.html" and needle.lower() in u["source_text"].lower()]
@@ -651,6 +769,8 @@ for i, (page, needle, statement, names) in enumerate(material_groups):
 
 proof_files = {}
 declarations = []
+referenced_names = {name for e in exercises for c in e["claims"] for name in c["lean_declarations"]}
+referenced_names.update(name for c in material for name in c["lean_declarations"])
 compiled = {}
 for compile_manifest_path in sorted((ROOT/"book/coverage/checks").glob("modules*standalone.json")):
     for r in json.loads(compile_manifest_path.read_text())["files"]:
@@ -663,11 +783,15 @@ for p in sorted((ROOT/"verification/lean/SafeLearning").glob("CompleteModules*.l
     # standalone compiler record matches exactly and reports success.
     if not record or record['sha256'] != sha or record['exit_code'] != 0:
         continue
+    text = p.read_text()
+    ns = re.search(r"^namespace\s+(\S+)",text,re.M).group(1)
+    # Successful but unmapped future work stays outside this ledger's audit
+    # selection until an exact source component actually references it.
+    if not any(name.startswith(ns+".") for name in referenced_names):
+        continue
     proof_files[rel] = {"sha256":sha,
                        "standalone_compile_status":"passed" if record and record['sha256']==sha and record['exit_code']==0 else "not_yet_recorded_for_current_source",
                        "standalone_compile_evidence":record if record and record['sha256']==sha else None}
-    text = p.read_text()
-    ns = re.search(r"^namespace\s+(\S+)",text,re.M).group(1)
     for match in re.finditer(r"^theorem\s+(\w+)",text,re.M):
         end = text.find(":=",match.start())
         declarations.append({"name":ns+"."+match.group(1),"file":rel,
@@ -688,7 +812,7 @@ out = {"schema_version":1,"generated_at_utc":datetime.datetime.now(datetime.time
            "Actual scalar-PSD RKHS construction/uniqueness, bounded evaluation, arbitrary-loss representer structure, ridge existence, scalar posterior asymptotic expansions, norm-convergent minimum-norm interpolation and sharp power-function errors are proved components. Remaining GP families include Gaussian conditioning/rank-one update, information gain and concentration theorems, exact source gradient formulas and spectral-norm remainder constants.",
            "SafeOpt finite-time discovery/acquisition and kernel jump examples; GoSafe ODE existence/uniqueness to flow law, returnability and discovery. Lipschitz no-crossing and abstract flow suffix are proved components.",
            "General infinite-horizon viability characterization, double-integrator continuous-time optimal braking and full penalized-policy optimality. The finite thermal graph and stopped-return upper bound are proved components.",
-           "General finite lifted LipSDP soundness, the actual arbitrary-dimensional one-hidden-layer block LMI, the actual spectral product gain and its exact feasible SDP point are proved components. Remaining families include full recursive multi-layer selectors, SDP optimization properties and exact optimized walkthrough value, network exact Lipschitz constants, barrier derivative and convolution realization.",
+           "General finite lifted LipSDP soundness, actual arbitrary-dimensional one-hidden-layer block LMI, spectral product gain, its exact feasible SDP point, genuine affine-parameter SDP convexity/local-global optimality, arbitrary-size logdet and actual block-weight derivatives, exact determinant Taylor remainder, inverse spectral boundary blow-up, Cholesky/Sylvester equivalences and validated norm-error margins are proved components. Remaining families include full recursive multi-layer selectors, exact optimized walkthrough value, further network exact Lipschitz constants, varying-mu training-path assumptions, and convolution realization.",
            "Cayley general invertibility/orthogonality, SLL/AOL/Sandwich completeness, matrix convolution Gramian/weighted gain limits and REN contraction.",
            "Numeric local tanh slope enclosures, complete local-sector LFT/LMI correspondence, printed delayed-system roots and general IQC results. Actual tanh local sectors and exact delayed-loop Lyapunov decay are proved components.",
            "Full multi-layer CROWN correspondence, continuous-score conformal upper coverage and random-trajectory thermal event specialization, randomized-smoothing Neyman–Pearson theorem, Hoeffding and convex scenario probability theorem. General affine IBP and shared exchangeable-rank lower coverage are proved components."

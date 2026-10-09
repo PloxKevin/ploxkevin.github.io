@@ -6,6 +6,8 @@ pending when another mathematical assertion has not yet been encoded.
 """
 from foundations_review import refs
 
+REVIEWED_NONFORMAL_MATERIAL = {}
+
 def claim(statement, group, *names, hypotheses, correspondence):
     return dict(statement_in_prose=statement, lean_declarations=refs(group,*names),
                 hypotheses=hypotheses, correspondence=correspondence)
@@ -520,7 +522,7 @@ REVIEWED_PARTIAL_MATERIAL = {
    claim('For everyPSDK andlambda>0, K+lambdaI isPD and invertible.',
          'CompleteFoundationsGramRegularization','positive_regularization_pd','positive_regularization_is_invertible',
          hypotheses='Arbitrary finite real squareK with its actual Matrix.PosSemidef object and positivelambda.',
-         correspondence='The actual ridge matrix has an actualPD certificate and an actual IsUnit witness; the separate generic Cholesky algorithm claim remains pending.'),
+         correspondence='The actual ridge matrix has an actualPD certificate and an actual IsUnit witness; the separate positive-diagonal Cholesky construction is explicitly mapped below.'),
    claim('The actual outer productaa^T isPSD and has rank1 fornonzeroa and rank0 fora0. Its quadratic form is(a^Tv)^2, its action ona has eigenvalue||a||², and it vanishes on every direction orthogonal toa.',
          'CompleteFoundationsGramRegularization','outer_psd','outer_zero','outer_actual_rank',
          'outer_actual_quadratic','outer_eigen_direction','outer_orthogonal_directions',
@@ -530,8 +532,15 @@ REVIEWED_PARTIAL_MATERIAL = {
          'CompleteFoundationsGramRegularization','outer_psd_increase',
          hypotheses='Arbitrary finite realM/a, any nonnegativebeta and every real vectorv; no convergence-speed conclusion is inferred.',
          correspondence='The exact actual matrix increment has aPSD certificate and a quantified exact quadratic increase. The parenthetical performance distinction asserts no further mathematical guarantee.')],
-  pending=['For every real positive definite ridge/kernel matrix, the standard Cholesky construction succeeds in exact arithmetic and yields a lower triangular factor with positive diagonal; the generic construction and all pivot conditions are not yet proved.'])
+  pending=[])
 }
+REVIEWED_PARTIAL_MATERIAL['primer-linalg.html::node-552']['proved'].append(
+ claim('Every finite real positive-definite regularized kernel matrix has an exact lower triangular Cholesky factor with strictly positive diagonal; every leading principal minor is positive.',
+       'CompleteModulesCholesky','actual_positive_definite_matrix_has_cholesky',
+       'actual_cholesky_existence_iff_positive_definite','actual_exact_cholesky_failure_iff_not_positive_definite',
+       'actual_positive_definite_leading_principal_minors_are_positive',
+       hypotheses='Arbitrary finite square real positive-definite matrices; the preceding ridge theorem supplies this premise for K PSD and lambda>0.',
+       correspondence='An actual Gram–Schmidt construction proves the factor, its product identity, and every positive diagonal entry. Failure means absence of an exact positive-diagonal factor, which is impossible here. This substantiates the exact-arithmetic mathematical claim; no floating-point implementation or algorithm execution trace is inferred.'))
 REVIEWED_PARTIAL_MATERIAL['primer-linalg.html::node-552']['proved'][0]['lean_declarations'] += refs(
  'CompleteFoundationsGramRegularization','gram_actual_quadratic_norm')
 
@@ -654,3 +663,187 @@ COMPLETE_EXERCISES['la-ex-matrix-norms-3'] = [
        'CompleteFoundationsMatrixNormModels','exact_tail_threshold','tail_source_numbers_and_neumann_hypothesis','first_basis_attains_tail','eight_term_indices','partialSum',
        hypotheses='Actual matrix remainder and natural integer indexing convention.',
        correspondence='A universal integer iff proves smallest-budget necessity and sufficiency, exact rational values check the printed decimals, and the actual CLM action proves attainment by the first basis vector.')]
+
+COMPLETE_EXERCISES['la-ex-svd-1'] = [
+ claim('The stated U, Sigma and V give an actual SVD of diag(2,-1); both orthogonality products equal the identity and the factor product equals A.',
+       'CompleteFoundationsSVDModels','sourceA','signU','stretchSigma','rightV','actual_svd_product','actual_svd_orthogonal',
+       hypotheses='Exactly the source real two-by-two matrix and displayed factors.',
+       correspondence='Actual Matrix multiplication and transpose establish the decomposition, with strictly positive diagonal entries 2 and1 in Sigma.'),
+ claim('The actual Gram matrix is diag(4,1); the nonnegative square roots of all its eigenvalues are exactly2 and1. The signed eigenvalues of A are exactly2 and-1.',
+       'CompleteFoundationsSVDModels','actual_gram_matrix','diagonal_all_eigenvalues','isSingularValue','actual_singular_values','actual_signed_eigenvalues',
+       hypotheses='Eigenvalues mean actual nonzero Euclidean eigenvectors; singular values mean nonnegative sigma with sigma squared an eigenvalue of the actual Gram matrix.',
+       correspondence='Universal iff statements prove all-and-only eigenvalues and singular values; the positive stretches are distinguished from the actual signed invariant directions.'),
+ claim('The actual spectral norm is2, actual Frobenius norm sqrt5, and actual inverse-based spectral condition number and largest-to-smallest singular-value ratio are both2.',
+       'CompleteFoundationsSVDModels','actual_spectral_norm','actual_frobenius_norm','actual_inverse','actual_condition_number',
+       hypotheses='The separately scoped actual L2 operator and Frobenius matrix norms; this A is invertible.',
+       correspondence='A checked inverse product gives the actual inverse before its induced norm is evaluated. The norms are the standard objects, not unproved proposed scalar formulas.'),
+ claim('The entire unit circle image is exactly the ellipse y1 squared over4 plus y2 squared equals1; the coordinate axes stretch by2 and1, and the second coordinate is reflected.',
+       'CompleteFoundationsSVDModels','actual_coordinate_action','actual_unit_circle_image','actual_axis_stretches',
+       hypotheses='All real Euclidean vectors of norm1, not a sampled circle.',
+       correspondence='Actual set-image equality proves both inclusion directions and all ellipse points; actual coordinate actions and norms verify both semi-axis lengths and reflection.')]
+
+COMPLETE_EXERCISES['la-ex-svd-2'] = [
+ claim('The actual row Gram product is5; the actual pseudoinverse is column(1/5,2/5), satisfying all four Moore–Penrose identities and uniquely satisfying them. Applied to b5 it gives xStar(1,2), which solves the equation.',
+       'CompleteFoundationsPseudoinverse','sourceA','sourcePlus','target','moorePenrose','actual_moore_penrose_identities','actual_moore_penrose_unique','actual_row_gram','actual_row_pseudoinverse_formula','actual_solution_from_pseudoinverse','actual_unique_minimum_norm',
+       hypotheses='Exactly the real one-by-two source matrix and target5; uniqueness ranges over every candidate two-by-one matrix.',
+       correspondence='Actual rectangular products and symmetry identities identify the Moore–Penrose inverse, rather than assigning the label to a computed vector without checking its definition.'),
+ claim('For every nonzero finite real row a, its Moore–Penrose inverse is a transpose divided by the positive row squared length; the row Gram product is that squared length times the one-by-one identity.',
+       'CompleteFoundationsPseudoinverse','rowMatrix','rowPlus','nonzero_row_squared_length_positive','actual_nonzero_row_right_inverse','actual_nonzero_row_pseudoinverse','actual_general_row_formula',
+       hypotheses='An arbitrary finite real row, required to be nonzero for positive denominator and the four inverse identities.',
+       correspondence='This also covers the generic formula in the hint. The actual Gram product is computed and the denominator is proved positive before showing all Moore–Penrose identities.'),
+ claim('All and only source solutions are xStar+t*(-2,1); this nonzero null direction is orthogonal to xStar, both squared lengths are5, and the actual solution squared norm is5+5t squared.',
+       'CompleteFoundationsPseudoinverse','actual_equation_iff','actual_null_direction','solution_coordinates','actual_all_solutions','actual_orthogonality','actual_squared_norms',
+       hypotheses='All real solution vectors and all real parameters, without nonnegativity restrictions.',
+       correspondence='A universal parameterization iff gives every solution and checks the nullspace action. Actual Euclidean inner product and squared norm give the precise Pythagorean calculation.'),
+ claim('The vector(1,2) is the unique minimum Euclidean norm solution, although the full solution set is infinite.',
+       'CompleteFoundationsPseudoinverse','actual_unique_minimum_norm','actual_parameter_injective','actual_infinitely_many_solutions',
+       hypotheses='The entire actual source equation solution set.',
+       correspondence='The norm comparison has equality iff x=xStar. Injectivity of the real parameterization proves actual Set.Infinite, so the infinitude assertion is also encoded.')]
+
+COMPLETE_EXERCISES['la-ex-svd-3'] = [
+ claim('The actual initial vector is unit, its matrix image is(3,1)/sqrt2, and its estimate is sqrt5, rounded2.2361; the actual Gram matrix is diag(9,1).',
+       'CompleteFoundationsPowerNormalization','actual_x_zero_unit','actual_initial_action','actual_initial_estimate','actual_source_gram','actual_printed_decimal_enclosures',
+       hypotheses='The exact source diag(3,1) and normalized initial vector.',
+       correspondence='Actual induced matrix action and actual Euclidean norm are evaluated. The printed approximation has a rigorous half-last-place rational enclosure.'),
+ claim('The actual normalized Gram power step gives(9,1)/sqrt82, which is unit; its matrix image is(27,1)/sqrt82 and actual estimate is sqrt(730/82), rounded2.9837. The estimate increases strictly but remains below the true spectral norm3.',
+       'CompleteFoundationsPowerNormalization','powerStep','actual_gram_action','actual_gram_action_norm','actual_power_iterate','actual_x_one_unit','actual_next_action','actual_next_estimate','actual_improvement_below_true_norm','actual_source_spectral_norm','actual_printed_decimal_enclosures',
+       hypotheses='The true normalized iteration, with its actual nonzero Gram-image norm.',
+       correspondence='The normalization denominator is evaluated before the iterate is identified. Actual norms prove the claimed improvement and remaining strict gap; a rational enclosure verifies the approximation.'),
+ claim('The actual spectral norm after division by the initial estimate is3/sqrt5, rounded1.3416 and strictly above1, so it fails the proposed certificate.',
+       'CompleteFoundationsPowerNormalization','actual_failed_normalization','actual_printed_decimal_enclosures',
+       hypotheses='Exactly the matrix and initial positive estimate.',
+       correspondence='Actual matrix scaling and its true operator norm establish the violating value; no candidate scalar bound is substituted for the norm.'),
+ claim('Dividing by3 gives actual norm1, and dividing by the actual Frobenius norm sqrt10 gives norm at most1. Every unit-direction estimate is a lower bound, whereas the spectral norm of every finite real matrix is bounded above by its actual Frobenius norm; any positive upper bound safely normalizes.',
+       'CompleteFoundationsPowerNormalization','actual_guaranteed_normalizations','actual_source_frobenius','actual_matrix_action_squared_bound','actual_spectral_le_frobenius','actual_frobenius_length_is_norm','actual_unit_direction_estimate_is_lower_bound','actual_upper_bound_normalizes',
+       hypotheses='Arbitrary finite rectangular real matrices for the general bound, every unit direction, and a positive divisor for guaranteed normalization.',
+       correspondence='Finite Cauchy–Schwarz bounds the actual map on every Euclidean vector, giving the actual operator norm bound. The scoped Frobenius identity identifies the standard norm and the explicit counterexample proves a power estimate alone cannot certify normalization.')]
+
+# These newly retained excerpts have been read individually; their classification
+# is explicit instead of inherited from containment in a completed exercise.
+for node in [780,798,816]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-linalg.html::node-{node}'] = (
+   'The exact paragraph is only a link labelled Review: Singular values, least squares and power iteration. It directs reading and makes no mathematical assertion.')
+REVIEWED_COMPLETE_MATERIAL['primer-linalg.html::node-784'] = [
+ claim('The sign can be placed in an orthogonal factor; singular values are nonnegative stretches, while the source negative eigenvalue reflects its direction.',
+       'CompleteFoundationsSVDModels','actual_svd_orthogonal','actual_svd_product','isSingularValue','actual_singular_values','actual_signed_eigenvalues','actual_axis_stretches',
+       hypotheses='The hint is interpreted in the exact exercise context diag(2,-1); the nonnegativity requirement is explicit for arbitrary matrices in isSingularValue.',
+       correspondence='Actual orthogonality and factor product put the negative sign in U. The singular-value definition requires nonnegativity, and actual axis lengths prove the two source unsigned stretches.')]
+
+COMPLETE_EXERCISES['la-ex-blocks-1'] = [
+ claim('The actual three-by-three source matrix sends(1,2,3) to(4,7,12), has trace9 and determinant20, and its all-vector action has no coupling between the first two coordinates and the third.',
+       'CompleteFoundationsBlockModels','blockM','actual_independent_block_action','actual_block_source_values',
+       hypotheses='The exact stated matrix; the independence statement holds for every real input vector.',
+       correspondence='Actual matrix-vector multiplication, actual trace and actual determinant are evaluated, including the universal coordinate action behind the no-coupling explanation.'),
+ claim('The matrix is precisely a block diagonal matrix after the canonical index equivalence. The first block determinant is5 and scalar block determinant4; block determinants multiply and block traces add.',
+       'CompleteFoundationsBlockModels','actual_block_representation','actual_determinant_from_blocks','generic_block_diagonal_determinant','generic_block_diagonal_trace',
+       hypotheses='Exact source blocks for their values; arbitrary finite square real blocks for the two general identities.',
+       correspondence='Actual equality after Fin2+Fin1 toFin3 reindexing and determinant invariance connect the source matrix to the general block determinant theorem. Trace additivity is also proved generically.')]
+COMPLETE_EXERCISES['la-ex-blocks-2'] = [
+ claim('For every reala and vectorz the actual Schur matrix quadratic form equals(a-4/3)x squared+3(y+2x/3) squared. It isPSD iff a>=4/3 andPD iff a>4/3.',
+       'CompleteFoundationsBlockModels','schurMatrix','actual_schur_completed_square','actual_schur_symmetry','actual_schur_psd_iff','actual_schur_pd_iff',
+       hypotheses='All real parameter and vector values, including the boundary.',
+       correspondence='The exact completed-square identity leads to actual Matrix.PosSemidef and PosDef iff statements, with both necessity and sufficiency.'),
+ claim('At a4/3 the nonzero vector(3,-2) is in the actual nullspace and determinant is0, while the matrix isPSD. For every a<4/3 the same vector has a negative form.',
+       'CompleteFoundationsBlockModels','actual_schur_boundary','actual_schur_negative_direction',
+       hypotheses='Exactly the boundary or strict lower parameter range.',
+       correspondence='Actual matrix-vector zero, nonzero witness and zero determinant establish singularity, and the quantified strict negative value verifies failure below the boundary.')]
+COMPLETE_EXERCISES['la-ex-blocks-3'] = [
+ claim('The actual base inverse isdiag(1/2,1), its action onu(1,2) givesv(1/2,2), and u dotv=9/2. The actual updated matrix is[[3,2],[2,5]] and its determinant equals detV*(1+u dotv)=11.',
+       'CompleteFoundationsBlockModels','actual_update_base_inverse','actual_shared_update_quantities','actual_rank_one_update_matrix','actual_update_determinant',
+       hypotheses='Exactly the stipulated base matrix and real update vector.',
+       correspondence='The actual nonsingular inverse is established by a product check before the shared quadratic scalar and actual rank-one updated determinant are evaluated.'),
+ claim('The actual inverse candidate is V inverse minusvv transpose divided by1+u dotv, equal to1/11*[[5,-2],[-2,3]]. Both actual multiplication orders equalI, so it is the actual updated inverse.',
+       'CompleteFoundationsBlockModels','inverseCandidate','actual_rank_one_inverse_formula','actual_independent_inverse_check',
+       hypotheses='The source update has the checked positive denominator11/2.',
+       correspondence='The displayed inverse-update expression is identified with the actual candidate matrix; independent products establish the inverse itself in both orders.'),
+ claim('The actual log-determinant increase islog(11/2), rounded1.70475 within0.000005.',
+       'CompleteFoundationsBlockModels','actual_log_determinant_increase','actual_log_determinant_decimal',
+       hypotheses='The actual positive determinants2 and11.',
+       correspondence='The exact log quotient identity is applied only to nonzero positive determinants. A finite real logarithm series bound and certified log2 enclosure prove the half-last-place decimal bound.')]
+for node in [924,942,960]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-linalg.html::node-{node}'] = (
+   'The exact paragraph is a reading link labelled Review: Block algebra, Schur complements and updates, with no mathematical assertion.')
+
+COMPLETE_EXERCISES['la-ex-svd-2'][2]['lean_declarations'] += refs(
+ 'CompleteFoundationsUniversalMatrices','actual_equal_images_iff_null_difference')
+COMPLETE_EXERCISES['la-ex-blocks-3'][0]['lean_declarations'] += refs(
+ 'CompleteFoundationsUniversalMatrices','actual_matrix_determinant_lemma')
+
+COMPLETE_EXERCISES['la-ex-structured-1'] = [
+ claim('The actual Q=diag(1,-1) equals its transpose, its transpose product equalsI, determinant is-1, and its action is(x1,-x2). It preserves every Euclidean norm.',
+       'CompleteFoundationsStructuredModels','actual_reflection_orthogonal','actual_reflection_action','actual_reflection_preserves_every_norm',
+       hypotheses='The exact real source matrix, with every real input vector.',
+       correspondence='Actual orthogonality, determinant and all-vector action establish reflection across the horizontal axis, with unsigned lengths preserved.'),
+ claim('The actual image of(3,4) is(3,-4) and both Euclidean lengths equal5.',
+       'CompleteFoundationsStructuredModels','actual_reflection_source_values',
+       hypotheses='Exactly the source vector.',
+       correspondence='Actual CLM matrix image and actual Euclidean norms are checked, including equality with the original length.'),
+ claim('Every finite real orthogonal matrix preserves every Euclidean norm and is invertible.',
+       'CompleteFoundationsUniversalMatrices','actual_orthogonal_matrix_preserves_norm','actual_orthogonal_matrix_is_invertible',
+       hypotheses='Any finite real squareQ with actualQ transpose timesQ=I.',
+       correspondence='The actual squared-norm identity follows from matrix multiplication and transpose, and the actual determinant product forces invertibility.')]
+COMPLETE_EXERCISES['la-ex-structured-2'] = [
+ claim('The actual P=diag(1,0) is symmetric and idempotent, maps eachx to(x1,0), and has image exactly the horizontal axis. Its residual is perpendicular to the image and the Euclidean squared norm obeys Pythagoras.',
+       'CompleteFoundationsStructuredModels','actual_projection_properties','actual_projection_action','actual_projection_image','actual_projection_residual',
+       hypotheses='The actual source matrix and every real Euclidean vector.',
+       correspondence='Actual transpose and product identities, image set equality, inner product and squared norms establish the orthogonal projection property, rather than using the label alone.'),
+ claim('The source projection is the unique closest horizontal-axis point to everyx. For(3,4), the projected point is(3,0), residual(0,4), lengths3 and4, and full length5.',
+       'CompleteFoundationsStructuredModels','actual_projection_is_unique_closest','actual_projection_source_values',
+       hypotheses='Every real horizontal-axis comparison point for nearest-point uniqueness; the exact source vector for numerical values.',
+       correspondence='Actual Euclidean distance comparison and equality iff provide nearest-point uniqueness. Actual norm calculations verify the source right triangle.'),
+ claim('P transpose timesP equalsP, which is notI; determinant0 makesP singular, while its actual operator norm is1. It removes the vertical coordinate rather than preserving every length; every orthogonal matrix preserves all lengths and is invertible.',
+       'CompleteFoundationsStructuredModels','actual_projection_properties','actual_projection_action','actual_projection_source_values',
+       hypotheses='The actual source matrix, with the standard induced Euclidean operator norm.',
+       correspondence='The false orthogonality identity, zero determinant, actual norm1 and all-vector coordinate action prove the distinction. Generic orthogonal norm preservation and invertibility are explicitly linked below.')]
+COMPLETE_EXERCISES['la-ex-structured-2'][2]['lean_declarations'] += refs(
+ 'CompleteFoundationsUniversalMatrices','actual_orthogonal_matrix_preserves_norm','actual_orthogonal_matrix_is_invertible')
+COMPLETE_EXERCISES['la-ex-structured-3'] = [
+ claim('For the exact quarter-turn skew matrix, actual(I+A) inverse ishalf*[[1,1],[-1,1]], the actual Cayley matrix is[[0,1],[-1,0]], its transpose product isI and determinant1. Its action(x1,x2) maps to(x2,-x1).',
+       'CompleteFoundationsStructuredModels','quarterSkew','cayley','actual_quarter_inverse','actual_quarter_cayley','actual_clockwise_quarter_action',
+       hypotheses='Exactly the source two-by-two real skew matrix.',
+       correspondence='A checked product gives the actual inverse before the Cayley product is evaluated. Actual orthogonality, determinant and coordinate action establish the clockwise quarter-turn.'),
+ claim('For every finite real skew-symmetricA, I+A is invertible, the actual Cayley transform is orthogonal, and Qv=-v forcesv=0.',
+       'CompleteFoundationsStructuredModels','actual_skew_one_add_is_invertible','actual_cayley_is_orthogonal','actual_cayley_no_negative_one_eigenvector',
+       hypotheses='Arbitrary finite real square matrices with actual transposeA=-A; every real vectorv.',
+       correspondence='The quadratic skew term is0, making the actual(I+A) map injective and hence invertible. The actual inverse-based transform is orthogonal, and the exactw=(I+A) inversev equation forcesw andv to0.'),
+ claim('Negative identity is orthogonal but cannot be the Cayley transform of a finite skew-symmetric matrix in a nonzero dimension.',
+       'CompleteFoundationsStructuredModels','actual_negative_identity_is_orthogonal','actual_negative_identity_is_excluded',
+       hypotheses='Nonempty finite coordinate type for the excluded negative-identity statement; orthogonality holds even in zero dimension.',
+       correspondence='An actual nonzero single-coordinate vector of negative identity would contradict the no-negative-one-eigenvector theorem, showing precisely the parameterization restriction.')]
+for node in [1035,1053,1071]:
+ REVIEWED_NONFORMAL_MATERIAL[f'primer-linalg.html::node-{node}'] = (
+   'The exact paragraph is a reading link labelled Review: Orthogonal maps, projections and Cayley transforms; it adds no mathematical assertion.')
+
+for node in [876,878]:
+ REVIEWED_PARTIAL_MATERIAL[f'primer-linalg.html::node-{node}'] = dict(
+  proved=[
+   claim('The actual rectangular determinant identity det(I+AB)=det(I+BA) holds for all finite real dimensions.',
+         'CompleteFoundationsUniversalMatrices','actual_sylvester_determinant_identity',
+         hypotheses='Arbitrary compatible finite rectangular real matrices.',
+         correspondence='The actual matrices and their actual determinants have the universal equality; neither product is assumed square in the same dimension.'),
+   claim('For any invertible realV, the actual rank-one determinant isdet(V+uv transpose)=detV*(1+v transposeV inverseu).',
+         'CompleteFoundationsUniversalMatrices','actual_matrix_determinant_lemma',
+         hypotheses='Arbitrary finite real squareV with unit determinant and arbitrary update vectors.',
+         correspondence='The finite rectangular determinant lemma is specialized to actual one-column/one-row products and the actual one-by-one determinant. The outer-product and dot-product formulas are proved equal.')],
+  pending=['The compatible rectangular productsAB andBA share all nonzero eigenvalues, with the exact eigenvalue multiplicity interpretation still requiring a full correspondence.'])
+
+REVIEWED_PARTIAL_MATERIAL['primer-linalg.html::node-755'] = dict(
+ proved=[
+  claim('Every unit-direction estimate is a lower bound on the actual Euclidean operator norm; the actual Frobenius norm is a guaranteed upper bound and division by any positive upper bound safely normalizes.',
+        'CompleteFoundationsPowerNormalization','actual_unit_direction_estimate_is_lower_bound','actual_spectral_le_frobenius','actual_frobenius_length_is_norm','actual_upper_bound_normalizes',
+        hypotheses='Every finite rectangular real matrix and every real Euclidean unit vector; a positive divisor is required for normalization.',
+        correspondence='Actual map bounds and actual induced norm establish the direction of each inequality. The standard Frobenius norm is explicitly identified.'),
+  claim('A power estimate can fail to certify norm at most1 after normalization.',
+        'CompleteFoundationsPowerNormalization','actual_failed_normalization',
+        hypotheses='The actual diag(3,1) model and its initial unit vector.',
+        correspondence='The actual scaled matrix has norm3/sqrt5>1, supplying a genuine counterexample to the unconditional estimate certificate.'),
+  claim('A nonzero initial projection onto the dominant subspace is necessary for the repeated-top convergence assertion: diag(3,3,1) from the third unit vector remains there with estimate1 at every time despite top norm3.',
+        'CompleteFoundationsPowerDegeneracy','actual_repeated_top_directions','actual_repeated_spectral_norm','actual_initial_dominant_projection_zero','actual_all_iterates_and_estimates','actual_estimates_do_not_reach_top',
+        hypotheses='The explicit finite real counterexample, with the actual normalized Gram iteration and a unit start.',
+        correspondence='Two independent top stretch directions and exact norm3 witness repetition. The start is orthogonal to both, every true iterate and estimate is evaluated, and actual filter convergence to3 is disproved. This justifies the corrected hypothesis; it does not prove the corrected positive convergence theorem.')],
+ pending=[
+  'General normalized Gram power convergence and its angle-rate bound under a simple largest singular value and nonzero dominant projection, with exact hypotheses and all-time dynamics.',
+  'General convergence to the dominant right-singular subspace, including repeated largest positive singular values, under the corrected nonzero initial dominant projection; the actual estimate limit also requires proof.',
+  'The exact breakdown iffAx=0, all-after-first range and nullspace-orthogonal invariants, exclusion of later breakdown, and the probabilistic random-start qualifier.',
+  'Every displayed walkthrough iterate/estimate2.236,2.765,2.824,2.8282 and actual limit2sqrt2 for the walkthrough matrix from(1,0).',
+  'The generic spectral bound sqrt(L1 operator norm timesL-infinity operator norm) and the actual walkthrough sqrt12 and rounded3.46.'])
