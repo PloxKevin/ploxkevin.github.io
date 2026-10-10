@@ -48,9 +48,11 @@ all bindings. Located source excerpts remain audit evidence; full external
 papers retain their separate attributed reference scope. Original failed
 selection runs and older interrupted executions remain preserved.
 
-The authorized GitHub publication of checkpoint 21 is being prepared. The
-previous checkpoint20 content and live delivery passed; the new checkpoint is
-not yet described as deployed. Complete audit archives and
+Checkpoint 21 was pushed as [`6228449`](https://github.com/PloxKevin/ploxkevin.github.io/commit/622844911b14afc0049ee3db720fd03c7ffadd86).
+[The actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38094471523)
+built and deployed successfully. [Live delivery](live-checkpoint-21-attempt1.json)
+matched all 31 frozen asset hashes, and [the Pages API](pages-checkpoint-21-attempt1.json)
+reported that exact commit built. Complete audit archives and
 [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Literal archive exclusions keep the current book, partial
 ledgers and actual audit reports in the website build.
