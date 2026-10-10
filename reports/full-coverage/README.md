@@ -46,8 +46,16 @@ The [actual freeze](freeze-checkpoint20-execution.json) prepares inputs; the
 separate actual audit establishes its formal verification. Located source
 passages remain audit evidence; full external papers retain their attributed
 reference scope. Original failed and interrupted historical runs are preserved.
-GitHub content delivery is being prepared; live delivery has not yet been
-asserted for this checkpoint.
+The authorized GitHub content push succeeded at commit
+`efd8e86b1a1ff8ff57375a0674124717ff955cf3`. The first Pages deployment failed
+because its archive exceeded the platform size limits; the original workflow
+log and both incomplete 31-asset checks are preserved. A build configuration
+excludes historical snapshots, old inventories and raw proof archives from the
+website. [Full Lean sources and evidence](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
+remain in Git. The current audit reports and all book pages stay in the website
+build. The measured included source-file budget is approximately 642 MB before
+these small metadata additions. A fresh actual deployment and all 31-asset
+delivery check are required; successful live delivery has not yet been asserted.
 
 From the repository root, reproduce the checks with:
 
