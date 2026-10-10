@@ -35,9 +35,10 @@ its page fingerprints match the frozen checkpoint.
 for 18 byte-identical pages and records the failed fresh browser attempt for eleven
 pages. Chromium launch was blocked by system permissions. No new screenshot or
 manual visual-inspection pass is asserted.
-The GitHub source push and live delivery are tracked separately. Live HTTP and
-Pages API delivery require actual post-push checks; no live-delivery pass is
-asserted here. [The checkpoint manifest](checkpoint-18-manifest.json) identifies
+The GitHub content push succeeded at commit `bcb4abf5be332abe9e8ece10a416e65a13fca784`.
+[Live delivery](live-checkpoint-18-attempt4.json) verified all31 frozen asset hashes,
+and [GitHub Pages](pages-checkpoint-18-attempt4.json) reported that commit built.
+Earlier failed DNS and incomplete-build attempts remain preserved. [The checkpoint manifest](checkpoint-18-manifest.json) identifies
 all frozen inputs. Historical correspondence and source corrections remain
 preserved in their original evidence records.
 
