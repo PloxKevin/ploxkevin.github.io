@@ -1,77 +1,72 @@
 # Continuing full mathematical coverage
 
-Checkpoint 20 passed the actual system Lean 4.34.1 audit: 8,667 theorems in
-1,068 files, a fresh 9,993-job build, kernel verification and a fresh axiom audit
-of every theorem. Only `propext`, `Classical.choice` and `Quot.sound` occur.
-See [the original formal audit](lean-checkpoint-20/verification-original.json)
-and [its actual execution](verify-checkpoint20-execution.json).
-All 13 additions received fresh kernel replays. The other 1,055 retain their
-original actual passing replays after exact module, transitive local import,
-Lean version and dependency artifact fingerprints were checked. The previous
-report and raw logs retain their original commands, directories and times.
+Checkpoint 21 passed the actual system Lean 4.34.1 audit: 8,821 public theorems in
+1,089 files, a fresh 10,014-job build, kernel verification and a fresh axiom audit
+of every indexed theorem. See [the original formal audit](lean-checkpoint-21/verification-original.json)
+and [its actual execution](verify-checkpoint21-execution-v1.json).
+All 21 additions received fresh kernel replays. The other 1,068 retain their
+original actual passing replays only after exact module, transitive local import,
+Lean version and dependency fingerprints matched. Original reports and raw logs
+retain their commands, directories and times; private proof dependencies are
+covered by module compilation and kernel replay.
 
-Coverage remains partial. All 556 exercises and 12,774 overlapping material
-review units are inventoried. The frozen ledgers classify 484 exercises as
-mathematically complete, 16 partial and 56 pending. There are 4,068 reviewed
-material units and 8,706 pending units. See [the frozen ledger audit](lean-checkpoint-20/ledger-audit.json).
-The validator checks literal source fingerprints and declarations; independent
-reviews establish the specific mathematical correspondence. Future additions
-are outside this verified checkpoint and add no verified coverage.
+Coverage remains partial. The frozen ledgers classify 502 of 556 exercises as
+complete, 16 partial and 38 pending. Of the 12,774 overlapping material review
+units, 4,312 are reviewed and 8,462 remain pending.
+[The actual frozen-ledger check](lean-checkpoint-21/ledger-audit.json) validates
+literal fingerprints and selected declarations; independent reviews establish
+specific mathematical correspondence. A successful Lean audit establishes the
+encoded statements, not completion of the remaining material.
 
-The source47 book contains 47 documented teaching corrections. The latest
-corrections specify the hypotheses behind topology and asymptotic statements,
-distinguish exact FOCOPS formulas from decimal approximations, and distinguish
-the true Gaussian CVaR from a rounded numerical estimate. Exact replacements,
-assumptions and reasons are in [material-corrections.json](../../book/coverage/material-corrections.json).
-The additions prove the actual finite FOCOPS probability laws, regularized and
-hard constrained optimizers, dual derivatives, branch conditions and numerical
-root bounds. Further verification practices now have individually reviewed
-finite, calibration, planner and scenario proofs. Earlier approved overlapping
-material components remain preserved alongside fresh pending gaps.
+The source48 book contains 48 documented teaching corrections. The latest
+clarifies the Chow example's exact costs, visit counts, LP optimizers and feasible
+policy limits, and the difference between almost-sure termination and a uniform
+finite termination bound. Nine source-matched proof files now cover that whole
+exercise. Seventeen further Viability and LipSDP practices received independent
+whole-exercise reviews, including their questions, hints and every worked step.
+Foundation material has additional individual source decisions; retained pending
+gaps are explicit. Future22 canonical proofs and retained trial archives add no
+verified coverage to this checkpoint.
 
-[Static validation](integration-20.json) passed on all 29 pages and 556 exercises.
-[Browser evidence](browser-checkpoint-20.json) covers all 29 pages at five widths:
-15 fresh checks on the three corrected pages and 130 retained actual checks on
-26 pages after their source bytes and both QA helpers matched exactly. The
-31 book assets and QA hashes match the frozen checkpoint. There are 48 screenshot
-artifacts and ten explicit skipped captures on pages without capture targets.
-The new screenshots have no manual visual pass; the earlier limited top-region
-inspection remains historical. Browser checks do not establish mathematical
-correctness.
+[Static validation](integration-21.json) passed on all 29 pages and 556 exercises.
+[Browser evidence](browser-checkpoint-21.json) covers all 29 pages at five widths:
+five fresh checks on the corrected page and 140 retained actual checks after
+source bytes and both QA helpers matched exactly. The 31 book assets and QA
+hashes match the frozen checkpoint. There are 48 standard screenshot artifacts
+and ten explicit skipped captures. Additional expanded Chow screenshots were
+actually viewed at phone and desktop widths. An initial preview concern was
+superseded by [actual measured containment](chow21-rendered-exercise-manual-observation-followup-v2.json):
+no cropping was reproduced at the five checked widths. This limited observation
+adds no manual visual pass for the entire book.
 
-The [checkpoint manifest](checkpoint-20-manifest.json) identifies the exact
-frozen inputs. The [selection](checkpoint-20-selection.json) retains all 1,055
-baseline proof fingerprints, original compiler evidence and historical inputs.
-The [actual freeze](freeze-checkpoint20-execution.json) prepares inputs; the
-separate actual audit establishes its formal verification. Located source
-passages remain audit evidence; full external papers retain their attributed
-reference scope. Original failed and interrupted historical runs are preserved.
-The authorized GitHub content push succeeded at commit
-`efd8e86b1a1ff8ff57375a0674124717ff955cf3`. Its first Pages deployment failed
-because the archive exceeded the platform size limits; the original failure
-and both incomplete delivery attempts are preserved. The archive-exclusion
-repair is commit `fd3b6b1ea8faee28fd2b1e0b5484a45129e0cec3`.
-[Its actual workflow](pages20-repair-workflow-original-v1.json) passed the build
-and deployment; the uploaded artifact was 260,523,320 bytes.
-[Live delivery attempt 3](live-checkpoint-20-attempt3.json) passed all 31 frozen
-asset SHA-256 checks, and [the Pages check](pages-checkpoint-20-attempt3.json)
-confirmed that exact commit was built. The full audit archives and
+[The manifest](checkpoint-21-manifest.json) identifies the 32,040 frozen inputs.
+[The selection](checkpoint-21-selection.json) preserves every baseline proof
+fingerprint and original compiler evidence. A separate exact content-binding map
+retains every one of the previous checkpoint's 30,207 original input paths and
+hashes, sharing identical bytes where possible. Independent review confirmed
+all bindings. Located source excerpts remain audit evidence; full external
+papers retain their separate attributed reference scope. Original failed
+selection runs and older interrupted executions remain preserved.
+
+The authorized GitHub publication of checkpoint 21 is being prepared. The
+previous checkpoint20 content and live delivery passed; the new checkpoint is
+not yet described as deployed. Complete audit archives and
 [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
-remain in Git. Historical snapshots, old inventories and raw proof archives
-are excluded from the website build; all book pages and current audit reports
-remain published. This is successful delivery of partial checkpoint 20.
+remain in Git. Literal archive exclusions keep the current book, partial
+ledgers and actual audit reports in the website build.
 
-From the repository root, reproduce the checks with:
+From the published repository root, reproduce checks into NEW output paths:
 
 ```sh
-python3 book/validate.py --allow-reviewed-corrections --output reports/full-coverage/integration-reproduction.json
-python3 book/coverage/validate.py --output reports/full-coverage/ledger-reproduction.json
-python3 verification/lean/verify.py --output reports/full-coverage/lean-reproduction
+python3 book/validate.py --allow-reviewed-corrections --output reports/full-coverage/integration-reproduction21.json
+python3 book/coverage/validate.py --output reports/full-coverage/ledger-reproduction21.json
+python3 verification/lean/verify.py --output reports/full-coverage/lean-reproduction21
 ```
 
-The reproducible source47 checkout is `reports/full-coverage/checkpoint-20`.
-Use `--resume-kernel` only with matching saved fingerprints.
+The local complete frozen source48 checkout is `reports/full-coverage/checkpoint-21`;
+the Git publication places its selected inputs at their original repository paths.
+Use kernel reuse only with matching saved fingerprints.
 `python3 book/coverage/validate.py --require-complete` remains a failing gate.
 The continuing objective includes every remaining mathematical material and
-exercise claim, exact assumptions and source correspondence, local Lean
-verification and GitHub publication. This checkpoint does not complete it.
+exercise claim, exact assumptions, system Lean verification and GitHub delivery.
+This checkpoint does not complete it.
