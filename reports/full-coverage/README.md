@@ -47,15 +47,19 @@ separate actual audit establishes its formal verification. Located source
 passages remain audit evidence; full external papers retain their attributed
 reference scope. Original failed and interrupted historical runs are preserved.
 The authorized GitHub content push succeeded at commit
-`efd8e86b1a1ff8ff57375a0674124717ff955cf3`. The first Pages deployment failed
-because its archive exceeded the platform size limits; the original workflow
-log and both incomplete 31-asset checks are preserved. A build configuration
-excludes historical snapshots, old inventories and raw proof archives from the
-website. [Full Lean sources and evidence](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
-remain in Git. The current audit reports and all book pages stay in the website
-build. The measured included source-file budget is approximately 642 MB before
-these small metadata additions. A fresh actual deployment and all 31-asset
-delivery check are required; successful live delivery has not yet been asserted.
+`efd8e86b1a1ff8ff57375a0674124717ff955cf3`. Its first Pages deployment failed
+because the archive exceeded the platform size limits; the original failure
+and both incomplete delivery attempts are preserved. The archive-exclusion
+repair is commit `fd3b6b1ea8faee28fd2b1e0b5484a45129e0cec3`.
+[Its actual workflow](pages20-repair-workflow-original-v1.json) passed the build
+and deployment; the uploaded artifact was 260,523,320 bytes.
+[Live delivery attempt 3](live-checkpoint-20-attempt3.json) passed all 31 frozen
+asset SHA-256 checks, and [the Pages check](pages-checkpoint-20-attempt3.json)
+confirmed that exact commit was built. The full audit archives and
+[Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
+remain in Git. Historical snapshots, old inventories and raw proof archives
+are excluded from the website build; all book pages and current audit reports
+remain published. This is successful delivery of partial checkpoint 20.
 
 From the repository root, reproduce the checks with:
 
