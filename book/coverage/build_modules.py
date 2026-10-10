@@ -137,10 +137,20 @@ for exercise in epigraph_review["exercises"]:
 whole_toolkit_reviews.append((epigraph_review,{"file":epigraph_review_rel,"sha256":epigraph_review_sha,
     "reviewer":epigraph_review["reviewer"],"status":epigraph_review["status"]}))
 
+# The selected15 LinearProgram history remains immutable. Only the explicitly
+# approved two-space future16 revision uses genuine new compiler evidence.
+lp_formatting_confirmation_rel="book/coverage/checks/modules-linear-program-formatting16-independent-source-rebase-confirmation.json"
+lp_formatting_confirmation_sha="b9e674967813e35518d8f85e87e2c264ad95f81bd2603dc11b68516d9b9decd8"
+assert digest(lp_formatting_confirmation_rel)==lp_formatting_confirmation_sha
+lp_formatting_confirmation=json.loads((ROOT/lp_formatting_confirmation_rel).read_text())
+assert lp_formatting_confirmation["status"]=='independent_exact_source_review_identity_rebase_confirmation_passed'
+
 # New whole-source reviews retain their independently saved semantic decisions.
 for review_rel,review_sha in [
     ("book/coverage/checks/modules-policy-dual-source-review-v1.json","5349ec74c928072854c3de6109365cd82eb2297463c3899f5f0a717dd54d07d5"),
-    ("book/coverage/checks/modules-linear-program-source-review-v1.json","f09ca2585962ecd86a90775acad338e4b09cf59eb4b92e09f4772ae4fd4a7c6c")]:
+    ("book/coverage/checks/modules-linear-program-source-review-formatting16.json","3c42e9489be03dfc125c9af2a3c8972b67fe361b1512dd5c1f145442ba198d19"),
+    ("book/coverage/checks/modules-singular-schur-p10-source-review-v1.json","857b167835d38de873c0a8b31b7df4ffb3363202d986f751ce01e5faa47118f1"),
+    ("book/coverage/checks/modules-thermal-b1-b2-source-review-v1.json","c9dfadec798e3bc2ada96691dc49d7cda984d1749b1ac4b7018b7efe59ff1ca0")]:
     assert digest(review_rel)==review_sha
     reviewed=json.loads((ROOT/review_rel).read_text())
     assert reviewed["status"]=="approved_complete_source" and not reviewed["missing_clauses"]
@@ -155,6 +165,45 @@ for review_rel,review_sha in [
         assert evidence_record["raw_log"]==record["log"] and evidence_record["raw_log_sha256"]==record["log_sha256"]
     whole_toolkit_reviews.append((reviewed,{"file":review_rel,"sha256":review_sha,
         "reviewer":reviewed["reviewer"],"status":reviewed["status"]}))
+
+# Future16 exact whole-source and partial-source reviews; historical versions stay fixed.
+riccati_source_review_rel="book/coverage/checks/modules-riccati-source-review-v1.json"
+ellipsoid_source_review_rel="book/coverage/checks/modules-ellipsoid-2-4-source-review-v1.json"
+sprocedure_source_review_rel="book/coverage/checks/modules-s-procedure-interval-source-review-v1.json"
+future16_reviews={}
+for review_rel,review_sha in [
+    (riccati_source_review_rel,"9638e9933c16bf5643b2936b4decd6ef865d4676f49858892c88107d7725429c"),
+    (ellipsoid_source_review_rel,"5a7afc2f78cde1cbc5c7b4e2605bbf19b4618ee17ede3e8b5dab7be0058376ed"),
+    (sprocedure_source_review_rel,"c36a7bceea186462434b38e2018abc674f5fe08b2fe379e97b742b476fa18838")]:
+    assert digest(review_rel)==review_sha
+    reviewed=json.loads((ROOT/review_rel).read_text())
+    expected_status={riccati_source_review_rel:"independent_source_correspondence_review_passed",ellipsoid_source_review_rel:"approved_complete_source",sprocedure_source_review_rel:"independent_precise_component_source_review_passed_whole_exercise_partial"}
+    assert reviewed["status"]==expected_status[review_rel]
+    for section in ["source_sha256","proof_source_sha256"]:
+        for path,sha in reviewed[section].items():assert digest(path)==sha,path
+    for evidence_record in reviewed["actual_standalone_evidence"]:
+        record=evidence_record.get("raw_execution_record",evidence_record)
+        assert evidence_record["actual_exit_code"]==record["exit_code"]==0
+        assert record["source_unchanged"] and digest(record["file"])==record["sha256"]
+        assert digest(evidence_record["compiler_manifest"])==evidence_record["compiler_manifest_sha256"]
+        assert digest(record["log"])==record["log_sha256"]
+    evidence={"file":review_rel,"sha256":review_sha,"reviewer":reviewed["reviewer"],"status":reviewed["status"]}
+    future16_reviews[review_rel]=(reviewed,evidence)
+    if review_rel==sprocedure_source_review_rel:
+        continue
+    assert not reviewed["missing_clauses"]
+    if "records" not in reviewed:
+        reviewed["records"]=[]
+        for exercise in reviewed["exercises"]:
+            assert exercise["review_status"]=="approved_complete_source" and not exercise["missing_clauses"]
+            parts=[]
+            for row in exercise["reviewed_clauses"]:
+                assert row["status"]=="approved_precise_component" and not row["missing_clauses"]
+                parts.append({**row,"id":exercise["exercise_key"]+"::"+row["id"]})
+            reviewed["records"].append({**exercise,"components":parts,
+                "lean_declarations":sorted({name for row in parts for name in row["lean_declarations"]})})
+    whole_toolkit_reviews.append((reviewed,evidence))
+sprocedure_source_review,sprocedure_source_evidence=future16_reviews[sprocedure_source_review_rel]
 
 structural_labels_review_rel="book/coverage/checks/modules-structural-label-material-source-review-v1.json"
 structural_labels_review_sha="fd880b2cbf968c1b1b0e7acd2cc8178a487533b14845c8997e27bae9fb8b69a6"
@@ -469,7 +518,6 @@ for key, statement, names in [
     ("toolkit-lmi.html#practice-1", "For all feasiblex<=1, (x-2)^2>=1 with equality iff x=1.", [FN+"kkt_scalar_minimum"]),
     ("toolkit-lmi.html#practice-3", "The quadratic form of[[t,2],[2,1]] is nonnegative for every vector iff t>=4.", [FN+"schur_scalar_psd_iff"]),
     ("toolkit-lmi.html#practice-5", "For positivep, a^2p-p<0 iff|a|<1.", [FN+"scalar_lyapunov_iff"]),
-    ("toolkit-lmi.html#practice-6", "The proposed S-procedure interval polynomial is exactly-(x-1)^2/2.", [FN+"s_procedure_identity", FN+"s_procedure_interval"]),
     ("toolkit-lmi.html#practice-10", "The singular-corner quadratic form2bxy+cy^2 is PSD iff b=0 and c>=0.", [FN+"singular_psd_range_condition"]),
     ("toolkit-lmi.html::exercise-19", "Tanh is differentiable with derivative1/cosh^2 in[0,1], yielding its full global incremental sector.", [TN+"tanh_derivative", TN+"tanh_derivative_bounds", TN+"tanh_incremental_sector"]),
     ("safe-bo.html#practice-11", "If every upper endpoint is at most the recommendation lower endpoint plus epsilon, true regret is at mostepsilon.", [TN+"confidence_recommendation"]),
@@ -1151,6 +1199,27 @@ for e in INV["exercises"]:
             c.update(independent_source_review=general_roesser_evidence,scope_limits=general_roesser_review["limits"])
             claims.append(c)
         complete=False
+    if e["key"]=="toolkit-lmi.html#practice-6":
+        scoped=next(row for row in sprocedure_source_review["exercises"] if row["exercise_key"]==e["key"])
+        assert scoped["exercise_text_sha256"]==e["text_sha256"]
+        assert scoped["review_status"]=="approved_components_whole_exercise_partial" and scoped["missing_clauses"]
+        approved=scoped["reviewed_clauses"]
+        names=sorted({name for row in approved for name in row["lean_declarations"]})
+        for c in claims:
+            c.update(status="proved",remaining_gaps=[],lean_declarations=names,
+                hypotheses=sorted({h for row in approved for h in row["hypotheses"]}),
+                correspondence="All requested interval certificate and exact multiplier computations in this literal question are independently approved. The extra general Slater S-lemma converse in the worked answer remains separately pending.",
+                independent_source_review=sprocedure_source_evidence,scope_limits=sprocedure_source_review["limits"])
+        for row in approved:
+            assert row["status"]=="approved_precise_component" and not row["missing_clauses"]
+            c=claim(e["key"]+"::independently-reviewed-component::"+row["id"],row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"])
+            c.update(independent_source_review=sprocedure_source_evidence,scope_limits=sprocedure_source_review["limits"])
+            claims.append(c)
+        for number,row in enumerate(scoped["missing_clauses"],1):
+            c=claim(e["key"]+f"::pending-background-clause-{number}",row["source_clause"],gaps=[row["reason"]],units=["toolkit-lmi.html::node-1101"])
+            c.update(independent_source_review=sprocedure_source_evidence,scope_limits=sprocedure_source_review["limits"])
+            claims.append(c)
+        complete=False
     for reviewed,evidence in whole_toolkit_reviews:
         whole=next((row for row in reviewed["records"] if row["exercise_key"]==e["key"]),None)
         if whole:
@@ -1169,7 +1238,7 @@ for e in INV["exercises"]:
     exercises.append({"inventory_key": e["key"], "source": e["source"], "locator": e["locator"],
                       "label": e["label"], "source_sha256": e["source_sha256"],
                       "source_text_sha256": e["text_sha256"], "claims": claims,
-                      "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) or e["key"] in ["toolkit-lmi.html::exercise-20","lipsdp.html::exercise-20"] else "pending"})
+                      "status": "complete_math" if complete else "partial" if COMPONENTS.get(e["key"]) or e["key"] in ["toolkit-lmi.html::exercise-20","lipsdp.html::exercise-20","toolkit-lmi.html#practice-6"] else "pending"})
 
 generic_margin_review_rel="book/coverage/checks/modules-generic-margin-source-review-v1.json"
 assert digest(generic_margin_review_rel)=="831801c4231159a74d036c05ed829fcfff4525e79bd221f892b4f2f9c5416dc7"
@@ -1297,6 +1366,24 @@ for u in INV["material_source_units"]:
                 lean_declarations=unit["lean_declarations"],correspondence=unit["per_unit_reason"],
                 hypotheses=["The exact actual scalar source model and hypotheses stated by the individually reviewed declarations."],
                 independent_source_review=evidence,scope_limits=reviewed["limits"])
+    interval_unit=next((row for row in sprocedure_source_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if interval_unit:
+        assert interval_unit["unit_text_sha256"]==u["text_sha256"] and interval_unit["source_sha256"]==u["source_sha256"]
+        if interval_unit["material_status"] in ["proved","not_a_formal_claim"]:
+            assert interval_unit["review_status"]=="approved_complete_source" and not interval_unit["missing_clauses"]
+            c.update(status=interval_unit["material_status"],kind=interval_unit["semantic_kind"],remaining_gaps=[],lean_declarations=interval_unit["lean_declarations"],
+                hypotheses=interval_unit.get("hypotheses",[]),correspondence=interval_unit["per_unit_reason"],
+                independent_source_review=sprocedure_source_evidence,scope_limits=sprocedure_source_review["limits"])
+        else:
+            assert interval_unit["material_status"]=="pending" and interval_unit["missing_clauses"]
+            c.update(status="pending",kind=interval_unit["semantic_kind"],lean_declarations=[],
+                remaining_gaps=[row["source_clause"]+" "+row["reason"] for row in interval_unit["missing_clauses"]],
+                correspondence=interval_unit["per_unit_reason"],independent_source_review=sprocedure_source_evidence,scope_limits=sprocedure_source_review["limits"])
+            for row in sprocedure_source_review["exercises"][0]["reviewed_clauses"]:
+                assert row["status"]=="approved_precise_component" and not row["missing_clauses"]
+                sc=claim(u["key"]+"::independent-interval-component::"+row["id"],row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"],units=[u["key"]])
+                sc.update(independent_source_review=sprocedure_source_evidence,scope_limits=sprocedure_source_review["limits"])
+                material.append(sc)
     sdp_unit=next((row for row in sdp_material_review["material_units"] if row["source_unit_key"]==u["key"]),None)
     if sdp_unit:
         assert sdp_unit["unit_text_sha256"]==u["text_sha256"] and sdp_unit["source_sha256"]==u["source_sha256"]
@@ -1600,7 +1687,12 @@ referenced_names.update(name for c in material for name in c["lean_declarations"
 compiled = {}
 for compile_manifest_path in sorted((ROOT/"book/coverage/checks").glob("modules*standalone.json")):
     for r in json.loads(compile_manifest_path.read_text())["files"]:
-        compiled[r["file"]] = r
+        # Historical successful executions remain preserved. Select only an
+        # actual successful record for the exact current source, independent
+        # of lexicographic manifest order after a versioned source revision.
+        if (ROOT/r["file"]).exists() and r["exit_code"]==0 and digest(r["file"])==r["sha256"]:
+            assert r["source_unchanged"] and digest(r["log"])==r["log_sha256"]
+            compiled[r["file"]] = r
 for p in sorted((ROOT/"verification/lean/SafeLearning").glob("CompleteModules*.lean")):
     rel = str(p.relative_to(ROOT))
     sha = digest(rel)

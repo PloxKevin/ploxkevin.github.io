@@ -35,7 +35,7 @@ theorem actual_nonnegative_affine_domain_has_the_true_infimum
           field_simp [ne_of_lt hfirst]
         rw [he] at hg
         exact hg
-      have hi : actualNonnegativeDomainAffineInfimum constant firstCoefficient secondCoefficient ≤ 
+      have hi : actualNonnegativeDomainAffineInfimum constant firstCoefficient secondCoefficient ≤
           ((constant+firstCoefficient*first+secondCoefficient*0 : ℝ) : EReal) :=
         sInf_le ⟨first,0,hp,le_rfl,rfl⟩
       apply lt_of_le_of_lt hi
@@ -51,7 +51,7 @@ theorem actual_nonnegative_affine_domain_has_the_true_infimum
           field_simp [ne_of_lt hsecond]
         rw [he] at hg
         exact hg
-      have hi : actualNonnegativeDomainAffineInfimum constant firstCoefficient secondCoefficient ≤ 
+      have hi : actualNonnegativeDomainAffineInfimum constant firstCoefficient secondCoefficient ≤
           ((constant+firstCoefficient*0+secondCoefficient*second : ℝ) : EReal) :=
         sInf_le ⟨0,second,le_rfl,hp,rfl⟩
       apply lt_of_le_of_lt hi

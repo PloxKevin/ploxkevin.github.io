@@ -1465,7 +1465,7 @@ def _load_independent_full_foundation_review(path, expected_sha256):
  inventory = _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())
  live_exercises = {entry['key']:entry for entry in inventory['exercises']}
  live_units = {entry['key']:entry for entry in inventory['material_source_units']}
- exercise_reviews = review.get('exercises', [review])
+ exercise_reviews = review.get('exercises', [review] if 'exercise_key' in review else [])
  for exercise in exercise_reviews:
   key = exercise['exercise_key']
   assert live_exercises[key]['text_sha256']==exercise['exercise_text_sha256']
@@ -1508,3 +1508,31 @@ _load_independent_full_foundation_review(
 _load_independent_full_foundation_review(
  'book/coverage/checks/foundations-parameterized-convex-b4b-source-review-v1.json',
  '1fc3cdb7ea74d8f2e4cda30f2137aad5622033d89f918e5c194698c8295bde44')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-extended-conjugate-b4c-source-review-v1.json',
+ '0f9b8a50c732df3ba82584fdb51a484d9a1156ea89d71151426fd741b2534cef')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-two-conjugates-b4-source-review-v1.json',
+ '350a42b04940a5d7c1211d4691e4a7e73b8e5746f968aa33472268445dc51083')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-norms-a1-source-review-v1.json',
+ '2803a9c4abc66f751f30e8b189bb4a5419e1572bb2b5b580ac48f94769a909fd')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-polygon-lp-b7b-source-review-v1.json',
+ 'c305d150f3a5bf78325442f604ebbd8fc5d38fc6627392d7d049a0c39d355872')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-norm-material-source-review-v1.json',
+ '578dd1f5b7f897481aed42c8cbad356e58a2ba2dfc80d1375f770da3652f0b0f')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-cholesky-family-a3-source-review-v1.json',
+ 'badcd849618949b1ba352f6f3e92f3a1026e72eb238a0c3a876800d221bc81db')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-generalized-eigen-a7-source-review-v1.json',
+ '72e91451206ca0a30aa71677960ebd5de713ef68497401be39cd08457f90fec0')

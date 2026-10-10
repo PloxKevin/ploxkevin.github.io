@@ -614,6 +614,102 @@ for component_name in [('barrier-ac-issf-component-source-review-v6.json'
         DIRECT_MATERIAL[key] = dict(record=record,path=str(component_path.relative_to(ROOT)),
                                    review_sha256=sha(str(component_path.relative_to(ROOT))))
 
+# These reviews deliberately keep the path-law and history-policy clauses open.
+# Preserve their original schemas and compiler records instead of rewriting peer
+# evidence to resemble a whole-source approval.
+CMDP_COMPONENT_MATERIAL = []
+for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
+                       'finite-cmdp-flow-recovery-source-components-review-v1.json',
+                       'finite-cmdp-linear-program-source-components-review-v1.json']:
+    component_path = ROOT/'book/coverage/checks'/component_name
+    if not component_path.exists():
+        continue
+    review = json.loads(component_path.read_text())
+    if review['status'] != 'independent_precise_component_source_review_passed_whole_8_1_partial':
+        raise ValueError('Unapproved finite CMDP component review: '+component_name)
+    if sha('book/coverage/inventory.json') != review['inventory_sha256']:
+        raise ValueError('Stale finite CMDP component inventory: '+component_name)
+    if ('prior_component_review' in review and
+            sha(review['prior_component_review']) != review['prior_component_review_sha256']):
+        raise ValueError('Changed prior finite CMDP component review: '+component_name)
+    for name, expected in review['source_sha256'].items():
+        if INV['source_sha256'][name] != expected:
+            raise ValueError('Changed finite CMDP source: '+name)
+    for name, expected in review['proof_source_sha256'].items():
+        if sha(name) != expected:
+            raise ValueError('Changed finite CMDP proof: '+name)
+    for evidence in review['actual_standalone_evidence']:
+        metadata = evidence['compiler_manifest']
+        if sha(metadata) != evidence['compiler_manifest_sha256']:
+            raise ValueError('Changed finite CMDP compiler record: '+metadata)
+        actual = json.loads((ROOT/metadata).read_text())
+        if (evidence['actual_exit_code'] != 0 or actual['exit_code'] != 0
+                or actual['source_sha256_before'] != actual['source_sha256_after']
+                or sha(actual['source']) != actual['source_sha256_after']
+                or sha(actual['log']) != actual['log_sha256']
+                or actual.get('source_unchanged', True) is not True):
+            raise ValueError('Stale actual finite CMDP compiler execution: '+metadata)
+        for field in ('source','source_sha256_before','source_sha256_after',
+                      'exit_code','command','actual_workdir','log','log_sha256'):
+            if actual[field] != evidence[field]:
+                raise ValueError('Finite CMDP compiler execution mismatch: '+field)
+    for record in review['records']:
+        key = record['exercise_key']
+        original = next(e for e in INV['exercises'] if e['key']==key)
+        components = record['components']
+        if (original['text_sha256'] != record['exercise_text_sha256']
+                or record['review_status'] != 'pending_component'
+                or not record['missing_clauses'] or not components
+                or any(c['status'] != 'approved_precise_component'
+                       or not c['lean_declarations'] or not c['per_clause_reason']
+                       or c['missing_clauses'] for c in components)):
+            raise ValueError('Incomplete precise finite CMDP correspondence: '+key)
+        if ('approved_component_ids' in record and
+                set(record['approved_component_ids']) != {c['id'] for c in components}):
+            raise ValueError('Finite CMDP component identity mismatch: '+key)
+        if components != review['reviewed_clauses']:
+            raise ValueError('Finite CMDP component declarations disagree: '+key)
+        old = MAP.get(key, dict(lean_declarations=[],hypotheses=[],statement_in_prose=''))
+        names = list(dict.fromkeys(old['lean_declarations'] +
+            [n for c in components for n in c['lean_declarations']]))
+        hypotheses = list(dict.fromkeys(old['hypotheses'] +
+            [h for c in components for h in c['hypotheses']]))
+        add(key,names,old['statement_in_prose']+' '+' '.join(c['per_clause_reason'] for c in components),
+            hypotheses,record['missing_clauses'])
+        MAP[key]['source_review'] = dict(file=str(component_path.relative_to(ROOT)),
+            sha256=sha(str(component_path.relative_to(ROOT))),
+            component_ids=[c['id'] for c in components],
+            limits=review['limits'])
+    units = {u['key']:u for u in INV['material_source_units']}
+    components = {c['id']:c for c in review['reviewed_clauses']}
+    for record in review['material_units']:
+        key = record['source_unit_key']
+        unit = units[key]
+        ids = record['approved_component_ids']
+        if (unit['source_sha256'] != record['source_sha256']
+                or unit['text_sha256'] != record['unit_text_sha256']
+                or unit['source_text'] != record['source_text']
+                or not record['per_unit_reason']
+                or not ids or not set(ids) <= components.keys()
+                or set(record['lean_declarations']) !=
+                   {n for i in ids for n in components[i]['lean_declarations']}):
+            raise ValueError('Stale finite CMDP material components: '+key)
+        if record['material_status'] == 'proved':
+            if (record['review_status'] != 'approved_complete_source'
+                    or record['missing_clauses'] or key in DIRECT_MATERIAL):
+                raise ValueError('Unresolved finite CMDP whole material unit: '+key)
+            DIRECT_MATERIAL[key] = dict(record=record,
+                path=str(component_path.relative_to(ROOT)),
+                review_sha256=sha(str(component_path.relative_to(ROOT))))
+            continue
+        if (record['material_status'] != 'pending'
+                or record['review_status'] != 'partial_source_review'
+                or not record['missing_clauses']):
+            raise ValueError('Unresolved finite CMDP component parent not retained: '+key)
+        CMDP_COMPONENT_MATERIAL.append(dict(record=record,
+            path=str(component_path.relative_to(ROOT)),
+            review_sha256=sha(str(component_path.relative_to(ROOT)))))
+
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
     review = json.loads(confidence_path.read_text())
@@ -787,6 +883,20 @@ for u in INV['material_source_units']:
             independent_review=dict(source=entry['path'], sha256=entry['review_sha256']))
     material.append(claim)
 
+for entry in CMDP_COMPONENT_MATERIAL:
+    record = entry['record']
+    unit = next(u for u in INV['material_source_units'] if u['key']==record['source_unit_key'])
+    material.append(dict(id=unit['key']+'::'+Path(entry['path']).stem+'::components',
+        source_unit_keys=[unit['key']],source=unit['source'],
+        source_sha256=unit['source_sha256'],text_sha256=unit['text_sha256'],
+        source_text=unit['source_text'],
+        statement_in_prose='Approved precise components: '+', '.join(record['approved_component_ids']),
+        kind='independently_reviewed_precise_source_components',status='proved',
+        lean_declarations=record['lean_declarations'],hypotheses=record['hypotheses'],
+        correspondence=record['per_unit_reason'],remaining_gaps=[],
+        independent_review=dict(source=entry['path'],sha256=entry['review_sha256']),
+        parent_remaining_gaps=record['missing_clauses']))
+
 proofs=['CompleteBookProjects','CompleteConformal','CompleteCoreControl','CompleteCoreBook',
         'CompleteCoreProbability','CompleteWeightedProjection','CompleteCoreReturns','CompleteBudgetValue','CompleteDuality','CompleteCoreEntryModel','CompleteConformalCounterexample','CompleteProjectionCharacterization','CompleteProjectionGeometry','CompleteProjectionDifferential','CompleteProjectDomains','CompleteProjectOptima','CompleteBarrierExamples','CompleteBarrierTrajectories','CompleteCompactLyapunov','CompleteLyapunovMargins','CompleteLyapunovCounterexample','CompleteCoreMaterialLimits','CompleteLyapunovExerciseModels','CompleteLyapunovMetricModels','CompleteLyapunovNonlinearModels','CompleteTwoInputProjection','CompletePolicyMixing','CompleteDiscountedFlow','CompleteSafetyBellman','CompleteSafetyBellmanConsequences','CompletePredictiveSafety','CompletePredictiveSafetyConsequences','CompleteBarrierFallback','CompleteAppliedTwoAtomRisk','CompleteAppliedTailRiskOptima','CompletePolicyConfidence','CompletePolicyBoundary','CompletePolicyImportance','CompleteExponentialBarrier','CompleteExponentialBarrierSafety','CompleteExponentialBarrierConsequences','CompleteExponentialBarrierClassK','CompletePolicyGeometry','CompletePolicyChecks','CompletePolicyAdvantages','CompletePolicyDivergence','CompletePolicyPracticeConsequences','CompletePolicyTrustStep','CompletePolicyDiskStep']
 proof_files={f'verification/lean/SafeLearning/{p}.lean':sha(f'verification/lean/SafeLearning/{p}.lean') for p in proofs}
@@ -808,6 +918,8 @@ for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
              'CompleteDualPIOscillation','CompleteDualPIRecurrenceDecay','CompleteDualPIStability',
              'CompleteDualPIAmplitude','CompleteDualPIHalfEnvelope',
              'CompletePolicyCDTTokens','CompletePolicyCDTDomain',
+             'CompleteFiniteCMDPOccupancy','CompleteFiniteCMDPFlow','CompleteFiniteCMDPRecovery',
+             'CompleteFiniteCMDPLinearProgram',
              'CompleteLyapunovValidationNumbers','CompleteLyapunovValidationConfidence',
              'CompleteLyapunovAdaptiveValidation','CompleteLyapunovTrajectoryValidation']:
     source = f'verification/lean/SafeLearning/{name}.lean'
@@ -817,7 +929,8 @@ out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     source_sha256={s:INV['source_sha256'][s] for s in sorted(SOURCES)},proof_files=proof_files,
     exercises=rows,material_claims=material,
     counts=dict(exercises=len(rows),exercise_statuses=dict(Counter(e['status'] for e in rows)),
-                material_source_units=len(material)),
+                material_source_units=sum(u['source'] in SOURCES for u in INV['material_source_units']),
+                material_claims=len(material)),
     limits=['This is a conservative work ledger, not a full coverage or current aggregate verification report.',
             'Original selected proofs remain available but are not automatically promoted to complete mathematical coverage.',
             'Physical model validity, research hypotheses and pedagogical advice require specific classification.'])
