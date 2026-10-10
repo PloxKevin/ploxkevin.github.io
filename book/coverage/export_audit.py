@@ -35,9 +35,13 @@ for field in ['source_sha256', 'proof_sha256', 'project_sha256']:
         if sha(snapshot / name) != expected:
             raise ValueError('Frozen audited input changed: ' + name)
 output.mkdir()
-for path in original_dir.iterdir():
+for path in original_dir.rglob('*'):
     if path.is_file():
-        shutil.copyfile(path, output / path.name)
+        destination = output / path.relative_to(original_dir)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, destination)
+        if sha(destination) != sha(path):
+            raise ValueError('Exported audit bytes differ: ' + str(path))
 (output / 'verification.json').rename(output / 'verification-original.json')
 old_prefix = 'reports/lean-verification/'
 new_prefix = str(output.relative_to(ROOT)) + '/'

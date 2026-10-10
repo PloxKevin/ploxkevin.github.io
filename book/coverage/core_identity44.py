@@ -1,4 +1,4 @@
-"""Check explicit current44 identities of unchanged reviewed core literals.
+"""Check explicit current47 identities of unchanged reviewed core literals.
 
 All semantic decisions and original review times remain in immutable originals.
 Only the separately recorded source/inventory pointer changes are normalized.
@@ -8,14 +8,15 @@ import hashlib
 import json
 from pathlib import Path
 
-MANIFEST = 'book/coverage/checks/core-source44-unchanged-review-identity-manifest-v2.json'
-MANIFEST_SHA256 = '8bb22f58ad16cc386033149e888bb93d1d8555d0e9eeb164b0a6e68e670eaf90'
-CONFIRMATION = 'book/coverage/checks/core-source44-unchanged-review-identity-independent-root-confirmation-v2.json'
+MANIFEST = 'book/coverage/checks/core-source47-unchanged-review-identity-manifest20-v1.json'
+MANIFEST_SHA256 = 'eb593dca760266d27c22e8e2edcfbc422dab2d8f472e24ddc1e6af8efa8e813f'
+CONFIRMATION = 'book/coverage/checks/future20-core/modules-core-source47-independent-mechanics-confirmation20-v1.json'
 
 def _manifest(root, sha):
     assert sha(MANIFEST) == MANIFEST_SHA256
     manifest = json.loads((root / MANIFEST).read_text())
     confirmation = json.loads((root / CONFIRMATION).read_text())
+    assert sha(CONFIRMATION) == '910f320cc4ad77c78944877ea55705bdf47c2221863feb39522fedd6a6277841'
     assert confirmation['status'] == 'independent_exact_inventory_identity_rebase_confirmation_passed'
     assert confirmation['rebase_manifest'] == MANIFEST and confirmation['rebase_manifest_sha256'] == MANIFEST_SHA256
     assert confirmation['immutable_inventory_after'] == manifest['immutable_inventory_after']

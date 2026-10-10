@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+from core_identity44 import current_review
 
 REVIEWS=(
     'policy-penalty-barrier-9-4-corrected44-whole-source-review19-v1.json',
@@ -29,6 +30,7 @@ def integrate(root, inventory, sha, add, mapping, direct_material, component_mat
     proof_sources={}
     for filename in REVIEWS:
         path='book/coverage/checks/'+filename
+        path=str(current_review(root, root/path, sha).relative_to(root))
         review=json.loads((root/path).read_text())
         assert review['inventory_sha256']==sha('book/coverage/inventory.json')==digest(review['inventory'])
         assert review['status']=='independent_fresh_corrected_source_whole_review_passed' and not review['missing_clauses']

@@ -7,8 +7,8 @@ import hashlib
 import json
 from pathlib import Path
 
-BINDING = 'book/coverage/checks/foundations-held19-source44-evidence-review-identity-binding-v1.json'
-BINDING_SHA256 = '9ea990b40967d6654b56c8ac9ad2ec97dc2ba6f7418f7775c481f32006f4859a'
+BINDING = 'book/coverage/checks/foundations-held19-source47-evidence-review-identity-binding-v1.json'
+BINDING_SHA256 = '6f8681d9827b81271448742051568573f529147135c65074fb4fde52ffdb4a02'
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()

@@ -4,6 +4,8 @@ sys.path.insert(0,'book')
 from validate import Document,clean_text
 from foundations_review import EXTRA,FULL,ATOMS,NONFORMAL,topic,clauses
 from foundations_promotions import COMPLETE_EXERCISES,FULL_MATERIAL,PARTIAL_MATERIAL,PARTIAL_EXERCISES,REVIEWED_COMPLETE_MATERIAL,SURROUNDING_PROSE,REVIEWED_PARTIAL_MATERIAL,REVIEWED_NONFORMAL_MATERIAL
+from foundations_material20 import pending_keys as material20_pending_keys
+CURRENT20_REVIEWED_PENDING_KEYS = material20_pending_keys()
 FULL.update(FULL_MATERIAL)
 for key,rows in PARTIAL_MATERIAL.items():ATOMS.setdefault(key,[]).extend(rows)
 root=Path('.')
@@ -90,6 +92,18 @@ for u in inv['material_source_units']:
   continue
  if u['key'] in REVIEWED_NONFORMAL_MATERIAL:
   material.append(dict(**common,id=u['key']+'::reviewed-interpretation',statement_in_prose=u['source_text'],kind='individually_reviewed_pedagogical_cross_reference',lean_declarations=[],status='not_a_formal_claim',hypotheses=[],correspondence=REVIEWED_NONFORMAL_MATERIAL[u['key']],remaining_gaps=[]))
+  continue
+ # These freshly read pending literals retain their exact components and gaps
+ # even when the same text also appears within a reviewed exercise.
+ if u['key'] in CURRENT20_REVIEWED_PENDING_KEYS:
+  review=REVIEWED_PARTIAL_MATERIAL[u['key']]
+  for i,row in enumerate(review['proved'],1):
+   material.append(dict(**common,**row,id=u['key']+f'::surrounding-reviewed-{i}',
+     kind='reviewed_mathematical_subclaim',status='proved',remaining_gaps=[]))
+  for i,st in enumerate(review['pending'],1):
+   material.append(dict(**common,id=u['key']+f'::surrounding-pending-{i}',statement_in_prose=st,
+     kind='reviewed_mathematical_clause',lean_declarations=[],status='pending',hypotheses='Exact source context and all assumptions still require a complete correspondence.',
+     correspondence='This exact reviewed source claim remains mathematical work; the other explicitly mapped conclusions do not establish it.',remaining_gaps=[st]))
   continue
  if owners:
   owner_rows=[e for e in exercises if e['inventory_key'] in owners]

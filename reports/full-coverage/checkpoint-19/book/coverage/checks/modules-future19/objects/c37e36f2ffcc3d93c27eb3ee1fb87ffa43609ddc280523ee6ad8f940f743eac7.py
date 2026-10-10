@@ -1,0 +1,54 @@
+from pathlib import Path
+import datetime,hashlib,importlib.util,json,shutil,sys
+sys.dont_write_bytecode=True
+R=Path('/home/oxrexkevin/SafetyBased')
+def P(p):return Path(p) if Path(p).is_absolute() else R/p
+def H(p):return hashlib.sha256(P(p).read_bytes()).hexdigest()
+proposal='/tmp/modules-landscape-guarantee-summary-precision19-proposal.json';ph='577fed740d13fadafded1fff1ea2c7e4c5e54c4e5e17138dc9b30687e01624c0';assert H(proposal)==ph
+base='/tmp/modules-landscape-known-bounds-components-review19-v1.json';bh='e37c3d0221be43bfdc280e3adc77b1ea7877d5f798121e1e1983039c493d5792';assert H(base)==bh
+B=json.loads(P(base).read_text());d=json.loads(P(proposal).read_text());pc=B['preservation_check'];I=json.loads(P(B['inventory']).read_text());S=json.loads(P(pc['selection']).read_text());F=json.loads(P(pc['frozen_manifest']).read_text());protected={}
+for p,v in S['proof_files'].items():protected[p]=v['sha256'];protected.update(v['evidence_sha256'])
+frozen={str(Path(F['snapshot'])/p):h for p,h in F['frozen_inputs_sha256'].items()}
+hist=d['separate_prior_paragraph710_proposal'];prior={base:bh,**B['prior_immutable_artifacts'],hist['path']:hist['sha256'],hist['independent_review']:hist['independent_review_sha256'],'/tmp/modules-landscape-barrier-global-components-review19-v1.json':'e1bbb300a1a6ca70cbc1030a006023c2417f3d01240250b3b7ccd9ae242b7ac2','/tmp/modules-landscape-ode-existence-axiom-evidence-review19-v1.json':'d29d7ea650868eaff3293dabccd4f3927b852423ea57597238eb6c2090c8ac2a'}
+old=P(d['source']).read_bytes();assert H(d['source'])==d['source_sha256_before']==B['source_sha256'] and H(B['inventory'])==d['inventory_sha256_at_preparation']==B['inventory_sha256']
+assert len(d['replacements'])==len(d['precise_subspan_replacements'])==1
+r=d['replacements'][0];s=d['precise_subspan_replacements'][0];assert r['before'].count(s['before'])==1 and r['before'].replace(s['before'],s['after'],1)==r['after'] and old.count(r['before'].encode())==r['count']==1
+new=old.replace(r['before'].encode(),r['after'].encode(),1);assert new.count(r['after'].encode())==1 and new.replace(r['after'].encode(),r['before'].encode(),1)==old and old.count(b'\n')==new.count(b'\n') and hashlib.sha256(new).hexdigest()==d['proposed_source_sha256_after']
+for key,hkey,data in [('source_bytes_before_snapshot','source_bytes_before_snapshot_sha256',old),('source_bytes_proposed_after_snapshot','source_bytes_proposed_after_snapshot_sha256',new)]:assert P(d[key]).read_bytes()==data and H(d[key])==d[hkey]
+def protect():
+ assert len(S['proof_files'])==490 and len(protected)==565 and len(frozen)==2431
+ assert H(proposal)==ph and H(B['inventory'])==B['inventory_sha256'] and H(pc['selection'])==pc['selection_sha256'] and H(pc['frozen_manifest'])==pc['frozen_manifest_sha256']
+ for rows in (protected,frozen,I['source_sha256'],pc['held_metadata_sha256'],prior,d['actual_proof_source_sha256'],d['preservation_check']['all_live_safelearning_sources_and_assets_sha256']):assert all(H(p)==h for p,h in rows.items())
+ assert P(d['source']).read_bytes()==old
+protect()
+for e in d['actual_standalone_evidence']:
+ assert H(e['compiler_manifest'])==e['compiler_manifest_sha256'];q=json.loads(P(e['compiler_manifest']).read_text());a=q['files'][0]
+ assert q['status']=='passed' and q['all_sources_still_match'] and a==e['raw_execution_record'] and a['exit_code']==0 and a['source_unchanged'] and H(a['file'])==a['sha256'] and H(a['log'])==a['log_sha256']
+assert all(n in B['actual_standalone_evidence']['all_new_theorem_declarations'] for n in d['proof_declarations'])
+prior_v2=json.loads(P(hist['independent_review']).read_text());primary=prior_v2['primary_attribution']
+assert H(primary['primary_local_pdf'])==primary['primary_local_pdf_sha256'] and H(primary['primary_local_text'])==primary['primary_local_text_sha256']
+text=P(primary['primary_local_text']).read_text();lines=text.splitlines();excerpt='\n'.join(lines[698:779]);assert 'to the best of our knowledge' in text
+sys.path.insert(0,str(R/'book'));from validate import Document
+A,C=Document(old.decode()),Document(new.decode());assert len(A.nodes)==len(C.nodes)==1472 and all((a.tag,a.attrs,a.line)==(c.tag,c.attrs,c.line) for a,c in zip(A.nodes,C.nodes))
+for a,c in zip(A.root.descendants('script'),C.root.descendants('script')):assert a.text()==c.text()
+assert A.nodes[1345].line==C.nodes[1345].line==713 and A.nodes[1345].text()!=C.nodes[1345].text()
+assert A.nodes[1335].text()==C.nodes[1335].text() and A.nodes[1337].text()==C.nodes[1337].text()
+sim=Path('/tmp/modules-landscape-guarantee-summary-independent19-v1-simulation');out=Path('/tmp/modules-landscape-guarantee-summary-independent-proposal-review19-v1.json');assert not sim.exists() and not out.exists();(sim/'SafeLearning').mkdir(parents=True)
+for p in (R/'SafeLearning').glob('*.html'):shutil.copyfile(p,sim/'SafeLearning'/p.name)
+assert len(list((sim/'SafeLearning').glob('*.html')))==29;(sim/d['source']).write_bytes(new)
+spec=importlib.util.spec_from_file_location('landscape_guarantee_summary_independent_inventory19_v1',R/'book/inventory_claims.py');gen=importlib.util.module_from_spec(spec);spec.loader.exec_module(gen);gen.ROOT=sim;gen.OUT=sim/'book/coverage';gen.inventory();np=gen.OUT/'inventory.json';N=json.loads(np.read_text());assert I['counts']==N['counts']
+delta={};details=[]
+for section in ('exercises','material_source_units'):
+ aa={u['key']:u for u in I[section]};bb={u['key']:u for u in N[section]};assert list(aa)==list(bb);delta[section]=[]
+ for key,u in aa.items():
+  v=bb[key];assert u.keys()==v.keys()
+  for field in u:
+   if field not in ('source_sha256','source_text','text_sha256'):assert u[field]==v[field],(key,field)
+  if u['source_text']!=v['source_text']:delta[section].append(key);details.append(dict(key=key,line=u['line'],locator=u['locator'],text_sha256_before=u['text_sha256'],text_sha256_proposed_after=v['text_sha256']))
+  else:assert u['text_sha256']==v['text_sha256']
+  if u['source']!=d['source']:assert u==v
+assert delta==d['full_temporary_inventory_parser']['actual_delta']==dict(exercises=['landscape.html::exercise-18'],material_source_units=['landscape.html::node-1346'])
+assert details==d['affected_exercises']+d['affected_physical_material_units'] and H(d['full_temporary_inventory_parser']['simulated_inventory'])==d['full_temporary_inventory_parser']['simulated_inventory_sha256']
+now=datetime.datetime.now(datetime.timezone.utc).isoformat()
+z=dict(schema_version=1,status='approved_exact_narrow_unknown_target_summary_qualification_readonly_proposal',reviewer='/root/modules_resume/gp34_review',reviewed_at_utc=now,proposal=proposal,proposal_sha256=ph,original_preparation_time_preserved=d['prepared_at_utc'],source=d['source'],source_sha256_before=H(d['source']),proposed_source_sha256_after=hashlib.sha256(new).hexdigest(),inventory=B['inventory'],inventory_sha256=B['inventory_sha256'],exact_paragraph_replacement=d['replacements'],independently_composed_exact_single_subspan_replacement=d['precise_subspan_replacements'],exact_forward_reverse_and_line_counts=True,fresh_independent_full_parser=dict(actual_command=['python3','/tmp/modules-review-landscape-guarantee-summary-proposal19-v1.py'],actual_exit_code=0,simulated_inventory=str(np),simulated_inventory_sha256=H(np),page_count=29,counts=N['counts'],actual_delta=delta,all_keys_lines_locators_tags_attributes_order_other_fields_unchanged=True,all_executable_code_unchanged=True,dom_node_count=len(A.nodes)),exact_original_summary_unit=next(u for u in I['material_source_units'] if u['key']==d['physical_material_key']),mathematical_and_primary_review=[dict(scope='Exactsingleuniversal-unverifiabilityphrase',status='approved_precise_modal_unknown_target_qualification',reason='ActualknownlinearofficialRKHSfunctionhastrueexactcoefficientnormandrealleastLipschitzconstant, disprovinguniversalnobodycanverify. Proposedsummaryspeaksaboutstatisticalandfunction-classassumptionsthatCANbedifficulttojustifyforunknown target, matchingqualifiedpracticalengineeringdiscussion; itdoesnotassertuniversaluncheckability orunknownnormestimationfromdata.'),dict(scope='Unchangedsummarycontext',status='not_new_theorem_approval',reason='No-model-needed/model-engineering/LoSBO/learnedresidualmeet-in-middlewordingisbyteidentical. ThisproposaldoesnotderiveSafeOptprobability/modelcheckability/genericCBFconcentrationornorminference; theirpriorcomponent/theoryscopesareunchanged.'),dict(scope='ExactsurroundingExercise1.4',status='no_whole_exercise_or_physical_summary_promotion',reason='ActualoriginalQ/answers/summaryread; onlyex18/node1346textchangesinfullparser. Separateparagraph710V2 remainshistoricalunappliedandcannotbecomposedbytewiseafterasererializedsourcechangewithoutrefreshedidentityplan.')],independent_known_bounds_component=dict(path=base,sha256=bh,actual_precise_declarations=d['proof_declarations']),actual_proof_source_sha256=d['actual_proof_source_sha256'],actual_standalone_evidence=d['actual_standalone_evidence'],qualified_primary_context=dict(local_pdf=primary['primary_local_pdf'],local_pdf_sha256=primary['primary_local_pdf_sha256'],local_text=primary['primary_local_text'],local_text_sha256=primary['primary_local_text_sha256'],exact_relevant_local_lines='699-779',actual_relevant_primary_excerpt=excerpt,scope='Existingindependentlyattributedversion-specificpracticaldiscussiononly; no genericconcentration/norminference approval.'),missing_proposed_replacement_clauses=[],unchanged_original_remaining_clauses=['GenericGP/RKHSconditionalnoisealltimeconcentration andquery-safetytheory remainseparate.', 'Originalparagraph710 categoricalmisattribution/seed/underbound scopesremainunchangedinthissummary-onlyproposal; separateV2approvedproposalremainunapplied.', 'OtherCBF/modelcheckability/learnedresidualtheoryclausesarebyteidentical; existingprecisecomponentreviewscloseonlytheiractualscopes.', 'No originalwholeex18/node1346promotionbeforeactualserializedapplication/newcorrectedread.'],separate_prior_paragraph710_proposal=hist,prior_reviews_immutable=prior,preservation_check=dict(pc,rechecked_at_utc=now,all_hashes_exact=True,all_live31_source_asset_fingerprints_exact=True),limits=['TMP-onlyunderHOLD33, no live material/source/metadata/inventory/coverage/index/selection/ledger writes/publication.', 'Fresh independent actual29page parser completed: all556exercises/12774units structure andonlyex18/node1346 textchanges verified; DOM1472/executablecodeunchanged.', 'Exactsource-before/proposedafter/forwardreverse, all490/565/2431/31liveassets/priorreview/proposal/time identitiespreserved.', 'Approvesonlyprecisemodalwording; no newSafeOptconcentration,unknownfunctionvalidation,CBFmodelcheckability orwholesourcepromotion.'])
+protect();out.write_text(json.dumps(z,indent=2,ensure_ascii=False)+'\n');print(json.dumps(dict(path=str(out),sha256=H(out),actual_delta=delta),indent=2))

@@ -13,7 +13,8 @@ import re
 import argparse
 from core_policy_components import integrate as integrate_policy_components
 from core_labels19 import integrate as integrate_labels19
-from core_tailrisk_components19 import integrate as integrate_tailrisk19
+from core_whole20 import integrate as integrate_whole20
+from core_labels20 import integrate as integrate_labels20
 from core_identity44 import current_review, verify_overlap_parent
 from core_path_reviews import (verify_inventory31_identity,
                               integrate_literal_path_reviews,
@@ -765,8 +766,9 @@ integrate_literal_path_reviews(ROOT, INV, reviewed_path, sha, add, MAP, DIRECT_M
 integrate_policy_performance_review(ROOT, INV, reviewed_path, sha, add, MAP, DIRECT_MATERIAL)
 integrate_instructional_labels(ROOT, INV, sha, DIRECT_MATERIAL)
 integrate_labels19(ROOT, INV, sha, DIRECT_MATERIAL)
+integrate_labels20(ROOT, INV, sha, DIRECT_MATERIAL)
 POLICY_COMPONENT_PROOFS = integrate_policy_components(ROOT, INV, sha, add, MAP, DIRECT_MATERIAL, CMDP_COMPONENT_MATERIAL)
-TAILRISK_COMPONENT_PROOFS = integrate_tailrisk19(ROOT, INV, sha, add, MAP, DIRECT_MATERIAL, CMDP_COMPONENT_MATERIAL)
+TAILRISK_COMPONENT_PROOFS = integrate_whole20(ROOT, INV, sha, add, MAP, DIRECT_MATERIAL)
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
