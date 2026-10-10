@@ -11,6 +11,9 @@ import hashlib
 import json
 import re
 import argparse
+from core_path_reviews import (verify_inventory31_identity,
+                              integrate_literal_path_reviews,
+                              integrate_instructional_labels)
 
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -21,7 +24,7 @@ args = parser.parse_args()
 def reviewed_path(name):
     original = ROOT/'book/coverage/checks'/name
     selected = original
-    for correction in (12, 14, 15, 20, 22, 24, 25, 28):
+    for correction in (12, 14, 15, 20, 22, 24, 25, 28, 31):
         rebased = original.with_name(original.stem+f'-correction{correction}-rebase.json')
         if rebased.exists():
             selected = rebased
@@ -634,7 +637,9 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
         raise ValueError('Unapproved finite CMDP component review: '+component_name)
     if sha('book/coverage/inventory.json') != review['inventory_sha256']:
         raise ValueError('Stale finite CMDP component inventory: '+component_name)
-    if 'inventory_identity_rebase_correction28' in review:
+    if 'inventory_identity_rebase_correction31' in review:
+        confirmation_name = verify_inventory31_identity(ROOT, review, component_path, sha)
+    elif 'inventory_identity_rebase_correction28' in review:
         confirmation_name = 'book/coverage/checks/core-cmdp-source28-inventory-identity-rebase-independent-foundations-confirmation.json'
         confirmation = json.loads((ROOT/confirmation_name).read_text())
         if (confirmation['status'] != 'independent_exact_inventory_identity_rebase_confirmation_passed'
@@ -714,7 +719,7 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
             sha256=sha(str(component_path.relative_to(ROOT))),
             component_ids=[c['id'] for c in components],
             limits=review['limits'])
-        if 'inventory_identity_rebase_correction28' in review:
+        if any(f'inventory_identity_rebase_correction{c}' in review for c in (28, 31)):
             MAP[key]['source_review']['inventory_identity_confirmation'] = dict(
                 file=confirmation_name, sha256=sha(confirmation_name))
     units = {u['key']:u for u in INV['material_source_units']}
@@ -749,6 +754,9 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
             review_name=Path(component_name).stem,
             hypotheses=record.get('hypotheses', list(dict.fromkeys(
                 h for i in ids for h in components[i]['hypotheses'])))))
+
+integrate_literal_path_reviews(ROOT, INV, reviewed_path, sha, add, MAP, DIRECT_MATERIAL)
+integrate_instructional_labels(ROOT, INV, sha, DIRECT_MATERIAL)
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
@@ -965,6 +973,10 @@ for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
              'CompleteFiniteCMDPDeterministicVertices',
              'CompleteFiniteNonnegativeAffineExtrema','CompleteFiniteCMDPActiveFlow',
              'CompleteFiniteCMDPVertexClassification',
+             'CompleteFiniteTrajectoryReturns','CompleteFiniteControlledPathFlow',
+             'CompleteFiniteControlledPathMeasure','CompleteFiniteControlledPathMeasureLaws',
+             'CompleteFiniteMarkovPathCorrespondence','CompleteFiniteHistoryPathLinearProgram',
+             'CompleteFinitePathOccupancyReindex','CompleteFinitePathAbsoluteRewardBound',
              'CompleteLyapunovValidationNumbers','CompleteLyapunovValidationConfidence',
              'CompleteLyapunovAdaptiveValidation','CompleteLyapunovTrajectoryValidation']:
     source = f'verification/lean/SafeLearning/{name}.lean'

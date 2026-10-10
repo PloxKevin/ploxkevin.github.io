@@ -38,7 +38,9 @@ def validate():
         if len(ns)!=1:
             errors.append(f'{path.name}: expected one namespace')
             continue
-        for kind,name in re.findall(r'^(theorem|lemma|def|abbrev|structure|inductive)\s+([^\s({:]+)',text,re.M):
+        # Named instances are declarations too; anonymous binder syntax does
+        # not supply a source-level name that a claim can reference.
+        for kind,name in re.findall(r'^(theorem|lemma|def|abbrev|structure|inductive|instance)\s+([^\s({:\[]+)',text,re.M):
             full=ns[0]+'.'+name
             declarations[full]=dict(file=str(path.relative_to(ROOT)),kind=kind)
         proofs[str(path.relative_to(ROOT))]=digest(path)

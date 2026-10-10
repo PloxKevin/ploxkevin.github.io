@@ -38,7 +38,7 @@ for name, record in selected.items():
     if len(namespaces) != 1:
         raise ValueError('Expected one namespace: ' + name)
     declarations.update(namespaces[0] + '.' + n for n in re.findall(
-        r'^(?:theorem|lemma|def|abbrev|structure|inductive)\s+([^\s({:]+)', text, re.M))
+        r'^(?:theorem|lemma|def|abbrev|structure|inductive|instance)\s+([^\s({:\[]+)', text, re.M))
     for dep in re.findall(r'^import\s+(SafeLearning\.\S+)', text, re.M):
         dependency = 'verification/lean/' + dep.replace('.', '/') + '.lean'
         if dependency not in selected:
