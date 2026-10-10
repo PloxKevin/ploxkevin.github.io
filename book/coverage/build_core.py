@@ -21,7 +21,7 @@ args = parser.parse_args()
 def reviewed_path(name):
     original = ROOT/'book/coverage/checks'/name
     selected = original
-    for correction in (12, 14, 15, 20, 22, 24, 25):
+    for correction in (12, 14, 15, 20, 22, 24, 25, 28):
         rebased = original.with_name(original.stem+f'-correction{correction}-rebase.json')
         if rebased.exists():
             selected = rebased
@@ -620,18 +620,39 @@ for component_name in [('barrier-ac-issf-component-source-review-v6.json'
 CMDP_COMPONENT_MATERIAL = []
 for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
                        'finite-cmdp-flow-recovery-source-components-review-v1.json',
-                       'finite-cmdp-linear-program-source-components-review-v1.json']:
-    component_path = ROOT/'book/coverage/checks'/component_name
+                       'finite-cmdp-linear-program-source-components-review-v1.json',
+                       'finite-cmdp-matrix-source-components-review-v1.json',
+                       'finite-cmdp-deterministic-vertices-source-components-review-v1.json',
+                       'finite-cmdp-vertex-classification-source-components-review-v1.json']:
+    component_path = reviewed_path(component_name)
     if not component_path.exists():
         continue
     review = json.loads(component_path.read_text())
-    if review['status'] != 'independent_precise_component_source_review_passed_whole_8_1_partial':
+    if review['status'] not in {
+            'independent_precise_component_source_review_passed_whole_8_1_partial',
+            'approved_precise_components_whole_exercise_pending'}:
         raise ValueError('Unapproved finite CMDP component review: '+component_name)
     if sha('book/coverage/inventory.json') != review['inventory_sha256']:
         raise ValueError('Stale finite CMDP component inventory: '+component_name)
+    if 'inventory_identity_rebase_correction28' in review:
+        confirmation_name = 'book/coverage/checks/core-cmdp-source28-inventory-identity-rebase-independent-foundations-confirmation.json'
+        confirmation = json.loads((ROOT/confirmation_name).read_text())
+        if (confirmation['status'] != 'independent_exact_inventory_identity_rebase_confirmation_passed'
+                or sha(confirmation['rebase_manifest']) != confirmation['rebase_manifest_sha256']
+                or sha(confirmation['immutable_inventory_after']) != confirmation['immutable_inventory_after_sha256']
+                or review['inventory_sha256'] != confirmation['immutable_inventory_after_sha256']):
+            raise ValueError('Unconfirmed finite CMDP inventory identity rebase: '+component_name)
+        manifest = json.loads((ROOT/confirmation['rebase_manifest']).read_text())
+        row = next(r for r in manifest['records'] if r['rebased_review']==str(component_path.relative_to(ROOT)))
+        if (sha(row['rebased_review']) != row['rebased_review_sha256']
+                or sha(row['original_review']) != row['original_review_sha256']):
+            raise ValueError('Changed confirmed finite CMDP inventory rebase: '+component_name)
     if ('prior_component_review' in review and
             sha(review['prior_component_review']) != review['prior_component_review_sha256']):
         raise ValueError('Changed prior finite CMDP component review: '+component_name)
+    for prior in review.get('prior_component_reviews', []):
+        if sha(prior['path']) != prior['sha256']:
+            raise ValueError('Changed historical finite CMDP component review: '+prior['path'])
     for name, expected in review['source_sha256'].items():
         if INV['source_sha256'][name] != expected:
             raise ValueError('Changed finite CMDP source: '+name)
@@ -651,7 +672,20 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
             raise ValueError('Stale actual finite CMDP compiler execution: '+metadata)
         for field in ('source','source_sha256_before','source_sha256_after',
                       'exit_code','command','actual_workdir','log','log_sha256'):
-            if actual[field] != evidence[field]:
+            alias = {'source_sha256_before':'source_sha256',
+                     'source_sha256_after':'source_sha256','exit_code':'actual_exit_code',
+                     'command':'actual_command','log':'raw_log','log_sha256':'raw_log_sha256'}
+            if field in evidence:
+                expected = evidence[field]
+            elif field == 'source':
+                if actual['source'] not in review['proof_source_sha256']:
+                    raise ValueError('Unreviewed finite CMDP compiler source: '+metadata)
+                expected = actual['source']
+            elif field in {'source_sha256_before', 'source_sha256_after'} and 'source_sha256' not in evidence:
+                expected = review['proof_source_sha256'][actual['source']]
+            else:
+                expected = evidence[alias.get(field, field)]
+            if actual[field] != expected:
                 raise ValueError('Finite CMDP compiler execution mismatch: '+field)
     for record in review['records']:
         key = record['exercise_key']
@@ -680,6 +714,9 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
             sha256=sha(str(component_path.relative_to(ROOT))),
             component_ids=[c['id'] for c in components],
             limits=review['limits'])
+        if 'inventory_identity_rebase_correction28' in review:
+            MAP[key]['source_review']['inventory_identity_confirmation'] = dict(
+                file=confirmation_name, sha256=sha(confirmation_name))
     units = {u['key']:u for u in INV['material_source_units']}
     components = {c['id']:c for c in review['reviewed_clauses']}
     for record in review['material_units']:
@@ -708,7 +745,10 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
             raise ValueError('Unresolved finite CMDP component parent not retained: '+key)
         CMDP_COMPONENT_MATERIAL.append(dict(record=record,
             path=str(component_path.relative_to(ROOT)),
-            review_sha256=sha(str(component_path.relative_to(ROOT)))))
+            review_sha256=sha(str(component_path.relative_to(ROOT))),
+            review_name=Path(component_name).stem,
+            hypotheses=record.get('hypotheses', list(dict.fromkeys(
+                h for i in ids for h in components[i]['hypotheses'])))))
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
@@ -886,13 +926,13 @@ for u in INV['material_source_units']:
 for entry in CMDP_COMPONENT_MATERIAL:
     record = entry['record']
     unit = next(u for u in INV['material_source_units'] if u['key']==record['source_unit_key'])
-    material.append(dict(id=unit['key']+'::'+Path(entry['path']).stem+'::components',
+    material.append(dict(id=unit['key']+'::'+entry['review_name']+'::components',
         source_unit_keys=[unit['key']],source=unit['source'],
         source_sha256=unit['source_sha256'],text_sha256=unit['text_sha256'],
         source_text=unit['source_text'],
         statement_in_prose='Approved precise components: '+', '.join(record['approved_component_ids']),
         kind='independently_reviewed_precise_source_components',status='proved',
-        lean_declarations=record['lean_declarations'],hypotheses=record['hypotheses'],
+        lean_declarations=record['lean_declarations'],hypotheses=entry['hypotheses'],
         correspondence=record['per_unit_reason'],remaining_gaps=[],
         independent_review=dict(source=entry['path'],sha256=entry['review_sha256']),
         parent_remaining_gaps=record['missing_clauses']))
@@ -920,6 +960,11 @@ for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
              'CompletePolicyCDTTokens','CompletePolicyCDTDomain',
              'CompleteFiniteCMDPOccupancy','CompleteFiniteCMDPFlow','CompleteFiniteCMDPRecovery',
              'CompleteFiniteCMDPLinearProgram',
+             'CompleteFiniteCMDPInverse','CompleteFiniteCMDPSpectrum',
+             'CompleteFiniteCMDPScaledSpectrum','CompleteFiniteCMDPMatrixConsequences',
+             'CompleteFiniteCMDPDeterministicVertices',
+             'CompleteFiniteNonnegativeAffineExtrema','CompleteFiniteCMDPActiveFlow',
+             'CompleteFiniteCMDPVertexClassification',
              'CompleteLyapunovValidationNumbers','CompleteLyapunovValidationConfidence',
              'CompleteLyapunovAdaptiveValidation','CompleteLyapunovTrajectoryValidation']:
     source = f'verification/lean/SafeLearning/{name}.lean'

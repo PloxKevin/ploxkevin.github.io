@@ -63,6 +63,48 @@ def claim(cid, statement, names=(), status="pending", kind="mathematical_require
             "source_unit_keys": list(units)}
 
 
+# Correction26 carries unchanged semantic decisions into explicit new page identities.
+CORRECTION26_CONFIRMATION_REL='book/coverage/checks/modules-correction26-independent-foundations-source-rebase-confirmation.json'
+CORRECTION26_CONFIRMATION_SHA='4edfa5ebc41d2bf351cf80d47016ea9f053dd7dab82fe080a21b253ff0cc01da'
+CORRECTION26_MANIFEST_REL='book/coverage/checks/modules-correction26-source-rebase-manifest.json'
+CORRECTION26_MANIFEST_SHA='e3d680261a10461a2386e2d8016886977c9f35cfc13defeec69cb4f1649fbeaf'
+assert digest(CORRECTION26_CONFIRMATION_REL)==CORRECTION26_CONFIRMATION_SHA
+assert digest(CORRECTION26_MANIFEST_REL)==CORRECTION26_MANIFEST_SHA
+correction26_confirmation=json.loads((ROOT/CORRECTION26_CONFIRMATION_REL).read_text())
+correction26_manifest=json.loads((ROOT/CORRECTION26_MANIFEST_REL).read_text())
+assert correction26_confirmation["status"]=="independent_exact_source_inventory_and_unchanged_review_rebase_confirmation_passed" and correction26_confirmation["correction_id"]==26
+assert digest(correction26_manifest["source"])==correction26_manifest["source_sha256_after"]
+correction26_confirmed={row["rebased_review"]:row for row in correction26_confirmation["records"]}
+assert len(correction26_confirmed)==len(correction26_manifest["records"])==16
+for correction26_row in correction26_manifest["records"]:
+    assert digest(correction26_row["historical_review"])==correction26_row["historical_review_sha256"]
+    assert digest(correction26_row["rebased_review"])==correction26_row["rebased_review_sha256"]
+    assert correction26_confirmed[correction26_row["rebased_review"]]["all_original_semantic_decisions_reviewer_times_hypotheses_gaps_and_evidence_identical"]
+    assert correction26_confirmed[correction26_row["rebased_review"]]["rebased_review_sha256"]==correction26_row["rebased_review_sha256"]
+correction26_evidence={"file":CORRECTION26_CONFIRMATION_REL,"sha256":CORRECTION26_CONFIRMATION_SHA,"status":"passed"}
+
+
+# Correction28 records the unchanged reviewed clauses under the new page identity.
+CORRECTION28_CONFIRMATION_REL='book/coverage/checks/modules-correction28-independent-applied-source-rebase-confirmation-v1.json'
+CORRECTION28_CONFIRMATION_SHA='f04929f690b47a047a0d81174200bc9fa9144bd05fcab310474249aeb304903e'
+CORRECTION28_MANIFEST_REL='book/coverage/checks/modules-correction28-source-rebase-manifest.json'
+CORRECTION28_MANIFEST_SHA='1ae5594de9b58385ba995890cc9039a261774f7fee5df71d894fb465a81c4028'
+assert digest(CORRECTION28_CONFIRMATION_REL)==CORRECTION28_CONFIRMATION_SHA
+assert digest(CORRECTION28_MANIFEST_REL)==CORRECTION28_MANIFEST_SHA
+correction28_confirmation=json.loads((ROOT/CORRECTION28_CONFIRMATION_REL).read_text())
+correction28_manifest=json.loads((ROOT/CORRECTION28_MANIFEST_REL).read_text())
+assert correction28_confirmation["status"]=="independent_exact_correction28_source_and_unchanged_review_rebases_confirmed" and correction28_confirmation["manifest_sha256"]==CORRECTION28_MANIFEST_SHA and not correction28_confirmation["missing_clauses"]
+assert digest(correction28_manifest["source"])==correction28_manifest["source_sha256_after"]
+correction28_confirmed={row["rebased_review"]:row for row in correction28_confirmation["records"]}
+correction28_historical={row["rebased_review"]:row["historical_review"] for row in correction28_manifest["records"]}
+assert len(correction28_confirmed)==len(correction28_manifest["records"])==2
+for correction28_row in correction28_manifest["records"]:
+    assert digest(correction28_row["historical_review"])==correction28_row["historical_review_sha256"]
+    assert digest(correction28_row["rebased_review"])==correction28_row["rebased_review_sha256"]
+    assert correction28_confirmed[correction28_row["rebased_review"]]["review_status"]=="confirmed_exact_unchanged_semantics_times_proof_evidence_prior_provenance"
+    assert correction28_confirmed[correction28_row["rebased_review"]]["rebased_review_sha256"]==correction28_row["rebased_review_sha256"]
+correction28_evidence={"file":CORRECTION28_CONFIRMATION_REL,"sha256":CORRECTION28_CONFIRMATION_SHA,"status":"passed"}
+
 general_roesser_review_rel="book/coverage/checks/modules-general-roesser-material-components-source-review-v1.json"
 assert digest(general_roesser_review_rel)=="78cf2d3a4028c397f42a29c8a25fc76d170e3a92ce89f5c214a3be3a536ec141"
 general_roesser_review=json.loads((ROOT/general_roesser_review_rel).read_text())
@@ -76,9 +118,9 @@ general_roesser_evidence={"file":general_roesser_review_rel,"sha256":digest(gene
 
 whole_toolkit_reviews=[]
 for review_rel,review_sha in [
-    ("book/coverage/checks/modules-quadratic-dual-source-review-v1.json","f4eb5e12751329e2e4a1b7bd5b192464ef5361f1d414cb8aab6248c4c94083b8"),
-    ("book/coverage/checks/modules-scalar-activation-source-review-v1.json","cd4113e48d28b43b92f051319c26ee7db3f01ca0fdea4efc44f5cad93c0d7a2a"),
-    ("book/coverage/checks/modules-scalar-lyapunov-source-review-v1.json","dfb5ccd7e6d2bfde5ce18d49061f4b710cf8966c1d72cd9ffdecbc63a0c04b85")]:
+    ("book/coverage/checks/modules-quadratic-dual-source-review-v1-correction26-rebase.json","cff7696c8fe8c9cd32c670ea52e65c119034f477944b861cb9602401b0206229"),
+    ("book/coverage/checks/modules-scalar-activation-source-review-v1-correction26-rebase.json","f3982cb2d9de3a2a564e16799e4fd9d25399b51168a62c8371f80cb276cc1608"),
+    ("book/coverage/checks/modules-scalar-lyapunov-source-review-v1-correction26-rebase.json","b5776b0f345d0380694782b7f67bed592ab5ea3d9e4c06382e5fa6fb28da5d80")]:
     assert digest(review_rel)==review_sha
     reviewed=json.loads((ROOT/review_rel).read_text())
     assert reviewed["status"]=="approved_complete_source" and not reviewed["missing_clauses"]
@@ -91,8 +133,42 @@ for review_rel,review_sha in [
         assert digest(row["log"])==row["log_sha256"]
     whole_toolkit_reviews.append((reviewed,{"file":review_rel,"sha256":review_sha,"reviewer":reviewed["reviewer"],"status":reviewed["status"]}))
 
-matrix_practice_review_rel="book/coverage/checks/modules-matrix-practice-source-review-v1.json"
-matrix_practice_review_sha="d6211978f9ab8dcfc05a40672c009176951f8dbb1d7b2ef6d9af97150c83bb8f"
+# Future17 independently reviewed whole tanh exercises bind the current source28.
+for review_rel,review_sha in [
+    ("book/coverage/checks/modules-tanh-14-2-source-review-v1.json","763e3e584509c5248a4db656246789ac39428a7c1b4e8c13e72c19c1c8e95471"),
+    ("book/coverage/checks/modules-tanh-2-5-source-review-v1.json","92493e57ab43d19fb83778e7f62cce7dc1cfcb1b1592d7c2fe1891f8c3f318f0"),
+    ("book/coverage/checks/modules-landscape-tail-atom-source-review-v1.json","b3129d1eb1b299522cb9eeba63a06ea5a2b94260558509eafc1f095e759cc7c0"),
+    ("book/coverage/checks/modules-tanh-medium-source-review-v1-correction28-rebase.json","88fecc39ab8350253039682a6686de5b3af2779538f030f61cec7044a0d1759f")]:
+    assert digest(review_rel)==review_sha
+    reviewed=json.loads((ROOT/review_rel).read_text())
+    assert reviewed["status"]=="approved_complete_source" and not reviewed["missing_clauses"]
+    for section in ["source_sha256","proof_source_sha256"]:
+        for path,sha in reviewed[section].items():assert digest(path)==sha,path
+    for evidence_record in reviewed["actual_standalone_evidence"]:
+        record=evidence_record.get("record",evidence_record.get("raw_execution_record",evidence_record))
+        assert evidence_record["actual_exit_code"]==record["exit_code"]==0
+        assert record["source_unchanged"] and digest(record["file"])==record["sha256"]
+        assert digest(evidence_record["compiler_manifest"])==evidence_record["compiler_manifest_sha256"]
+        assert digest(record["log"])==record["log_sha256"]
+    for path,sha in reviewed.get("definition_dependency_source_sha256",{}).items():assert digest(path)==sha,path
+    if reviewed.get("primary_attribution_check"):
+        primary=reviewed["primary_attribution_check"]
+        if primary.get("path"):
+            assert digest(primary["path"])==primary["sha256"]
+        else:
+            assert digest(primary["preserved_independent_check"])==primary["preserved_independent_check_sha256"]
+    if reviewed.get("protected_dependency_evidence"):
+        dependency=reviewed["protected_dependency_evidence"]
+        assert digest(dependency["source"])==dependency["source_sha256"]
+        assert digest(dependency["actual_aggregate"])==dependency["actual_aggregate_sha256"]
+    for whole in reviewed["records"]:
+        if "lean_declarations" not in whole:
+            whole["lean_declarations"]=sorted({name for row in whole["components"] for name in row["lean_declarations"]})
+    whole_toolkit_reviews.append((reviewed,{"file":review_rel,"sha256":review_sha,
+        "reviewer":reviewed["reviewer"],"status":reviewed["status"]}))
+
+matrix_practice_review_rel="book/coverage/checks/modules-matrix-practice-source-review-v1-correction26-rebase.json"
+matrix_practice_review_sha="8ab1b7dee61661f9b21d8ca8da0e36d7352adc97a1c6b5523dcc153e1c6d5113"
 assert digest(matrix_practice_review_rel)==matrix_practice_review_sha
 matrix_practice_review=json.loads((ROOT/matrix_practice_review_rel).read_text())
 assert matrix_practice_review["status"]=="independent_whole_source_reviews_passed" and not matrix_practice_review["missing_clauses"]
@@ -114,8 +190,8 @@ for exercise in matrix_practice_review["exercises"]:
 whole_toolkit_reviews.append((matrix_practice_review,{"file":matrix_practice_review_rel,"sha256":matrix_practice_review_sha,
     "reviewer":matrix_practice_review["reviewer"],"status":matrix_practice_review["status"]}))
 
-epigraph_review_rel="book/coverage/checks/modules-epigraph-source-review-v1.json"
-epigraph_review_sha="29f1b13a26b9aebe46b030d50c790bb986f9798e48a42bc9953abb6a6a78a420"
+epigraph_review_rel="book/coverage/checks/modules-epigraph-source-review-v1-correction26-rebase.json"
+epigraph_review_sha="4a5c68d25ed4a084731f825c4d18a0c00cd3e69dad1d26677d84a98e0029643a"
 assert digest(epigraph_review_rel)==epigraph_review_sha
 epigraph_review=json.loads((ROOT/epigraph_review_rel).read_text())
 assert epigraph_review["status"]=="independent_whole_source_reviews_passed" and not epigraph_review["missing_clauses"]
@@ -147,10 +223,10 @@ assert lp_formatting_confirmation["status"]=='independent_exact_source_review_id
 
 # New whole-source reviews retain their independently saved semantic decisions.
 for review_rel,review_sha in [
-    ("book/coverage/checks/modules-policy-dual-source-review-v1.json","5349ec74c928072854c3de6109365cd82eb2297463c3899f5f0a717dd54d07d5"),
-    ("book/coverage/checks/modules-linear-program-source-review-formatting16.json","3c42e9489be03dfc125c9af2a3c8972b67fe361b1512dd5c1f145442ba198d19"),
-    ("book/coverage/checks/modules-singular-schur-p10-source-review-v1.json","857b167835d38de873c0a8b31b7df4ffb3363202d986f751ce01e5faa47118f1"),
-    ("book/coverage/checks/modules-thermal-b1-b2-source-review-v1.json","c9dfadec798e3bc2ada96691dc49d7cda984d1749b1ac4b7018b7efe59ff1ca0")]:
+    ("book/coverage/checks/modules-policy-dual-source-review-v1-correction26-rebase.json","48ee4b25405dc501049d81127c18f539bfec8e38f60beb7cd3bab2e8ef559292"),
+    ("book/coverage/checks/modules-linear-program-source-review-formatting16-correction26-rebase.json","76dc354549d89d07d626240fc8b33a2ecf2962f02edccb031805ca56d38dfc7c"),
+    ("book/coverage/checks/modules-singular-schur-p10-source-review-v1-correction26-rebase.json","e0949534f71c665e00b6130cf510a5323fc34ab91ec4b7178614b25a120512cc"),
+    ("book/coverage/checks/modules-thermal-b1-b2-source-review-v1-correction26-rebase.json","de726f1730824dde40361f660541d1be390bb7eb2618f4ca3c3c1f8a4d7849eb")]:
     assert digest(review_rel)==review_sha
     reviewed=json.loads((ROOT/review_rel).read_text())
     assert reviewed["status"]=="approved_complete_source" and not reviewed["missing_clauses"]
@@ -167,14 +243,14 @@ for review_rel,review_sha in [
         "reviewer":reviewed["reviewer"],"status":reviewed["status"]}))
 
 # Future16 exact whole-source and partial-source reviews; historical versions stay fixed.
-riccati_source_review_rel="book/coverage/checks/modules-riccati-source-review-v1.json"
-ellipsoid_source_review_rel="book/coverage/checks/modules-ellipsoid-2-4-source-review-v1.json"
-sprocedure_source_review_rel="book/coverage/checks/modules-s-procedure-interval-source-review-v1.json"
+riccati_source_review_rel="book/coverage/checks/modules-riccati-source-review-v1-correction26-rebase.json"
+ellipsoid_source_review_rel="book/coverage/checks/modules-ellipsoid-2-4-source-review-v1-correction26-rebase.json"
+sprocedure_source_review_rel="book/coverage/checks/modules-s-procedure-interval-source-review-v1-correction26-rebase.json"
 future16_reviews={}
 for review_rel,review_sha in [
-    (riccati_source_review_rel,"9638e9933c16bf5643b2936b4decd6ef865d4676f49858892c88107d7725429c"),
-    (ellipsoid_source_review_rel,"5a7afc2f78cde1cbc5c7b4e2605bbf19b4618ee17ede3e8b5dab7be0058376ed"),
-    (sprocedure_source_review_rel,"c36a7bceea186462434b38e2018abc674f5fe08b2fe379e97b742b476fa18838")]:
+    (riccati_source_review_rel,"7afcccecb8335a1ab2f9525f7b77fb909eb44822d6ac8055904a797be612b16b"),
+    (ellipsoid_source_review_rel,"633c1a4e6e5b386f46766fc91ad0bcd183705442e8c23cab107827a3476b8b86"),
+    (sprocedure_source_review_rel,"ffa6b16333c003d2b1391c6ce6c4b957649641ae11393e2dcd5011427d236f5d")]:
     assert digest(review_rel)==review_sha
     reviewed=json.loads((ROOT/review_rel).read_text())
     expected_status={riccati_source_review_rel:"independent_source_correspondence_review_passed",ellipsoid_source_review_rel:"approved_complete_source",sprocedure_source_review_rel:"independent_precise_component_source_review_passed_whole_exercise_partial"}
@@ -205,8 +281,29 @@ for review_rel,review_sha in [
     whole_toolkit_reviews.append((reviewed,evidence))
 sprocedure_source_review,sprocedure_source_evidence=future16_reviews[sprocedure_source_review_rel]
 
-structural_labels_review_rel="book/coverage/checks/modules-structural-label-material-source-review-v1.json"
-structural_labels_review_sha="fd880b2cbf968c1b1b0e7acd2cc8178a487533b14845c8997e27bae9fb8b69a6"
+# Exact offset mathematical components retain the two whole-unit citation gaps.
+offset_sector_review_rel="book/coverage/checks/modules-offset-sector-material-source-components-review-v1.json"
+offset_sector_review_sha="922e03d25aeede395362e6f475c46d235b478d9a563f99a2e734aaea2705f60c"
+assert digest(offset_sector_review_rel)==offset_sector_review_sha
+offset_sector_review=json.loads((ROOT/offset_sector_review_rel).read_text())
+assert offset_sector_review["status"]=="approved_precise_components_full_source_unit_partial"
+assert offset_sector_review["inventory_sha256"]==digest("book/coverage/inventory.json")
+assert len(offset_sector_review["reviewed_clauses"])==4 and offset_sector_review["missing_clauses"]
+for section in ["source_sha256","proof_source_sha256","definition_dependency_source_sha256"]:
+    for path,sha in offset_sector_review[section].items():assert digest(path)==sha,path
+for evidence_record in offset_sector_review["actual_standalone_evidence"]:
+    record=evidence_record.get("record",evidence_record.get("raw_execution_record",evidence_record))
+    assert evidence_record["actual_exit_code"]==record["exit_code"]==0
+    assert record["source_unchanged"] and digest(record["file"])==record["sha256"]
+    assert digest(evidence_record["compiler_manifest"])==evidence_record["compiler_manifest_sha256"]
+    assert digest(record["log"])==record["log_sha256"]
+prior=offset_sector_review["prior_independent_review"]
+assert digest(prior["file"])==prior["sha256"]
+offset_sector_evidence={"file":offset_sector_review_rel,"sha256":offset_sector_review_sha,
+    "reviewer":offset_sector_review["reviewer"],"status":offset_sector_review["status"]}
+
+structural_labels_review_rel="book/coverage/checks/modules-structural-label-material-source-review-v1-correction26-rebase-correction28-rebase.json"
+structural_labels_review_sha="a13ed3126c106271cf955cc12caf029e2f21dd4b56985eef2b1768c860c788a2"
 assert digest(structural_labels_review_rel)==structural_labels_review_sha
 structural_labels_review=json.loads((ROOT/structural_labels_review_rel).read_text())
 assert structural_labels_review["status"]=="independent_exact_structural_material_units_review_passed" and not structural_labels_review["missing_clauses"]
@@ -814,7 +911,14 @@ for e in INV["exercises"]:
         continue
     text = e["source_text"].replace(e["label"], "", 1).strip()
     question = re.split(r"Review if needed:|Review:|Show hint|Show answer|Hint|Worked solution", text, maxsplit=1)[0].strip()
-    claims = [claim(f"{e['key']}::requirement-{i+1}", t) for i, t in enumerate(split_sentences(question))]
+    question_sentences = split_sentences(question)
+    if e["key"] == "nn-in-the-loop.html::exercise-16":
+        # Keep the new part(b) assumption attached to its requested conclusion.
+        # The existing requirement IDs and completion decisions remain stable.
+        assert question_sentences[1] == r"(b) Assume $\bar v\gt0$."
+        assert question_sentences[2].startswith("Prove that on ")
+        question_sentences[1:3] = [" ".join(question_sentences[1:3])]
+    claims = [claim(f"{e['key']}::requirement-{i+1}", t) for i, t in enumerate(question_sentences)]
     for i, (statement, names, hypotheses, gaps) in enumerate(COMPONENTS.get(e["key"], [])):
         claims.append(claim(f"{e['key']}::proved-component-{i+1}", statement,
                             names, "proved", hypotheses=hypotheses,
@@ -1043,7 +1147,7 @@ for e in INV["exercises"]:
                 claims.append(c)
         complete = all(c["status"] != "pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "toolkit-lmi.html#practice-8":
-        dissipation_review_rel="book/coverage/checks/modules-dissipation-p8-source-review.json"
+        dissipation_review_rel="book/coverage/checks/modules-dissipation-p8-source-review-correction26-rebase.json"
         dissipation_review=json.loads((ROOT/dissipation_review_rel).read_text())
         assert dissipation_review["status"]=="approved_complete_source" and not dissipation_review["missing_clauses"]
         assert dissipation_review["exercise_key"]==e["key"] and dissipation_review["exercise_text_sha256"]==e["text_sha256"]
@@ -1076,7 +1180,7 @@ for e in INV["exercises"]:
             claims.append(c)
         complete=all(c["status"]!="pending" and not c["remaining_gaps"] for c in claims)
     if e["key"] == "toolkit-lmi.html::exercise-20":
-        scalar_bounded_review_rel="book/coverage/checks/modules-scalar-bounded-real-source-review-v1.json"
+        scalar_bounded_review_rel="book/coverage/checks/modules-scalar-bounded-real-source-review-v1-correction26-rebase.json"
         scalar_bounded_review=json.loads((ROOT/scalar_bounded_review_rel).read_text())
         assert scalar_bounded_review["status"]=="approved_precise_components_whole_source_partial"
         assert scalar_bounded_review["exercise_key"]==e["key"] and scalar_bounded_review["exercise_text_sha256"]==e["text_sha256"]
@@ -1313,8 +1417,8 @@ for manifest in pooling_fc_review["actual_standalone_evidence"]:
         assert digest(record["log"])==record["log_sha256"]
 pooling_fc_evidence={"file":pooling_fc_review_rel,"sha256":digest(pooling_fc_review_rel),"reviewer":pooling_fc_review["reviewer"],"status":pooling_fc_review["status"]}
 
-sdp_material_review_rel="book/coverage/checks/modules-sdp-cone-duality-material-source-review-v1.json"
-sdp_material_review_sha="728ad01d6bf0f32b9f110343f9a2c11c95cf9c7b8dcf07cf3c090b45de9202f4"
+sdp_material_review_rel="book/coverage/checks/modules-sdp-cone-duality-material-source-review-v1-correction26-rebase.json"
+sdp_material_review_sha="1a38d4f23b57e643f25cdbbfea3322f5568b03b382a523d058748b87dc24d6f1"
 assert digest(sdp_material_review_rel)==sdp_material_review_sha
 sdp_material_review=json.loads((ROOT/sdp_material_review_rel).read_text())
 assert sdp_material_review["status"]=="approved_precise_components_seven_whole_source_units_two_partial"
@@ -1366,6 +1470,21 @@ for u in INV["material_source_units"]:
                 lean_declarations=unit["lean_declarations"],correspondence=unit["per_unit_reason"],
                 hypotheses=["The exact actual scalar source model and hypotheses stated by the individually reviewed declarations."],
                 independent_source_review=evidence,scope_limits=reviewed["limits"])
+    offset_unit=next((row for row in offset_sector_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if offset_unit:
+        assert offset_unit["unit_text_sha256"]==u["text_sha256"] and offset_unit["source_sha256"]==u["source_sha256"]
+        assert offset_unit["material_status"]=="pending" and offset_unit["missing_clauses"]
+        c.update(status="pending",kind=offset_unit["semantic_kind"],lean_declarations=offset_unit["lean_declarations"],
+            hypotheses=offset_unit["hypotheses"],correspondence=offset_unit["per_unit_reason"],
+            remaining_gaps=[gap["reason"] for gap in offset_unit["missing_clauses"]],
+            independent_source_review=offset_sector_evidence,scope_limits=offset_sector_review["limits"],
+            precisely_reviewed_components=offset_sector_review["reviewed_clauses"])
+        for row in offset_sector_review["reviewed_clauses"]:
+            assert row["status"]=="approved_precise_component" and not row["missing_clauses"]
+            extra=claim(u["key"]+"::offset-reviewed-"+row["id"],row["source_clause"],row["lean_declarations"],"proved",
+                hypotheses=row["hypotheses"],correspondence=row["per_clause_reason"],units=[u["key"]])
+            extra.update(independent_source_review=offset_sector_evidence,scope_limits=offset_sector_review["limits"])
+            material.append(extra)
     interval_unit=next((row for row in sprocedure_source_review["material_units"] if row["source_unit_key"]==u["key"]),None)
     if interval_unit:
         assert interval_unit["unit_text_sha256"]==u["text_sha256"] and interval_unit["source_sha256"]==u["source_sha256"]
@@ -1739,5 +1858,41 @@ out = {"schema_version":1,"generated_at_utc":datetime.datetime.now(datetime.time
                  "The mathematical source-unit queue overlaps and requires semantic review; one proved statement does not cover every assertion in its source unit.",
                  "Old Modules.lean selected proofs remain valid evidence; old coarse exercise associations do not close new granular requirements.",
                  "Standalone compilation is preliminary; root must run fresh aggregate build, kernel replay and transitive-axiom audit."]}
+def attach_correction26_identity_confirmation(value):
+    if isinstance(value,dict):
+        if value.get("file") in correction26_confirmed:
+            value["source_version_rebase_confirmation"]=correction26_evidence
+        for child in list(value.values()):attach_correction26_identity_confirmation(child)
+    elif isinstance(value,list):
+        for child in value:attach_correction26_identity_confirmation(child)
+
+attach_correction26_identity_confirmation(out)
+out["source_identity_rebases"]=[{"correction_id":26,"manifest":CORRECTION26_MANIFEST_REL,
+    "manifest_sha256":CORRECTION26_MANIFEST_SHA,"independent_confirmation":correction26_evidence}]
+def attach_correction28_identity_confirmation(value):
+    if isinstance(value,dict):
+        if value.get("file") in correction28_confirmed:
+            value["source_version_rebase_confirmation28"]=correction28_evidence
+            # Carry the prior independently confirmed26 provenance forward unchanged.
+            if correction28_historical[value["file"]] in correction26_confirmed:
+                value["source_version_rebase_confirmation"]=correction26_evidence
+        for child in list(value.values()):attach_correction28_identity_confirmation(child)
+    elif isinstance(value,list):
+        for child in value:attach_correction28_identity_confirmation(child)
+
+attach_correction28_identity_confirmation(out)
+out["source_identity_rebases"].append({"correction_id":28,"manifest":CORRECTION28_MANIFEST_REL,
+    "manifest_sha256":CORRECTION28_MANIFEST_SHA,"independent_confirmation":correction28_evidence})
+# Current global inventory and all prior/raw identities are checked without
+# changing original independent review decisions or their historical times.
+from modules_binding import check_bindings
+current_bindings=check_bindings(ROOT,out,INV)
+current_bindings_rel="book/coverage/checks/modules-source28-bindings17-current.json"
+(ROOT/current_bindings_rel).write_text(json.dumps(current_bindings,indent=2,ensure_ascii=False)+"\n")
+out["current_inventory"]=current_bindings["current_inventory"]
+out["current_inventory_sha256"]=current_bindings["current_inventory_sha256"]
+out["current_identity_binding_validation"]={"file":current_bindings_rel,"sha256":digest(current_bindings_rel),
+    "status":current_bindings["status"],"validator":"book/coverage/modules_binding.py",
+    "validator_sha256":digest("book/coverage/modules_binding.py")}
 (ROOT/"book/coverage/modules.json").write_text(json.dumps(out,indent=2,ensure_ascii=False)+"\n")
 print(json.dumps(out["counts"],indent=2))

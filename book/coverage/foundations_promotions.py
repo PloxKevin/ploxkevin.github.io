@@ -1219,7 +1219,7 @@ REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107'] = {
 
 # These two future modules have actual standalone EXIT0 and a separate
 # independent component review. Keep the complete paragraph partial.
-_augmented_review = 'book/coverage/checks/foundations-augmented-generic-penalty-source-review-v1.json'
+_augmented_review = 'book/coverage/checks/foundations-augmented-generic-penalty-source-review-v1-correction27-rebase.json'
 REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107']['proved'] += [
  claim('The actual quadratic-penalty candidates are exactly1.5,1.1,1.01 at rho2,18,198. Its actual second derivatives on the open branchesx<1 andx>1 are respectively2 and2+rho.',
        'CompleteFoundationsAugmentedModels','actual_quad_source_candidates','actual_quadratic_penalty_both_open_branch_curvatures',
@@ -1247,8 +1247,8 @@ REVIEWED_PARTIAL_MATERIAL['primer-optimization.html::node-1107']['pending'] = [
 import json as _review_json
 import hashlib as _review_hashlib
 from pathlib import Path as _ReviewPath
-_labels_path = _ReviewPath('book/coverage/checks/foundations-material-label-source-review-v1-correction23-rebase.json')
-assert _review_hashlib.sha256(_labels_path.read_bytes()).hexdigest() == '6283841c6e20ac690b92b71334253944ba883ad03db0e4ead96ca861cc8f46cd'
+_labels_path = _ReviewPath('book/coverage/checks/foundations-material-label-source-review-v1-correction23-rebase-correction27-rebase.json')
+assert _review_hashlib.sha256(_labels_path.read_bytes()).hexdigest() == 'bbf04850aab7077ebd6dfaf1ef8dbf9db4a171a960ecde2741e18e771304bc9a'
 _label_review = _review_json.loads(_labels_path.read_text())
 _live_label_units = {u['key']: u for u in _review_json.loads(_ReviewPath('book/coverage/inventory.json').read_text())['material_source_units']}
 for _label_unit in _label_review['material_units']:
@@ -1291,8 +1291,8 @@ for _regret_unit in _regret_review['material_units']:
   REVIEWED_NONFORMAL_MATERIAL[_regret_unit['source_unit_key']] = _regret_unit['per_unit_reason']+' Exact independent whole review: '+str(_regret_path)+'.'
 
 # Working14: actual finite backup table and continuous nested interval game.
-_backup_path = _ReviewPath('book/coverage/checks/foundations-backup-games-b8b-b8c-source-review-v1.json')
-assert _review_hashlib.sha256(_backup_path.read_bytes()).hexdigest() == 'e3f5fb440c8b2a137eb9223a5e561a41958f0a17dc03c773052ada62d302204f'
+_backup_path = _ReviewPath('book/coverage/checks/foundations-backup-games-b8b-b8c-source-review-v1-correction27-rebase.json')
+assert _review_hashlib.sha256(_backup_path.read_bytes()).hexdigest() == 'e4cf89035c5119cc6fc7f3ae45a2feae2892775e626cc181ec7144cdf734a4b5'
 _backup_review = _review_json.loads(_backup_path.read_text())
 assert _backup_review['status']=='independent_whole_source_reviews_passed' and not _backup_review['missing_clauses']
 for _backup_file,_backup_hash in _backup_review['proof_source_sha256'].items():
@@ -1498,32 +1498,32 @@ def _load_independent_full_foundation_review(path, expected_sha256):
    REVIEWED_NONFORMAL_MATERIAL[key] = unit['per_unit_reason']+' Exact independent whole review: '+path+'.'
 
 _load_independent_full_foundation_review(
- 'book/coverage/checks/foundations-convex-sets-b4a-source-review-v1.json',
- '56d28ae2b44a0936d542986d6bd645fc0e5e5670d41be4d33468d71b46c8b96a')
+ 'book/coverage/checks/foundations-convex-sets-b4a-source-review-v1-correction27-rebase.json',
+ '5766def3b295c2a13086e8460f2d5840f8033f2056229c725e2ddb928ba63cd2')
 
 _load_independent_full_foundation_review(
  'book/coverage/checks/foundations-rates-costs-0-6-source-review-v1.json',
  '88898c755cd5fe11a6f7b545619efee2b2d8d02b68cd9b9375648fc1b6df1ecc')
 
 _load_independent_full_foundation_review(
- 'book/coverage/checks/foundations-parameterized-convex-b4b-source-review-v1.json',
- '1fc3cdb7ea74d8f2e4cda30f2137aad5622033d89f918e5c194698c8295bde44')
+ 'book/coverage/checks/foundations-parameterized-convex-b4b-source-review-v1-correction27-rebase.json',
+ '8c3cb432a3de992ff01ee93e09d55b1de2e4c297ec9954b8b09bacf55081be10')
 
 _load_independent_full_foundation_review(
- 'book/coverage/checks/foundations-extended-conjugate-b4c-source-review-v1.json',
- '0f9b8a50c732df3ba82584fdb51a484d9a1156ea89d71151426fd741b2534cef')
+ 'book/coverage/checks/foundations-extended-conjugate-b4c-source-review-v1-correction27-rebase.json',
+ 'b1835549903545ee7f55ab475626bf032355a3ca5122e0548fd0beac6fb8bf74')
 
 _load_independent_full_foundation_review(
- 'book/coverage/checks/foundations-two-conjugates-b4-source-review-v1.json',
- '350a42b04940a5d7c1211d4691e4a7e73b8e5746f968aa33472268445dc51083')
+ 'book/coverage/checks/foundations-two-conjugates-b4-source-review-v1-correction27-rebase.json',
+ 'b63823401612c230857f48cae52f4da8e11e4209933c39fcad0e1fbb46e22390')
 
 _load_independent_full_foundation_review(
  'book/coverage/checks/foundations-norms-a1-source-review-v1.json',
  '2803a9c4abc66f751f30e8b189bb4a5419e1572bb2b5b580ac48f94769a909fd')
 
 _load_independent_full_foundation_review(
- 'book/coverage/checks/foundations-polygon-lp-b7b-source-review-v1.json',
- 'c305d150f3a5bf78325442f604ebbd8fc5d38fc6627392d7d049a0c39d355872')
+ 'book/coverage/checks/foundations-polygon-lp-b7b-source-review-v1-correction27-rebase.json',
+ 'c3cace815d51990398a8c0855cbf25bca0f84f2bf596d1eebdbd6039f7989951')
 
 _load_independent_full_foundation_review(
  'book/coverage/checks/foundations-norm-material-source-review-v1.json',
@@ -1536,3 +1536,20 @@ _load_independent_full_foundation_review(
 _load_independent_full_foundation_review(
  'book/coverage/checks/foundations-generalized-eigen-a7-source-review-v1.json',
  '72e91451206ca0a30aa71677960ebd5de713ef68497401be39cd08457f90fec0')
+
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-grid-certificates-b3-source-review-v1-correction28-inventory-rebase.json',
+ '1c601b1e5608e1608ce8566543f7619d2a0c17e03a4b27ce963d6428b74038b6')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-rank-one-schur-a5-source-review-v1-correction28-inventory-rebase.json',
+ '2eb706cbc126bac1e6c928521d19261227bc9e8ce9d9af9f9c487b6c9bb8b810')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-sequential-logdet-a6-source-review-v1-correction28-inventory-rebase.json',
+ 'bbd8099737c9d16c6c37c43a8480923da9520554f9e544e5f45f85134f27d3f6')
+
+_load_independent_full_foundation_review(
+ 'book/coverage/checks/foundations-pedagogical-material-source-review-17-v1.json',
+ 'b0ce64ae548949958b585bd5139b4a688bcde41300cbdbe89c559d2ee3b01bcf')
