@@ -43,8 +43,11 @@ verifier then resumed successfully, including a fresh complete axiom audit and
 final fingerprint checks. [The resume execution](verify-checkpoint19-resume-execution.json)
 records the actual command, directory, times and exit code. The earlier interrupted
 execution retains its actual failure status.
-GitHub delivery of checkpoint19 is being prepared; checkpoint18 remains the
-last verified live delivery until the new push and live checks pass.
+The authorized GitHub content push succeeded at commit `e3006080675d0f8e37f7b3be4ec42aea213c3c14`.
+[Live delivery](live-checkpoint-19-attempt3.json) verified every one of the 31 frozen
+asset hashes, and [GitHub Pages](pages-checkpoint-19-attempt3.json) reported that
+commit built. The first two checks recorded an incomplete deployment and remain
+preserved.
 [The checkpoint manifest](checkpoint-19-manifest.json) identifies
 all frozen inputs. Historical correspondence and source corrections remain
 preserved in their original evidence records.
