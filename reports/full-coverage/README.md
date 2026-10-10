@@ -1,9 +1,9 @@
 # Continuing full mathematical coverage
 
-The verified checkpoint contains 5,190 theorems in 490 Lean files. Its fresh
-9,415-job build, kernel checks and standard-axiom audit passed with Lean 4.34.1
-and the pinned Mathlib revision. See [the formal audit](lean-checkpoint-18/verification.json).
-Twenty-nine modules received fresh kernel replays. The other 461 retain actual
+The verified checkpoint contains 8,563 theorems in 1,055 Lean files. Its fresh
+9,980-job build, kernel checks and standard-axiom audit passed with Lean 4.34.1
+and the pinned Mathlib revision. See [the formal audit](lean-checkpoint-19/verification.json).
+All 565 added modules received fresh kernel replays. The other 490 retain actual
 passing replays after identical module sources, transitive local imports and
 compiled dependency fingerprints were checked. Every theorem received a fresh
 axiom audit. Actual commands, execution directories and original logs are retained;
@@ -11,14 +11,14 @@ the complete previous report is preserved verbatim beside the current audit.
 
 Coverage remains partial. All 556 exercises and 12,774 overlapping material
 review units are inventoried, including surrounding prose, hints and table rows.
-The frozen ledgers classify 343 exercises as mathematically complete, 47 partial
-and 166 pending; 10,160 material units remain pending review.
-See [the exact frozen ledger audit](lean-checkpoint-18/ledger-audit.json).
+The frozen ledgers classify 475 exercises as mathematically complete, 17 partial
+and 64 pending; 8,907 material units remain pending review.
+See [the exact frozen ledger audit](lean-checkpoint-19/ledger-audit.json).
 The validator checks source fingerprints and references; independent reviews
 establish the specific source correspondences. Further working additions are
 outside this checkpoint and do not count as verified coverage.
 
-The book contains 31 documented teaching corrections. Exact replacements,
+The frozen book contains 44 documented teaching corrections. Exact replacements,
 assumptions and reasons are in
 [material-corrections.json](../../book/coverage/material-corrections.json).
 The selected additions prove genuine finite CMDP inverse and spectral claims,
@@ -29,16 +29,23 @@ positive radius their division requires. The selected additions also construct a
 and prove their flow, expected-return and occupancy-polytope correspondences. Historical compiler, source and
 review evidence remains preserved; no baseline Lean source changed in this audit.
 
-[Static validation](integration-18.json) passed on all 29 pages and 556 exercises;
+[Static validation](integration-19.json) passed on all 29 pages and 556 exercises;
 its page fingerprints match the frozen checkpoint.
-[Browser evidence](browser-checkpoint-18.json) retains 90 actual viewport checks
-for 18 byte-identical pages and records the failed fresh browser attempt for eleven
-pages. Chromium launch was blocked by system permissions. No new screenshot or
-manual visual-inspection pass is asserted.
-The GitHub content push succeeded at commit `bcb4abf5be332abe9e8ece10a416e65a13fca784`.
-[Live delivery](live-checkpoint-18-attempt4.json) verified all31 frozen asset hashes,
-and [GitHub Pages](pages-checkpoint-18-attempt4.json) reported that commit built.
-Earlier failed DNS and incomplete-build attempts remain preserved. [The checkpoint manifest](checkpoint-18-manifest.json) identifies
+[Browser evidence](browser-checkpoint-19.json) records a fresh pass on all 29 pages
+at five widths: 145 actual viewport checks. It includes 48 screenshots and ten
+explicitly skipped captures on pages without lab or reference targets. Manual
+visual review covers only the top regions of six screenshots; broader visual
+review remains pending. The initial layout failure and isolated replay remain
+preserved beside the successful run.
+The original serial kernel run was interrupted after completed commands were
+preserved. Four workers ran the remaining new modules, and the unchanged frozen
+verifier then resumed successfully, including a fresh complete axiom audit and
+final fingerprint checks. [The resume execution](verify-checkpoint19-resume-execution.json)
+records the actual command, directory, times and exit code. The earlier interrupted
+execution retains its actual failure status.
+GitHub delivery of checkpoint19 is being prepared; checkpoint18 remains the
+last verified live delivery until the new push and live checks pass.
+[The checkpoint manifest](checkpoint-19-manifest.json) identifies
 all frozen inputs. Historical correspondence and source corrections remain
 preserved in their original evidence records.
 
@@ -50,6 +57,8 @@ python3 book/coverage/validate.py --output reports/full-coverage/ledger-reproduc
 python3 verification/lean/verify.py --output reports/full-coverage/lean-reproduction
 ```
 
+The reproducible source44 checkout is `reports/full-coverage/checkpoint-19`.
+Further source47 edits and new standalone Lean files are outside this checkpoint.
 Use `--resume-kernel` only with matching saved fingerprints.
 `python3 book/coverage/validate.py --require-complete` remains a failing gate.
 The continuing objective includes every remaining mathematical material and

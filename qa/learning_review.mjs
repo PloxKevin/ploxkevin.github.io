@@ -215,7 +215,16 @@ for (const [index,name] of files.entries()) {
         document.querySelectorAll('.collapsible').forEach(c => c.classList.add('open'));
         document.querySelectorAll('details').forEach(d => d.open=true);
       });
-      await page.waitForTimeout(350);
+      // A timeout can expire before a busy long page paints the resize.
+      // Begin with two painted frames, then require the main-column CSS
+      // transition to finish before measuring its final layout.
+      await settle(page, 350);
+      await page.waitForFunction(() => {
+        const main = document.querySelector('.main-content');
+        if (!main) return true;
+        if (main.getAnimations().some(a => a instanceof CSSTransition && a.playState === 'running')) return false;
+        return !matchMedia('(max-width: 768px)').matches || Math.abs(parseFloat(getComputedStyle(main).marginLeft)) < 0.1;
+      }, null, {timeout:5000});
       const v = await page.evaluate(() => ({
         width:innerWidth,
         documentWidth:document.documentElement.scrollWidth,

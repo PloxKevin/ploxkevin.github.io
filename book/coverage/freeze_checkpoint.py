@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import shutil
+from lean_names import declarations as source_declarations
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,25 +30,27 @@ if not snapshot.is_relative_to(ROOT / 'reports/full-coverage') or snapshot.exist
 selection = json.loads(selection_path.read_text())
 selected = selection['proof_files']
 declarations = set()
+selected_evidence_inputs = []
 for name, record in selected.items():
     source = ROOT / name
     if sha(source) != record['sha256']:
         raise ValueError('Selected source changed: ' + name)
     text = source.read_text()
-    namespaces = re.findall(r'^namespace\s+(\S+)', text, re.M)
-    if len(namespaces) != 1:
-        raise ValueError('Expected one namespace: ' + name)
-    declarations.update(namespaces[0] + '.' + n for n in re.findall(
-        r'^(?:theorem|lemma|def|abbrev|structure|inductive|instance)\s+([^\s({:\[]+)', text, re.M))
+    declarations.update(record['name'] for record in source_declarations(text))
     for dep in re.findall(r'^import\s+(SafeLearning\.\S+)', text, re.M):
         dependency = 'verification/lean/' + dep.replace('.', '/') + '.lean'
         if dependency not in selected:
             raise ValueError('Missing selected dependency: ' + dependency)
     for evidence, expected in record.get('evidence_sha256', {}).items():
+        if (Path(evidence).is_absolute() or '..' in Path(evidence).parts
+                or str(Path(evidence)) != evidence
+                or not (ROOT / evidence).resolve().is_relative_to(ROOT.resolve())):
+            raise ValueError('Selected evidence escapes the checkout: ' + evidence)
         if sha(ROOT / evidence) != expected:
             raise ValueError('Selected evidence changed: ' + evidence)
+        selected_evidence_inputs.append(evidence)
 
-files = list(selected)
+files = list(selected) + selected_evidence_inputs
 for record in selected.values():
     revision = record.get('deliberate_source_revision')
     if not revision:
@@ -72,12 +75,30 @@ files += [str(p.relative_to(ROOT)) for p in (ROOT / 'SafeLearning').iterdir()
 files += ['verification/lean/' + name for name in
           ['lean-toolchain', 'lakefile.toml', 'lake-manifest.json', 'verify.py']]
 files += [str(p.relative_to(ROOT)) for p in (ROOT / 'book/coverage').rglob('*')
-          if p.is_file() and p.suffix in {'.py', '.json', '.md', '.log', '.html'}
+          # Archived Lean trials and reviewed JavaScript are evidence inputs.
+          # Only selected verification/lean sources enter the proof aggregator.
+          if p.is_file() and p.suffix in {'.py', '.json', '.md', '.log', '.html', '.lean', '.js'}
           and '__pycache__' not in p.parts]
 for metadata in (ROOT / 'book/coverage').rglob('*.json'):
     files += re.findall(r'"(reports/full-coverage/inventory[^"\n]+\.json)"',
                         metadata.read_text())
 files += ['book/inventory_claims.py', 'book/validate.py']
+# Freeze the exact browser runner and shared checks used by reader evidence.
+files += ['qa/learning_review.mjs', 'qa/book_browser_checks.mjs']
+# Located excerpts and exact replay harnesses are opt-in audit inputs. Keep
+# full external-paper references outside this reproducibility claim.
+for name, record in selection.get('extra_frozen_inputs', {}).items():
+    path = (ROOT / name).resolve()
+    if (Path(name).is_absolute() or '..' in Path(name).parts
+            or str(Path(name)) != name
+            or not any(path.is_relative_to(base.resolve()) for base in
+            (ROOT / 'book/coverage', ROOT / 'reports/full-coverage/source-history'))):
+        raise ValueError('Explicit audit input escapes the allowed provenance roots: ' + name)
+    if (record.get('scope') != 'immutable_audit_or_local_source_evidence'
+            or path.suffix not in {'.py', '.json', '.md', '.log', '.html', '.lean', '.js', '.cjs', '.txt'}
+            or sha(path) != record['sha256']):
+        raise ValueError('Invalid or changed explicit audit input: ' + name)
+    files.append(name)
 files = sorted(set(files))
 initial_hashes = {name: sha(ROOT / name) for name in files}
 for name in files:

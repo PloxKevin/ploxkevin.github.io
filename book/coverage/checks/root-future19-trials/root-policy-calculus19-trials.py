@@ -1,0 +1,7 @@
+from pathlib import Path
+import argparse,json,hashlib,subprocess,time,shutil
+from datetime import datetime,timezone
+p=argparse.ArgumentParser();p.add_argument('module');p.add_argument('label');a=p.parse_args();r=Path('/home/oxrexkevin/SafetyBased');source=r/'verification/lean/SafeLearning'/f'{a.module}.lean';base=Path('/tmp')/f'root-{a.label}';snap=base.with_suffix('.lean');log=base.with_suffix('.log');record=base.with_suffix('.json');assert not any(x.exists() for x in [snap,log,record]);shutil.copyfile(source,snap);sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();before=sha(source);cmd=['lake','env','lean',str(source.relative_to(r/'verification/lean'))];t=time.monotonic()
+with log.open('wb') as out:x=subprocess.run(cmd,cwd=r/'verification/lean',stdout=out,stderr=subprocess.STDOUT)
+row=dict(status='passed' if x.returncode==0 and before==sha(source) else 'failed',source=str(source.relative_to(r)),source_sha256_before=before,source_sha256_after=sha(source),source_unchanged=before==sha(source),source_snapshot=str(snap),source_snapshot_sha256=sha(snap),command=cmd,actual_workdir=str(r/'verification/lean'),exit_code=x.returncode,checked_at_utc=datetime.now(timezone.utc).isoformat(),elapsed_seconds=time.monotonic()-t,log=str(log),log_sha256=sha(log),scope='Actual source-matched standalone trial, not aggregate verification or source correspondence.')
+record.write_text(json.dumps(row,indent=2)+'\n');print(json.dumps(row,indent=2));print(log.read_text());raise SystemExit(x.returncode)

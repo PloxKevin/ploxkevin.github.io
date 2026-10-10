@@ -4,11 +4,16 @@ Historical component approvals retain their original scope and evidence. Whole
 source approvals below are separate reviews of the complete literal text.
 """
 import json
+from core_identity44 import current_review, verify_identity
 
 
-def verify_inventory31_identity(root, review, review_path, sha):
+def verify_inventory31_identity(root, review, review_path, sha, prefix="core-cmdp"):
     """Verify a new inventory identity without changing prior review provenance."""
-    name = 'book/coverage/checks/core-cmdp-source31-inventory-identity-rebase-independent-foundations-confirmation.json'
+    if 'source44_identity_provenance' in review:
+        return verify_identity(root, review, review_path, sha)
+    correction = next(c for c in (33, 32, 31) if f'inventory_identity_rebase_correction{c}' in review)
+    provenance_key = f'inventory_identity_rebase_correction{correction}'
+    name = f'book/coverage/checks/{prefix}-source{correction}-inventory-identity-rebase-independent-foundations-confirmation.json'
     confirmation = json.loads((root/name).read_text())
     if (confirmation['status'] != 'independent_exact_inventory_identity_rebase_confirmation_passed'
             or sha(confirmation['rebase_manifest']) != confirmation['rebase_manifest_sha256']
@@ -25,11 +30,13 @@ def verify_inventory31_identity(root, review, review_path, sha):
             or sha(row['original_inventory']) != row['original_inventory_sha256']):
         raise ValueError('Changed current CMDP identity provenance: '+path)
     old = json.loads((root/row['original_review']).read_text())
-    normalized = {k: v for k, v in review.items() if k != 'inventory_identity_rebase_correction31'}
+    normalized = {k: v for k, v in review.items() if k != provenance_key}
     normalized['inventory_sha256'] = old['inventory_sha256']
+    if 'inventory' in old:
+        normalized['inventory'] = old['inventory']
     if normalized != old:
         raise ValueError('Current CMDP identity rebase changed an original review field: '+path)
-    provenance = review['inventory_identity_rebase_correction31']
+    provenance = review[provenance_key]
     for field in ('original_review', 'original_review_sha256', 'original_inventory', 'original_inventory_sha256'):
         if provenance[field] != row[field]:
             raise ValueError('Current CMDP identity provenance mismatch: '+field)
@@ -127,10 +134,39 @@ def integrate_literal_path_reviews(root, inventory, reviewed_path, sha, add, map
 
 def integrate_instructional_labels(root, inventory, sha, direct_material):
     name = 'book/coverage/checks/core-instructional-label-material-source-review-18-v1.json'
+    original_name = name
+    for correction in (32, 33):
+        current_name = original_name.removesuffix('.json') + f'-correction{correction}-inventory-identity.json'
+        if (root/current_name).exists():
+            name = current_name
     path = root/name
+    path = current_review(root, path, sha)
+    name = str(path.relative_to(root))
     if not path.exists():
         return
     review = json.loads(path.read_text())
+    if 'source44_identity_provenance' in review:
+        verify_identity(root, review, path, sha)
+    elif any(f'inventory_identity_rebase_correction{c}' in review for c in (32, 33)):
+        correction = next(c for c in (33, 32) if f'inventory_identity_rebase_correction{c}' in review)
+        confirmation_name = f'book/coverage/checks/core-material-label-source{correction}-inventory-identity-rebase-independent-foundations-confirmation.json'
+        confirmation = json.loads((root/confirmation_name).read_text())
+        if (confirmation['status'] != 'independent_exact_inventory_identity_rebase_confirmation_passed'
+                or sha(confirmation['rebase_manifest']) != confirmation['rebase_manifest_sha256']
+                or sha(confirmation['immutable_inventory_after']) != confirmation['immutable_inventory_after_sha256']
+                or confirmation['immutable_inventory_after_sha256'] != review['inventory_sha256']):
+            raise ValueError('Unconfirmed current instructional-label inventory identity')
+        manifest = json.loads((root/confirmation['rebase_manifest']).read_text())
+        if (manifest['rebased_review'] != name or sha(name) != manifest['rebased_review_sha256']
+                or sha(manifest['original_review']) != manifest['original_review_sha256']
+                or sha(manifest['preserved_original_review']) != manifest['original_review_sha256']):
+            raise ValueError('Changed instructional-label identity provenance')
+        old = json.loads((root/manifest['original_review']).read_text())
+        normalized = {k: v for k, v in review.items() if k != f'inventory_identity_rebase_correction{correction}'}
+        normalized['inventory'] = old['inventory']
+        normalized['inventory_sha256'] = old['inventory_sha256']
+        if normalized != old:
+            raise ValueError('Instructional-label identity rebase changed an original semantic field')
     if (review['status'] != 'independent_exact_nonformal_material_units_review_passed'
             or review['missing_clauses'] or review['proof_source_sha256']
             or review['actual_standalone_evidence']
@@ -164,3 +200,71 @@ def integrate_instructional_labels(root, inventory, sha, direct_material):
                                    review_sha256=sha(str(path.relative_to(root))))
     if seen != set(candidates) or len(seen) != 157:
         raise ValueError('Individual instructional-label review did not cover its exact candidate set')
+
+
+def integrate_policy_performance_review(root, inventory, reviewed_path, sha, add, mapping, direct_material):
+    """Integrate only the independently reviewed whole literal finite exercise9.1."""
+    path = reviewed_path('finite-policy-performance-9-1-full-source-review-v1.json')
+    if not path.exists():
+        return
+    review = json.loads(path.read_text())
+    if 'source44_identity_provenance' in review or 'inventory_identity_rebase_correction33' in review:
+        verify_inventory31_identity(root, review, path, sha, prefix='core-policy')
+    if (review['status'] != 'approved_complete_source' or review['missing_clauses']
+            or sha(review['inventory']) != review['inventory_sha256']
+            or sha('book/coverage/inventory.json') != review['inventory_sha256']):
+        raise ValueError('Unapproved literal policy performance review')
+    for name, expected in review['source_sha256'].items():
+        if sha(name) != expected or inventory['source_sha256'][name] != expected:
+            raise ValueError('Changed literal policy performance source: '+name)
+    for name, expected in review['proof_source_sha256'].items():
+        if sha(name) != expected:
+            raise ValueError('Changed literal policy performance proof: '+name)
+    seen = set()
+    for family in ('actual_standalone_evidence', 'actual_named_build_evidence'):
+        for evidence in review[family]:
+            name = evidence['compiler_manifest']
+            actual = json.loads((root/name).read_text())
+            if (sha(name) != evidence['compiler_manifest_sha256']
+                    or actual != evidence['raw_execution_record']
+                    or actual['exit_code'] != evidence['actual_exit_code'] or actual['exit_code'] != 0
+                    or actual['source_sha256_before'] != actual['source_sha256_after']
+                    or actual['source'] not in review['proof_source_sha256']
+                    or actual['source_sha256_after'] != sha(actual['source'])
+                    or sha(actual['log']) != actual['log_sha256']):
+                raise ValueError('Changed actual policy performance compiler evidence: '+name)
+            if family == 'actual_standalone_evidence':
+                seen.add(actual['source'])
+    if seen != set(review['proof_source_sha256']):
+        raise ValueError('A reviewed policy performance proof lacks actual standalone evidence')
+    exercises = {e['key']: e for e in inventory['exercises']}
+    for record in review['records']:
+        key = record['exercise_key']
+        clauses = record['components']
+        if (key != 'policy-optimization.html::exercise-16'
+                or exercises[key]['text_sha256'] != record['exercise_text_sha256']
+                or record['review_status'] != 'approved_complete_source' or record['missing_clauses']
+                or not clauses or any(c['status'] != 'approved_precise_component'
+                    or c['missing_clauses'] or not c['lean_declarations'] or not c['per_clause_reason']
+                    for c in clauses)):
+            raise ValueError('Incomplete literal policy performance exercise review')
+        declared = list(dict.fromkeys(n for c in clauses for n in c['lean_declarations']))
+        hypotheses = list(dict.fromkeys(h for c in clauses for h in c['hypotheses']))
+        add(key, declared, ' '.join(c['source_clause'] for c in clauses), hypotheses, [])
+        mapping[key]['source_review'] = dict(file=str(path.relative_to(root)),
+            sha256=sha(str(path.relative_to(root))), component_ids=[c['id'] for c in clauses],
+            limits=review['limits'])
+    units = {u['key']: u for u in inventory['material_source_units']}
+    for record in review['material_units']:
+        key = record['source_unit_key']
+        unit = units[key]
+        if (key not in {'policy-optimization.html::node-1419', 'policy-optimization.html::node-1424'}
+                or key in direct_material or unit['source_sha256'] != record['source_sha256']
+                or unit['text_sha256'] != record['unit_text_sha256']
+                or unit['source_text'] != record['source_text']
+                or record['review_status'] != 'approved_complete_source'
+                or record['material_status'] != 'proved' or record['missing_clauses']
+                or not record['lean_declarations'] or not record['per_unit_reason']):
+            raise ValueError('Incomplete literal policy performance material review: '+key)
+        direct_material[key] = dict(record=record, path=str(path.relative_to(root)),
+                                   review_sha256=sha(str(path.relative_to(root))))

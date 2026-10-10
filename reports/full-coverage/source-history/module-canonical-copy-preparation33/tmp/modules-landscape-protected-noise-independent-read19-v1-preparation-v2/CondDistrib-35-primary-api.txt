@@ -1,0 +1,57 @@
+## Main statements
+
+* `condDistrib_ae_eq_condExp`: for almost all `a`, `condDistrib` evaluated at `X a` and a
+  measurable set `s` is equal to the conditional expectation `μ⟦Y ⁻¹' s | mβ.comap X⟧ a`.
+* `condExp_prod_ae_eq_integral_condDistrib`: the conditional expectation
+  `μ[(fun a => f (X a, Y a)) | X; mβ]` is almost everywhere equal to the integral
+  `∫ y, f (X a, y) ∂(condDistrib Y X μ (X a))`.
+
+-/
+
+@[expose] public section
+
+
+open MeasureTheory Set Filter TopologicalSpace
+
+open scoped ENNReal MeasureTheory ProbabilityTheory
+
+namespace ProbabilityTheory
+
+variable {α β Ω F : Type*} [MeasurableSpace Ω] [StandardBorelSpace Ω]
+  [Nonempty Ω] [NormedAddCommGroup F] {mα : MeasurableSpace α} {μ : Measure α} [IsFiniteMeasure μ]
+  {X : α → β} {Y : α → Ω}
+
+/-- **Regular conditional probability distribution**: kernel associated with the conditional
+expectation of `Y` given `X`.
+For almost all `a`, `condDistrib Y X μ` evaluated at `X a` and a measurable set `s` is equal to
+the conditional expectation `μ⟦Y ⁻¹' s | mβ.comap X⟧ a`. It also satisfies the equality
+`μ[(fun a => f (X a, Y a)) | mβ.comap X] =ᵐ[μ] fun a => ∫ y, f (X a, y) ∂(condDistrib Y X μ (X a))`
+for all integrable functions `f`. -/
+noncomputable irreducible_def condDistrib {_ : MeasurableSpace α} [MeasurableSpace β] (Y : α → Ω)
+    (X : α → β) (μ : Measure α) [IsFiniteMeasure μ] : Kernel β Ω :=
+  (μ.map fun a => (X a, Y a)).condKernel
+
+instance [MeasurableSpace β] : IsMarkovKernel (condDistrib Y X μ) := by
+  rw [condDistrib]; infer_instance
+
+variable {mβ : MeasurableSpace β} {s : Set Ω} {t : Set β} {f : β × Ω → F}
+
+/-- If the singleton `{x}` has non-zero mass for `μ.map X`, then for all `s : Set Ω`,
+`condDistrib Y X μ x s = (μ.map X {x})⁻¹ * μ.map (fun a => (X a, Y a)) ({x} ×ˢ s)` . -/
+lemma condDistrib_apply_of_ne_zero [MeasurableSingletonClass β] (hX : Measurable X)
+    (hY : Measurable Y) (x : β) (hX' : μ.map X {x} ≠ 0) (s : Set Ω) :
+    condDistrib Y X μ x s = (μ.map X {x})⁻¹ * μ.map (fun a => (X a, Y a)) ({x} ×ˢ s) := by
+  rw [condDistrib, Measure.condKernel_apply_of_ne_zero _ s]
+  · rw [Measure.fst_map_prodMk hX hY]
+  · rwa [Measure.fst_map_prodMk hX hY]
+
+lemma compProd_map_condDistrib (hX : AEMeasurable X μ) (hY : AEMeasurable Y μ) :
+    (μ.map X) ⊗ₘ condDistrib Y X μ = μ.map fun a ↦ (X a, Y a) := by
+  rw [condDistrib, ← Measure.fst_map_prodMk₀ hX hY, Measure.disintegrate]
+
+lemma condDistrib_comp_map (hX : AEMeasurable X μ) (hY : AEMeasurable Y μ) :
+    condDistrib Y X μ ∘ₘ (μ.map X) = μ.map Y := by
+  rw [← Measure.snd_compProd, compProd_map_condDistrib hX hY, Measure.snd_map_prodMk₀ hX hY]
+
+lemma condDistrib_congr {X' : α → β} {Y' : α → Ω} (hY : Y =ᵐ[μ] Y') (hX : X =ᵐ[μ] X') :
+    condDistrib Y X μ = condDistrib Y' X' μ := by

@@ -156,6 +156,8 @@ for review_rel,review_sha in [
 # Future17 independently reviewed whole tanh exercises bind the current source28.
 for review_rel,review_sha in [
 
+    ("book/coverage/checks/modules-landscape-signed-cvar-source-review-v1.json","1d3935127fe2197829430c2eb54babc55aea999329a7eba4d2cdb0a01649211a"),
+    ("book/coverage/checks/modules-landscape-count-failure-source-review-v1.json","7ccb8708dd88d1726be58c0f2689f6db89e0fe15b671ac5ba0f1e4bbe1b9f561"),
     ("book/coverage/checks/modules-landscape-rare-spike-source-review-v1.json","d5f020bb9f935bed518934f9f31bbaaa2a7db7ad1d6bb815129ec717c80782fe"),
     ("book/coverage/checks/modules-landscape-invariance-source-review-v1.json","93ad320637cf69db0ecda4826bab323ae92c8cb0c4202cdd7a53482455d2fea4"),
     ("book/coverage/checks/modules-landscape-discounted-failure-source-review-v1.json","69cbd98be6095d7306cce537e92df0dd3b17a4d1d6f4522b62a45c3e2a1a2507"),
@@ -227,6 +229,21 @@ assert not body18_review["proof_source_sha256"] and not body18_review["actual_st
 assert digest(body18_review["candidate"]["file"])==body18_review["candidate"]["sha256"]
 assert digest(body18_review["candidate"]["original_inventory"])==body18_review["candidate"]["original_inventory_sha256"]
 body18_evidence={"file":body18_review_rel,"sha256":body18_review_sha,"reviewer":body18_review["reviewer"],"status":body18_review["status"]}
+
+# Fresh future19 actual generic RKHS minimizer/formula components; whole parent citation units remain pending.
+ridge19_rel="book/coverage/checks/modules-ridge-posterior-equality-source-components-review19-v1.json"
+ridge19_sha="fbea489a73de24d031d3eb3926c2486062529c514553ffaddd0fa254ff18426d"
+assert digest(ridge19_rel)==ridge19_sha
+ridge19_review=json.loads((ROOT/ridge19_rel).read_text())
+assert ridge19_review["status"]=="independent_component_source_correspondence_review_passed"
+for section in ["source_sha256","proof_source_sha256","definition_dependency_source_sha256"]:
+    for path,sha in ridge19_review[section].items():assert digest(path)==sha,path
+for entry in ridge19_review["actual_standalone_evidence"]:
+    actual=entry["actual_execution_record"]
+    manifest=json.loads((ROOT/entry["compiler_manifest"]).read_text())
+    assert digest(entry["compiler_manifest"])==entry["compiler_manifest_sha256"] and actual in manifest["files"]
+    assert actual["exit_code"]==0 and actual["source_unchanged"] and digest(actual["file"])==actual["sha256"] and digest(actual["log"])==actual["log_sha256"]
+ridge19_evidence={"file":ridge19_rel,"sha256":ridge19_sha,"reviewer":ridge19_review["reviewer"],"status":ridge19_review["status"]}
 
 matrix_practice_review_rel="book/coverage/checks/modules-matrix-practice-source-review-v1-correction26-rebase-correction30-rebase.json"
 matrix_practice_review_sha="7b8188f74885288c2ef361fa7044df5492c01618dced564d4a7328cbbe652bee"
@@ -1529,7 +1546,7 @@ for u in INV["material_source_units"]:
             assert not unit["missing_clauses"] and unit["material_status"] in ["proved","not_formalizable","not_a_formal_claim"]
             c.update(status="proved" if unit["material_status"]=="proved" else "not_a_formal_claim",kind=unit["semantic_kind"],remaining_gaps=[],
                 lean_declarations=unit["lean_declarations"],correspondence=unit["per_unit_reason"],
-                hypotheses=unit.get("hypotheses",[]) if evidence["file"] in {'book/coverage/checks/modules-landscape-rare-spike-source-review-v1.json', 'book/coverage/checks/modules-landscape-invariance-source-review-v1.json', 'book/coverage/checks/modules-landscape-discounted-failure-source-review-v1.json', 'book/coverage/checks/modules-landscape-notation-source-review-v1.json', 'book/coverage/checks/modules-landscape-risk-budgets-source-review-v1.json', 'book/coverage/checks/modules-landscape-robust-radius-source-review-v1.json', 'book/coverage/checks/modules-landscape-stability-sets-source-review-v1.json', 'book/coverage/checks/modules-landscape-episode-counts-source-review-v1.json'} else ["The exact actual scalar source model and hypotheses stated by the individually reviewed declarations."],
+                hypotheses=unit.get("hypotheses",[]) if evidence["file"] in {'book/coverage/checks/modules-landscape-signed-cvar-source-review-v1.json', 'book/coverage/checks/modules-landscape-count-failure-source-review-v1.json', 'book/coverage/checks/modules-landscape-rare-spike-source-review-v1.json', 'book/coverage/checks/modules-landscape-invariance-source-review-v1.json', 'book/coverage/checks/modules-landscape-discounted-failure-source-review-v1.json', 'book/coverage/checks/modules-landscape-notation-source-review-v1.json', 'book/coverage/checks/modules-landscape-risk-budgets-source-review-v1.json', 'book/coverage/checks/modules-landscape-robust-radius-source-review-v1.json', 'book/coverage/checks/modules-landscape-stability-sets-source-review-v1.json', 'book/coverage/checks/modules-landscape-episode-counts-source-review-v1.json'} else ["The exact actual scalar source model and hypotheses stated by the individually reviewed declarations."],
                 independent_source_review=evidence,scope_limits=reviewed["limits"])
     offset_unit=next((row for row in offset_sector_review["material_units"] if row["source_unit_key"]==u["key"]),None)
     if offset_unit:
@@ -1839,6 +1856,16 @@ for u in INV["material_source_units"]:
             c.update(status="pending",remaining_gaps=body18_unit["missing_clauses"])
         c.update(kind=body18_unit["semantic_kind"],lean_declarations=[],hypotheses=[],
             correspondence=body18_unit["per_unit_reason"],independent_source_review=body18_evidence,scope_limits=body18_review["limits"])
+    ridge19_unit=next((row for row in ridge19_review["material_units"] if row["source_unit_key"]==u["key"]),None)
+    if ridge19_unit:
+        assert ridge19_unit["source_sha256"]==u["source_sha256"] and ridge19_unit["unit_text_sha256"]==u["text_sha256"] and ridge19_unit["source_text"]==u["source_text"]
+        if ridge19_unit["review_status"]=="approved_complete_source":
+            assert ridge19_unit["material_status"]=="proved" and not ridge19_unit["missing_clauses"]
+            c.update(status="proved",lean_declarations=ridge19_unit["lean_declarations"],remaining_gaps=[])
+        else:
+            assert ridge19_unit["material_status"]=="pending" and ridge19_unit["missing_clauses"]
+            c.update(status="pending",lean_declarations=[],remaining_gaps=ridge19_unit["missing_clauses"])
+        c.update(kind=ridge19_unit["semantic_kind"],hypotheses=ridge19_unit["hypotheses"],correspondence=ridge19_unit["per_unit_reason"],independent_source_review=ridge19_evidence,scope_limits=ridge19_review["limits"])
     material.append(c)
 
 # Additional proved material claims are tied to exact current units by phrase.
@@ -1886,6 +1913,17 @@ for i, (page, needle, statement, names) in enumerate(material_groups):
                           hypotheses=["The exact mathematical model and explicit declaration hypotheses."],
                           correspondence="Only the explicitly stated result is discharged; overlapping source units may contain other pending claims.", units=units))
 
+# Exact new generic ridge mathematical clauses mapped independently of pending full citation paragraphs.
+for row in ridge19_review["reviewed_clauses"]:
+    assert row["review_status"]=="approved_complete_source" and not row["missing_clauses"]
+    c=claim("modules::ridge19-"+row["id"],row["source_clause"],row["lean_declarations"],"proved",hypotheses=row["hypotheses"],correspondence=row["reason"],units=["toolkit-gp.html::node-232","toolkit-gp.html::node-233","toolkit-gp.html::node-234"])
+    c.update(independent_source_review=ridge19_evidence,scope_limits=ridge19_review["limits"])
+    material.append(c)
+
+from modules_reviews19_source33 import apply_reviews
+reviewed_work_integration19=apply_reviews(ROOT,INV,exercises,material)
+
+from lean_names import declarations as source_declarations
 proof_files = {}
 declarations = []
 referenced_names = {name for e in exercises for c in e["claims"] for name in c["lean_declarations"]}
@@ -1899,6 +1937,26 @@ for compile_manifest_path in sorted((ROOT/"book/coverage/checks").glob("modules*
         if (ROOT/r["file"]).exists() and r["exit_code"]==0 and digest(r["file"])==r["sha256"]:
             assert r["source_unchanged"] and digest(r["log"])==r["log_sha256"]
             compiled[r["file"]] = r
+# Keep actual import dependencies explicit even when no source clause names
+# one of their exports directly. Dependency inclusion does not approve a clause.
+required_own_sources=set()
+for p in sorted((ROOT/"verification/lean/SafeLearning").glob("CompleteModules*.lean")):
+    text=p.read_text()
+    ns=re.search(r"^namespace\s+(\S+)",text,re.M).group(1)
+    if any(name.startswith(ns+".") for name in referenced_names):
+        required_own_sources.add(str(p.relative_to(ROOT)))
+transitive_sources=set(required_own_sources)
+pending_dependencies=list(required_own_sources)
+while pending_dependencies:
+    current=pending_dependencies.pop()
+    for imported in re.findall(r"^import\s+(SafeLearning\.\S+)",(ROOT/current).read_text(),re.M):
+        dependency="verification/lean/"+imported.replace(".","/")+".lean"
+        if dependency not in transitive_sources:
+            transitive_sources.add(dependency)
+            pending_dependencies.append(dependency)
+required_own_sources.update(source for source in transitive_sources if Path(source).name.startswith("CompleteModules"))
+for source in required_own_sources:
+    assert source in compiled,("required actual import lacks current standalone success",source)
 for p in sorted((ROOT/"verification/lean/SafeLearning").glob("CompleteModules*.lean")):
     rel = str(p.relative_to(ROOT))
     sha = digest(rel)
@@ -1911,16 +1969,20 @@ for p in sorted((ROOT/"verification/lean/SafeLearning").glob("CompleteModules*.l
     ns = re.search(r"^namespace\s+(\S+)",text,re.M).group(1)
     # Successful but unmapped future work stays outside this ledger's audit
     # selection until an exact source component actually references it.
-    if not any(name.startswith(ns+".") for name in referenced_names):
+    if rel not in required_own_sources:
         continue
     proof_files[rel] = {"sha256":sha,
+                       "selection_scope":"direct_reviewed_reference" if any(name.startswith(ns+".") for name in referenced_names) else "required_transitive_import_only",
                        "standalone_compile_status":"passed" if record and record['sha256']==sha and record['exit_code']==0 else "not_yet_recorded_for_current_source",
                        "standalone_compile_evidence":record if record and record['sha256']==sha else None}
-    for match in re.finditer(r"^theorem\s+(\w+)",text,re.M):
-        end = text.find(":=",match.start())
-        declarations.append({"name":ns+"."+match.group(1),"file":rel,
-                             "line":text.count("\n",0,match.start())+1,
-                             "statement":text[match.start():end].strip()})
+    public_theorems={d['name'] for d in source_declarations(text) if d['kind']=='theorem'}
+    for name in sorted(public_theorems):
+        short=name.rsplit('.',1)[-1]
+        match=re.search(r"^\s*(?:@\[[^\n]*?\]\s*)*theorem\s+"+re.escape(short)+r"\b",text,re.M)
+        assert match,name
+        end=text.find(":=",match.start())
+        declarations.append({"name":name,"file":rel,"line":text.count("\n",0,match.start())+1,"statement":text[match.start():end].strip()})
+
     proof_files[rel]["declarations"] = [d["name"] for d in declarations if d["file"]==rel]
 
 out = {"schema_version":1,"generated_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -1928,6 +1990,8 @@ out = {"schema_version":1,"generated_at_utc":datetime.datetime.now(datetime.time
        "chapter_fragment_sha256":{f"book/chapters/{p}.html":digest(f"book/chapters/{p}.html") for p in PAGES},
        "proof_files":proof_files,"status":"active_partial_new_formal_components_and_explicit_complete_gap_queue",
        "exercises":exercises,"material_claims":material,"declarations":declarations,
+       "reviewed_work_integration19":reviewed_work_integration19,
+       "required_external_import_dependencies":{source:digest(source) for source in sorted(transitive_sources-required_own_sources)},
        "counts":{"exercises":len(exercises),"exercise_status":dict(collections.Counter(e['status'] for e in exercises)),
                  "exercise_claim_status":dict(collections.Counter(c['status'] for e in exercises for c in e['claims'])),
                  "material_claim_status":dict(collections.Counter(c['status'] for c in material)),
@@ -1987,15 +2051,16 @@ out["source_identity_rebases"].append({"correction_id":30,"manifest":CORRECTION3
 
 # Current global inventory and all prior/raw identities are checked without
 # changing original independent review decisions or their historical times.
-from modules_binding18_source31 import check_bindings
+from modules_binding19_source33 import check_bindings
 current_bindings=check_bindings(ROOT,out,INV)
-current_bindings_rel="book/coverage/checks/modules-source31-bindings18-v2.json"
+current_bindings_rel="book/coverage/checks/modules-source33-bindings19-v1.json"
 (ROOT/current_bindings_rel).write_text(json.dumps(current_bindings,indent=2,ensure_ascii=False)+"\n")
-out["inventory_identity_rebase31"]=current_bindings["inventory_identity_rebase"]
+out["inventory_identity_rebase32"]=current_bindings["inventory_identity_rebase32"]
+out["inventory_identity_rebase33"]=current_bindings["inventory_identity_rebase"]
 out["current_inventory"]=current_bindings["current_inventory"]
 out["current_inventory_sha256"]=current_bindings["current_inventory_sha256"]
 out["current_identity_binding_validation"]={"file":current_bindings_rel,"sha256":digest(current_bindings_rel),
-    "status":current_bindings["status"],"validator":"book/coverage/modules_binding18_source31.py",
-    "validator_sha256":digest("book/coverage/modules_binding18_source31.py")}
+    "status":current_bindings["status"],"validator":"book/coverage/modules_binding19_source33.py",
+    "validator_sha256":digest("book/coverage/modules_binding19_source33.py")}
 (ROOT/"book/coverage/modules.json").write_text(json.dumps(out,indent=2,ensure_ascii=False)+"\n")
 print(json.dumps(out["counts"],indent=2))

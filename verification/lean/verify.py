@@ -13,9 +13,12 @@ import re
 import shutil
 import subprocess
 import time
+import sys
 
 PROJECT = Path(__file__).resolve().parent
 ROOT = PROJECT.parent.parent
+sys.path.insert(0, str(ROOT / "book/coverage"))
+from lean_names import declarations as source_declarations, without_comments
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output', type=Path, default=ROOT / 'reports/lean-verification',
                     help='Report directory; use a separate directory for a new source revision.')
@@ -61,23 +64,19 @@ site_files = sorted(p for p in (ROOT / 'SafeLearning').iterdir()
 project_files = [PROJECT / name for name in
                  ['SafeLearning.lean', 'lean-toolchain', 'lakefile.toml', 'lake-manifest.json', 'verify.py']]
 initial_hashes = {str(p.relative_to(ROOT)): sha(p)
-                  for p in proof_files + site_files + project_files}
+                  for p in proof_files + site_files + project_files + [ROOT / "book/coverage/lean_names.py"]}
 declarations = []
 for p in proof_files:
     source = p.read_text()
-    # These files use one top-level namespace each. Reject ambiguous changes.
-    namespaces = re.findall(r'^namespace\s+(\S+)', source, re.M)
-    if len(namespaces) != 1:
-        raise RuntimeError(f'Expected one namespace in {p}')
-    bare = re.sub(r'/\-.*?\-/', '', source, flags=re.S)
-    bare = re.sub(r'--[^\n]*', '', bare)
+    indexed = source_declarations(source)
+    bare = without_comments(source)
     forbidden = re.findall(r'\b(?:sorry|admit|axiom|unsafe|native_decide|implemented_by|run_elab)\b|'
                            r'ofReduceBool|sorryAx', bare)
     if forbidden:
         raise RuntimeError(f'Forbidden proof escape in {p}: {forbidden}')
-    for m in re.finditer(r'^(?:theorem|lemma)\s+([^\s({:]+)', bare, re.M):
-        declarations.append({'name': namespaces[0] + '.' + m.group(1),
-                             'file': str(p.relative_to(ROOT))})
+    for record in indexed:
+        if record['kind'] in {'theorem', 'lemma'}:
+            declarations.append({'name': record['name'], 'file': str(p.relative_to(ROOT))})
 
 checks = []
 checks.append(run(['lean', '--version'], 'lean-version.txt'))
@@ -272,7 +271,7 @@ if unexpected:
     raise RuntimeError(f'Unexpected axiom dependencies: {unexpected}')
 
 final_hashes = {str(p.relative_to(ROOT)): sha(p)
-                for p in proof_files + site_files + project_files}
+                for p in proof_files + site_files + project_files + [ROOT / "book/coverage/lean_names.py"]}
 if initial_hashes != final_hashes:
     raise RuntimeError('Proof, project or site source changed during verification; rerun after edits finish.')
 if dependency_environment() != dependency_environment_identity:

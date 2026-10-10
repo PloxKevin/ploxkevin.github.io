@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import sys
+from lean_names import declarations as source_declarations
 
 ROOT=Path(__file__).resolve().parents[2]
 CLAIM_STATUSES={'proved','definition_encoded','not_a_formal_claim','open_problem_statement','pending'}
@@ -34,15 +35,16 @@ def validate():
         if path.name=='Smoke.lean':
             continue
         text=path.read_text()
-        ns=re.findall(r'^namespace\s+(\S+)',text,re.M)
-        if len(ns)!=1:
-            errors.append(f'{path.name}: expected one namespace')
+        try:
+            indexed=source_declarations(text)
+        except ValueError as error:
+            errors.append(f'{path.name}: {error}')
             continue
-        # Named instances are declarations too; anonymous binder syntax does
-        # not supply a source-level name that a claim can reference.
-        for kind,name in re.findall(r'^(theorem|lemma|def|abbrev|structure|inductive|instance)\s+([^\s({:\[]+)',text,re.M):
-            full=ns[0]+'.'+name
-            declarations[full]=dict(file=str(path.relative_to(ROOT)),kind=kind)
+        for record in indexed:
+            full=record['name']
+            if full in declarations:
+                errors.append(f'{path.name}: duplicate local declaration {full}')
+            declarations[full]=dict(file=str(path.relative_to(ROOT)),kind=record['kind'])
         proofs[str(path.relative_to(ROOT))]=digest(path)
     for source,expected in inv['source_sha256'].items():
         if digest(ROOT/source)!=expected:

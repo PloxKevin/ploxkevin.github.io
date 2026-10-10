@@ -11,8 +11,13 @@ import hashlib
 import json
 import re
 import argparse
+from core_policy_components import integrate as integrate_policy_components
+from core_labels19 import integrate as integrate_labels19
+from core_tailrisk_components19 import integrate as integrate_tailrisk19
+from core_identity44 import current_review, verify_overlap_parent
 from core_path_reviews import (verify_inventory31_identity,
                               integrate_literal_path_reviews,
+                              integrate_policy_performance_review,
                               integrate_instructional_labels)
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,14 +26,17 @@ parser.add_argument('--without-overlap-review', action='store_true',
                     help='Generate candidate parent claims without promoting material overlaps.')
 args = parser.parse_args()
 
+def sha(name):
+    return hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+
 def reviewed_path(name):
     original = ROOT/'book/coverage/checks'/name
     selected = original
-    for correction in (12, 14, 15, 20, 22, 24, 25, 28, 31):
+    for correction in (12, 14, 15, 20, 22, 24, 25, 28, 31, 32, 33):
         rebased = original.with_name(original.stem+f'-correction{correction}-rebase.json')
         if rebased.exists():
             selected = rebased
-    return selected
+    return current_review(ROOT, selected, sha)
 
 INV = json.loads((ROOT/'book/coverage/inventory.json').read_text())
 PAGES = {'barriers','case-studies','cmdp','lyapunov-mpc','policy-optimization',
@@ -376,9 +384,6 @@ for review_name in ['lyapunov-exercise-models-source-review.json',
             sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
             nonformal_scope_clauses=record.get('nonformal_scope_clauses',[]))
 
-def sha(p):
-    return hashlib.sha256((ROOT/p).read_bytes()).hexdigest()
-
 practice_hypotheses = {
     'policy-optimization.html#exercise-9-p1': ['The source one-state two-action values and actual normalized old/new PMFs. All averages are genuine integrals under those laws; no discounted whole-controller return is identified with a single-state advantage average.'],
     'policy-optimization.html#exercise-9-p2': ['The exact two strictly positive finite PMFs and natural logarithms. The forward/reverse KL witnesses are genuine log density-ratio integrals; no unsupported-action density or global equivalence between KL and total variation is inferred.'],
@@ -540,6 +545,7 @@ for component_name in [('barrier-ac-issf-component-source-review-v6.json'
                         else 'barrier-ac-issf-component-source-review-v5.json'),
                        'lyapunov-validation-11-3-component-source-review-v3.json']:
     component_path = ROOT/'book/coverage/checks'/component_name
+    component_path = current_review(ROOT, component_path, sha)
     if not component_path.exists():
         continue
     review = json.loads(component_path.read_text())
@@ -637,7 +643,7 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
         raise ValueError('Unapproved finite CMDP component review: '+component_name)
     if sha('book/coverage/inventory.json') != review['inventory_sha256']:
         raise ValueError('Stale finite CMDP component inventory: '+component_name)
-    if 'inventory_identity_rebase_correction31' in review:
+    if any(f'inventory_identity_rebase_correction{c}' in review for c in (31, 32, 33)):
         confirmation_name = verify_inventory31_identity(ROOT, review, component_path, sha)
     elif 'inventory_identity_rebase_correction28' in review:
         confirmation_name = 'book/coverage/checks/core-cmdp-source28-inventory-identity-rebase-independent-foundations-confirmation.json'
@@ -719,7 +725,7 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
             sha256=sha(str(component_path.relative_to(ROOT))),
             component_ids=[c['id'] for c in components],
             limits=review['limits'])
-        if any(f'inventory_identity_rebase_correction{c}' in review for c in (28, 31)):
+        if any(f'inventory_identity_rebase_correction{c}' in review for c in (28, 31, 32, 33)):
             MAP[key]['source_review']['inventory_identity_confirmation'] = dict(
                 file=confirmation_name, sha256=sha(confirmation_name))
     units = {u['key']:u for u in INV['material_source_units']}
@@ -756,7 +762,11 @@ for component_name in ['finite-cmdp-occupancy-source-components-review-v1.json',
                 h for i in ids for h in components[i]['hypotheses'])))))
 
 integrate_literal_path_reviews(ROOT, INV, reviewed_path, sha, add, MAP, DIRECT_MATERIAL)
+integrate_policy_performance_review(ROOT, INV, reviewed_path, sha, add, MAP, DIRECT_MATERIAL)
 integrate_instructional_labels(ROOT, INV, sha, DIRECT_MATERIAL)
+integrate_labels19(ROOT, INV, sha, DIRECT_MATERIAL)
+POLICY_COMPONENT_PROOFS = integrate_policy_components(ROOT, INV, sha, add, MAP, DIRECT_MATERIAL, CMDP_COMPONENT_MATERIAL)
+TAILRISK_COMPONENT_PROOFS = integrate_tailrisk19(ROOT, INV, sha, add, MAP, DIRECT_MATERIAL, CMDP_COMPONENT_MATERIAL)
 
 confidence_path = reviewed_path('lyapunov-confidence-source-review.json')
 if confidence_path.exists():
@@ -840,6 +850,7 @@ for checkpoint in (8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19):
         overlap_path = candidate_review
 overlaps = {}
 if overlap_path.exists() and not args.without_overlap_review:
+    overlap_path = current_review(ROOT, overlap_path, sha)
     review = json.loads(overlap_path.read_text())
     candidate_path = review['candidate_source']
     if sha(candidate_path) != review['candidate_sha256']:
@@ -877,7 +888,7 @@ if overlap_path.exists() and not args.without_overlap_review:
                 owner['text_sha256'] != record['exercise_text_sha256']):
             raise ValueError('Changed overlap source: '+key)
         parent_hash = hashlib.sha256(json.dumps(owner['claims'], sort_keys=True).encode()).hexdigest()
-        if parent_hash != record['reviewed_parent_claims_sha256']:
+        if parent_hash != record['reviewed_parent_claims_sha256'] and not ('source44_identity_provenance' in review and verify_overlap_parent(ROOT, record, owner, sha)):
             raise ValueError('Changed independently reviewed parent claims: '+key)
         parent_refs = {n for c in owner['claims'] for n in c['lean_declarations']}
         if material_status == 'proved':
@@ -977,10 +988,16 @@ for name in ['CompleteAlternatingCMDP','CompleteAlternatingCMDPReturns',
              'CompleteFiniteControlledPathMeasure','CompleteFiniteControlledPathMeasureLaws',
              'CompleteFiniteMarkovPathCorrespondence','CompleteFiniteHistoryPathLinearProgram',
              'CompleteFinitePathOccupancyReindex','CompleteFinitePathAbsoluteRewardBound',
+             'CompleteFinitePolicyNeumann','CompleteFinitePolicyValues',
+             'CompleteFinitePolicyPerformance','CompleteFinitePolicyTrajectorySeries',
+             'CompleteFinitePolicyExample','CompleteFinitePolicySeriesConsequences',
+             'CompleteFinitePolicySurrogateConsequences',
              'CompleteLyapunovValidationNumbers','CompleteLyapunovValidationConfidence',
              'CompleteLyapunovAdaptiveValidation','CompleteLyapunovTrajectoryValidation']:
     source = f'verification/lean/SafeLearning/{name}.lean'
     proof_files[source] = sha(source)
+proof_files.update(POLICY_COMPONENT_PROOFS)
+proof_files.update(TAILRISK_COMPONENT_PROOFS)
 out=dict(schema_version=1,owner='core',status='in_progress_partial_coverage',
     generated_at_utc=datetime.now(timezone.utc).isoformat(),scope_pages=sorted(SOURCES),
     source_sha256={s:INV['source_sha256'][s] for s in sorted(SOURCES)},proof_files=proof_files,
