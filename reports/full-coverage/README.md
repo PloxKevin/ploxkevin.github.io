@@ -36,8 +36,11 @@ four archive patterns after its unexecuted draft was frozen; its old snapshot an
 actual first-run bytes are both preserved under Root's exact single-file authorization.
 Original semantic bodies, hypotheses, commands, failed/passing outputs and times remain unchanged.
 
-Checkpoint25 has passed the local audit and awaits an actual GitHub Pages build and
-live asset checks. Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
+Checkpoint 25 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/e5bcce293af4c259f34804b12e3eacb75a472e71).
+The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38116071263)
+completed successfully, and [live delivery](live-checkpoint-25-attempt1.json)
+matched all 31 book asset hashes and the built commit exactly.
+Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Full external references retain their separate attribution scope.
 
 From the published repository root, reproduce checks into NEW output paths:
