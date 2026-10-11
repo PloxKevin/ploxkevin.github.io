@@ -1,0 +1,265 @@
+{
+  "status": "passed_independent_actual_scalar_scenario_support_components_future23",
+  "reviewed_by": "/root/config21_next",
+  "started_at_utc": "2026-10-11T00:37:16.418079+00:00",
+  "reviewed_at_utc": "2026-10-11T00:37:16.658906+00:00",
+  "request": {
+    "file": "/tmp/applied-lyapunov-scenario-support23-independent-review-request-v1.json",
+    "sha256": "b04520ef934d3d4f4e74a9d9dd027c9ced3473e6d8cc52465687517b079f4023"
+  },
+  "original_request_created_at_utc": "2026-10-11T00:36:15.634982+00:00",
+  "prior25_body_peer": {
+    "file": "/tmp/lyapunov-scenario-validation23-independent-foundations-components-review-v2.json",
+    "sha256": "e4b152e9cdb7908ea0b46ac85e58a38d90212861152a5be1918a26c09f8d1ded"
+  },
+  "actual_checker": "/tmp/review-lyapunov-scenario-support23-independent-foundations-v1.py",
+  "actual_checker_sha256": "54050730cf4d1e7d8f01d0f13e3c7b40d3f07990393d7cbfa879640e77adb628",
+  "errors": [],
+  "full_source_and_all_nine_bodies": "import SafeLearning.CompleteFoundationsIndependentTrials\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set MeasureTheory ProbabilityTheory\nopen scoped BigOperators\n\nnamespace SafeLearning.CompleteLyapunovScenarioSupport23\n\ndef sampleMaximum {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) : ℝ :=\n  Finset.univ.sup' Finset.univ_nonempty s\n\ndef sampledFeasible {ι : Type*} (s : ι → ℝ) : Set ℝ := {x | ∀ i, s i ≤ x}\n\n/-- Removing this constraint genuinely permits a smaller objective value. -/\ndef supporting {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) (i : ι) : Prop :=\n  ∃ x : ℝ, (∀ j, j ≠ i → s j ≤ x) ∧ x < sampleMaximum s\n\ntheorem actual_scalar_scenario_optimizer_is_the_sample_maximum\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) :\n    IsLeast (sampledFeasible s) (sampleMaximum s) := by\n  classical\n  constructor\n  · intro i\n    exact Finset.le_sup' s (Finset.mem_univ i)\n  · intro x hx\n    exact (Finset.sup'_le_iff Finset.univ_nonempty s).mpr (fun i _ => hx i)\n\ntheorem actual_scalar_scenario_optimizer_is_unique\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) (x : ℝ)\n    (hx : IsLeast (sampledFeasible s) x) : x = sampleMaximum s :=\n  hx.unique (actual_scalar_scenario_optimizer_is_the_sample_maximum s)\n\ntheorem actual_sample_maximum_is_attained_by_a_sample\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) :\n    ∃ i, sampleMaximum s = s i := by\n  classical\n  obtain ⟨i, _, hi⟩ := Finset.exists_mem_eq_sup' Finset.univ_nonempty s\n  exact ⟨i, hi⟩\n\ntheorem actual_support_constraint_is_a_strict_unique_maximum\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) (i : ι)\n    (hi : supporting s i) : sampleMaximum s = s i ∧ ∀ j, j ≠ i → s j < s i := by\n  obtain ⟨x, hx, hxm⟩ := hi\n  obtain ⟨k, hk⟩ := actual_sample_maximum_is_attained_by_a_sample s\n  have hki : k = i := by\n    by_contra h\n    have hle := hx k h\n    rw [← hk] at hle\n    exact (not_le_of_gt hxm) hle\n  have he : sampleMaximum s = s i := hki ▸ hk\n  refine ⟨he, ?_⟩\n  intro j hj\n  have hl := hx j hj\n  rw [he] at hxm\n  exact hl.trans_lt hxm\n\ntheorem actual_strict_unique_maximum_is_a_support_constraint\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) (i : ι)\n    (hi : ∀ j, j ≠ i → s j < s i) : supporting s i := by\n  classical\n  have hm : sampleMaximum s = s i := by\n    apply le_antisymm\n    · exact (Finset.sup'_le_iff Finset.univ_nonempty s).mpr (fun j _ => by\n        by_cases hji : j = i\n        · exact hji ▸ le_rfl\n        · exact (hi j hji).le)\n    · exact (actual_scalar_scenario_optimizer_is_the_sample_maximum s).1 i\n  by_cases he : (Finset.univ.erase i : Finset ι).Nonempty\n  · refine ⟨(Finset.univ.erase i).sup' he s, ?_, ?_⟩\n    · intro j hj\n      exact Finset.le_sup' s (Finset.mem_erase.mpr ⟨hj, Finset.mem_univ j⟩)\n    · rw [hm]\n      exact (Finset.sup'_lt_iff he).mpr (fun j hj => hi j (Finset.mem_erase.mp hj).1)\n  · refine ⟨s i - 1, ?_, ?_⟩\n    · intro j hj\n      exact False.elim (he ⟨j, Finset.mem_erase.mpr ⟨hj, Finset.mem_univ j⟩⟩)\n    · rw [hm]\n      linarith\n\ntheorem actual_at_most_one_sample_constraint_is_supporting\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ) :\n    Set.Subsingleton {i | supporting s i} := by\n  intro i hi j hj\n  by_contra hij\n  have hji := (actual_support_constraint_is_a_strict_unique_maximum s i hi).2 j (Ne.symm hij)\n  have hij' := (actual_support_constraint_is_a_strict_unique_maximum s j hj).2 i hij\n  exact (not_lt_of_ge hij'.le) hji\n\ntheorem actual_support_sample_count_is_at_most_one\n    {ι : Type*} [Fintype ι] [Nonempty ι] (s : ι → ℝ)\n    [DecidablePred (supporting s)] :\n    (Finset.univ.filter (supporting s)).card ≤ 1 := by\n  apply Finset.card_le_one.mpr\n  intro i hi j hj\n  exact actual_at_most_one_sample_constraint_is_supporting s\n    (Finset.mem_filter.mp hi).2 (Finset.mem_filter.mp hj).2\n\ntheorem actual_sample_maximum_threshold_event_is_exactly_all_misses\n    {Ω ι : Type*} [Fintype ι] [Nonempty ι] (X : ι → Ω → ℝ) (q : ℝ) :\n    {w | sampleMaximum (fun i => X i w) ≤ q} = ⋂ i, {w | q < X i w}ᶜ := by\n  classical\n  ext w\n  simp only [Set.mem_setOf_eq, Set.mem_iInter, Set.mem_compl_iff, not_lt,\n    sampleMaximum, Finset.sup'_le_iff, Finset.mem_univ, forall_const]\n\ntheorem actual_independent_scalar_scenario_threshold_failure_probability\n    {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) [IsProbabilityMeasure P]\n    (n : ℕ) [NeZero n] (X : Fin n → Ω → ℝ) (q epsilon : ℝ)\n    (hX : ∀ i, MeasurableSet {w | q < X i w})\n    (hind : iIndepSet (fun i => {w | q < X i w}) P)\n    (he : ∀ i, P.real {w | q < X i w} = epsilon)\n    (hepsilon : epsilon ∈ Icc (0 : ℝ) 1) :\n    P.real {w | sampleMaximum (fun i => X i w) ≤ q} = (1-epsilon)^n ∧\n      P.real {w | sampleMaximum (fun i => X i w) ≤ q} ≤ Real.exp (-epsilon*n) := by\n  rw [actual_sample_maximum_threshold_event_is_exactly_all_misses X q]\n  exact CompleteFoundationsIndependentTrials.actual_independent_events_have_the_true_all_miss_probability_and_exponential_bound\n    P n (fun i => {w | q < X i w}) epsilon hX hind hepsilon he\n\nend SafeLearning.CompleteLyapunovScenarioSupport23\n",
+  "source": {
+    "file": "/tmp/CompleteLyapunovScenarioSupport23.lean",
+    "sha256": "038615c0dacea25bfb8eb28b4770ac8f523a290ec20e1804f3848194f95ba38d"
+  },
+  "public_theorem_names": [
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_at_most_one_sample_constraint_is_supporting",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_independent_scalar_scenario_threshold_failure_probability",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_sample_maximum_is_attained_by_a_sample",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_sample_maximum_threshold_event_is_exactly_all_misses",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_scalar_scenario_optimizer_is_the_sample_maximum",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_scalar_scenario_optimizer_is_unique",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_strict_unique_maximum_is_a_support_constraint",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_support_constraint_is_a_strict_unique_maximum",
+    "SafeLearning.CompleteLyapunovScenarioSupport23.actual_support_sample_count_is_at_most_one"
+  ],
+  "component_decisions": [
+    {
+      "component_id": "actual_lower_bound_scalar_linear_scenario_optimizer",
+      "approved": true,
+      "status": "approved_complete_precise_scalar_support_component",
+      "original_component_unchanged": {
+        "component_id": "actual_lower_bound_scalar_linear_scenario_optimizer",
+        "lean_declarations": [
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_scalar_scenario_optimizer_is_the_sample_maximum",
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_scalar_scenario_optimizer_is_unique",
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_sample_maximum_is_attained_by_a_sample"
+        ],
+        "hypotheses": [
+          "Arbitrary nonempty finite sample index set; arbitrary real sampled lower bounds. The actual program minimizes the scalar objective x subject to every sampled inequality s_i≤x."
+        ],
+        "per_component_reason": "The actual feasible set is defined from all sampled constraints. Its attained unique least scalar objective is derived to equal the finite sample maximum; the optimizer and attainment are not assumed."
+      },
+      "independent_reason": "The actual nonempty finite scalar sampled lower-bound feasible set is defined, and its attained unique least objective is derived as the sample maximum using genuine finite sup inequalities. No optimizer is assumed in the hypotheses.",
+      "whole_exercise_or_material_unit_approved": false
+    },
+    {
+      "component_id": "actual_at_most_one_supporting_sample_in_this_scalar_program",
+      "approved": true,
+      "status": "approved_complete_precise_scalar_support_component",
+      "original_component_unchanged": {
+        "component_id": "actual_at_most_one_supporting_sample_in_this_scalar_program",
+        "lean_declarations": [
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_support_constraint_is_a_strict_unique_maximum",
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_strict_unique_maximum_is_a_support_constraint",
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_at_most_one_sample_constraint_is_supporting",
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_support_sample_count_is_at_most_one"
+        ],
+        "hypotheses": [
+          "A sample is supporting precisely when removing its inequality permits an objective strictly below the original sample maximum.",
+          "Arbitrary nonempty finite scalar lower-bound program; tied maxima are allowed."
+        ],
+        "per_component_reason": "Supporting constraints are proved equivalent to strict unique maxima. At most one supports the program; with ties at the maximum no constraint supports it. This is a genuine scalar program result, not a conclusion assumed from the variable count."
+      },
+      "independent_reason": "Removing a constraint permits a smaller objective exactly when that sample is the strict unique maximum. The proof handles the singleton remaining-empty case and tied maxima explicitly. Uniqueness derives a subsingleton supporting set and the cardinality≤1 result; this is limited to this scalar program.",
+      "whole_exercise_or_material_unit_approved": false
+    },
+    {
+      "component_id": "actual_fixed_threshold_missed_region_probability",
+      "approved": true,
+      "status": "approved_complete_precise_scalar_support_component",
+      "original_component_unchanged": {
+        "component_id": "actual_fixed_threshold_missed_region_probability",
+        "lean_declarations": [
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_sample_maximum_threshold_event_is_exactly_all_misses",
+          "SafeLearning.CompleteLyapunovScenarioSupport23.actual_independent_scalar_scenario_threshold_failure_probability"
+        ],
+        "hypotheses": [
+          "The threshold q is fixed before sampling. There are n>0 real sample coordinates; the events {q<X_i} are measurable, mutually independent, and each has actual probability epsilon in[0,1]."
+        ],
+        "per_component_reason": "The event that the actual sample optimizer is at most q is proved equal to missing all fixed strict-upper-tail events. The selected genuine independent-event law derives exact probability (1-epsilon)^n and exponential upperbound. Independence and the actual common event probability are explicit."
+      },
+      "independent_reason": "For a fixed threshold q, the actual sample-maximum≤q event equals missing every strict-upper-tail event. Explicit measurable mutually independent equal-probability tail events give the exact all-miss probability and exponential bound through the retained genuine dependency. This is not a random optimizer violation-probability scenario theorem.",
+      "whole_exercise_or_material_unit_approved": false
+    }
+  ],
+  "exact_entire_exercise_and_answer_a": {
+    "key": "lyapunov-mpc.html::exercise-19",
+    "source": "SafeLearning/lyapunov-mpc.html",
+    "ordinal": 19,
+    "locator": "::exercise-19",
+    "anchor": null,
+    "line": 954,
+    "label": "Exercise 11.4 — Scenario design and validation, numerically",
+    "level": null,
+    "source_sha256": "ad1afbe557c64272f1dd92abc452280cc661226de972ee57f4985273eec2b8d9",
+    "source_text": "\n      \n        Exercise 11.4 — Scenario design and validation, numerically\n      \n      \n        (a) For $d=1$ show that the Campi–Garatti bound reduces to $(1-\\epsilon)^N\\le\\beta$; compute $N$ for $\\epsilon=0.05$, $\\beta=10^{-3}$. (b) A common-Lyapunov LMI with $d_x=2$, $d_u=1$ has $n_k=2d_x^2+d_xd_u$ variables. For $\\epsilon=0.05$, $\\beta=10^{-5}$ compare the exact scenario sample size (calculator) with the sufficient formula. (c) For validation with $\\alpha=0.01$, $\\epsilon_{\\mathrm{val}}=0.02$, compute $M_{\\mathrm{val}}$ with the corrected and the misprinted rule; what confidence does the misprinted size give? (d) With $c=0.95$, $\\epsilon=0.05$ and (c), what does the corrected theorem guarantee?\n        \n          Show answer\n          \n            (a) Only the term $i=0$ remains: $(1-\\epsilon)^N\\le\\beta\\iff N\\ge\\ln(1/\\beta)/(-\\ln(1-\\epsilon))=6.9078/0.051293=134.7$, so $N=135$. With one variable only one sample can support the solution, and a violation above $\\epsilon$ needs all $N$ samples to miss an $\\epsilon$-mass region.\n            (b) $n_k=10$. The binomial tail first drops below $10^{-5}$ at $N=581$ ($9.67\\cdot10^{-6}$; at $580$ it is $1.003\\cdot10^{-5}$); the sufficient formula gives $\\lceil40(\\ln10^5+10)\\rceil=861$, about 48% more.\n            (c) Corrected: $\\ln100/(2\\cdot0.02^2)=5756.5$, so $5757$. Misprinted: $\\ln100/(2\\cdot0.02)=115.1$, so $116$, for which $e^{-2\\cdot116\\cdot0.02^2}=e^{-0.0928}=0.911$: so Hoeffding certifies a confidence of only $1-0.911\\approx9\\%$, not $99\\%$ (a lower bound from this inequality, not the actual confidence of the procedure).\n            (d) With probability at least $0.99$ over the validation samples, the posterior probability that $K^\\ast$ stabilises the true linearisation is at least $0.95-0.05-0.02=0.88$: a Bayesian statement, as good as the GP posterior.\n          \n        \n      \n    ",
+    "text_sha256": "45902f4662a47056e44972868ccaefc96dc9897ddf22a665db002e232a242f9f"
+  },
+  "exact_material_rows": [
+    {
+      "source_unit_key": "lyapunov-mpc.html::node-1397",
+      "entire_inventory_record": {
+        "key": "lyapunov-mpc.html::node-1397",
+        "source": "SafeLearning/lyapunov-mpc.html",
+        "locator": "::node-1397",
+        "line": 963,
+        "tag": "p",
+        "classes": [],
+        "source_text": "(a) Only the term $i=0$ remains: $(1-\\epsilon)^N\\le\\beta\\iff N\\ge\\ln(1/\\beta)/(-\\ln(1-\\epsilon))=6.9078/0.051293=134.7$, so $N=135$. With one variable only one sample can support the solution, and a violation above $\\epsilon$ needs all $N$ samples to miss an $\\epsilon$-mass region.",
+        "text_sha256": "bc2e0ea36560e164ac27fa612d87154bb548837514ed9f544902b888d600ad0d",
+        "source_sha256": "ad1afbe557c64272f1dd92abc452280cc661226de972ee57f4985273eec2b8d9",
+        "inventory_kind": "source_unit_needs_claim_review"
+      },
+      "whole_unit_approved": false,
+      "missing_clauses": [
+        "The source states a general one-variable scenario theorem, whereas this supplement proves the actual scalar lower-bound program.",
+        "The fixed-threshold tail-miss identity is not a proof that the random scenario optimizer has violation probability above epsilon with probability (1-epsilon)^n for arbitrary convex programs/distributions.",
+        "Original logarithm and ratio finite-decimal exact equalities remain false."
+      ]
+    }
+  ],
+  "original_actual_standalone_record": {
+    "file": "/tmp/applied-lyapunov-scenario-support23-trial2.json",
+    "sha256": "4251e91a98095e9e27a19c72fff841c4adb776a6cc983c602713c5276dffb76f"
+  },
+  "entire_original_actual_record": {
+    "status": "actual_standalone_lean_execution",
+    "actual_command": [
+      "lake",
+      "env",
+      "lean",
+      "/tmp/applied-lyapunov-scenario-support23-trial2-source.lean"
+    ],
+    "cwd": "/home/oxrexkevin/SafetyBased/verification/lean",
+    "started_at": "2026-10-11T00:35:13.610216+00:00",
+    "completed_at": "2026-10-11T00:35:19.571329+00:00",
+    "actual_exit_code": 0,
+    "source_file": "/tmp/applied-lyapunov-scenario-support23-trial2-source.lean",
+    "source_sha256_before": "038615c0dacea25bfb8eb28b4770ac8f523a290ec20e1804f3848194f95ba38d",
+    "source_sha256_after": "038615c0dacea25bfb8eb28b4770ac8f523a290ec20e1804f3848194f95ba38d",
+    "working_source_file": "/tmp/CompleteLyapunovScenarioSupport23.lean",
+    "working_source_sha256_after": "038615c0dacea25bfb8eb28b4770ac8f523a290ec20e1804f3848194f95ba38d",
+    "raw_log_file": "/tmp/applied-lyapunov-scenario-support23-trial2.log",
+    "raw_log_sha256": "723b77d4356b57a2a3b39fc2b778acba21e635d18ee7a7b4ade733c138244a91",
+    "runner_file": "/tmp/run-lyapunov-scenario-support23-trial.py",
+    "runner_sha256": "4260fede16dda0b8249f9d5028202e615748915037344158543b7f09fb4b10e9"
+  },
+  "source_snapshot": {
+    "file": "/tmp/applied-lyapunov-scenario-support23-trial2-source.lean",
+    "sha256": "038615c0dacea25bfb8eb28b4770ac8f523a290ec20e1804f3848194f95ba38d"
+  },
+  "genuine_nonempty_warning_log": {
+    "file": "/tmp/applied-lyapunov-scenario-support23-trial2.log",
+    "sha256": "723b77d4356b57a2a3b39fc2b778acba21e635d18ee7a7b4ade733c138244a91"
+  },
+  "all_original_failed_trials": [
+    {
+      "record": {
+        "file": "/tmp/applied-lyapunov-scenario-support23-trial1.json",
+        "sha256": "8ac89651b751365c1347eee9ae900c3559e9eb79feaf4a2f5abf8477bc504f09"
+      },
+      "entire_original_record": {
+        "status": "actual_standalone_lean_execution",
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "/tmp/applied-lyapunov-scenario-support23-trial1-source.lean"
+        ],
+        "cwd": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "started_at": "2026-10-11T00:34:51.022349+00:00",
+        "completed_at": "2026-10-11T00:34:58.050648+00:00",
+        "actual_exit_code": 1,
+        "source_file": "/tmp/applied-lyapunov-scenario-support23-trial1-source.lean",
+        "source_sha256_before": "9ff3869203e045d86c76da0d558f030a536516a819f5886efc612c22edededa7",
+        "source_sha256_after": "9ff3869203e045d86c76da0d558f030a536516a819f5886efc612c22edededa7",
+        "working_source_file": "/tmp/CompleteLyapunovScenarioSupport23.lean",
+        "working_source_sha256_after": "9ff3869203e045d86c76da0d558f030a536516a819f5886efc612c22edededa7",
+        "raw_log_file": "/tmp/applied-lyapunov-scenario-support23-trial1.log",
+        "raw_log_sha256": "533c2bb4c34e071b37bcafa959aa2ad7df1432f1766a2934816045c7dd15cca6",
+        "runner_file": "/tmp/run-lyapunov-scenario-support23-trial.py",
+        "runner_sha256": "4260fede16dda0b8249f9d5028202e615748915037344158543b7f09fb4b10e9"
+      },
+      "source_snapshot": {
+        "file": "/tmp/applied-lyapunov-scenario-support23-trial1-source.lean",
+        "sha256": "9ff3869203e045d86c76da0d558f030a536516a819f5886efc612c22edededa7"
+      },
+      "raw_log": {
+        "file": "/tmp/applied-lyapunov-scenario-support23-trial1.log",
+        "sha256": "533c2bb4c34e071b37bcafa959aa2ad7df1432f1766a2934816045c7dd15cca6"
+      },
+      "failure_description": "Original trial1: sup_lt implicit argument mismatch and Ne.symm syntax. Exact failed bytes retained."
+    }
+  ],
+  "selected_dependency_exact": {
+    "source_file": "verification/lean/SafeLearning/CompleteFoundationsIndependentTrials.lean",
+    "sha256": "f1982f6dd0437c60d927ad2b21be7a1278ca42cc59488b48e20fa963ab4e7c2a",
+    "entire_selected21_row": {
+      "sha256": "f1982f6dd0437c60d927ad2b21be7a1278ca42cc59488b48e20fa963ab4e7c2a",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "evidence_sha256": {
+        "book/coverage/checks/foundations-held19/source33-originals/foundations-independent-trials-trial2.json": "0c783e18e956728651f4fc712382526c0bddb093bb02d6ae3d2d69231085ea10",
+        "book/coverage/checks/foundations-held19/source33-originals/foundations-independent-trials-trial2.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "reports/full-coverage/lean-checkpoint-19/verification-original.json": "d2686b31be70326e95d63161487add696786b5e6c02a8cc74ea766f498df45bc",
+        "reports/full-coverage/lean-checkpoint-20/verification-original.json": "29cd0e2daf8cceb0afcfd52fc2288e7cb7303e887bb7b13725e1aa7997e533ca"
+      },
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "SafeLearning/CompleteFoundationsIndependentTrials.lean"
+      ],
+      "actual_workdir": "verification/lean",
+      "original_execution_times": {
+        "started_at_utc": "2026-10-10T05:23:35.150378+00:00",
+        "finished_at_utc": "2026-10-10T05:23:40.512189+00:00"
+      },
+      "imports": [
+        "SafeLearning.CompleteFoundationsExponentialLesson"
+      ],
+      "local_import_dependency_sha256": {
+        "verification/lean/SafeLearning/CompleteFoundationsExponentialLesson.lean": "4478d3e3adea5fee94973c3067237803fd5c6ea087c9d2b84b8d36337bfeb116"
+      },
+      "selection_role": "new_mapped_foundation_proof_with_actual_source_matched_standalone_zero",
+      "public_theorem_or_lemma_count": 3,
+      "evidence_scope": "Original actual standalone EXIT0 bytes copied unchanged; aggregate/kernel/axiom audit remains separate.",
+      "original_actual_zero_record": "book/coverage/checks/foundations-held19/source33-originals/foundations-independent-trials-trial2.json"
+    },
+    "evidence_scope": "Retained genuine selected compiler/source evidence for the identical IndependentTrials source; no new dependency execution is claimed."
+  },
+  "primary_sources": [
+    {
+      "source_file": "sources/text/cg2008.txt",
+      "sha256": "8de2dbe7a0861782901460ed89237462571b302f9710a16e30a4800992e23f93",
+      "primary_url": "https://epubs.siam.org/doi/10.1137/07069821X",
+      "direct_read_scope": "Assumption1/Proposition2.2/Theorem2.4 and Table2.2, lines160–305. The scenario optimizer/binomial upperbound remains a primary attributed result; arithmetic does not prove it."
+    },
+    {
+      "source_file": "sources/text/2105.07668.txt",
+      "sha256": "194abf25c23da990ad6c05975e0d4434d5fe9fc7e2c5cee612e3dafcbff4716d",
+      "primary_url": "https://arxiv.org/pdf/2105.07668",
+      "direct_read_scope": "Assumption1/the initialization theorem/Section3.2 one-sided validation proof, lines180–335. Actual online primary arXivv2 PDF read. The source theorem contains the first-power tolerance and stated/proved posterior discrepancy; retained scope is a fixed fresh independent validation batch."
+    }
+  ],
+  "all1089_selected21_sources_exact": true,
+  "whole_exercise_approved": false,
+  "whole_unit_approved": false,
+  "coverage_complete": false,
+  "limits": [
+    "This is the scalar minimize-x program with sample lower bounds, not every one-variable convex scenario program.",
+    "The fixed q tail event is supplied; no quantile selection, random optimized violation event, general Campi–Garatti upper bound, GP-law construction or repeated-until-pass guarantee is inferred.",
+    "The original source(a) finite-decimal exact equalities remain false and are not whole-unit approved.",
+    "Original25-body packet/peer bytes and times remain exact. Only new TMP reader/review files are written; no canonical build, aggregate23 or mapping is claimed.",
+    "Original runner hash-before/after fields are serialized after compilation; snapshots and original fields are bound without inventing independently observed before-execution capture."
+  ]
+}
