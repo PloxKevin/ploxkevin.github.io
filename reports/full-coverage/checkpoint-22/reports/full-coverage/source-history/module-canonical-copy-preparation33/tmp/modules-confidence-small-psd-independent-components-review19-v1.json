@@ -1,0 +1,317 @@
+{
+  "schema_version": 1,
+  "kind": "independent_actual_psd_small_information_trace_and_inverse_comparison_review",
+  "reviewer": "/root/modules_resume",
+  "reviewed_at_utc": "2026-10-10T18:36:52.544821+00:00",
+  "status": "approved_six_genuine_psd_components_only",
+  "handoff": {
+    "path": "/tmp/modules-confidence-small-psd-handoff.json",
+    "sha256": "070f35dffc6087c38a8026e6abb4a34e8115c92bd8fa628641c83acebde162b3"
+  },
+  "inventory": "book/coverage/inventory-after-correction33.json",
+  "inventory_sha256": "c5edf43ad9e1b2d408b328fd331b2a52c624126dd167100541d5ca931986a963",
+  "source_sha256": {
+    "SafeLearning/landscape.html": "4626b82bdcabbdb7275d8abc16864d6cca9c41e9346db312f366cc4b5f2d627e",
+    "SafeLearning/safe-bo.html": "0b0acdbfd62270e31fb31ad47a4477a29f27e6e80a6619e95df0ddece92900f9"
+  },
+  "proof_source_sha256": {
+    "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean": "48b20c41fd29b116bb052748069a7994ba6ab70debff60e28eaf1a2951b13f9e"
+  },
+  "full_actual_sources_read": {
+    "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean": "import SafeLearning.CompleteModulesLandscapeGaussianGPRegularization\nimport SafeLearning.CompleteModulesLandscapeGaussianQuadraticIntegral\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nset_option maxHeartbeats 2400000\nnoncomputable section\nnamespace SafeLearning.CompleteModulesLandscapeSmallInformationPSD\nopen Matrix\nopen scoped BigOperators RealInnerProductSpace\nopen CompleteModulesSafeOptFiniteInformationBound\n\nvariable {\u03b9 : Type*} [Fintype \u03b9] [DecidableEq \u03b9]\n\nomit [Fintype \u03b9] in\nprivate theorem one_add_sum_le_product (f : \u03b9 \u2192 \u211d) (hf : \u2200 i, 0 \u2264 f i)\n    (s : Finset \u03b9) : 1 + \u2211 i \u2208 s, f i \u2264 \u220f i \u2208 s, (1 + f i) := by\n  induction s using Finset.induction_on with\n  | empty => simp\n  | @insert i s hi ih =>\n    rw [Finset.sum_insert hi, Finset.prod_insert hi]\n    have hs : 0 \u2264 \u2211 j \u2208 s, f j := Finset.sum_nonneg (fun j _ => hf j)\n    have hp := mul_le_mul_of_nonneg_left ih (show 0 \u2264 1 + f i by linarith [hf i])\n    nlinarith [mul_nonneg (hf i) hs]\n\n/-- Actual PSD trace is bounded by the determinant increment. The proof\nuses its official nonnegative eigenvalues, also in dimension zero. -/\ntheorem actual_psd_normalized_trace_is_at_most_determinant_minus_one\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (a : \u211d) (ha : 0 \u2264 a) :\n    (a \u2022 A).trace \u2264 (1 + a \u2022 A).det - 1 := by\n  have hp := one_add_sum_le_product (fun i => a * hA.isHermitian.eigenvalues i)\n    (fun i => mul_nonneg ha (hA.eigenvalues_nonneg i)) Finset.univ\n  rw [\u2190 (actual_positive_semidefinite_normalized_determinant_is_a_positive_spectral_product\n    A hA a ha).1] at hp\n  have ht : (a \u2022 A).trace = \u2211 i, a * hA.isHermitian.eigenvalues i := by\n    rw [Matrix.trace_smul, hA.isHermitian.trace_eq_sum_eigenvalues]\n    simp [Finset.mul_sum]\n  rw [\u2190 ht] at hp\n  linarith\n\n/-- The true normalized log determinant is at most the true normalized\ntrace, by summing log(1+x) \u2264 x over the derived nonnegative spectrum. -/\ntheorem actual_psd_normalized_logdet_is_at_most_normalized_trace\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (a : \u211d) (ha : 0 \u2264 a) :\n    Real.log (1 + a \u2022 A).det \u2264 (a \u2022 A).trace := by\n  rw [(actual_positive_semidefinite_normalized_determinant_is_a_positive_spectral_product\n    A hA a ha).1, Real.log_prod (fun i _ =>\n      (show 0 < 1 + a * hA.isHermitian.eigenvalues i by\n        exact add_pos_of_pos_of_nonneg zero_lt_one (mul_nonneg ha (hA.eigenvalues_nonneg i))).ne')]\n  have ht : (a \u2022 A).trace = \u2211 i, a * hA.isHermitian.eigenvalues i := by\n    rw [Matrix.trace_smul, hA.isHermitian.trace_eq_sum_eigenvalues]\n    simp [Finset.mul_sum]\n  rw [ht]\n  apply Finset.sum_le_sum\n  intro i _\n  have h := Real.log_le_sub_one_of_pos\n    (show 0 < 1 + a * hA.isHermitian.eigenvalues i by\n      exact add_pos_of_pos_of_nonneg zero_lt_one (mul_nonneg ha (hA.eigenvalues_nonneg i)))\n  linarith\n\n/-- Small actual PSD information forces a dimension-free trace bound. -/\ntheorem actual_small_psd_logdet_implies_normalized_trace_at_most_four_gamma\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (lambda gamma : \u211d)\n    (hlambda : 0 < lambda) (hgamma : 0 < gamma) (hgamma_half : gamma \u2264 1 / 2)\n    (hsmall : Real.log (1 + lambda\u207b\u00b9 \u2022 A).det \u2264 2 * gamma) :\n    (lambda\u207b\u00b9 \u2022 A).trace \u2264 4 * gamma := by\n  have hdet := (actual_positive_semidefinite_normalized_determinant_is_a_positive_spectral_product\n    A hA lambda\u207b\u00b9 (inv_nonneg.mpr hlambda.le)).2\n  have hdpos : 0 < (1 + lambda\u207b\u00b9 \u2022 A).det := lt_of_lt_of_le zero_lt_one hdet\n  have he := Real.exp_le_exp.mpr hsmall\n  rw [Real.exp_log hdpos] at he\n  have heapprox := Real.abs_exp_sub_one_le (x := 2 * gamma)\n    (show |2 * gamma| \u2264 1 by rw [abs_of_pos (by positivity)]; linarith)\n  rw [abs_of_pos (show 0 < 2 * gamma by positivity)] at heapprox\n  have heupper := (le_abs_self (Real.exp (2 * gamma) - 1)).trans heapprox\n  have ht := actual_psd_normalized_trace_is_at_most_determinant_minus_one\n    A hA lambda\u207b\u00b9 (inv_nonneg.mpr hlambda.le)\n  linarith\n\n/-- Rescaling the actual regularization by small information leaves a\nuniform log-determinant budget of four. -/\ntheorem actual_small_psd_logdet_implies_gamma_regularized_logdet_at_most_four\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (lambda gamma : \u211d)\n    (hlambda : 0 < lambda) (hgamma : 0 < gamma) (hgamma_half : gamma \u2264 1 / 2)\n    (hsmall : Real.log (1 + lambda\u207b\u00b9 \u2022 A).det \u2264 2 * gamma) :\n    Real.log (1 + (lambda * gamma)\u207b\u00b9 \u2022 A).det \u2264 4 := by\n  have ht := actual_small_psd_logdet_implies_normalized_trace_at_most_four_gamma\n    A hA lambda gamma hlambda hgamma hgamma_half hsmall\n  have hscale : ((lambda * gamma)\u207b\u00b9 \u2022 A).trace =\n      (lambda\u207b\u00b9 \u2022 A).trace / gamma := by\n    simp only [Matrix.trace_smul, smul_eq_mul, div_eq_mul_inv, _root_.mul_inv_rev]\n    ring\n  have hlog := actual_psd_normalized_logdet_is_at_most_normalized_trace\n    A hA (lambda * gamma)\u207b\u00b9 (inv_nonneg.mpr (mul_pos hlambda hgamma).le)\n  rw [hscale] at hlog\n  exact hlog.trans ((div_le_iff\u2080 hgamma).mpr (by nlinarith))\n\nprivate theorem actual_regularized_inverse_eigenbasis_action\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (lambda : \u211d) (hlambda : 0 < lambda) (i : \u03b9) :\n    toEuclideanCLM (\ud835\udd5c := \u211d) (lambda \u2022 1 + A)\u207b\u00b9 (hA.isHermitian.eigenvectorBasis i) =\n      (lambda + hA.isHermitian.eigenvalues i)\u207b\u00b9 \u2022 hA.isHermitian.eigenvectorBasis i := by\n  have hp : (lambda \u2022 (1 : Matrix \u03b9 \u03b9 \u211d) + A).PosDef :=\n    (Matrix.PosDef.one.smul hlambda).add_posSemidef hA\n  have hu : IsUnit (lambda \u2022 (1 : Matrix \u03b9 \u03b9 \u211d) + A).det :=\n    isUnit_iff_ne_zero.mpr hp.det_pos.ne'\n  have he : (lambda \u2022 1 + A) *\u1d65 \u21d1(hA.isHermitian.eigenvectorBasis i) =\n      (lambda + hA.isHermitian.eigenvalues i) \u2022 \u21d1(hA.isHermitian.eigenvectorBasis i) := by\n    rw [add_mulVec, smul_mulVec, one_mulVec, hA.isHermitian.mulVec_eigenvectorBasis]\n    ext j\n    simp\n    ring\n  have hh := congrArg (fun x : \u03b9 \u2192 \u211d => (lambda \u2022 1 + A)\u207b\u00b9 *\u1d65 x) he\n  rw [mulVec_mulVec, nonsing_inv_mul _ hu, one_mulVec, mulVec_smul] at hh\n  have hn : lambda + hA.isHermitian.eigenvalues i \u2260 0 :=\n    (add_pos_of_pos_of_nonneg hlambda (hA.eigenvalues_nonneg i)).ne'\n  have hh' := congrArg (fun x : \u03b9 \u2192 \u211d => (lambda + hA.isHermitian.eigenvalues i)\u207b\u00b9 \u2022 x) hh\n  simp only [smul_smul, inv_mul_cancel\u2080 hn, one_smul] at hh'\n  ext j\n  exact congrFun hh'.symm j\n\n/-- The true regularized inverse quadratic is diagonal in the actual\nmatrix's derived orthonormal eigenbasis; no spectral premise is supplied. -/\ntheorem actual_psd_regularized_inverse_quadratic_has_the_exact_spectral_sum\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (lambda : \u211d) (hlambda : 0 < lambda)\n    (S : EuclideanSpace \u211d \u03b9) :\n    \u27eaS, toEuclideanCLM (\ud835\udd5c := \u211d) (lambda \u2022 1 + A)\u207b\u00b9 S\u27eb =\n      \u2211 i, \u27eahA.isHermitian.eigenvectorBasis i, S\u27eb ^ 2 /\n        (lambda + hA.isHermitian.eigenvalues i) := by\n  let b := hA.isHermitian.eigenvectorBasis\n  have hi : toEuclideanCLM (\ud835\udd5c := \u211d) (lambda \u2022 1 + A)\u207b\u00b9 S =\n      \u2211 i, (\u27eab i, S\u27eb / (lambda + hA.isHermitian.eigenvalues i)) \u2022 b i := by\n    calc\n      _ = toEuclideanCLM (\ud835\udd5c := \u211d) (lambda \u2022 1 + A)\u207b\u00b9 (\u2211 i, \u27eab i, S\u27eb \u2022 b i) := by rw [b.sum_repr']\n      _ = _ := by\n        simp only [map_sum, map_smul, b, actual_regularized_inverse_eigenbasis_action A hA lambda hlambda,\n          smul_smul, div_eq_mul_inv]\n  rw [hi, inner_sum]\n  apply Finset.sum_congr rfl\n  intro i _\n  rw [real_inner_smul_right, real_inner_comm S (b i)]\n  dsimp only [b]\n  ring\n\n/-- Small actual information compares the actual inverse quadratics at\nlambda and lambda*gamma, with the precise five-gamma factor. -/\ntheorem actual_small_psd_logdet_implies_actual_inverse_quadratic_comparison\n    (A : Matrix \u03b9 \u03b9 \u211d) (hA : A.PosSemidef) (lambda gamma : \u211d)\n    (hlambda : 0 < lambda) (hgamma : 0 < gamma) (hgamma_half : gamma \u2264 1 / 2)\n    (hsmall : Real.log (1 + lambda\u207b\u00b9 \u2022 A).det \u2264 2 * gamma) (S : \u03b9 \u2192 \u211d) :\n    S \u2b1d\u1d65 ((lambda \u2022 1 + A)\u207b\u00b9 *\u1d65 S) \u2264\n      5 * gamma * (S \u2b1d\u1d65 (((lambda * gamma) \u2022 1 + A)\u207b\u00b9 *\u1d65 S)) := by\n  have ht := actual_small_psd_logdet_implies_normalized_trace_at_most_four_gamma\n    A hA lambda gamma hlambda hgamma hgamma_half hsmall\n  have heigen : \u2200 i, hA.isHermitian.eigenvalues i \u2264 4 * gamma * lambda := by\n    intro i\n    have hs := Finset.single_le_sum (fun j _ => hA.eigenvalues_nonneg j) (Finset.mem_univ i)\n    have hsum : (\u2211 j, hA.isHermitian.eigenvalues j) = A.trace := by\n      simpa using hA.isHermitian.trace_eq_sum_eigenvalues.symm\n    rw [hsum] at hs\n    rw [Matrix.trace_smul] at ht\n    change lambda\u207b\u00b9 * A.trace \u2264 4 * gamma at ht\n    have ht' : A.trace / lambda \u2264 4 * gamma := by simpa [div_eq_mul_inv, mul_comm] using ht\n    exact hs.trans ((div_le_iff\u2080 hlambda).mp ht')\n  have hq1 := actual_psd_regularized_inverse_quadratic_has_the_exact_spectral_sum A hA lambda hlambda (WithLp.toLp 2 S)\n  have hq2 := actual_psd_regularized_inverse_quadratic_has_the_exact_spectral_sum A hA (lambda * gamma) (mul_pos hlambda hgamma) (WithLp.toLp 2 S)\n  rw [inner_toEuclideanCLM] at hq1 hq2\n  rw [hq1, hq2, Finset.mul_sum]\n  apply Finset.sum_le_sum\n  intro i _\n  have hd := hA.eigenvalues_nonneg i\n  have hden1 : 0 < lambda + hA.isHermitian.eigenvalues i := add_pos_of_pos_of_nonneg hlambda hd\n  have hden2 : 0 < lambda * gamma + hA.isHermitian.eigenvalues i := add_pos_of_pos_of_nonneg (mul_pos hlambda hgamma) hd\n  have hden : lambda * gamma + hA.isHermitian.eigenvalues i \u2264\n      5 * gamma * (lambda + hA.isHermitian.eigenvalues i) := by\n    nlinarith [heigen i, mul_nonneg hgamma.le hd]\n  rw [\u2190 mul_div_assoc]\n  apply (div_le_div_iff\u2080 hden1 hden2).mpr\n  have hsquare := sq_nonneg \u27eahA.isHermitian.eigenvectorBasis i, WithLp.toLp 2 S\u27eb\n  nlinarith [mul_le_mul_of_nonneg_left hden hsquare]\n\nend SafeLearning.CompleteModulesLandscapeSmallInformationPSD\n"
+  },
+  "actual_standalone_and_named_evidence": [
+    {
+      "manifest": "book/coverage/checks/modules-confidence-small-psd-try1-standalone.json",
+      "sha256": "550c6682425aefacba8a5bcac76b2f87a48f690dfc296007d2e8659a02aa8a7f",
+      "raw_record": {
+        "kind": "standalone_compilation_only",
+        "status": "passed",
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "files": [
+          {
+            "file": "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean",
+            "sha256": "48b20c41fd29b116bb052748069a7994ba6ab70debff60e28eaf1a2951b13f9e",
+            "exit_code": 0,
+            "log": "book/coverage/checks/CompleteModulesLandscapeSmallInformationPSD-confidence-small-psd-try1-standalone.log",
+            "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "source_unchanged": true,
+            "actual_command": [
+              "lake",
+              "env",
+              "lean",
+              "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean"
+            ],
+            "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+            "started_at_utc": "2026-10-10T18:31:22.320868+00:00",
+            "completed_at_utc": "2026-10-10T18:31:28.299864+00:00",
+            "elapsed_seconds": 5.978992116986774
+          }
+        ],
+        "all_sources_still_match": true,
+        "limits": [
+          "Genuine actual source-matched execution. Fresh aggregate kernel and axiom audit are separate."
+        ]
+      },
+      "full_actual_log": ""
+    },
+    {
+      "manifest": "book/coverage/checks/modules-confidence-small-psd-actual0-standalone.json",
+      "sha256": "d052e48aa14d310feca01f938643c8adc2baf4a7ad79acb84a5dd7de2e3b844e",
+      "raw_record": {
+        "kind": "standalone_compilation_only",
+        "status": "passed",
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "files": [
+          {
+            "file": "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean",
+            "sha256": "48b20c41fd29b116bb052748069a7994ba6ab70debff60e28eaf1a2951b13f9e",
+            "exit_code": 0,
+            "log": "book/coverage/checks/CompleteModulesLandscapeSmallInformationPSD-confidence-small-psd-actual0-standalone.log",
+            "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "source_unchanged": true,
+            "actual_command": [
+              "lake",
+              "env",
+              "lean",
+              "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean"
+            ],
+            "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+            "started_at_utc": "2026-10-10T18:31:39.122149+00:00",
+            "completed_at_utc": "2026-10-10T18:31:45.638191+00:00",
+            "elapsed_seconds": 6.516038935005781
+          }
+        ],
+        "all_sources_still_match": true,
+        "limits": [
+          "Genuine actual source-matched execution. Fresh aggregate kernel and axiom audit are separate."
+        ]
+      },
+      "full_actual_log": ""
+    },
+    {
+      "manifest": "book/coverage/checks/modules-confidence-small-psd-actual0-named-build.json",
+      "sha256": "327ccd4ab825b34140c83303d1f1116b8c3f843ddb74b2f41daa04744e5aea08",
+      "raw_record": {
+        "kind": "named_build_only",
+        "status": "passed",
+        "actual_command": [
+          "lake",
+          "build",
+          "SafeLearning.CompleteModulesLandscapeSmallInformationPSD"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "files": [
+          {
+            "file": "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean",
+            "sha256": "48b20c41fd29b116bb052748069a7994ba6ab70debff60e28eaf1a2951b13f9e",
+            "exit_code": 0,
+            "log": "book/coverage/checks/CompleteModulesLandscapeSmallInformationPSD-confidence-small-psd-actual0-named-build.log",
+            "log_sha256": "f1022f3b3ac929777df03ad8f802918451ed6599c59c0d3e70cb31f6c1dd0734",
+            "source_unchanged": true,
+            "actual_command": [
+              "lake",
+              "build",
+              "SafeLearning.CompleteModulesLandscapeSmallInformationPSD"
+            ],
+            "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+            "started_at_utc": "2026-10-10T18:32:10.242186+00:00",
+            "completed_at_utc": "2026-10-10T18:32:21.672040+00:00",
+            "elapsed_seconds": 11.429856458998984
+          }
+        ],
+        "all_sources_still_match": true,
+        "limits": [
+          "Genuine actual source-matched execution. Fresh aggregate kernel and axiom audit are separate."
+        ]
+      },
+      "full_actual_log": "\u26a0 [8929/8944] Replayed SafeLearning.CompleteFoundationsSpectralModels\nwarning: SafeLearning/CompleteFoundationsSpectralModels.lean:67:45: This simp argument is unused:\n  Matrix.cons_val_zero\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [Matrix.cons_val_one]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`\nwarning: SafeLearning/CompleteFoundationsSpectralModels.lean:67:66: This simp argument is unused:\n  Matrix.cons_val_one\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [Matrix.cons_val_zero]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`\nwarning: SafeLearning/CompleteFoundationsSpectralModels.lean:310:2: try 'simp' instead of 'simpa'\n\nNote: This linter can be disabled with `set_option linter.unnecessarySimpa false`\n\u26a0 [8930/8944] Replayed SafeLearning.CompleteFoundationsUniversalMatrices\nwarning: SafeLearning/CompleteFoundationsUniversalMatrices.lean:41:27: This simp argument is unused:\n  Fin.sum_univ_succ\n\nHint: Omit it from the simp argument list.\n  [apply] simp [Matrix.mul_apply, Matrix.vecMulVec]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`\nwarning: SafeLearning/CompleteFoundationsUniversalMatrices.lean:43:65: This simp argument is unused:\n  Fin.sum_univ_succ\n\nHint: Omit it from the simp argument list.\n  [apply] simp [Matrix.mul_apply, Matrix.replicateRow, Matrix.replicateCol, Finset.sum_mul] at h\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`\n\u26a0 [8931/8944] Replayed SafeLearning.CompleteFoundationsQuadraticForms\nwarning: SafeLearning/CompleteFoundationsQuadraticForms.lean:136:39: This simp argument is unused:\n  Pi.star_apply\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [hH, true_and, realQuadratic, star_trivial]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`\nwarning: SafeLearning/CompleteFoundationsQuadraticForms.lean:144:39: This simp argument is unused:\n  Pi.star_apply\n\nHint: Omit it from the simp argument list.\n  [apply] simp only [hH, true_and, realQuadratic, star_trivial]\n\nNote: This linter can be disabled with `set_option linter.unusedSimpArgs false`\n\u26a0 [8932/8944] Replayed SafeLearning.CompleteFoundationsCongruence\nwarning: SafeLearning/CompleteFoundationsCongruence.lean:168:16: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice\n\nNote: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`\n\u26a0 [8935/8944] Replayed SafeLearning.CompleteFoundationsTemporalLogDet\nwarning: SafeLearning/CompleteFoundationsTemporalLogDet.lean:25:0: automatically included section variable(s) unused in theorem `SafeLearning.CompleteFoundationsTemporalLogDet.actual_temporal_feature_gram_is_the_cumulative_outer_sum`:\n  [Fintype feature]\n  [DecidableEq feature]\nconsider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:\n  omit [Fintype feature] [DecidableEq feature] in theorem ...\n\nNote: This linter can be disabled with `set_option linter.unusedSectionVars false`\nwarning: SafeLearning/CompleteFoundationsTemporalLogDet.lean:39:0: automatically included section variable(s) unused in theorem `SafeLearning.CompleteFoundationsTemporalLogDet.actual_temporal_covariance_update`:\n  [Fintype feature]\nconsider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:\n  omit [Fintype feature] in theorem ...\n\nNote: This linter can be disabled with `set_option linter.unusedSectionVars false`\nwarning: SafeLearning/CompleteFoundationsTemporalLogDet.lean:45:0: automatically included section variable(s) unused in theorem `SafeLearning.CompleteFoundationsTemporalLogDet.actual_temporal_initial_covariance`:\n  [Fintype feature]\nconsider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:\n  omit [Fintype feature] in theorem ...\n\nNote: This linter can be disabled with `set_option linter.unusedSectionVars false`\nwarning: SafeLearning/CompleteFoundationsTemporalLogDet.lean:108:70: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice\n\nNote: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`\nwarning: SafeLearning/CompleteFoundationsTemporalLogDet.lean:125:16: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice\n\nNote: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`\n\u26a0 [8940/8944] Replayed SafeLearning.CompleteModulesLandscapeGaussianGPRegularization\nwarning: SafeLearning/CompleteModulesLandscapeGaussianGPRegularization.lean:124:40: this tactic is never executed\n\nNote: This linter can be disabled with `set_option linter.unreachableTactic false`\nwarning: SafeLearning/CompleteModulesLandscapeGaussianGPRegularization.lean:124:40: Unused tactic linter: `ring` does nothing\n\nNote: This linter can be disabled with `set_option linter.unusedTactic false`\n\u26a0 [8941/8944] Replayed SafeLearning.CompleteModulesLandscapeScalarGaussianMixture\nwarning: SafeLearning/CompleteModulesLandscapeScalarGaussianMixture.lean:41:4: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice\n\nNote: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`\n\u26a0 [8942/8944] Replayed SafeLearning.CompleteModulesLandscapeGaussianDiagonalIntegral\nwarning: SafeLearning/CompleteModulesLandscapeGaussianDiagonalIntegral.lean:47:6: this tactic is never executed\n\nNote: This linter can be disabled with `set_option linter.unreachableTactic false`\nwarning: SafeLearning/CompleteModulesLandscapeGaussianDiagonalIntegral.lean:47:6: Unused tactic linter: `ring` does nothing\n\nNote: This linter can be disabled with `set_option linter.unusedTactic false`\n\u2714 [8944/8944] Built SafeLearning.CompleteModulesLandscapeSmallInformationPSD (5.7s)\nBuild completed successfully (8944 jobs).\n"
+    }
+  ],
+  "genuine_failed_histories_preserved": [
+    {
+      "manifest": "book/coverage/checks/modules-confidence-small-psd-try0-standalone.json",
+      "sha256": "ca62ad3598f696bacb5923b85e4a64f163f4b06c93fbd473977fdab1ae51b242",
+      "raw_record": {
+        "kind": "standalone_compilation_only",
+        "status": "failed",
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "files": [
+          {
+            "file": "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean",
+            "sha256": "487ab18f2c0dfcad04ace17d54a3ea9cad915b1bcfa94989f6ec51d836f615c2",
+            "exit_code": 1,
+            "log": "book/coverage/checks/CompleteModulesLandscapeSmallInformationPSD-confidence-small-psd-try0-standalone.log",
+            "log_sha256": "a63f5438c47f2fc15c9e95bc6dae4f9234ca11cb5a8663e6062beef829a11673",
+            "source_unchanged": true,
+            "actual_command": [
+              "lake",
+              "env",
+              "lean",
+              "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean"
+            ],
+            "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+            "started_at_utc": "2026-10-10T18:31:03.013010+00:00",
+            "completed_at_utc": "2026-10-10T18:31:08.911950+00:00",
+            "elapsed_seconds": 5.898936976998812
+          }
+        ],
+        "all_sources_still_match": true,
+        "limits": [
+          "Genuine actual source-matched execution. Fresh aggregate kernel and axiom audit are separate."
+        ]
+      },
+      "full_actual_log": "SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean:15:8: warning: automatically included section variable(s) unused in theorem `_private.SafeLearning.CompleteModulesLandscapeSmallInformationPSD.0.SafeLearning.CompleteModulesLandscapeSmallInformationPSD.one_add_sum_le_product`:\n  [Fintype \u03b9]\nconsider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:\n  omit [Fintype \u03b9] in theorem ...\n\nNote: This linter can be disabled with `set_option linter.unusedSectionVars false`\nSafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean:90:63: error: Ambiguous term\n  mul_inv_rev\nPossible interpretations:\n  _root_.mul_inv_rev : \u2200 (a b : ?m.113), (a * b)\u207b\u00b9 = b\u207b\u00b9 * a\u207b\u00b9\n  \n  Matrix.mul_inv_rev : \u2200 (A B : Matrix ?m.113 ?m.113 ?m.114), (A * B)\u207b\u00b9 = B\u207b\u00b9 * A\u207b\u00b9\nSafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean:156:8: error: Tactic `rewrite` failed: Did not find an occurrence of the pattern\n  \u2211 i, \u2191(\u22ef.eigenvalues i)\nin the target expression\n  \u22ef.eigenvalues i \u2264 \u2211 x, \u22ef.eigenvalues x\n\n\u03b9 : Type u_1\ninst\u271d\u00b9 : Fintype \u03b9\ninst\u271d : DecidableEq \u03b9\nA : Matrix \u03b9 \u03b9 \u211d\nhA : A.PosSemidef\nlambda gamma : \u211d\nhlambda : 0 < lambda\nhgamma : 0 < gamma\nhgamma_half : gamma \u2264 1 / 2\nhsmall : Real.log (1 + lambda\u207b\u00b9 \u2022 A).det \u2264 2 * gamma\nS : \u03b9 \u2192 \u211d\nht : (lambda\u207b\u00b9 \u2022 A).trace \u2264 4 * gamma\ni : \u03b9\nhs : \u22ef.eigenvalues i \u2264 \u2211 x, \u22ef.eigenvalues x\n\u22a2 \u22ef.eigenvalues i \u2264 4 * gamma * lambda\n",
+      "failed_source_snapshot": {
+        "path": "/tmp/modules-confidence-small-psd-try0-source.lean",
+        "sha256": "487ab18f2c0dfcad04ace17d54a3ea9cad915b1bcfa94989f6ec51d836f615c2"
+      }
+    }
+  ],
+  "private_helpers_read": [
+    "one_add_sum_le_product",
+    "actual_regularized_inverse_eigenbasis_action"
+  ],
+  "actual_six_export_axiom_probe": {
+    "path": "/tmp/modules-confidence-small-psd-independent-axiom-probe19-v1.json",
+    "sha256": "0732403298f470c3d9cf9e6d2b0c188b5026f5100308a7e8e6f0609c75b8b54d",
+    "raw_record": {
+      "kind": "actual_six_export_exact_source_copied_axiom_probe",
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "/tmp/modules-confidence-small-psd-independent-axiom-probe19-v1.lean"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+      "started_at_utc": "2026-10-10T18:35:30.205516+00:00",
+      "completed_at_utc": "2026-10-10T18:35:36.707280+00:00",
+      "elapsed_seconds": 6.501765969995176,
+      "exit_code": 0,
+      "source": "/tmp/modules-confidence-small-psd-independent-axiom-probe19-v1.lean",
+      "source_sha256": "ebf9cc32f55b8bace3cffd9a7370163702638dac0452d0177f71e45ae19cd727",
+      "exact_origin": "verification/lean/SafeLearning/CompleteModulesLandscapeSmallInformationPSD.lean",
+      "exact_origin_sha256": "48b20c41fd29b116bb052748069a7994ba6ab70debff60e28eaf1a2951b13f9e",
+      "source_unchanged": true,
+      "log": "/tmp/modules-confidence-small-psd-independent-axiom-probe19-v1.log",
+      "log_sha256": "7c569b1dfed9a6174f348d5c022483f85a220215d60d60904dbe42ebc330cdf7",
+      "full_actual_log": "'SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_normalized_trace_is_at_most_determinant_minus_one' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n'SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_normalized_logdet_is_at_most_normalized_trace' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n'SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_normalized_trace_at_most_four_gamma' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n'SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_gamma_regularized_logdet_at_most_four' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n'SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_regularized_inverse_quadratic_has_the_exact_spectral_sum' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n'SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_actual_inverse_quadratic_comparison' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]\n",
+      "actual_printed_axioms": {
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_normalized_trace_is_at_most_determinant_minus_one": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_normalized_logdet_is_at_most_normalized_trace": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_normalized_trace_at_most_four_gamma": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_gamma_regularized_logdet_at_most_four": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_regularized_inverse_quadratic_has_the_exact_spectral_sum": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ],
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_actual_inverse_quadratic_comparison": [
+          "propext",
+          "Classical.choice",
+          "Quot.sound"
+        ]
+      },
+      "limits": [
+        "Exact six public exports only; full source copy retains both private helper bodies. No aggregate audit. TMP-only HOLD33."
+      ]
+    }
+  },
+  "theorem_groups": [
+    {
+      "id": "genuine_psd_trace_and_logdet_spectral_comparisons",
+      "declarations": [
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_normalized_trace_is_at_most_determinant_minus_one",
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_normalized_logdet_is_at_most_normalized_trace"
+      ],
+      "review_status": "approved_complete_component",
+      "hypotheses": [
+        "Arbitrary finite real PSD A, nonnegative normalization a. Empty finite dimension permitted."
+      ],
+      "assessment": "Both full proofs plus private finite-product induction read. Official actual eigenvalues are nonnegative and official trace/spectral product identities derive trace(aA)<=det(I+aA)-1. Actual spectral log product and log(1+x)<=x derive logdet(I+aA)<=trace(aA). No trace or determinant bound is supplied as a desired conclusion.",
+      "missing": []
+    },
+    {
+      "id": "small_information_true_trace_and_rescaled_logdet",
+      "declarations": [
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_normalized_trace_at_most_four_gamma",
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_gamma_regularized_logdet_at_most_four"
+      ],
+      "review_status": "approved_complete_component",
+      "hypotheses": [
+        "Actual PSD A,lambda>0,0<gamma<=1/2,computed logdet(I+A/lambda)<=2gamma."
+      ],
+      "assessment": "Both full bodies read. The normalized determinant is genuinely>=1, so exp(logdet)=det. True exp error inequality at2gamma derives exp(2gamma)-1<=4gamma. Actual trace comparison then gives trace(A/lambda)<=4gamma; true logdet<=trace and positive-gamma scale arithmetic give logdet(I+A/(lambda gamma))<=4. No dimension, normalization or supplied eigendecomposition restriction is added.",
+      "missing": []
+    },
+    {
+      "id": "actual_inverse_quadratic_spectral_sum_and_five_gamma_comparison",
+      "declarations": [
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_psd_regularized_inverse_quadratic_has_the_exact_spectral_sum",
+        "SafeLearning.CompleteModulesLandscapeSmallInformationPSD.actual_small_psd_logdet_implies_actual_inverse_quadratic_comparison"
+      ],
+      "review_status": "approved_complete_component",
+      "hypotheses": [
+        "Actual PSD A,positive lambda,any actual vector S;comparison additionally0<gamma<=1/2 and same small actual logdet budget."
+      ],
+      "assessment": "Both full proofs and private eigenbasis inverse action independently read. PSD plus positive regularization internally derives PosDef/nonsingularity before applying inverse. Actual original A orthonormal eigenbasis and its true eigenvectors derive exact inverse quadratic sum. Each nonnegative eigenvalue<=trace<=4gamma lambda makes lambda gamma+d<=5gamma(lambda+d); termwise true squared-coordinate comparison proves Qlambda<=5gamma Qlambda gamma for any real S. No supplied decomposition or desired inverse/noise conclusion.",
+      "missing": []
+    }
+  ],
+  "preservation_check": {
+    "actual_selected_sources": 490,
+    "actual_source_evidence_paths": 565,
+    "actual_frozen_inputs": 2431,
+    "actual_inventory_pages": 29,
+    "all_hashes_exact": true,
+    "held_metadata_sha256": {
+      "book/coverage/build_modules.py": "65b82248172e8df5878a5fe9a2d6a34cf99ab29a993f463be6d5d22a62907570",
+      "book/coverage/modules.json": "4f1a83075bc30401f58f3a63a4f4f194d3ee4bfd13f15a00bd1dd194f28d9bac",
+      "book/coverage/modules_binding19_source32.py": "35de380f757b2d9e2229e69fe6407af724348f2684a0ddac503f0a158faa4bb1",
+      "book/coverage/checks/modules-source32-bindings19-v1.json": "ff45303818446b98b39ef59eb58c7d70d6b4c156ec4d1cdb0725a9b694320363"
+    }
+  },
+  "remaining_application_obligations": [
+    "Compose the deterministic PSD estimates with scheduled-prior genuine probability event and actual posterior error.",
+    "Exact source confidence/SafeOpt convergence remains separate."
+  ],
+  "limits": [
+    "TMP-only independent mathematical/source/evidence review under HOLD33. No source/coverage metadata mutation.",
+    "Four genuine records:two source-identical standalone passes and one named pass,one preserved genuine failure. Both standalone pass logs empty; actual named success output preserved.",
+    "Six exact copied-source public exports use standard axioms only; two private helpers fully read. No selected aggregate claim."
+  ]
+}
