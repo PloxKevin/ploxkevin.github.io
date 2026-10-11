@@ -1,0 +1,93 @@
+/-- The printed moving-away example has a genuine safe continuation for every
+bounded held input, including the inputs which end the hold moving toward the
+wall. Its initial position may be arbitrarily close to the wall from below. -/
+theorem actual_printed_moving_away_example_has_all_inputs_safe
+    (L x : ℝ) (hx : x < L) :
+    heldContinuationActions 1 L x (-(3:ℝ)/10) (1/2) = Icc (-1) 1 := by
+  apply Subset.antisymm
+  · intro u hu
+    exact abs_le.mp hu.1
+  · intro u hu
+    apply (actual_safe_hold_action_iff_prefix_and_successor_kernel
+      1 L x (-(3:ℝ)/10) (1/2) u (by norm_num) (by norm_num)).mpr
+    refine ⟨abs_le.mpr hu, ?_, ?_⟩
+    · intro t ht htD
+      have hsq : t^2 ≤ t/2 := by nlinarith
+      have hm := mul_le_mul_of_nonneg_right hu.2 (sq_nonneg t)
+      nlinarith
+    · change x+(-(3:ℝ)/10)*(1/2)+(u/2)*(1/2)^2 < L ∧
+        (-(3:ℝ)/10+u*(1/2) ≤ 0 ∨
+          x+(-(3:ℝ)/10)*(1/2)+(u/2)*(1/2)^2+
+            (-(3:ℝ)/10+u*(1/2))^2/(2*1) < L)
+      constructor
+      · nlinarith [hu.2]
+      · by_cases hw : -(3:ℝ)/10+u*(1/2) ≤ 0
+        · exact Or.inl hw
+        · right
+          have hu0 : 0 ≤ u := by linarith
+          have hsq : u^2 ≤ u := by nlinarith [mul_nonneg hu0 (sub_nonneg.mpr hu.2)]
+          nlinarith
+
+theorem actual_printed_moving_away_example_has_full_safe_action_measure
+    (L x : ℝ) (hx : x < L) :
+    volume.real (heldContinuationActions 1 L x (-(3:ℝ)/10) (1/2)) = 2 := by
+  rw [actual_printed_moving_away_example_has_all_inputs_safe L x hx,
+    Real.volume_real_Icc_of_le (by norm_num : -(1:ℝ) ≤ 1)]
+  norm_num
+
+/-- At rest, more than a Delta^2 of clearance suffices for every legal held
+input. Positive held inputs use the attained hold-then-brake continuation; the
+negative inputs use the attained constant nonpositive control. -/
+theorem actual_far_wall_rest_has_all_inputs_safe
+    (a L x Delta : ℝ) (ha : 0 < a) (hD : 0 < Delta)
+    (hfar : a*Delta^2 < L-x) :
+    heldContinuationActions a L x 0 Delta = Icc (-a) a := by
+  have hx : x < L := by nlinarith [mul_nonneg ha.le (sq_nonneg Delta)]
+  apply Subset.antisymm
+  · intro u hu
+    exact abs_le.mp hu.1
+  · intro u hu
+    by_cases hup : 0 < u
+    · apply (actual_safe_hold_action_iff_prefix_and_successor_kernel a L x 0 Delta u ha hD).mpr
+      refine ⟨abs_le.mpr hu, ?_, ?_⟩
+      · intro t ht htD
+        have hs : t^2 ≤ Delta^2 := by nlinarith
+        have hm := mul_le_mul_of_nonneg_left hs hup.le
+        have hm' := mul_le_mul_of_nonneg_right hu.2 (sq_nonneg Delta)
+        nlinarith [mul_nonneg ha.le (sq_nonneg Delta)]
+      · change x+0*Delta+(u/2)*Delta^2 < L ∧
+          (0+u*Delta ≤ 0 ∨ x+0*Delta+(u/2)*Delta^2+(0+u*Delta)^2/(2*a) < L)
+        have hu2 : u^2 ≤ a^2 := by nlinarith [mul_nonneg hup.le (sub_nonneg.mpr hu.2)]
+        have hratio : u^2/a ≤ a := (div_le_iff₀ ha).mpr (by nlinarith)
+        have hc : u+u^2/a ≤ 2*a := by linarith
+        have hm := mul_le_mul_of_nonneg_right hc (sq_nonneg Delta)
+        have he : x+0*Delta+(u/2)*Delta^2+(0+u*Delta)^2/(2*a) =
+            x+(u+u^2/a)*Delta^2/2 := by field_simp;ring
+        constructor
+        · nlinarith [mul_le_mul_of_nonneg_right hu.2 (sq_nonneg Delta)]
+        · right
+          rw [he]
+          nlinarith
+    · apply actual_nonpositive_constant_inputs_give_safe_hold_actions a L x 0 Delta u hx le_rfl
+        (le_of_not_gt hup) (abs_le.mpr hu)
+
+theorem actual_far_wall_rest_has_full_safe_action_measure
+    (a L x Delta : ℝ) (ha : 0 < a) (hD : 0 < Delta)
+    (hfar : a*Delta^2 < L-x) :
+    volume.real (heldContinuationActions a L x 0 Delta) = 2*a := by
+  rw [actual_far_wall_rest_has_all_inputs_safe a L x Delta ha hD hfar,
+    Real.volume_real_Icc_of_le (by linarith : -a ≤ a)]
+  ring
+
+/-- Every unviable state fails in finite time for every admissible actual
+trajectory, even though the family above precludes a common horizon. Initial
+members of the closed failure set fail already at time zero. -/
+theorem actual_every_unviable_state_has_finite_all_controller_failure
+    (a L x v : ℝ) (ha : 0 < a) (hU : ¬ Viable a L x v)
+    (P : ControlledPath a x v) :
+    ∃ t : ℝ, 0 ≤ t ∧ L ≤ P.position t := by
+  have hu := (actual_unviable_state_iff_printed_union a L x v ha).mp hU
+  rcases hu with hfail | ⟨hv,hpeak⟩
+  · exact ⟨0,le_rfl,by simpa only [P.position_zero] using hfail⟩
+  · exact ⟨v/a,div_nonneg hv.le ha.le,
+      actual_closed_wall_failure_by_stopping_time a L x v P ha hv hpeak⟩

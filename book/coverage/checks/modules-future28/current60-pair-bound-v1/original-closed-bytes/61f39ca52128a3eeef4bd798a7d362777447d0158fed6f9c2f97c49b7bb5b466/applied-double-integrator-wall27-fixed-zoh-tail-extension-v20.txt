@@ -1,0 +1,129 @@
+
+namespace SafeLearning.CompleteAppliedDoubleIntegratorWall27
+
+/-- A legal hold sequence: apply u during the first hold, then keep -a on every
+later hold. Unlike stopping exactly at zero velocity, this needs no switch
+inside a later hold interval. -/
+def holdFullBrakePosition (a x v u Delta t : ℝ) : ℝ :=
+  x+v*min t Delta+(u/2)*(min t Delta)^2+
+    (v+u*Delta)*max (t-Delta) 0-(a/2)*(max (t-Delta) 0)^2
+def holdFullBrakeVelocity (a v u Delta t : ℝ) : ℝ :=
+  v+u*min t Delta-a*max (t-Delta) 0
+def holdFullBrakeInput (a u Delta t : ℝ) : ℝ := if t < Delta then u else -a
+
+def holdThenFullBrakePath (a x v u Delta : ℝ) (ha : 0 ≤ a) (hD : 0 < Delta)
+    (hu : |u| ≤ a) : ControlledPath a x v where
+  position := holdFullBrakePosition a x v u Delta
+  velocity := holdFullBrakeVelocity a v u Delta
+  input := holdFullBrakeInput a u Delta
+  position_zero := by
+    simp [holdFullBrakePosition,min_eq_left hD.le,
+      max_eq_right (show -Delta ≤ 0 by linarith)]
+  velocity_zero := by
+    simp [holdFullBrakeVelocity,min_eq_left hD.le,
+      max_eq_right (show -Delta ≤ 0 by linarith)]
+  input_measurable := Measurable.ite measurableSet_Iio measurable_const measurable_const
+  input_bound := by
+    intro t ht
+    simp only [holdFullBrakeInput]
+    split_ifs
+    · exact hu
+    · simpa [abs_of_nonneg ha] using le_refl a
+  position_ac := by
+    intro T hT
+    have hh : AbsolutelyContinuousOnInterval (fun t : ℝ => min t Delta) 0 T :=
+      (LipschitzWith.id.min_const Delta).lipschitzOnWith.absolutelyContinuousOnInterval
+    have hc : AbsolutelyContinuousOnInterval (fun _ : ℝ => x) 0 T :=
+      (contDiff_const : ContDiff ℝ 1 (fun _ : ℝ => x)).contDiffOn.absolutelyContinuousOnInterval
+    have hq := holdZeroTail_ac Delta T
+    change AbsolutelyContinuousOnInterval (fun t : ℝ =>
+      x+v*min t Delta+(u/2)*(min t Delta)^2+
+        (v+u*Delta)*max (t-Delta) 0-(a/2)*(max (t-Delta) 0)^2) 0 T
+    simpa only [pow_two] using
+      (((hc.fun_add (hh.const_mul v)).fun_add ((hh.fun_mul hh).const_mul (u/2))).fun_add
+        (hq.const_mul (v+u*Delta))).fun_sub ((hq.fun_mul hq).const_mul (a/2))
+  velocity_ac := by
+    intro T hT
+    have hh : AbsolutelyContinuousOnInterval (fun t : ℝ => min t Delta) 0 T :=
+      (LipschitzWith.id.min_const Delta).lipschitzOnWith.absolutelyContinuousOnInterval
+    have hc : AbsolutelyContinuousOnInterval (fun _ : ℝ => v) 0 T :=
+      (contDiff_const : ContDiff ℝ 1 (fun _ : ℝ => v)).contDiffOn.absolutelyContinuousOnInterval
+    exact (hc.fun_add (hh.const_mul u)).fun_sub ((holdZeroTail_ac Delta T).const_mul a)
+  derivatives_ae := by
+    filter_upwards [volume.ae_ne Delta] with t htne
+    intro ht
+    rcases lt_or_gt_of_ne htne with hbefore | hafter
+    · have hh : HasDerivAt (fun y : ℝ => min y Delta) 1 t := by
+        convert brakingTime_hasDeriv_before 1 Delta t (by simpa using hbefore) using 1 <;>
+          (try ext y) <;> simp [brakingTime]
+      have hq := holdZeroTail_hasDeriv_before Delta t hbefore
+      constructor
+      · have hp := ((((hasDerivAt_const t x).add (hh.const_mul v)).add
+            ((hh.pow 2).const_mul (u/2))).add (hq.const_mul (v+u*Delta))).sub
+            ((hq.pow 2).const_mul (a/2))
+        convert hp using 1 <;> (try ext y) <;>
+          dsimp [holdFullBrakePosition,holdFullBrakeVelocity] <;> ring
+      · have hv := ((hasDerivAt_const t v).add (hh.const_mul u)).sub (hq.const_mul a)
+        convert hv using 1 <;> (try ext y) <;>
+          simp [holdFullBrakeVelocity,holdFullBrakeInput,hbefore]
+    · have hh : HasDerivAt (fun y : ℝ => min y Delta) 0 t := by
+        convert brakingTime_hasDeriv_after 1 Delta t (by simpa using hafter) using 1 <;>
+          (try ext y) <;> simp [brakingTime]
+      have hq := holdZeroTail_hasDeriv_after Delta t hafter
+      constructor
+      · have hp := ((((hasDerivAt_const t x).add (hh.const_mul v)).add
+            ((hh.pow 2).const_mul (u/2))).add (hq.const_mul (v+u*Delta))).sub
+            ((hq.pow 2).const_mul (a/2))
+        convert hp using 1 <;> (try ext y) <;>
+          dsimp [holdFullBrakePosition,holdFullBrakeVelocity] <;>
+          (try rw [min_eq_right hafter.le]) <;> ring
+      · have hv := ((hasDerivAt_const t v).add (hh.const_mul u)).sub (hq.const_mul a)
+        convert hv using 1 <;> (try ext y) <;>
+          simp [holdFullBrakeVelocity,holdFullBrakeInput,not_lt_of_ge hafter.le]
+
+theorem actual_fixed_full_braking_tail_path_is_safe
+    (a L x v u Delta : ℝ) (ha : 0 < a) (hD : 0 < Delta)
+    (hprefix : ∀ t : ℝ, 0 ≤ t → t ≤ Delta → x+v*t+(u/2)*t^2 < L)
+    (hpeak : x+v*Delta+(u/2)*Delta^2+(v+u*Delta)^2/(2*a) < L) :
+    ∀ t : ℝ, 0 ≤ t → holdFullBrakePosition a x v u Delta t < L := by
+  intro t ht
+  by_cases htD : t ≤ Delta
+  · simpa [holdFullBrakePosition,min_eq_left htD,max_eq_right (sub_nonpos.mpr htD)]
+      using hprefix t ht htD
+  · have hafter : Delta ≤ t := (lt_of_not_ge htD).le
+    have hidentity :
+        x+v*Delta+(u/2)*Delta^2+(v+u*Delta)^2/(2*a)-
+          holdFullBrakePosition a x v u Delta t =
+            (a/2)*((v+u*Delta)/a-(t-Delta))^2 := by
+      simp only [holdFullBrakePosition,min_eq_right hafter,
+        max_eq_left (sub_nonneg.mpr hafter)]
+      field_simp
+      ring
+    have hpositive : 0 ≤ (a/2)*((v+u*Delta)/a-(t-Delta))^2 := by positivity
+    linarith
+
+/-- Every action in the actual safe hold set has an attained continuation whose
+future input is constant zero or full braking. Hence all later hold intervals
+can be respected, without assuming existence of a concatenation or policy. -/
+theorem actual_safe_hold_action_has_an_attained_constant_zero_order_hold_tail
+    (a L x v Delta u : ℝ) (ha : 0 < a) (hD : 0 < Delta)
+    (hmem : u ∈ heldContinuationActions a L x v Delta) :
+    ∃ (P : ControlledPath a x v) (tail : ℝ), |tail| ≤ a ∧
+      (tail=0 ∨ tail=-a) ∧ (∀ t : ℝ, P.input t = if t < Delta then u else tail) ∧
+      (∀ t : ℝ, 0 ≤ t → P.position t < L) := by
+  obtain ⟨hu,hprefix,hkernel⟩ :=
+    (actual_safe_hold_action_iff_prefix_and_successor_kernel a L x v Delta u ha hD).mp hmem
+  by_cases hw : v+u*Delta ≤ 0
+  · refine ⟨holdThenZeroPath a x v u Delta ha.le hD hu,0,by simpa using ha.le,
+      Or.inl rfl,?_,?_⟩
+    · intro t
+      rfl
+    · exact actual_held_then_zero_path_is_safe L x v u Delta hw hprefix hD
+  · have hpeak := hkernel.2.resolve_left hw
+    refine ⟨holdThenFullBrakePath a x v u Delta ha.le hD hu,-a,
+      by simpa [abs_of_pos ha] using le_refl a,Or.inr rfl,?_,?_⟩
+    · intro t
+      rfl
+    · exact actual_fixed_full_braking_tail_path_is_safe a L x v u Delta ha hD hprefix hpeak
+
+end SafeLearning.CompleteAppliedDoubleIntegratorWall27

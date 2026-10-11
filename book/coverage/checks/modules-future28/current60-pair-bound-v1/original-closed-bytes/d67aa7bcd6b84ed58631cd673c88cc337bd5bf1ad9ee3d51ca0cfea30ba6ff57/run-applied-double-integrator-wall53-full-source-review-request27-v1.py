@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+R=Path('/home/oxrexkevin/SafetyBased');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();C=Path('/tmp/prepare-applied-double-integrator-wall53-full-source-review-request27-v1.py');O=Path('/tmp/applied-double-integrator-wall53-full-source-request-preparation27-actual-v1.json');L=O.with_suffix('.log');assert not O.exists()and not L.exists();t=time.monotonic();s=datetime.now(timezone.utc).isoformat();h=H(C)
+with L.open('xb')as f:r=subprocess.run(['python3',str(C)],cwd=R,stdout=f,stderr=subprocess.STDOUT)
+O.write_text(json.dumps({'status':'actual_tmp_full_literal_request_preparation','actual_exit_code':r.returncode,'actual_command':['python3',str(C)],'actual_workdir':str(R),'started_at_utc':s,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'helper_sha256_before':h,'helper_sha256_after':H(C),'raw_log':str(L),'raw_log_sha256':H(L),'scope':'TMP packet preparation only; no compiler or live/canonical/PUB/Git write.'},indent=2)+'\n');print(json.dumps({'actual':str(O),'sha256':H(O),'actual_exit_code':r.returncode,'raw_log_sha256':H(L)}));raise SystemExit(r.returncode)

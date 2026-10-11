@@ -1,0 +1,175 @@
+
+def holdZeroPosition (x v u Delta t : ℝ) : ℝ :=
+  x+v*min t Delta+(u/2)*(min t Delta)^2 + (v+u*Delta)*max (t-Delta) 0
+def holdZeroVelocity (v u Delta t : ℝ) : ℝ := v+u*min t Delta
+def holdZeroInput (u Delta t : ℝ) : ℝ := if t < Delta then u else 0
+
+private theorem holdZeroTail_ac (Delta T : ℝ) :
+    AbsolutelyContinuousOnInterval (fun t : ℝ => max (t-Delta) 0) 0 T := by
+  exact (LipschitzWith.id.max_const 0).comp_absolutelyContinuousOnInterval
+    ((by fun_prop : ContDiff ℝ 1 (fun t : ℝ => t-Delta)).contDiffOn.absolutelyContinuousOnInterval)
+
+private theorem holdZeroTail_hasDeriv_before (Delta t : ℝ) (ht : t < Delta) :
+    HasDerivAt (fun s : ℝ => max (s-Delta) 0) 0 t := by
+  apply (hasDerivAt_const t (0:ℝ)).congr_of_eventuallyEq
+  filter_upwards [eventually_lt_nhds ht] with y hy
+  exact max_eq_right (sub_nonpos.mpr hy.le)
+
+private theorem holdZeroTail_hasDeriv_after (Delta t : ℝ) (ht : Delta < t) :
+    HasDerivAt (fun s : ℝ => max (s-Delta) 0) 1 t := by
+  apply ((hasDerivAt_id t).sub_const Delta).congr_of_eventuallyEq
+  filter_upwards [eventually_gt_nhds ht] with y hy
+  exact max_eq_left (sub_nonneg.mpr hy.le)
+
+/-- The other legal continuation: hold u and then use zero input. Safety of its
+nonpositive terminal velocity is derived separately, not assumed here. -/
+def holdThenZeroPath (a x v u Delta : ℝ) (ha : 0 ≤ a) (hD : 0 < Delta)
+    (hu : |u| ≤ a) : ControlledPath a x v where
+  position := holdZeroPosition x v u Delta
+  velocity := holdZeroVelocity v u Delta
+  input := holdZeroInput u Delta
+  position_zero := by simp [holdZeroPosition,min_eq_left hD.le,max_eq_right (show -Delta ≤ 0 by linarith)]
+  velocity_zero := by simp [holdZeroVelocity,min_eq_left hD.le]
+  input_measurable := Measurable.ite measurableSet_Iio measurable_const measurable_const
+  input_bound := by
+    intro t ht
+    simp only [holdZeroInput]
+    split_ifs
+    · exact hu
+    · simpa using ha
+  position_ac := by
+    intro T hT
+    have hh : AbsolutelyContinuousOnInterval (fun t : ℝ => min t Delta) 0 T :=
+      (LipschitzWith.id.min_const Delta).lipschitzOnWith.absolutelyContinuousOnInterval
+    have hc : AbsolutelyContinuousOnInterval (fun _ : ℝ => x) 0 T :=
+      (contDiff_const : ContDiff ℝ 1 (fun _ : ℝ => x)).contDiffOn.absolutelyContinuousOnInterval
+    simpa only [holdZeroPosition,pow_two] using
+      ((hc.fun_add (hh.const_mul v)).fun_add ((hh.fun_mul hh).const_mul (u/2))).fun_add
+        ((holdZeroTail_ac Delta T).const_mul (v+u*Delta))
+  velocity_ac := by
+    intro T hT
+    have hh : AbsolutelyContinuousOnInterval (fun t : ℝ => min t Delta) 0 T :=
+      (LipschitzWith.id.min_const Delta).lipschitzOnWith.absolutelyContinuousOnInterval
+    have hc : AbsolutelyContinuousOnInterval (fun _ : ℝ => v) 0 T :=
+      (contDiff_const : ContDiff ℝ 1 (fun _ : ℝ => v)).contDiffOn.absolutelyContinuousOnInterval
+    exact hc.fun_add (hh.const_mul u)
+  derivatives_ae := by
+    filter_upwards [volume.ae_ne Delta] with t htne
+    intro ht
+    rcases lt_or_gt_of_ne htne with hbefore | hafter
+    · have hh := brakingTime_hasDeriv_before 1 Delta t (by simpa using hbefore)
+      simp only [brakingTime,div_one] at hh
+      have hq := holdZeroTail_hasDeriv_before Delta t hbefore
+      constructor
+      · have hp := (((hasDerivAt_const t x).add (hh.const_mul v)).add ((hh.pow 2).const_mul (u/2))).add
+          (hq.const_mul (v+u*Delta))
+        convert hp using 1 <;> (try ext y) <;> dsimp [holdZeroPosition,holdZeroVelocity] <;> ring
+      · have hv := (hasDerivAt_const t v).add (hh.const_mul u)
+        convert hv using 1 <;> (try ext y) <;> simp [holdZeroVelocity,holdZeroInput,hbefore]
+    · have hh := brakingTime_hasDeriv_after 1 Delta t (by simpa using hafter)
+      simp only [brakingTime,div_one] at hh
+      have hq := holdZeroTail_hasDeriv_after Delta t hafter
+      constructor
+      · have hp := (((hasDerivAt_const t x).add (hh.const_mul v)).add ((hh.pow 2).const_mul (u/2))).add
+          (hq.const_mul (v+u*Delta))
+        convert hp using 1 <;> (try ext y) <;> dsimp [holdZeroPosition,holdZeroVelocity] <;>
+          (try rw [min_eq_right hafter.le]) <;> ring
+      · have hv := (hasDerivAt_const t v).add (hh.const_mul u)
+        convert hv using 1 <;> (try ext y) <;>
+          simp [holdZeroVelocity,holdZeroInput,not_lt_of_ge hafter.le]
+
+theorem actual_held_then_zero_path_is_safe
+    (L x v u Delta : ℝ) (hw : v+u*Delta ≤ 0)
+    (hprefix : ∀ t : ℝ, 0 ≤ t → t ≤ Delta → x+v*t+(u/2)*t^2 < L)
+    (hD : 0 < Delta) :
+    ∀ t : ℝ, 0 ≤ t → holdZeroPosition x v u Delta t < L := by
+  intro t ht
+  by_cases htD : t ≤ Delta
+  · simpa [holdZeroPosition,min_eq_left htD,max_eq_right (sub_nonpos.mpr htD)] using hprefix t ht htD
+  · have hD' : Delta ≤ t := (lt_of_not_ge htD).le
+    have hm := mul_nonpos_of_nonpos_of_nonneg hw (sub_nonneg.mpr hD')
+    have hb := hprefix Delta hD.le le_rfl
+    simp only [holdZeroPosition,min_eq_right hD',max_eq_left (sub_nonneg.mpr hD')]
+    linarith
+
+/-- Exact actual safe hold-action characterization, including safety DURING the
+hold as well as the successor kernel. Both sufficient branches are actual
+bounded AC/AE-ODE trajectories, not an assumed concatenation principle. -/
+theorem actual_safe_hold_action_iff_prefix_and_successor_kernel
+    (a L x v Delta u : ℝ) (ha : 0 < a) (hD : 0 < Delta) :
+    u ∈ heldContinuationActions a L x v Delta ↔
+      |u| ≤ a ∧
+      (∀ t : ℝ, 0 ≤ t → t ≤ Delta → x+v*t+(u/2)*t^2 < L) ∧
+      (x+v*Delta+(u/2)*Delta^2,v+u*Delta) ∈ printedKernel a L := by
+  constructor
+  · rintro ⟨hu,P,hheld,hsafe⟩
+    refine ⟨hu,?_,?_⟩
+    · intro t ht htD
+      have he := actual_held_input_implies_the_polynomial_state a x v Delta u t P ht htD hheld
+      simpa only [he.2] using hsafe t ht
+    · have he := actual_held_input_implies_the_polynomial_state a x v Delta u Delta P hD.le le_rfl hheld
+      simpa only [he.1,he.2] using actual_safe_continuation_has_kernel_at_every_time a L x v Delta P ha hD.le hsafe
+  · rintro ⟨hu,hprefix,hK⟩
+    by_cases hw : v+u*Delta ≤ 0
+    · refine ⟨hu,holdThenZeroPath a x v u Delta ha.le hD hu,?_,?_⟩
+      · filter_upwards [volume.ae_ne Delta] with t hne
+        intro ht htD
+        change holdZeroInput u Delta t = u
+        simp [holdZeroInput,lt_of_le_of_ne htD hne]
+      · exact actual_held_then_zero_path_is_safe L x v u Delta hw hprefix hD
+    · have hpeak := hK.2.resolve_left hw
+      refine ⟨hu,holdThenBrakePath a x v u Delta ha hD hu (le_of_not_ge hw),?_,?_⟩
+      · filter_upwards [volume.ae_ne Delta] with t hne
+        intro ht htD
+        change holdBrakeInput a v u Delta t = u
+        simp [holdBrakeInput,lt_of_le_of_ne htD hne]
+      · exact actual_held_then_braking_path_is_safe a L x v u Delta ha hD (le_of_not_ge hw) hprefix hpeak
+
+/-- The finite held-prefix safety predicate is open in u: violations are the
+projection of a genuinely closed subset with compact time factor. -/
+theorem actual_held_prefix_safety_set_is_open (L x v Delta : ℝ) :
+    IsOpen {u : ℝ | ∀ t : ℝ, 0 ≤ t → t ≤ Delta → x+v*t+(u/2)*t^2 < L} := by
+  let C : Set (ℝ × ↥(Icc (0:ℝ) Delta)) :=
+    {z | L ≤ x+v*(z.2:ℝ)+(z.1/2)*(z.2:ℝ)^2}
+  have hC : IsClosed C := isClosed_le continuous_const (by fun_prop)
+  have hp : IsClosed (Prod.fst '' C) := isClosedMap_fst_of_compactSpace C hC
+  have he : {u : ℝ | ∀ t : ℝ, 0 ≤ t → t ≤ Delta → x+v*t+(u/2)*t^2 < L} =
+      (Prod.fst '' C)ᶜ := by
+    ext u
+    simp only [mem_setOf_eq,mem_compl_iff,mem_image,not_exists,not_and]
+    constructor
+    · intro h z hz hzu
+      have heq : z.1=u := hzu
+      have ht := z.2.property
+      have hh := h (z.2:ℝ) ht.1 ht.2
+      change L ≤ x+v*(z.2:ℝ)+(z.1/2)*(z.2:ℝ)^2 at hz
+      rw [heq] at hz
+      linarith
+    · intro h t ht htD
+      by_contra hn
+      have hz : (u,⟨t,ht,htD⟩) ∈ C := le_of_not_gt hn
+      exact h (u,⟨t,ht,htD⟩) hz rfl
+  rw [he]
+  exact hp.isOpen_compl
+
+/-- The safe hold-action slice is genuinely Lebesgue measurable, so its real
+volume in the previous bounds is the stated safety measure, not only an
+outer-measure estimate of an unspecified controller set. -/
+theorem actual_safe_hold_action_set_is_lebesgue_measurable
+    (a L x v Delta : ℝ) (ha : 0 < a) (hD : 0 < Delta) :
+    MeasurableSet (heldContinuationActions a L x v Delta) := by
+  have hprefix := actual_held_prefix_safety_set_is_open L x v Delta
+  have hK : IsOpen (printedKernel a L) := by
+    rw [actual_kernel_is_the_strict_stopping_barrier_sublevel a L ha]
+    exact isOpen_lt (by fun_prop : Continuous (wallStoppingBarrier a)) continuous_const
+  have hf : Continuous (fun u : ℝ => (x+v*Delta+(u/2)*Delta^2,v+u*Delta)) := by fun_prop
+  have hbound : MeasurableSet {u : ℝ | |u| ≤ a} := (isClosed_le (by fun_prop) continuous_const).measurableSet
+  have he : heldContinuationActions a L x v Delta =
+      {u : ℝ | |u| ≤ a} ∩
+      {u : ℝ | ∀ t : ℝ, 0 ≤ t → t ≤ Delta → x+v*t+(u/2)*t^2 < L} ∩
+      (fun u : ℝ => (x+v*Delta+(u/2)*Delta^2,v+u*Delta)) ⁻¹' printedKernel a L := by
+    ext u
+    simpa only [mem_inter_iff,mem_setOf_eq,mem_preimage,and_assoc] using
+      actual_safe_hold_action_iff_prefix_and_successor_kernel a L x v Delta u ha hD
+  rw [he]
+  exact (hbound.inter hprefix.measurableSet).inter (hK.preimage hf).measurableSet

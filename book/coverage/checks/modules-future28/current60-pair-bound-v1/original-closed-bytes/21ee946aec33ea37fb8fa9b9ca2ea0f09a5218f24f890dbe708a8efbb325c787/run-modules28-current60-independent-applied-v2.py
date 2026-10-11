@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,sys,time
+R=Path('/home/oxrexkevin/SafetyBased');CHECK=Path('/tmp/check-modules-owner28-current60-independent-applied-v2.py');REC=Path('/tmp/modules28-current60-independent-applied-actual-v2.json');LOG=REC.with_suffix('.log');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();assert not REC.exists()and not LOG.exists();before=H(CHECK);start=datetime.now(timezone.utc).isoformat();tick=time.monotonic()
+with LOG.open('xb')as f:r=subprocess.run([sys.executable,str(CHECK)],cwd=R,stdout=f,stderr=subprocess.STDOUT)
+d={'status':'passed_actual_readonly_mechanics_checker'if r.returncode==0 else'failed_actual_readonly_mechanics_checker','actual_exit_code':r.returncode,'actual_command':[sys.executable,str(CHECK)],'actual_workdir':str(R),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-tick,'helper_sha256_before':{str(CHECK):before},'helper_sha256_after':{str(CHECK):H(CHECK)},'log':str(LOG),'log_sha256':H(LOG),'compiler_or_live_owner_written':False};REC.write_text(json.dumps(d,indent=2)+'\n');print(json.dumps(d));sys.exit(r.returncode)
