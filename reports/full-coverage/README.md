@@ -33,7 +33,10 @@ captures were inspected; whole-site manual screenshot review remains pending.
 Exact content bindings retain every original checkpoint25 path and byte hash.
 Original semantic bodies, hypotheses, commands, failed and passing outputs, and
 times remain unchanged. Checkpoint25's completed GitHub Pages delivery is preserved
-in the progress history. Checkpoint26 awaits its own actual push, Pages build and live checks.
+in the progress history. Checkpoint 26 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/68fa8a62c5085c3dbc92ec6c80e5dfd9f3e2e381).
+The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38124319984)
+completed successfully, and [live delivery](live-checkpoint-26-attempt2.json)
+matched all 31 book asset hashes and the built commit exactly. Full coverage work continues.
 
 Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Reproduce checks into new output paths:

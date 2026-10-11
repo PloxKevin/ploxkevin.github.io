@@ -1,0 +1,533 @@
+{
+  "status": "requires_changes_independent_code_native_guard_observation",
+  "reviewer": "/root/applied_next",
+  "reviewed_at_utc": "2026-10-11T08:26:53.097461+00:00",
+  "helper": {
+    "file": "book/coverage/checks/root_update_publication26_delivery_progress_v3.py",
+    "sha256": "e2c94e169d4b5ffc105b725c488f30c5dcb10ec50397636994a711f0cad57784"
+  },
+  "helper_sha256": "e2c94e169d4b5ffc105b725c488f30c5dcb10ec50397636994a711f0cad57784",
+  "entire_helper_body": "\"\"\"Record completed26 delivery from actual workflow and all31 live hashes.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, shutil, subprocess\n\nROOT=Path(__file__).resolve().parents[3]\nREPORTS=ROOT/'reports/full-coverage'\nPUB=ROOT/'reports/book/publication-repo'\nSELF=Path(__file__).relative_to(ROOT).as_posix()\ndef safe(n):\n    assert isinstance(n,str) and n and str(Path(n))==n\n    assert not Path(n).is_absolute() and '..' not in Path(n).parts\n    assert not any(c in n for c in ('\\0','\\n','\\r'))\n    p=ROOT/n;assert p.resolve().is_relative_to(ROOT.resolve());return p\ndef sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p):return json.loads(p.read_text())\ndef ref(p):return {'file':p.relative_to(ROOT).as_posix(),'sha256':sha(p)}\ndef actual(stem):\n    d=read(REPORTS/(stem+'.json'))\n    codes=[d[k] for k in ('actual_exit_code','exit_code') if k in d]\n    assert codes and all(type(code) is int and code==0 for code in codes)\n    assert sha(safe(d['log']))==d['log_sha256']\n    assert d['actual_workdir'] in (str(ROOT),str(PUB))\n    return d\n\nout=REPORTS/'progress-checkpoint26-delivery-update-v1.json'\nassert not out.exists()\nlive=read(REPORTS/'live-checkpoint-26-attempt2.json');commit=live['commit']\nassert live['status']=='passed_all31_asset_sha256' and len(live['assets'])==31\nassert live['remote_main']==commit\nassert subprocess.run(['git','rev-parse','HEAD'],cwd=PUB,check=True,capture_output=True).stdout.decode().strip()==commit\npages=read(REPORTS/'pages-checkpoint-26-attempt2.json')\nassert pages['status']=='passed' and pages['commit']==pages['expected_commit']==commit\nstems=['publication26-content-commit-execution-v1','publication26-content-push-execution-v1',\n    'publication26-pages-watch-execution-v1','publication26-pages-view-execution-v1',\n    'publication26-pages-artifact-execution-v1','live26-attempt2-execution-v1']\nrecords={s:actual(s) for s in stems}\nworkflow=read(REPORTS/'publication26-pages-view-execution-v1.log')\nassert workflow['headSha']==commit and workflow['status']=='completed' and workflow['conclusion']=='success'\nassert workflow['jobs'] and all(j['conclusion']=='success' for j in workflow['jobs'])\ncommand=records['publication26-pages-view-execution-v1']['actual_command']\nassert command[:3]==['gh','run','view'] and command[3].isdigit();run_id=int(command[3])\nmanifest=read(REPORTS/'checkpoint-26-manifest.json')\naudit=read(REPORTS/'lean-checkpoint-26/verification-original.json')\nledger=read(REPORTS/'frozen-ledger-checkpoint26-v1.json')\nassert manifest['status']=='formal_verification_passed_partial_coverage'\nassert len(manifest['proof_files'])==audit['proof_file_count']==1167 and audit['theorem_count']==9503\nassert audit['status']=='passed' and all(type(c['exit_code']) is int and c['exit_code']==0 for c in audit['checks'])\nassert len(audit['declarations'])==len(audit['axiom_dependencies'])==9503\nassert {d['name'] for d in audit['declarations']}==set(audit['axiom_dependencies'])\nassert set(audit['allowed_standard_axioms'])=={'propext','Classical.choice','Quot.sound'}\nassert all(set(xs)<=set(audit['allowed_standard_axioms']) for xs in audit['axiom_dependencies'].values())\nassert sum(c.get('evidence_mode')=='fresh_kernel_replay' for c in audit['checks'])==11\nassert sum(c.get('evidence_mode')=='reused_identical_module_and_transitive_local_imports' for c in audit['checks'])==1156\nassert manifest['successful_verification']['report_sha256']==sha(REPORTS/'lean-checkpoint-26/verification-original.json')\nassets={n:h for n,h in manifest['frozen_inputs_sha256'].items() if n.startswith('SafeLearning/')}\nassert len(assets)==31 and len({row['source'] for row in live['assets']})==31\nassert {row['source']:row['expected_sha256'] for row in live['assets']}==assets\nfor row in live['assets']:\n    assert row['http_status']==200 and row['matches'] is True\n    assert row['actual_sha256']==row['expected_sha256']==sha(safe(row['source']))==sha(PUB/row['source'])\nassert ledger['integrity_status']=='passed' and ledger['errors']==[] and ledger['mathematical_coverage_complete'] is False\ncounts=ledger['counts'];states=counts['statuses'];materials=counts['material_review_statuses']\nassert counts['exercises']==556 and counts['material_source_units']==12774\nexcounts={label:states.get('exercise:'+key,0) for label,key in [('complete','complete_math'),('partial','partial'),('pending','pending')]}\nassert sum(excounts.values())==556 and sum(materials.values())==12774\nassert sha(ROOT/'book/coverage/inventory.json')==sha(ROOT/'book/coverage/inventory-after-correction53.json')=='4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be'\nassert len(read(ROOT/'book/coverage/material-corrections.json')['corrections'])==53\nfailed_name='live26-attempt1-execution-v1.json'\nfailed=read(REPORTS/failed_name)\nassert type(failed['actual_exit_code']) is int and failed['actual_exit_code']==1\nassert failed['actual_command']==['python3','book/coverage/verify_live19.py','26',commit,'--attempt','1']\nassert sha(safe(failed['log']))==failed['log_sha256']\nfirst_live=read(REPORTS/'live-checkpoint-26-attempt1.json')\nassert first_live['status']=='delivery_not_yet_verified' and first_live['commit']==commit\nassert len(first_live['assets'])==31 and sum(row['matches'] for row in first_live['assets'])==24\nassert all('Temporary failure in name resolution' in row.get('error','') for row in first_live['assets'] if not row['matches'])\nprogress_path=ROOT/'book/coverage/progress.json';readme_path=REPORTS/'README.md'\nprogress=read(progress_path)\nassert progress['verified_checkpoint']['proof_files']==1167 and progress['verified_checkpoint']['theorems']==9503\nassert progress['verified_checkpoint']['coverage_complete'] is False\nassert progress['publication_status']=='checkpoint26_actual_audit_passed_prepared_awaiting_actual_pages_and_live_checks'\nassert progress['last_published_content_commit']==progress['previous_checkpoint25_delivery']['content_commit']\nassert progress['working_next_checkpoint_preparation']['exercise_counts']==excounts\nassert progress['working_next_checkpoint_preparation']['material_review_units']==materials\nbefore=readme_path.read_text()\nold=\"in the progress history. Checkpoint26 awaits its own actual push, Pages build and live checks.\\n\"\nassert before.count(old)==1\nbackup_names=['progress-checkpoint26-before-delivery-update-original-v1.json','README-checkpoint26-before-delivery-update-original-v1.md']\nassert all(not (REPORTS/name).exists() for name in backup_names)\nbackups={}\nfor source,name in zip([progress_path,readme_path],backup_names):\n    target=REPORTS/name;shutil.copyfile(source,target);assert sha(source)==sha(target)\n    backups[source.relative_to(ROOT).as_posix()]=ref(target)\nprogress.update(last_published_commit=commit,last_published_content_commit=commit,\n    live_delivery_status=live['status'],live_delivery_evidence='reports/full-coverage/live-checkpoint-26-attempt2.json',\n    publication_status='checkpoint26_pushed_actual_pages_build_and_all31_live_hashes_verified_coverage_remains_partial')\nprogress['working_next_checkpoint_preparation']['status']='checkpoint26_passed_actual_frozen_audit_and_live_delivery_full_coverage_work_continues'\nprogress_path.write_text(json.dumps(progress,indent=2)+'\\n')\nnew=(f'in the progress history. Checkpoint 26 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/{commit}).\\n'\n     f'The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/{run_id})\\n'\n     'completed successfully, and [live delivery](live-checkpoint-26-attempt2.json)\\n'\n     'matched all 31 book asset hashes and the built commit exactly. Full coverage work continues.\\n')\nreadme_path.write_text(before.replace(old,new,1))\nevidence_names=['live-checkpoint-26-attempt2.json','pages-checkpoint-26-attempt2.json','publication26-pages-view-execution-v1.log',\n    'lean-checkpoint-26/verification-original.json','frozen-ledger-checkpoint26-v1.json']\nfor stem in stems:evidence_names.extend([stem+'.json',stem+'.log'])\nevidence_names.extend(['live-checkpoint-26-attempt1.json','pages-checkpoint-26-attempt1.json','pages-checkpoint-26-attempt1.log',failed_name,'live26-attempt1-execution-v1.log'])\nrecord={'status':'passed_actual_checkpoint26_delivery_progress_update',\n    'updated_at_utc':datetime.now(timezone.utc).isoformat(),'helper':ref(Path(__file__)),\n    'originals':backups,'updated_sha256':{p.relative_to(ROOT).as_posix():sha(p) for p in [progress_path,readme_path]},\n    'content_commit':commit,'pages_run':run_id,'exercise_counts':excounts,'material_review_units':materials,'coverage_complete':False,\n    'evidence_sha256':{(REPORTS/n).relative_to(ROOT).as_posix():sha(REPORTS/n) for n in evidence_names},\n    'retained_first_live_attempt_failure':{'file':'reports/full-coverage/'+failed_name,'sha256':sha(REPORTS/failed_name)},\n    'scope':'Actual delivery metadata only, from genuine successful live attempt2. First attempt1 DNS failure and its actual status, bytes and times remain unchanged; original proof and semantic review bodies and times unchanged.'}\nwith out.open('x') as f:f.write(json.dumps(record,indent=2)+'\\n')\nprint(json.dumps({'status':'passed','content_commit':commit,'pages_run':run_id,'proof_files':1167,'theorems':9503,'coverage_complete':False}))\n",
+  "full_code_read": true,
+  "whole_prior_v1_peer": {
+    "status": "passed_independent_full_code_and_isolated_native_guard_fixture_review",
+    "errors": [],
+    "reviewer": "applied_next",
+    "reviewed_at_utc": "2026-10-11T06:50:33.529622+00:00",
+    "helper": {
+      "file": "book/coverage/checks/root_update_publication26_delivery_progress_v1.py",
+      "sha256": "35465697714e898b2f2fcc692b8f23ae4f0eae7c0365ec12991e9c016ec44a31"
+    },
+    "helper_sha256": "35465697714e898b2f2fcc692b8f23ae4f0eae7c0365ec12991e9c016ec44a31",
+    "entire_reviewed_helper_body": "\"\"\"Record completed26 delivery from actual workflow and all31 live hashes.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, shutil, subprocess\n\nROOT=Path(__file__).resolve().parents[3]\nREPORTS=ROOT/'reports/full-coverage'\nPUB=ROOT/'reports/book/publication-repo'\nSELF=Path(__file__).relative_to(ROOT).as_posix()\ndef safe(n):\n    assert isinstance(n,str) and n and str(Path(n))==n\n    assert not Path(n).is_absolute() and '..' not in Path(n).parts\n    assert not any(c in n for c in ('\\0','\\n','\\r'))\n    p=ROOT/n;assert p.resolve().is_relative_to(ROOT.resolve());return p\ndef sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p):return json.loads(p.read_text())\ndef ref(p):return {'file':p.relative_to(ROOT).as_posix(),'sha256':sha(p)}\ndef actual(stem):\n    d=read(REPORTS/(stem+'.json'))\n    codes=[d[k] for k in ('actual_exit_code','exit_code') if k in d]\n    assert codes and all(type(code) is int and code==0 for code in codes)\n    assert sha(safe(d['log']))==d['log_sha256']\n    assert d['actual_workdir'] in (str(ROOT),str(PUB))\n    return d\n\nout=REPORTS/'progress-checkpoint26-delivery-update-v1.json'\nassert not out.exists()\nlive=read(REPORTS/'live-checkpoint-26-attempt1.json');commit=live['commit']\nassert live['status']=='passed_all31_asset_sha256' and len(live['assets'])==31\nassert live['remote_main']==commit\nassert subprocess.run(['git','rev-parse','HEAD'],cwd=PUB,check=True,capture_output=True).stdout.decode().strip()==commit\npages=read(REPORTS/'pages-checkpoint-26-attempt1.json')\nassert pages['status']=='passed' and pages['commit']==pages['expected_commit']==commit\nstems=['publication26-content-commit-execution-v1','publication26-content-push-execution-v1',\n    'publication26-pages-watch-execution-v1','publication26-pages-view-execution-v1',\n    'publication26-pages-artifact-execution-v1','live26-attempt1-execution-v1']\nrecords={s:actual(s) for s in stems}\nworkflow=read(REPORTS/'publication26-pages-view-execution-v1.log')\nassert workflow['headSha']==commit and workflow['status']=='completed' and workflow['conclusion']=='success'\nassert workflow['jobs'] and all(j['conclusion']=='success' for j in workflow['jobs'])\ncommand=records['publication26-pages-view-execution-v1']['actual_command']\nassert command[:3]==['gh','run','view'] and command[3].isdigit();run_id=int(command[3])\nmanifest=read(REPORTS/'checkpoint-26-manifest.json')\naudit=read(REPORTS/'lean-checkpoint-26/verification-original.json')\nledger=read(REPORTS/'frozen-ledger-checkpoint26-v1.json')\nassert manifest['status']=='formal_verification_passed_partial_coverage'\nassert len(manifest['proof_files'])==audit['proof_file_count']==1167 and audit['theorem_count']==9503\nassert audit['status']=='passed' and all(type(c['exit_code']) is int and c['exit_code']==0 for c in audit['checks'])\nassert len(audit['declarations'])==len(audit['axiom_dependencies'])==9503\nassert {d['name'] for d in audit['declarations']}==set(audit['axiom_dependencies'])\nassert set(audit['allowed_standard_axioms'])=={'propext','Classical.choice','Quot.sound'}\nassert all(set(xs)<=set(audit['allowed_standard_axioms']) for xs in audit['axiom_dependencies'].values())\nassert sum(c.get('evidence_mode')=='fresh_kernel_replay' for c in audit['checks'])==11\nassert sum(c.get('evidence_mode')=='reused_identical_module_and_transitive_local_imports' for c in audit['checks'])==1156\nassert manifest['successful_verification']['report_sha256']==sha(REPORTS/'lean-checkpoint-26/verification-original.json')\nassets={n:h for n,h in manifest['frozen_inputs_sha256'].items() if n.startswith('SafeLearning/')}\nassert len(assets)==31 and len({row['source'] for row in live['assets']})==31\nassert {row['source']:row['expected_sha256'] for row in live['assets']}==assets\nfor row in live['assets']:\n    assert row['http_status']==200 and row['matches'] is True\n    assert row['actual_sha256']==row['expected_sha256']==sha(safe(row['source']))==sha(PUB/row['source'])\nassert ledger['integrity_status']=='passed' and ledger['errors']==[] and ledger['mathematical_coverage_complete'] is False\ncounts=ledger['counts'];states=counts['statuses'];materials=counts['material_review_statuses']\nassert counts['exercises']==556 and counts['material_source_units']==12774\nexcounts={label:states.get('exercise:'+key,0) for label,key in [('complete','complete_math'),('partial','partial'),('pending','pending')]}\nassert sum(excounts.values())==556 and sum(materials.values())==12774\nassert sha(ROOT/'book/coverage/inventory.json')==sha(ROOT/'book/coverage/inventory-after-correction53.json')=='4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be'\nassert len(read(ROOT/'book/coverage/material-corrections.json')['corrections'])==53\nprogress_path=ROOT/'book/coverage/progress.json';readme_path=REPORTS/'README.md'\nprogress=read(progress_path)\nassert progress['verified_checkpoint']['proof_files']==1167 and progress['verified_checkpoint']['theorems']==9503\nassert progress['verified_checkpoint']['coverage_complete'] is False\nassert progress['publication_status']=='checkpoint26_actual_audit_passed_prepared_awaiting_actual_pages_and_live_checks'\nassert progress['last_published_content_commit']==progress['previous_checkpoint25_delivery']['content_commit']\nassert progress['working_next_checkpoint_preparation']['exercise_counts']==excounts\nassert progress['working_next_checkpoint_preparation']['material_review_units']==materials\nbefore=readme_path.read_text()\nold=\"in the progress history. Checkpoint26 awaits its own actual push, Pages build and live checks.\\n\"\nassert before.count(old)==1\nbackup_names=['progress-checkpoint26-before-delivery-update-original-v1.json','README-checkpoint26-before-delivery-update-original-v1.md']\nassert all(not (REPORTS/name).exists() for name in backup_names)\nbackups={}\nfor source,name in zip([progress_path,readme_path],backup_names):\n    target=REPORTS/name;shutil.copyfile(source,target);assert sha(source)==sha(target)\n    backups[source.relative_to(ROOT).as_posix()]=ref(target)\nprogress.update(last_published_commit=commit,last_published_content_commit=commit,\n    live_delivery_status=live['status'],live_delivery_evidence='reports/full-coverage/live-checkpoint-26-attempt1.json',\n    publication_status='checkpoint26_pushed_actual_pages_build_and_all31_live_hashes_verified_coverage_remains_partial')\nprogress['working_next_checkpoint_preparation']['status']='checkpoint26_passed_actual_frozen_audit_and_live_delivery_full_coverage_work_continues'\nprogress_path.write_text(json.dumps(progress,indent=2)+'\\n')\nnew=(f'in the progress history. Checkpoint 26 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/{commit}).\\n'\n     f'The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/{run_id})\\n'\n     'completed successfully, and [live delivery](live-checkpoint-26-attempt1.json)\\n'\n     'matched all 31 book asset hashes and the built commit exactly. Full coverage work continues.\\n')\nreadme_path.write_text(before.replace(old,new,1))\nevidence_names=['live-checkpoint-26-attempt1.json','pages-checkpoint-26-attempt1.json','publication26-pages-view-execution-v1.log',\n    'lean-checkpoint-26/verification-original.json','frozen-ledger-checkpoint26-v1.json']\nfor stem in stems:evidence_names.extend([stem+'.json',stem+'.log'])\nrecord={'status':'passed_actual_checkpoint26_delivery_progress_update',\n    'updated_at_utc':datetime.now(timezone.utc).isoformat(),'helper':ref(Path(__file__)),\n    'originals':backups,'updated_sha256':{p.relative_to(ROOT).as_posix():sha(p) for p in [progress_path,readme_path]},\n    'content_commit':commit,'pages_run':run_id,'exercise_counts':excounts,'material_review_units':materials,'coverage_complete':False,\n    'evidence_sha256':{(REPORTS/n).relative_to(ROOT).as_posix():sha(REPORTS/n) for n in evidence_names},\n    'scope':'Actual delivery metadata only; original proof and semantic review bodies and times unchanged.'}\nwith out.open('x') as f:f.write(json.dumps(record,indent=2)+'\\n')\nprint(json.dumps({'status':'passed','content_commit':commit,'pages_run':run_id,'proof_files':1167,'theorems':9503,'coverage_complete':False}))\n",
+    "full_code_read": true,
+    "fixtures": [
+      {
+        "fixture": "native actual int-zero ROOT",
+        "accepted": true,
+        "expected_acceptance": true,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "native actual int-zero PUB",
+        "accepted": true,
+        "expected_acceptance": true,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "native actual bool false",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "native actual conflicting exit aliases",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "native actual missing exits",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "native actual changed raw log digest",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "native actual wrong working directory",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit all actual26 fields",
+        "accepted": true,
+        "expected_acceptance": true,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit bool kernel success",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit wrong declaration count",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit changed axiom key same cardinality",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit extra axiom",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit replay scope mislabelled fresh",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit audit report digest changed",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "audit complete coverage status substituted",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live exact31 frozen actual matches",
+        "accepted": true,
+        "expected_acceptance": true,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live duplicate source",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live missing asset",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live HTTP failure",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live truthy nonbool matches",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live changed actual body",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "live changed expected body",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "workflow real completed successful jobs",
+        "accepted": true,
+        "expected_acceptance": true,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "workflow wrong commit",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "workflow job failure",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "workflow no jobs",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "workflow still queued",
+        "accepted": false,
+        "expected_acceptance": false,
+        "synthetic_only": true
+      },
+      {
+        "fixture": "metadata exact inverse and entire checkpoint25 semantic history",
+        "accepted": true,
+        "synthetic_only": true
+      }
+    ],
+    "fixture_count": 28,
+    "actual_scope": "Unexecuted code only. Synthetic isolated native success/exit/log/workdir/audit/axiom/replay/live/workflow and exact-history-inverse fixtures; no actual delivery, producer execution, owner, README/progress, PUB or Git mutation performed. Real audit, frozen ledger, six measured commit/push/Pages/live outputs and exact31 live assets remain required before updater writes.",
+    "preserved_initial_reader_failure": {
+      "checker": {
+        "file": "/tmp/check-publication26-delivery-updater-independent-applied-v1.py",
+        "sha256": "7b874b86e2f15ed2bed35c3f2737ff4d8064df64bbe8e70e555631e4eae970b9"
+      },
+      "actual": {
+        "file": "/tmp/publication26-delivery-updater-independent-applied-actual-v1.json",
+        "sha256": "b711c0ccda33a85186e7ea98f9a5479d3f88f8a5d8414fe163b59977e664eb50"
+      },
+      "raw_log": {
+        "file": "/tmp/publication26-delivery-updater-independent-applied-actual-v1.log",
+        "sha256": "bea9075728b6e6a11f2431277ab64890be5adf5021253a367b6289006e2a1742"
+      },
+      "reason": "Independent isolated function fixture initially placed read in a new dict rather than the function global namespace. Stopped before any report or producer writes; checker2 repairs only that namespace binding."
+    },
+    "native_schema_notes": [
+      "Native26 audit declarations are records with name fields; all9503 names equal axiom-map keys; fresh11/reused1156 modes distinct.",
+      "The prior25 history and full proof/semantic/review fields survive exact metadata update inverse.",
+      "Native actual wrappers require every present exit alias to be integer zero and exact current raw-log bytes; synthetic records are explicitly isolated, not measured producer results.",
+      "Metadata stager independently pins all updater evidence hashes against current originals before copying."
+    ],
+    "entire_original_review_body_and_time": {
+      "status": "passed_independent_full_code_and_isolated_native_guard_fixture_review",
+      "errors": [],
+      "reviewer": "applied_next",
+      "reviewed_at_utc": "2026-10-11T06:50:33.529622+00:00",
+      "helper": {
+        "file": "book/coverage/checks/root_update_publication26_delivery_progress_v1.py",
+        "sha256": "35465697714e898b2f2fcc692b8f23ae4f0eae7c0365ec12991e9c016ec44a31"
+      },
+      "helper_sha256": "35465697714e898b2f2fcc692b8f23ae4f0eae7c0365ec12991e9c016ec44a31",
+      "entire_reviewed_helper_body": "\"\"\"Record completed26 delivery from actual workflow and all31 live hashes.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, shutil, subprocess\n\nROOT=Path(__file__).resolve().parents[3]\nREPORTS=ROOT/'reports/full-coverage'\nPUB=ROOT/'reports/book/publication-repo'\nSELF=Path(__file__).relative_to(ROOT).as_posix()\ndef safe(n):\n    assert isinstance(n,str) and n and str(Path(n))==n\n    assert not Path(n).is_absolute() and '..' not in Path(n).parts\n    assert not any(c in n for c in ('\\0','\\n','\\r'))\n    p=ROOT/n;assert p.resolve().is_relative_to(ROOT.resolve());return p\ndef sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p):return json.loads(p.read_text())\ndef ref(p):return {'file':p.relative_to(ROOT).as_posix(),'sha256':sha(p)}\ndef actual(stem):\n    d=read(REPORTS/(stem+'.json'))\n    codes=[d[k] for k in ('actual_exit_code','exit_code') if k in d]\n    assert codes and all(type(code) is int and code==0 for code in codes)\n    assert sha(safe(d['log']))==d['log_sha256']\n    assert d['actual_workdir'] in (str(ROOT),str(PUB))\n    return d\n\nout=REPORTS/'progress-checkpoint26-delivery-update-v1.json'\nassert not out.exists()\nlive=read(REPORTS/'live-checkpoint-26-attempt1.json');commit=live['commit']\nassert live['status']=='passed_all31_asset_sha256' and len(live['assets'])==31\nassert live['remote_main']==commit\nassert subprocess.run(['git','rev-parse','HEAD'],cwd=PUB,check=True,capture_output=True).stdout.decode().strip()==commit\npages=read(REPORTS/'pages-checkpoint-26-attempt1.json')\nassert pages['status']=='passed' and pages['commit']==pages['expected_commit']==commit\nstems=['publication26-content-commit-execution-v1','publication26-content-push-execution-v1',\n    'publication26-pages-watch-execution-v1','publication26-pages-view-execution-v1',\n    'publication26-pages-artifact-execution-v1','live26-attempt1-execution-v1']\nrecords={s:actual(s) for s in stems}\nworkflow=read(REPORTS/'publication26-pages-view-execution-v1.log')\nassert workflow['headSha']==commit and workflow['status']=='completed' and workflow['conclusion']=='success'\nassert workflow['jobs'] and all(j['conclusion']=='success' for j in workflow['jobs'])\ncommand=records['publication26-pages-view-execution-v1']['actual_command']\nassert command[:3]==['gh','run','view'] and command[3].isdigit();run_id=int(command[3])\nmanifest=read(REPORTS/'checkpoint-26-manifest.json')\naudit=read(REPORTS/'lean-checkpoint-26/verification-original.json')\nledger=read(REPORTS/'frozen-ledger-checkpoint26-v1.json')\nassert manifest['status']=='formal_verification_passed_partial_coverage'\nassert len(manifest['proof_files'])==audit['proof_file_count']==1167 and audit['theorem_count']==9503\nassert audit['status']=='passed' and all(type(c['exit_code']) is int and c['exit_code']==0 for c in audit['checks'])\nassert len(audit['declarations'])==len(audit['axiom_dependencies'])==9503\nassert {d['name'] for d in audit['declarations']}==set(audit['axiom_dependencies'])\nassert set(audit['allowed_standard_axioms'])=={'propext','Classical.choice','Quot.sound'}\nassert all(set(xs)<=set(audit['allowed_standard_axioms']) for xs in audit['axiom_dependencies'].values())\nassert sum(c.get('evidence_mode')=='fresh_kernel_replay' for c in audit['checks'])==11\nassert sum(c.get('evidence_mode')=='reused_identical_module_and_transitive_local_imports' for c in audit['checks'])==1156\nassert manifest['successful_verification']['report_sha256']==sha(REPORTS/'lean-checkpoint-26/verification-original.json')\nassets={n:h for n,h in manifest['frozen_inputs_sha256'].items() if n.startswith('SafeLearning/')}\nassert len(assets)==31 and len({row['source'] for row in live['assets']})==31\nassert {row['source']:row['expected_sha256'] for row in live['assets']}==assets\nfor row in live['assets']:\n    assert row['http_status']==200 and row['matches'] is True\n    assert row['actual_sha256']==row['expected_sha256']==sha(safe(row['source']))==sha(PUB/row['source'])\nassert ledger['integrity_status']=='passed' and ledger['errors']==[] and ledger['mathematical_coverage_complete'] is False\ncounts=ledger['counts'];states=counts['statuses'];materials=counts['material_review_statuses']\nassert counts['exercises']==556 and counts['material_source_units']==12774\nexcounts={label:states.get('exercise:'+key,0) for label,key in [('complete','complete_math'),('partial','partial'),('pending','pending')]}\nassert sum(excounts.values())==556 and sum(materials.values())==12774\nassert sha(ROOT/'book/coverage/inventory.json')==sha(ROOT/'book/coverage/inventory-after-correction53.json')=='4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be'\nassert len(read(ROOT/'book/coverage/material-corrections.json')['corrections'])==53\nprogress_path=ROOT/'book/coverage/progress.json';readme_path=REPORTS/'README.md'\nprogress=read(progress_path)\nassert progress['verified_checkpoint']['proof_files']==1167 and progress['verified_checkpoint']['theorems']==9503\nassert progress['verified_checkpoint']['coverage_complete'] is False\nassert progress['publication_status']=='checkpoint26_actual_audit_passed_prepared_awaiting_actual_pages_and_live_checks'\nassert progress['last_published_content_commit']==progress['previous_checkpoint25_delivery']['content_commit']\nassert progress['working_next_checkpoint_preparation']['exercise_counts']==excounts\nassert progress['working_next_checkpoint_preparation']['material_review_units']==materials\nbefore=readme_path.read_text()\nold=\"in the progress history. Checkpoint26 awaits its own actual push, Pages build and live checks.\\n\"\nassert before.count(old)==1\nbackup_names=['progress-checkpoint26-before-delivery-update-original-v1.json','README-checkpoint26-before-delivery-update-original-v1.md']\nassert all(not (REPORTS/name).exists() for name in backup_names)\nbackups={}\nfor source,name in zip([progress_path,readme_path],backup_names):\n    target=REPORTS/name;shutil.copyfile(source,target);assert sha(source)==sha(target)\n    backups[source.relative_to(ROOT).as_posix()]=ref(target)\nprogress.update(last_published_commit=commit,last_published_content_commit=commit,\n    live_delivery_status=live['status'],live_delivery_evidence='reports/full-coverage/live-checkpoint-26-attempt1.json',\n    publication_status='checkpoint26_pushed_actual_pages_build_and_all31_live_hashes_verified_coverage_remains_partial')\nprogress['working_next_checkpoint_preparation']['status']='checkpoint26_passed_actual_frozen_audit_and_live_delivery_full_coverage_work_continues'\nprogress_path.write_text(json.dumps(progress,indent=2)+'\\n')\nnew=(f'in the progress history. Checkpoint 26 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/{commit}).\\n'\n     f'The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/{run_id})\\n'\n     'completed successfully, and [live delivery](live-checkpoint-26-attempt1.json)\\n'\n     'matched all 31 book asset hashes and the built commit exactly. Full coverage work continues.\\n')\nreadme_path.write_text(before.replace(old,new,1))\nevidence_names=['live-checkpoint-26-attempt1.json','pages-checkpoint-26-attempt1.json','publication26-pages-view-execution-v1.log',\n    'lean-checkpoint-26/verification-original.json','frozen-ledger-checkpoint26-v1.json']\nfor stem in stems:evidence_names.extend([stem+'.json',stem+'.log'])\nrecord={'status':'passed_actual_checkpoint26_delivery_progress_update',\n    'updated_at_utc':datetime.now(timezone.utc).isoformat(),'helper':ref(Path(__file__)),\n    'originals':backups,'updated_sha256':{p.relative_to(ROOT).as_posix():sha(p) for p in [progress_path,readme_path]},\n    'content_commit':commit,'pages_run':run_id,'exercise_counts':excounts,'material_review_units':materials,'coverage_complete':False,\n    'evidence_sha256':{(REPORTS/n).relative_to(ROOT).as_posix():sha(REPORTS/n) for n in evidence_names},\n    'scope':'Actual delivery metadata only; original proof and semantic review bodies and times unchanged.'}\nwith out.open('x') as f:f.write(json.dumps(record,indent=2)+'\\n')\nprint(json.dumps({'status':'passed','content_commit':commit,'pages_run':run_id,'proof_files':1167,'theorems':9503,'coverage_complete':False}))\n",
+      "full_code_read": true,
+      "fixtures": [
+        {
+          "fixture": "native actual int-zero ROOT",
+          "accepted": true,
+          "expected_acceptance": true,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "native actual int-zero PUB",
+          "accepted": true,
+          "expected_acceptance": true,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "native actual bool false",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "native actual conflicting exit aliases",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "native actual missing exits",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "native actual changed raw log digest",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "native actual wrong working directory",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit all actual26 fields",
+          "accepted": true,
+          "expected_acceptance": true,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit bool kernel success",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit wrong declaration count",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit changed axiom key same cardinality",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit extra axiom",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit replay scope mislabelled fresh",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit audit report digest changed",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "audit complete coverage status substituted",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live exact31 frozen actual matches",
+          "accepted": true,
+          "expected_acceptance": true,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live duplicate source",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live missing asset",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live HTTP failure",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live truthy nonbool matches",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live changed actual body",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "live changed expected body",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "workflow real completed successful jobs",
+          "accepted": true,
+          "expected_acceptance": true,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "workflow wrong commit",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "workflow job failure",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "workflow no jobs",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "workflow still queued",
+          "accepted": false,
+          "expected_acceptance": false,
+          "synthetic_only": true
+        },
+        {
+          "fixture": "metadata exact inverse and entire checkpoint25 semantic history",
+          "accepted": true,
+          "synthetic_only": true
+        }
+      ],
+      "fixture_count": 28,
+      "actual_scope": "Unexecuted code only. Synthetic isolated native success/exit/log/workdir/audit/axiom/replay/live/workflow and exact-history-inverse fixtures; no actual delivery, producer execution, owner, README/progress, PUB or Git mutation performed. Real audit, frozen ledger, six measured commit/push/Pages/live outputs and exact31 live assets remain required before updater writes.",
+      "preserved_initial_reader_failure": {
+        "checker": {
+          "file": "/tmp/check-publication26-delivery-updater-independent-applied-v1.py",
+          "sha256": "7b874b86e2f15ed2bed35c3f2737ff4d8064df64bbe8e70e555631e4eae970b9"
+        },
+        "actual": {
+          "file": "/tmp/publication26-delivery-updater-independent-applied-actual-v1.json",
+          "sha256": "b711c0ccda33a85186e7ea98f9a5479d3f88f8a5d8414fe163b59977e664eb50"
+        },
+        "raw_log": {
+          "file": "/tmp/publication26-delivery-updater-independent-applied-actual-v1.log",
+          "sha256": "bea9075728b6e6a11f2431277ab64890be5adf5021253a367b6289006e2a1742"
+        },
+        "reason": "Independent isolated function fixture initially placed read in a new dict rather than the function global namespace. Stopped before any report or producer writes; checker2 repairs only that namespace binding."
+      },
+      "native_schema_notes": [
+        "Native26 audit declarations are records with name fields; all9503 names equal axiom-map keys; fresh11/reused1156 modes distinct.",
+        "The prior25 history and full proof/semantic/review fields survive exact metadata update inverse.",
+        "Native actual wrappers require every present exit alias to be integer zero and exact current raw-log bytes; synthetic records are explicitly isolated, not measured producer results.",
+        "Metadata stager independently pins all updater evidence hashes against current originals before copying."
+      ]
+    },
+    "actual_execution": {
+      "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v2.json",
+      "sha256": "07b0d1077fa7934c0f3309b823ad6d01b5ee4187acb51da658737dedc794aa43"
+    },
+    "original_closed_byte_aliases": {
+      "/tmp/check-publication26-delivery-updater-independent-applied-v1.py": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/check-publication26-delivery-updater-independent-applied-v1.py",
+        "sha256": "7b874b86e2f15ed2bed35c3f2737ff4d8064df64bbe8e70e555631e4eae970b9"
+      },
+      "/tmp/run-publication26-delivery-updater-independent-applied-v1.py": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/run-publication26-delivery-updater-independent-applied-v1.py",
+        "sha256": "e214aa23d2f301b2b587067d1841f735c4ba3a1bb86c9a0809ac60ca91201169"
+      },
+      "/tmp/publication26-delivery-updater-independent-applied-actual-v1.json": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v1.json",
+        "sha256": "b711c0ccda33a85186e7ea98f9a5479d3f88f8a5d8414fe163b59977e664eb50"
+      },
+      "/tmp/publication26-delivery-updater-independent-applied-actual-v1.log": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v1.log",
+        "sha256": "bea9075728b6e6a11f2431277ab64890be5adf5021253a367b6289006e2a1742"
+      },
+      "/tmp/check-publication26-delivery-updater-independent-applied-v2.py": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/check-publication26-delivery-updater-independent-applied-v2.py",
+        "sha256": "e03682cd90d60ce1daec2421ef74c0845ee8029e2bb5bca308bee93dc4c9d04a"
+      },
+      "/tmp/run-publication26-delivery-updater-independent-applied-v2.py": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/run-publication26-delivery-updater-independent-applied-v2.py",
+        "sha256": "11a7aa1c7ffde2bbb44eb8bd807aa0180704f507b7d51937d0da9e64ae3ed9a9"
+      },
+      "/tmp/publication26-delivery-updater-independent-applied-actual-v2.json": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v2.json",
+        "sha256": "07b0d1077fa7934c0f3309b823ad6d01b5ee4187acb51da658737dedc794aa43"
+      },
+      "/tmp/publication26-delivery-updater-independent-applied-actual-v2.log": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v2.log",
+        "sha256": "be9e54da5d000b7dbe39bd7e37dd938e8533df49cac81faf108de6e70b89fed6"
+      },
+      "/tmp/publication26-delivery-updater-independent-applied-review-v1.json": {
+        "file": "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-review-v1.json",
+        "sha256": "fa94a5bf82fe84f4e5113660a801d562d096d753eea4a3731b1798de0e925d6e"
+      }
+    },
+    "closed_evidence_sha256": {
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/check-publication26-delivery-updater-independent-applied-v1.py": "7b874b86e2f15ed2bed35c3f2737ff4d8064df64bbe8e70e555631e4eae970b9",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/run-publication26-delivery-updater-independent-applied-v1.py": "e214aa23d2f301b2b587067d1841f735c4ba3a1bb86c9a0809ac60ca91201169",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v1.json": "b711c0ccda33a85186e7ea98f9a5479d3f88f8a5d8414fe163b59977e664eb50",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v1.log": "bea9075728b6e6a11f2431277ab64890be5adf5021253a367b6289006e2a1742",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/check-publication26-delivery-updater-independent-applied-v2.py": "e03682cd90d60ce1daec2421ef74c0845ee8029e2bb5bca308bee93dc4c9d04a",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/run-publication26-delivery-updater-independent-applied-v2.py": "11a7aa1c7ffde2bbb44eb8bd807aa0180704f507b7d51937d0da9e64ae3ed9a9",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v2.json": "07b0d1077fa7934c0f3309b823ad6d01b5ee4187acb51da658737dedc794aa43",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-actual-v2.log": "be9e54da5d000b7dbe39bd7e37dd938e8533df49cac81faf108de6e70b89fed6",
+      "book/coverage/checks/future26-core/original-publication26-updater-independent-applied-v1/publication26-delivery-updater-independent-applied-review-v1.json": "fa94a5bf82fe84f4e5113660a801d562d096d753eea4a3731b1798de0e925d6e"
+    }
+  },
+  "fixtures": [
+    {
+      "fixture": "actual first native24 matched plus7DNS accepted",
+      "accepted": true,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "boolean actual failure rejected",
+      "accepted": false,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "wrong raw log hash rejected",
+      "accepted": false,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "wrong first commit rejected",
+      "accepted": false,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "wrong match count rejected",
+      "accepted": false,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "conflicting extra exit alias currently accepted",
+      "accepted": true,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "changed expected hash currently accepted",
+      "accepted": true,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "changed actual matched hash currently accepted",
+      "accepted": true,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "duplicate first source currently accepted",
+      "accepted": true,
+      "synthetic_isolated_copy": true
+    },
+    {
+      "fixture": "matched HTTP404 currently accepted",
+      "accepted": true,
+      "synthetic_isolated_copy": true
+    }
+  ],
+  "findings": [
+    "The actual first native bytes are good, but the failed wrapper gate ignores conflicting present exit aliases.",
+    "The first native31 row gate accepts altered expected/actual hashes, duplicate source or HTTP404 under a truthy matched row. New version should bind the first source/hash map to frozen assets and24 genuinely matched HTTP200 rows/7strict False DNS failures before writes.",
+    "Successful retry wrapper should bind exact attempt2 command."
+  ],
+  "actual_scope": "Read-only helper code and isolated synthetic copies only. No producer execution, progress/README/backup/PUB/Git/owner write. Existing v3 held unchanged; fixture pass is diagnostic completion, not helper approval."
+}
