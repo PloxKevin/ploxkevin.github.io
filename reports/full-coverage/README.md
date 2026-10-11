@@ -50,8 +50,10 @@ binding and selector executions remain failures in the preserved evidence.
 Located source excerpts remain audit evidence; full external papers retain their
 separate attributed reference scope.
 
-Checkpoint 23 is prepared for GitHub publication. Its actual commit, Pages build
-and live delivery will be recorded only after those operations finish.
+Checkpoint 23 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/e384ffa82cea432f274dd83abbe498f988c756e4).
+The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38105180456)
+completed successfully, and [live delivery](live-checkpoint-23-attempt1.json)
+matched all 31 book asset hashes and the built commit exactly.
 Complete audit archives and
 [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Literal archive exclusions keep the current book, partial
