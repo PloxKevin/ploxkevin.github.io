@@ -1,0 +1,11 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import subprocess,time,json,hashlib
+R=Path('/home/oxrexkevin/SafetyBased');D=Path('/tmp/applied-gaussian-mixture24-isolated-imports');assert not D.exists();(D/'SafeLearning').mkdir(parents=True)
+H=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();records=[]
+for name in ['CompleteAppliedGaussianMixtureLaw24','CompleteAppliedGaussianMixtureCDFNumbers24','CompleteAppliedGaussianSmallTail24']:
+ s=Path('/tmp')/(name+'.lean');h=H(s);o=D/'SafeLearning'/(name+'.olean');prefix=Path('/tmp')/(name+'-isolated-import-build24-v1');log=prefix.with_suffix('.log');rec=prefix.with_suffix('.json');assert not log.exists() and not rec.exists();cmd=['env','LEAN_PATH='+str(D),'lake','env','lean','-o',str(o),str(s)];start=datetime.now(timezone.utc).isoformat();t=time.monotonic()
+ with log.open('wb') as f:a=subprocess.run(cmd,cwd=R/'verification/lean',stdout=f,stderr=subprocess.STDOUT)
+ z={'status':'passed' if a.returncode==0 else 'failed','actual_exit_code':a.returncode,'actual_command':cmd,'actual_workdir':str(R/'verification/lean'),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'source':str(s),'source_sha256_before':h,'source_sha256_after':H(s),'actual_olean_output':str(o),'actual_olean_sha256':H(o) if o.exists() else None,'log':str(log),'log_sha256':H(log),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual TMP-only compiler output to an isolated /tmp import directory. No shared .lake artifact, canonical named build, proof selection, aggregate audit or owner change.'};rec.write_text(json.dumps(z,indent=2)+'\n');records.append({'file':str(rec),'sha256':H(rec)});print(rec,H(rec),flush=True)
+ if a.returncode:print(log.read_text());raise SystemExit(a.returncode)
+p=Path('/tmp/applied-gaussian-mixture24-isolated-import-build-readiness-v1.json');assert not p.exists();p.write_text(json.dumps({'status':'passed_actual_three_TMP_isolated_compiler_outputs','import_directory':str(D),'actual_records':records,'scope':'Temporary source import reuse only; canonical/named/global coverage assertions remain separate.'},indent=2)+'\n');print(p,H(p))

@@ -1,0 +1,700 @@
+{
+  "status": "independent_exact_single_frozen24_draft_to_actual25_working_helper_archive_delta_review_passed",
+  "errors": [],
+  "reviewed_at_utc": "2026-10-11T04:30:51.649947+00:00",
+  "reviewer": "Independent Foundations agent; Root authored original canonical helper",
+  "helper_sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+  "original_frozen24_helper": {
+    "file": "reports/full-coverage/checkpoint-24/book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+    "sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6"
+  },
+  "current_actual_working_helper": {
+    "file": "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+    "sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6"
+  },
+  "exact_working_input_hash_update": {
+    "file": "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+    "original_frozen24_sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6",
+    "current_working_sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+    "original_frozen24_byte_copy": {
+      "file": "reports/full-coverage/checkpoint-24/book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+      "sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6"
+    }
+  },
+  "baseline24_manifest": {
+    "file": "reports/full-coverage/checkpoint-24-manifest.json",
+    "sha256": "5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0"
+  },
+  "entire_old_frozen_helper_source": "\"\"\"Preserve reviewed trials and run two real, uniquely named compiler checks.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, re, subprocess\n\nROOT = Path(__file__).resolve().parents[3]\nTMP = Path('/tmp')\nBASE = ROOT / 'book/coverage/checks/future25-core/barrier-control'\nNAME = 'CompleteBarrierControlMaterial25'\nSOURCE = TMP / 'root-barrier-control-material25-trial2.lean'\nDIGEST = 'b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8'\n\ndef sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p): return json.loads(p.read_text())\ndef rel(p): return p.relative_to(ROOT).as_posix()\ndef exact_copy(source, target):\n    target.parent.mkdir(parents=True, exist_ok=True)\n    if target.exists(): assert sha(target) == sha(source), str(target)\n    else:\n        with target.open('xb') as f: f.write(source.read_bytes())\n    assert sha(target) == sha(source)\n\nselection = read(ROOT / 'reports/full-coverage/checkpoint-24-selection.json')\nmanifest = read(ROOT / 'reports/full-coverage/checkpoint-24-manifest.json')\nassert len(selection['proof_files']) == 1144\nprotected = {n:r['sha256'] for n,r in selection['proof_files'].items()}\nowners = {'book/coverage/'+o+'.json' for o in ['core','foundations','applied','modules']}\nowners.add('book/coverage/applied-promotions.json')\nprotected.update({n:h for n,h in manifest['working_inputs_sha256'].items()\n                  if n.startswith('SafeLearning/') or n in owners or n == 'book/coverage/inventory.json'})\ndef guard():\n    for n,h in protected.items(): assert sha(ROOT/n) == h,n\n\nassert (ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json').exists()\nassert read(ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json')['actual_exit_code'] == 0\nguard()\nassert sha(SOURCE) == DIGEST\npeer = TMP / 'root-barrier-control-material25-two-literals-independent-applied-review-v1.json'\nassert sha(peer) == '76e1758db4acca9f756742e630a66a69f7cd604a7380e4e6370e183f583162a5'\ncanonical = ROOT / 'verification/lean/SafeLearning' / (NAME+'.lean')\nassert not canonical.exists()\nfor suffix in ['-standalone.json','.log','-named-build.json','-named-build.log']:\n    assert not (ROOT/'book/coverage/checks'/(NAME+suffix)).exists()\noriginals = {p for pattern in ['root-barrier-control-material25*','root_compile_tmp_core25*',\n            'CompleteBarrierControlMaterial25*','root-core25-case-study-guidance*']\n            for p in TMP.glob(pattern) if p.is_file()}\nassert SOURCE in originals and peer in originals and len(originals) > 10\narchived = {}\nfor p in sorted(originals):\n    target = BASE/'original-tmp'/p.name\n    exact_copy(p,target)\n    archived[str(p)] = {'file':rel(target),'sha256':sha(target)}\nexact_copy(SOURCE,canonical)\nsnapshot = BASE/(NAME+'-original-source-v1.lean')\nexact_copy(SOURCE,snapshot)\nassert len(re.findall(r'^theorem ',canonical.read_text(),re.M)) == 7\nfor helper in ['book/coverage/check_core_standalone.py','book/coverage/check_core_named_build.py']:\n    result = subprocess.run(['python3',helper,NAME],cwd=ROOT)\n    guard()\n    assert sha(canonical) == DIGEST\n    if result.returncode: raise SystemExit(result.returncode)\npairs = []\nfor suffix in ['-standalone.json','-named-build.json']:\n    p = ROOT/'book/coverage/checks'/(NAME+suffix)\n    d = read(p)\n    assert d['exit_code'] == 0 and d['source_sha256_before'] == d['source_sha256_after'] == DIGEST\n    assert sha(ROOT/d['log']) == d['log_sha256']\n    pairs.append({'file':rel(p),'sha256':sha(p),'log':{'file':d['log'],'sha256':d['log_sha256']},'actual_exit_code':0})\nout = BASE/'root-barrier-control25-canonical-readiness-v1.json'\nassert not out.exists()\nout.write_text(json.dumps({'status':'passed_actual_canonical_pair_unselected_future25',\n    'prepared_at_utc':datetime.now(timezone.utc).isoformat(),\n    'source':{'file':rel(canonical),'sha256':DIGEST},\n    'source_snapshot':{'file':rel(snapshot),'sha256':DIGEST},\n    'public_theorem_count':7,'actual_canonical_pair':pairs,\n    'original_TMP_byte_copies':archived,'protected_selected24_source_count':1144,\n    'scope':'Exact original trial, failed compilation, mathematical review and execution time bytes retained. These are real compiler checks, with no inferred kernel replay, selection, whole-ledger promotion or complete coverage.',\n    'coverage_complete':False},indent=2)+'\\n')\nguard()\nprint(json.dumps({'status':'passed','public_theorems':7,'archived_originals':len(archived),'readiness':rel(out)}))\n",
+  "entire_current_actual_helper_source": "\"\"\"Preserve reviewed trials and run two real, uniquely named compiler checks.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, re, subprocess\n\nROOT = Path(__file__).resolve().parents[3]\nTMP = Path('/tmp')\nBASE = ROOT / 'book/coverage/checks/future25-core/barrier-control'\nNAME = 'CompleteBarrierControlMaterial25'\nSOURCE = TMP / 'root-barrier-control-material25-trial2.lean'\nDIGEST = 'b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8'\n\ndef sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p): return json.loads(p.read_text())\ndef rel(p): return p.relative_to(ROOT).as_posix()\ndef exact_copy(source, target):\n    target.parent.mkdir(parents=True, exist_ok=True)\n    if target.exists(): assert sha(target) == sha(source), str(target)\n    else:\n        with target.open('xb') as f: f.write(source.read_bytes())\n    assert sha(target) == sha(source)\n\nselection = read(ROOT / 'reports/full-coverage/checkpoint-24-selection.json')\nmanifest = read(ROOT / 'reports/full-coverage/checkpoint-24-manifest.json')\nassert len(selection['proof_files']) == 1144\nprotected = {n:r['sha256'] for n,r in selection['proof_files'].items()}\nowners = {'book/coverage/'+o+'.json' for o in ['core','foundations','applied','modules']}\nowners.add('book/coverage/applied-promotions.json')\nprotected.update({n:h for n,h in manifest['working_inputs_sha256'].items()\n                  if n.startswith('SafeLearning/') or n in owners or n == 'book/coverage/inventory.json'})\ndef guard():\n    for n,h in protected.items(): assert sha(ROOT/n) == h,n\n\nassert (ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json').exists()\nassert read(ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json')['actual_exit_code'] == 0\nguard()\nassert sha(SOURCE) == DIGEST\npeer = TMP / 'root-barrier-control-material25-two-literals-independent-applied-review-v1.json'\nassert sha(peer) == '76e1758db4acca9f756742e630a66a69f7cd604a7380e4e6370e183f583162a5'\ncanonical = ROOT / 'verification/lean/SafeLearning' / (NAME+'.lean')\nassert not canonical.exists()\nfor suffix in ['-standalone.json','.log','-named-build.json','-named-build.log']:\n    assert not (ROOT/'book/coverage/checks'/(NAME+suffix)).exists()\noriginals = {p for pattern in ['root-barrier-control-material25*','root_compile_tmp_core25*',\n            'CompleteBarrierControlMaterial25*','root-core25-case-study-guidance*',\n            'check-root-barrier-control-material25*','run-root-barrier-control-material25*',\n            'check-root-core25-case-study-guidance*','run-root-core25-case-study-guidance*']\n            for p in TMP.glob(pattern) if p.is_file()}\nassert SOURCE in originals and peer in originals and len(originals) > 10\narchived = {}\nfor p in sorted(originals):\n    target = BASE/'original-tmp'/p.name\n    exact_copy(p,target)\n    archived[str(p)] = {'file':rel(target),'sha256':sha(target)}\nexact_copy(SOURCE,canonical)\nsnapshot = BASE/(NAME+'-original-source-v1.lean')\nexact_copy(SOURCE,snapshot)\nassert len(re.findall(r'^theorem ',canonical.read_text(),re.M)) == 7\nfor helper in ['book/coverage/check_core_standalone.py','book/coverage/check_core_named_build.py']:\n    result = subprocess.run(['python3',helper,NAME],cwd=ROOT)\n    guard()\n    assert sha(canonical) == DIGEST\n    if result.returncode: raise SystemExit(result.returncode)\npairs = []\nfor suffix in ['-standalone.json','-named-build.json']:\n    p = ROOT/'book/coverage/checks'/(NAME+suffix)\n    d = read(p)\n    assert d['exit_code'] == 0 and d['source_sha256_before'] == d['source_sha256_after'] == DIGEST\n    assert sha(ROOT/d['log']) == d['log_sha256']\n    pairs.append({'file':rel(p),'sha256':sha(p),'log':{'file':d['log'],'sha256':d['log_sha256']},'actual_exit_code':0})\nout = BASE/'root-barrier-control25-canonical-readiness-v1.json'\nassert not out.exists()\nout.write_text(json.dumps({'status':'passed_actual_canonical_pair_unselected_future25',\n    'prepared_at_utc':datetime.now(timezone.utc).isoformat(),\n    'source':{'file':rel(canonical),'sha256':DIGEST},\n    'source_snapshot':{'file':rel(snapshot),'sha256':DIGEST},\n    'public_theorem_count':7,'actual_canonical_pair':pairs,\n    'original_TMP_byte_copies':archived,'protected_selected24_source_count':1144,\n    'scope':'Exact original trial, failed compilation, mathematical review and execution time bytes retained. These are real compiler checks, with no inferred kernel replay, selection, whole-ledger promotion or complete coverage.',\n    'coverage_complete':False},indent=2)+'\\n')\nguard()\nprint(json.dumps({'status':'passed','public_theorems':7,'archived_originals':len(archived),'readiness':rel(out)}))\n",
+  "only_source_change_four_added_original_history_archive_patterns": [
+    "check-root-barrier-control-material25*",
+    "run-root-barrier-control-material25*",
+    "check-root-core25-case-study-guidance*",
+    "run-root-core25-case-study-guidance*"
+  ],
+  "actual_canonical_pair_outer_execution": {
+    "file": "reports/full-coverage/root-core25-canonical-pair-execution-v1.json",
+    "sha256": "75d258aa0f97e44a2e32cc4077c483571b62bc483619ce0cd451ecbdfcad31c0"
+  },
+  "entire_original_actual_outer_record_and_time": {
+    "status": "passed",
+    "actual_exit_code": 0,
+    "actual_command": [
+      "python3",
+      "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py"
+    ],
+    "actual_workdir": "/home/oxrexkevin/SafetyBased",
+    "started_at_utc": "2026-10-11T03:32:16.857173+00:00",
+    "finished_at_utc": "2026-10-11T03:32:36.317957+00:00",
+    "elapsed_seconds": 19.46077151899226,
+    "helper_sha256_before": {
+      "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+      "book/coverage/check_core_standalone.py": "124bab45d3f48204b7436d721bf0b414c216a42e57b91a937dbd9e2ac6c8300a",
+      "book/coverage/check_core_named_build.py": "605ac2593a1b49044d011abc2d59cf3c4a422617929455754594199a5af73069"
+    },
+    "helper_sha256_after": {
+      "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+      "book/coverage/check_core_standalone.py": "124bab45d3f48204b7436d721bf0b414c216a42e57b91a937dbd9e2ac6c8300a",
+      "book/coverage/check_core_named_build.py": "605ac2593a1b49044d011abc2d59cf3c4a422617929455754594199a5af73069"
+    },
+    "log": "reports/full-coverage/root-core25-canonical-pair-execution-v1.log",
+    "log_sha256": "bba2a064ba66e634777ca3936235b88cc332d86d664cd66bf4cae3652028d51a",
+    "baseline_selection": {
+      "file": "reports/full-coverage/checkpoint-23-selection.json",
+      "sha256": "9831539a3b2be8c9d7878fd004354511aa332b203e40506233d0a000dca805fb"
+    },
+    "selection_sha256": "9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314"
+  },
+  "actual_canonical_pair_outer_raw_log": {
+    "file": "reports/full-coverage/root-core25-canonical-pair-execution-v1.log",
+    "sha256": "bba2a064ba66e634777ca3936235b88cc332d86d664cd66bf4cae3652028d51a"
+  },
+  "actual_canonical_pair_readiness": {
+    "file": "book/coverage/checks/future25-core/barrier-control/root-barrier-control25-canonical-readiness-v1.json",
+    "sha256": "e5db72443c0531ef5e57aa9799cd6a1578417f2442d7a66190fc108e896495eb"
+  },
+  "entire_original_readiness_body_and_time": {
+    "status": "passed_actual_canonical_pair_unselected_future25",
+    "prepared_at_utc": "2026-10-11T03:32:36.184399+00:00",
+    "source": {
+      "file": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+      "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+    },
+    "source_snapshot": {
+      "file": "book/coverage/checks/future25-core/barrier-control/CompleteBarrierControlMaterial25-original-source-v1.lean",
+      "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+    },
+    "public_theorem_count": 7,
+    "actual_canonical_pair": [
+      {
+        "file": "book/coverage/checks/CompleteBarrierControlMaterial25-standalone.json",
+        "sha256": "0185d2cf48d9f64c04d04838182564566dbaa98721504032c42c1508f024c780",
+        "log": {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "actual_exit_code": 0
+      },
+      {
+        "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.json",
+        "sha256": "1231b7cc3350cf15f15441b3e2bd4bf32c54fb0fef3d424f059bed4cc99095d9",
+        "log": {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.log",
+          "sha256": "242671eeaaf81270b4b84b29c5dd521c3d8d0560fc0a3b59ceb43c6f1edcafd9"
+        },
+        "actual_exit_code": 0
+      }
+    ],
+    "original_TMP_byte_copies": {
+      "/tmp/CompleteBarrierControlMaterial25-v1.lean": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/CompleteBarrierControlMaterial25-v1.lean",
+        "sha256": "4929be1f8ecdb956df77e6c3a6701b6ffaba29658bc9c9ab99c6530abbd16b70"
+      },
+      "/tmp/CompleteBarrierControlMaterial25-v2.lean": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/CompleteBarrierControlMaterial25-v2.lean",
+        "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+      },
+      "/tmp/check-root-barrier-control-material25-independent-applied-v1.py": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/check-root-barrier-control-material25-independent-applied-v1.py",
+        "sha256": "c19cdbd0a85be930cc0681dbfd16765b8b084bd00a742d5fdbfa0addc34f2a0b"
+      },
+      "/tmp/check-root-core25-case-study-guidance-independent-applied-v1.py": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/check-root-core25-case-study-guidance-independent-applied-v1.py",
+        "sha256": "a0b5ab4207bc01ca627a2faedb78542923292b7e81cdfcba99c1c5ed7138d2af"
+      },
+      "/tmp/root-barrier-control-material25-independent-applied-actual-v1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-independent-applied-actual-v1.json",
+        "sha256": "49374212846596d61411d48509d7dd56e51c13822f216cbc11231667fa1bba43"
+      },
+      "/tmp/root-barrier-control-material25-independent-applied-actual-v1.log": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-independent-applied-actual-v1.log",
+        "sha256": "5ccf67942e4f40a429cf46a37cacce812443e5e7df7765a019c37d1baea2ae28"
+      },
+      "/tmp/root-barrier-control-material25-trial1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial1.json",
+        "sha256": "eaa9338ff25ba095fee752ff436541d2c7a7ac4a3db0f885b1015f7f31eeb12e"
+      },
+      "/tmp/root-barrier-control-material25-trial1.lean": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial1.lean",
+        "sha256": "4929be1f8ecdb956df77e6c3a6701b6ffaba29658bc9c9ab99c6530abbd16b70"
+      },
+      "/tmp/root-barrier-control-material25-trial1.log": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial1.log",
+        "sha256": "2f5c409f3498d3fd61043235a5f3119c25149793ca1f42ffbb8b8338ad153a5c"
+      },
+      "/tmp/root-barrier-control-material25-trial2.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial2.json",
+        "sha256": "5fdf0865d00a3fba8b85c3150d073a48cbf606bde1480c1de83e01e5ab33b283"
+      },
+      "/tmp/root-barrier-control-material25-trial2.lean": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial2.lean",
+        "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+      },
+      "/tmp/root-barrier-control-material25-trial2.log": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial2.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "/tmp/root-barrier-control-material25-two-literals-full-source-review-request-v1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-two-literals-full-source-review-request-v1.json",
+        "sha256": "203b5e08c97d27178e5ceb5beff7739dcc2da406dec7f77ca3529c776bbc4f77"
+      },
+      "/tmp/root-barrier-control-material25-two-literals-independent-applied-review-v1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-two-literals-independent-applied-review-v1.json",
+        "sha256": "76e1758db4acca9f756742e630a66a69f7cd604a7380e4e6370e183f583162a5"
+      },
+      "/tmp/root-core25-case-study-guidance-five-whole-units-independent-applied-review-v1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-five-whole-units-independent-applied-review-v1.json",
+        "sha256": "11a90753b9114695527c4ebbf707f81275237558b7793014994ad62ffb831190"
+      },
+      "/tmp/root-core25-case-study-guidance-five-whole-units-review-request-v1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-five-whole-units-review-request-v1.json",
+        "sha256": "3a404d0d745a4b13c0b58142303a177e24cc43375a146dab657456231a47dce3"
+      },
+      "/tmp/root-core25-case-study-guidance-independent-applied-actual-v1.json": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-independent-applied-actual-v1.json",
+        "sha256": "7f6504609aeec8b588c1555ae9f40ab7fdd9109dca0585b64b1e1004cc9b8421"
+      },
+      "/tmp/root-core25-case-study-guidance-independent-applied-actual-v1.log": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-independent-applied-actual-v1.log",
+        "sha256": "5525811f5cef2886da1f22454730e7e67b479e880037da824dd39df35b156214"
+      },
+      "/tmp/root_compile_tmp_core25_v1.py": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root_compile_tmp_core25_v1.py",
+        "sha256": "f89c02c54dc653e488267ec616781f0cfe403da644bee047a023971c8befdc85"
+      },
+      "/tmp/run-root-barrier-control-material25-independent-applied-v1.py": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/run-root-barrier-control-material25-independent-applied-v1.py",
+        "sha256": "86d9486c835a76d93e47ca594f4f730ea87fc3a95f37338723bf01fb71027534"
+      },
+      "/tmp/run-root-core25-case-study-guidance-independent-applied-actual-v1.py": {
+        "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/run-root-core25-case-study-guidance-independent-applied-actual-v1.py",
+        "sha256": "2bd675dc1fb48d26ab3b4209f05429c771c2c8c3f1d4afac807b2ff60afc33c2"
+      }
+    },
+    "protected_selected24_source_count": 1144,
+    "scope": "Exact original trial, failed compilation, mathematical review and execution time bytes retained. These are real compiler checks, with no inferred kernel replay, selection, whole-ledger promotion or complete coverage.",
+    "coverage_complete": false
+  },
+  "original_native_pairs": [
+    {
+      "original_record": {
+        "file": "book/coverage/checks/CompleteBarrierControlMaterial25-standalone.json",
+        "sha256": "0185d2cf48d9f64c04d04838182564566dbaa98721504032c42c1508f024c780"
+      },
+      "entire_original_record_and_time": {
+        "status": "passed",
+        "source": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+        "source_sha256_before": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+        "source_sha256_after": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+        "source_unchanged": true,
+        "exit_code": 0,
+        "command": [
+          "lake",
+          "env",
+          "lean",
+          "SafeLearning/CompleteBarrierControlMaterial25.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "checked_at_utc": "2026-10-11T03:32:22.867900+00:00",
+        "elapsed_seconds": 5.5441752720216755,
+        "log": "book/coverage/checks/CompleteBarrierControlMaterial25.log",
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "scope": "Actual standalone compiler execution; aggregate build, kernel replay and axiom audit remain separate."
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/CompleteBarrierControlMaterial25.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "original_record": {
+        "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.json",
+        "sha256": "1231b7cc3350cf15f15441b3e2bd4bf32c54fb0fef3d424f059bed4cc99095d9"
+      },
+      "entire_original_record_and_time": {
+        "status": "passed",
+        "source": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+        "source_sha256_before": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+        "source_sha256_after": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+        "source_unchanged": true,
+        "exit_code": 0,
+        "command": [
+          "lake",
+          "build",
+          "SafeLearning.CompleteBarrierControlMaterial25"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "checked_at_utc": "2026-10-11T03:32:36.069825+00:00",
+        "elapsed_seconds": 13.019121921999613,
+        "log": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.log",
+        "log_sha256": "242671eeaaf81270b4b84b29c5dd521c3d8d0560fc0a3b59ceb43c6f1edcafd9",
+        "scope": "Actual named module build; aggregate verification, kernel replay and axiom audit remain separate."
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.log",
+        "sha256": "242671eeaaf81270b4b84b29c5dd521c3d8d0560fc0a3b59ceb43c6f1edcafd9"
+      }
+    }
+  ],
+  "all_original_TMP_aliases_exact": 21,
+  "complete_root_working_difference_observation": {
+    "file": "book/coverage/checks/future25-core/root-baseline24-current-working-input-difference-observation-v1.json",
+    "sha256": "0d871b1f2ad008e3bb41581996356c0dabf3521fa0f2e459687fd5e893959880"
+  },
+  "scope": "This peer approves only eligibility of the one explicitly pinned frozen draft/current genuinely executed helper metadata update. The entire frozen24 original hash and byte copy remain authoritative history. No selected source, mathematical statement, compiler command/protection logic, raw evidence or original record/time changed. It does not waive any other immutable input or approve a future integrator/binding version or owner installation; those require separate code and actual checks.",
+  "original_first_reader_failure_preserved": {
+    "reason": "The first AST reader evaluated every list including variable-valued compiler command lists. The second reader restricts the archive pattern search to literal-valued lists; reviewed code and evidence unchanged.",
+    "closed_originals": [
+      {
+        "file": "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v1.py",
+        "sha256": "451b8b57670e020dc95a25537811b6bd101996677a533a29e98c6c81b3d249d1"
+      },
+      {
+        "file": "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v1.py",
+        "sha256": "a6f9c9e1fb52847688fb7baa43ed45eb09e237b7b9cbde7c2f26b1481f5c3c61"
+      },
+      {
+        "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.json",
+        "sha256": "4066b3234f44698af00c78aee3ec7bbd917c1191cefd6f76d2ae4351165626e0"
+      },
+      {
+        "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.log",
+        "sha256": "0dbffacae0a5a2a8028c3233c304f0351edf02592bf136bff904c35c3d799e5a"
+      }
+    ]
+  },
+  "original_second_reader_failure_preserved": {
+    "reason": "The second reader expected a singleton outer helper map, but the actual original wrapper also truthfully pins both canonical compiler-check helpers. The third reader requires all three exact before/after/current hashes. No reviewed helper or original record changed.",
+    "closed_originals": [
+      {
+        "file": "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v2.py",
+        "sha256": "46a21852522490b1d8f5f806290bfc0d961b135a660c1175d856e876a86e7879"
+      },
+      {
+        "file": "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v2.py",
+        "sha256": "081ccd927a8c2d3bd80545387976362e0adfc28ff49f2b1b93cbf016be61c55f"
+      },
+      {
+        "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.json",
+        "sha256": "88e16b5f8827f64fa1763495c012d56db007f08029f06c0cc39c4bb862fce169"
+      },
+      {
+        "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.log",
+        "sha256": "705f0b1ad6890a66a6de04cceb12fcc30b0bf1b1e2605ba1e32ebfe26872df8b"
+      }
+    ]
+  },
+  "actual_independent_delta_checker": {
+    "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v3.json",
+    "sha256": "8165b94374e3058014cdaf98599c4f3e373b10f7ecf369f4571015fdfefd2134"
+  },
+  "closed_evidence_sha256": {
+    "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v3.py": "eef335371ed53f6d411fa9fd404354ba5c5032564fea45a5e9c7a7ec451c6f94",
+    "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v3.py": "d646cba49652a16d81c751a40ee7832c1f65dae1f38b3f716f84f53cbfba9f0c",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-observations-v3.json": "d3360f02d17f30633bdc7ec91367fe0c11b83e00fb273626a065794d78762991",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v3.json": "8165b94374e3058014cdaf98599c4f3e373b10f7ecf369f4571015fdfefd2134",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v3.log": "01c13127f0a22e9859ccdc4f4305f2c785db449f5b451310f30415440b75788e",
+    "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v1.py": "451b8b57670e020dc95a25537811b6bd101996677a533a29e98c6c81b3d249d1",
+    "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v1.py": "a6f9c9e1fb52847688fb7baa43ed45eb09e237b7b9cbde7c2f26b1481f5c3c61",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.json": "4066b3234f44698af00c78aee3ec7bbd917c1191cefd6f76d2ae4351165626e0",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.log": "0dbffacae0a5a2a8028c3233c304f0351edf02592bf136bff904c35c3d799e5a",
+    "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v2.py": "46a21852522490b1d8f5f806290bfc0d961b135a660c1175d856e876a86e7879",
+    "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v2.py": "081ccd927a8c2d3bd80545387976362e0adfc28ff49f2b1b93cbf016be61c55f",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.json": "88e16b5f8827f64fa1763495c012d56db007f08029f06c0cc39c4bb862fce169",
+    "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.log": "705f0b1ad6890a66a6de04cceb12fcc30b0bf1b1e2605ba1e32ebfe26872df8b"
+  },
+  "original_observation_body_and_time": {
+    "status": "independent_exact_single_frozen24_draft_to_actual25_working_helper_archive_delta_review_passed",
+    "errors": [],
+    "reviewed_at_utc": "2026-10-11T04:30:51.649947+00:00",
+    "reviewer": "Independent Foundations agent; Root authored original canonical helper",
+    "helper_sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+    "original_frozen24_helper": {
+      "file": "reports/full-coverage/checkpoint-24/book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+      "sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6"
+    },
+    "current_actual_working_helper": {
+      "file": "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+      "sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6"
+    },
+    "exact_working_input_hash_update": {
+      "file": "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+      "original_frozen24_sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6",
+      "current_working_sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+      "original_frozen24_byte_copy": {
+        "file": "reports/full-coverage/checkpoint-24/book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+        "sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6"
+      }
+    },
+    "baseline24_manifest": {
+      "file": "reports/full-coverage/checkpoint-24-manifest.json",
+      "sha256": "5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0"
+    },
+    "entire_old_frozen_helper_source": "\"\"\"Preserve reviewed trials and run two real, uniquely named compiler checks.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, re, subprocess\n\nROOT = Path(__file__).resolve().parents[3]\nTMP = Path('/tmp')\nBASE = ROOT / 'book/coverage/checks/future25-core/barrier-control'\nNAME = 'CompleteBarrierControlMaterial25'\nSOURCE = TMP / 'root-barrier-control-material25-trial2.lean'\nDIGEST = 'b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8'\n\ndef sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p): return json.loads(p.read_text())\ndef rel(p): return p.relative_to(ROOT).as_posix()\ndef exact_copy(source, target):\n    target.parent.mkdir(parents=True, exist_ok=True)\n    if target.exists(): assert sha(target) == sha(source), str(target)\n    else:\n        with target.open('xb') as f: f.write(source.read_bytes())\n    assert sha(target) == sha(source)\n\nselection = read(ROOT / 'reports/full-coverage/checkpoint-24-selection.json')\nmanifest = read(ROOT / 'reports/full-coverage/checkpoint-24-manifest.json')\nassert len(selection['proof_files']) == 1144\nprotected = {n:r['sha256'] for n,r in selection['proof_files'].items()}\nowners = {'book/coverage/'+o+'.json' for o in ['core','foundations','applied','modules']}\nowners.add('book/coverage/applied-promotions.json')\nprotected.update({n:h for n,h in manifest['working_inputs_sha256'].items()\n                  if n.startswith('SafeLearning/') or n in owners or n == 'book/coverage/inventory.json'})\ndef guard():\n    for n,h in protected.items(): assert sha(ROOT/n) == h,n\n\nassert (ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json').exists()\nassert read(ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json')['actual_exit_code'] == 0\nguard()\nassert sha(SOURCE) == DIGEST\npeer = TMP / 'root-barrier-control-material25-two-literals-independent-applied-review-v1.json'\nassert sha(peer) == '76e1758db4acca9f756742e630a66a69f7cd604a7380e4e6370e183f583162a5'\ncanonical = ROOT / 'verification/lean/SafeLearning' / (NAME+'.lean')\nassert not canonical.exists()\nfor suffix in ['-standalone.json','.log','-named-build.json','-named-build.log']:\n    assert not (ROOT/'book/coverage/checks'/(NAME+suffix)).exists()\noriginals = {p for pattern in ['root-barrier-control-material25*','root_compile_tmp_core25*',\n            'CompleteBarrierControlMaterial25*','root-core25-case-study-guidance*']\n            for p in TMP.glob(pattern) if p.is_file()}\nassert SOURCE in originals and peer in originals and len(originals) > 10\narchived = {}\nfor p in sorted(originals):\n    target = BASE/'original-tmp'/p.name\n    exact_copy(p,target)\n    archived[str(p)] = {'file':rel(target),'sha256':sha(target)}\nexact_copy(SOURCE,canonical)\nsnapshot = BASE/(NAME+'-original-source-v1.lean')\nexact_copy(SOURCE,snapshot)\nassert len(re.findall(r'^theorem ',canonical.read_text(),re.M)) == 7\nfor helper in ['book/coverage/check_core_standalone.py','book/coverage/check_core_named_build.py']:\n    result = subprocess.run(['python3',helper,NAME],cwd=ROOT)\n    guard()\n    assert sha(canonical) == DIGEST\n    if result.returncode: raise SystemExit(result.returncode)\npairs = []\nfor suffix in ['-standalone.json','-named-build.json']:\n    p = ROOT/'book/coverage/checks'/(NAME+suffix)\n    d = read(p)\n    assert d['exit_code'] == 0 and d['source_sha256_before'] == d['source_sha256_after'] == DIGEST\n    assert sha(ROOT/d['log']) == d['log_sha256']\n    pairs.append({'file':rel(p),'sha256':sha(p),'log':{'file':d['log'],'sha256':d['log_sha256']},'actual_exit_code':0})\nout = BASE/'root-barrier-control25-canonical-readiness-v1.json'\nassert not out.exists()\nout.write_text(json.dumps({'status':'passed_actual_canonical_pair_unselected_future25',\n    'prepared_at_utc':datetime.now(timezone.utc).isoformat(),\n    'source':{'file':rel(canonical),'sha256':DIGEST},\n    'source_snapshot':{'file':rel(snapshot),'sha256':DIGEST},\n    'public_theorem_count':7,'actual_canonical_pair':pairs,\n    'original_TMP_byte_copies':archived,'protected_selected24_source_count':1144,\n    'scope':'Exact original trial, failed compilation, mathematical review and execution time bytes retained. These are real compiler checks, with no inferred kernel replay, selection, whole-ledger promotion or complete coverage.',\n    'coverage_complete':False},indent=2)+'\\n')\nguard()\nprint(json.dumps({'status':'passed','public_theorems':7,'archived_originals':len(archived),'readiness':rel(out)}))\n",
+    "entire_current_actual_helper_source": "\"\"\"Preserve reviewed trials and run two real, uniquely named compiler checks.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport hashlib, json, re, subprocess\n\nROOT = Path(__file__).resolve().parents[3]\nTMP = Path('/tmp')\nBASE = ROOT / 'book/coverage/checks/future25-core/barrier-control'\nNAME = 'CompleteBarrierControlMaterial25'\nSOURCE = TMP / 'root-barrier-control-material25-trial2.lean'\nDIGEST = 'b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8'\n\ndef sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()\ndef read(p): return json.loads(p.read_text())\ndef rel(p): return p.relative_to(ROOT).as_posix()\ndef exact_copy(source, target):\n    target.parent.mkdir(parents=True, exist_ok=True)\n    if target.exists(): assert sha(target) == sha(source), str(target)\n    else:\n        with target.open('xb') as f: f.write(source.read_bytes())\n    assert sha(target) == sha(source)\n\nselection = read(ROOT / 'reports/full-coverage/checkpoint-24-selection.json')\nmanifest = read(ROOT / 'reports/full-coverage/checkpoint-24-manifest.json')\nassert len(selection['proof_files']) == 1144\nprotected = {n:r['sha256'] for n,r in selection['proof_files'].items()}\nowners = {'book/coverage/'+o+'.json' for o in ['core','foundations','applied','modules']}\nowners.add('book/coverage/applied-promotions.json')\nprotected.update({n:h for n,h in manifest['working_inputs_sha256'].items()\n                  if n.startswith('SafeLearning/') or n in owners or n == 'book/coverage/inventory.json'})\ndef guard():\n    for n,h in protected.items(): assert sha(ROOT/n) == h,n\n\nassert (ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json').exists()\nassert read(ROOT/'reports/full-coverage/cache-checkpoint24-execution-v1.json')['actual_exit_code'] == 0\nguard()\nassert sha(SOURCE) == DIGEST\npeer = TMP / 'root-barrier-control-material25-two-literals-independent-applied-review-v1.json'\nassert sha(peer) == '76e1758db4acca9f756742e630a66a69f7cd604a7380e4e6370e183f583162a5'\ncanonical = ROOT / 'verification/lean/SafeLearning' / (NAME+'.lean')\nassert not canonical.exists()\nfor suffix in ['-standalone.json','.log','-named-build.json','-named-build.log']:\n    assert not (ROOT/'book/coverage/checks'/(NAME+suffix)).exists()\noriginals = {p for pattern in ['root-barrier-control-material25*','root_compile_tmp_core25*',\n            'CompleteBarrierControlMaterial25*','root-core25-case-study-guidance*',\n            'check-root-barrier-control-material25*','run-root-barrier-control-material25*',\n            'check-root-core25-case-study-guidance*','run-root-core25-case-study-guidance*']\n            for p in TMP.glob(pattern) if p.is_file()}\nassert SOURCE in originals and peer in originals and len(originals) > 10\narchived = {}\nfor p in sorted(originals):\n    target = BASE/'original-tmp'/p.name\n    exact_copy(p,target)\n    archived[str(p)] = {'file':rel(target),'sha256':sha(target)}\nexact_copy(SOURCE,canonical)\nsnapshot = BASE/(NAME+'-original-source-v1.lean')\nexact_copy(SOURCE,snapshot)\nassert len(re.findall(r'^theorem ',canonical.read_text(),re.M)) == 7\nfor helper in ['book/coverage/check_core_standalone.py','book/coverage/check_core_named_build.py']:\n    result = subprocess.run(['python3',helper,NAME],cwd=ROOT)\n    guard()\n    assert sha(canonical) == DIGEST\n    if result.returncode: raise SystemExit(result.returncode)\npairs = []\nfor suffix in ['-standalone.json','-named-build.json']:\n    p = ROOT/'book/coverage/checks'/(NAME+suffix)\n    d = read(p)\n    assert d['exit_code'] == 0 and d['source_sha256_before'] == d['source_sha256_after'] == DIGEST\n    assert sha(ROOT/d['log']) == d['log_sha256']\n    pairs.append({'file':rel(p),'sha256':sha(p),'log':{'file':d['log'],'sha256':d['log_sha256']},'actual_exit_code':0})\nout = BASE/'root-barrier-control25-canonical-readiness-v1.json'\nassert not out.exists()\nout.write_text(json.dumps({'status':'passed_actual_canonical_pair_unselected_future25',\n    'prepared_at_utc':datetime.now(timezone.utc).isoformat(),\n    'source':{'file':rel(canonical),'sha256':DIGEST},\n    'source_snapshot':{'file':rel(snapshot),'sha256':DIGEST},\n    'public_theorem_count':7,'actual_canonical_pair':pairs,\n    'original_TMP_byte_copies':archived,'protected_selected24_source_count':1144,\n    'scope':'Exact original trial, failed compilation, mathematical review and execution time bytes retained. These are real compiler checks, with no inferred kernel replay, selection, whole-ledger promotion or complete coverage.',\n    'coverage_complete':False},indent=2)+'\\n')\nguard()\nprint(json.dumps({'status':'passed','public_theorems':7,'archived_originals':len(archived),'readiness':rel(out)}))\n",
+    "only_source_change_four_added_original_history_archive_patterns": [
+      "check-root-barrier-control-material25*",
+      "run-root-barrier-control-material25*",
+      "check-root-core25-case-study-guidance*",
+      "run-root-core25-case-study-guidance*"
+    ],
+    "actual_canonical_pair_outer_execution": {
+      "file": "reports/full-coverage/root-core25-canonical-pair-execution-v1.json",
+      "sha256": "75d258aa0f97e44a2e32cc4077c483571b62bc483619ce0cd451ecbdfcad31c0"
+    },
+    "entire_original_actual_outer_record_and_time": {
+      "status": "passed",
+      "actual_exit_code": 0,
+      "actual_command": [
+        "python3",
+        "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased",
+      "started_at_utc": "2026-10-11T03:32:16.857173+00:00",
+      "finished_at_utc": "2026-10-11T03:32:36.317957+00:00",
+      "elapsed_seconds": 19.46077151899226,
+      "helper_sha256_before": {
+        "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+        "book/coverage/check_core_standalone.py": "124bab45d3f48204b7436d721bf0b414c216a42e57b91a937dbd9e2ac6c8300a",
+        "book/coverage/check_core_named_build.py": "605ac2593a1b49044d011abc2d59cf3c4a422617929455754594199a5af73069"
+      },
+      "helper_sha256_after": {
+        "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+        "book/coverage/check_core_standalone.py": "124bab45d3f48204b7436d721bf0b414c216a42e57b91a937dbd9e2ac6c8300a",
+        "book/coverage/check_core_named_build.py": "605ac2593a1b49044d011abc2d59cf3c4a422617929455754594199a5af73069"
+      },
+      "log": "reports/full-coverage/root-core25-canonical-pair-execution-v1.log",
+      "log_sha256": "bba2a064ba66e634777ca3936235b88cc332d86d664cd66bf4cae3652028d51a",
+      "baseline_selection": {
+        "file": "reports/full-coverage/checkpoint-23-selection.json",
+        "sha256": "9831539a3b2be8c9d7878fd004354511aa332b203e40506233d0a000dca805fb"
+      },
+      "selection_sha256": "9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314"
+    },
+    "actual_canonical_pair_outer_raw_log": {
+      "file": "reports/full-coverage/root-core25-canonical-pair-execution-v1.log",
+      "sha256": "bba2a064ba66e634777ca3936235b88cc332d86d664cd66bf4cae3652028d51a"
+    },
+    "actual_canonical_pair_readiness": {
+      "file": "book/coverage/checks/future25-core/barrier-control/root-barrier-control25-canonical-readiness-v1.json",
+      "sha256": "e5db72443c0531ef5e57aa9799cd6a1578417f2442d7a66190fc108e896495eb"
+    },
+    "entire_original_readiness_body_and_time": {
+      "status": "passed_actual_canonical_pair_unselected_future25",
+      "prepared_at_utc": "2026-10-11T03:32:36.184399+00:00",
+      "source": {
+        "file": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+        "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+      },
+      "source_snapshot": {
+        "file": "book/coverage/checks/future25-core/barrier-control/CompleteBarrierControlMaterial25-original-source-v1.lean",
+        "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+      },
+      "public_theorem_count": 7,
+      "actual_canonical_pair": [
+        {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25-standalone.json",
+          "sha256": "0185d2cf48d9f64c04d04838182564566dbaa98721504032c42c1508f024c780",
+          "log": {
+            "file": "book/coverage/checks/CompleteBarrierControlMaterial25.log",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "actual_exit_code": 0
+        },
+        {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.json",
+          "sha256": "1231b7cc3350cf15f15441b3e2bd4bf32c54fb0fef3d424f059bed4cc99095d9",
+          "log": {
+            "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.log",
+            "sha256": "242671eeaaf81270b4b84b29c5dd521c3d8d0560fc0a3b59ceb43c6f1edcafd9"
+          },
+          "actual_exit_code": 0
+        }
+      ],
+      "original_TMP_byte_copies": {
+        "/tmp/CompleteBarrierControlMaterial25-v1.lean": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/CompleteBarrierControlMaterial25-v1.lean",
+          "sha256": "4929be1f8ecdb956df77e6c3a6701b6ffaba29658bc9c9ab99c6530abbd16b70"
+        },
+        "/tmp/CompleteBarrierControlMaterial25-v2.lean": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/CompleteBarrierControlMaterial25-v2.lean",
+          "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+        },
+        "/tmp/check-root-barrier-control-material25-independent-applied-v1.py": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/check-root-barrier-control-material25-independent-applied-v1.py",
+          "sha256": "c19cdbd0a85be930cc0681dbfd16765b8b084bd00a742d5fdbfa0addc34f2a0b"
+        },
+        "/tmp/check-root-core25-case-study-guidance-independent-applied-v1.py": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/check-root-core25-case-study-guidance-independent-applied-v1.py",
+          "sha256": "a0b5ab4207bc01ca627a2faedb78542923292b7e81cdfcba99c1c5ed7138d2af"
+        },
+        "/tmp/root-barrier-control-material25-independent-applied-actual-v1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-independent-applied-actual-v1.json",
+          "sha256": "49374212846596d61411d48509d7dd56e51c13822f216cbc11231667fa1bba43"
+        },
+        "/tmp/root-barrier-control-material25-independent-applied-actual-v1.log": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-independent-applied-actual-v1.log",
+          "sha256": "5ccf67942e4f40a429cf46a37cacce812443e5e7df7765a019c37d1baea2ae28"
+        },
+        "/tmp/root-barrier-control-material25-trial1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial1.json",
+          "sha256": "eaa9338ff25ba095fee752ff436541d2c7a7ac4a3db0f885b1015f7f31eeb12e"
+        },
+        "/tmp/root-barrier-control-material25-trial1.lean": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial1.lean",
+          "sha256": "4929be1f8ecdb956df77e6c3a6701b6ffaba29658bc9c9ab99c6530abbd16b70"
+        },
+        "/tmp/root-barrier-control-material25-trial1.log": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial1.log",
+          "sha256": "2f5c409f3498d3fd61043235a5f3119c25149793ca1f42ffbb8b8338ad153a5c"
+        },
+        "/tmp/root-barrier-control-material25-trial2.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial2.json",
+          "sha256": "5fdf0865d00a3fba8b85c3150d073a48cbf606bde1480c1de83e01e5ab33b283"
+        },
+        "/tmp/root-barrier-control-material25-trial2.lean": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial2.lean",
+          "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8"
+        },
+        "/tmp/root-barrier-control-material25-trial2.log": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-trial2.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "/tmp/root-barrier-control-material25-two-literals-full-source-review-request-v1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-two-literals-full-source-review-request-v1.json",
+          "sha256": "203b5e08c97d27178e5ceb5beff7739dcc2da406dec7f77ca3529c776bbc4f77"
+        },
+        "/tmp/root-barrier-control-material25-two-literals-independent-applied-review-v1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-barrier-control-material25-two-literals-independent-applied-review-v1.json",
+          "sha256": "76e1758db4acca9f756742e630a66a69f7cd604a7380e4e6370e183f583162a5"
+        },
+        "/tmp/root-core25-case-study-guidance-five-whole-units-independent-applied-review-v1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-five-whole-units-independent-applied-review-v1.json",
+          "sha256": "11a90753b9114695527c4ebbf707f81275237558b7793014994ad62ffb831190"
+        },
+        "/tmp/root-core25-case-study-guidance-five-whole-units-review-request-v1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-five-whole-units-review-request-v1.json",
+          "sha256": "3a404d0d745a4b13c0b58142303a177e24cc43375a146dab657456231a47dce3"
+        },
+        "/tmp/root-core25-case-study-guidance-independent-applied-actual-v1.json": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-independent-applied-actual-v1.json",
+          "sha256": "7f6504609aeec8b588c1555ae9f40ab7fdd9109dca0585b64b1e1004cc9b8421"
+        },
+        "/tmp/root-core25-case-study-guidance-independent-applied-actual-v1.log": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root-core25-case-study-guidance-independent-applied-actual-v1.log",
+          "sha256": "5525811f5cef2886da1f22454730e7e67b479e880037da824dd39df35b156214"
+        },
+        "/tmp/root_compile_tmp_core25_v1.py": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/root_compile_tmp_core25_v1.py",
+          "sha256": "f89c02c54dc653e488267ec616781f0cfe403da644bee047a023971c8befdc85"
+        },
+        "/tmp/run-root-barrier-control-material25-independent-applied-v1.py": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/run-root-barrier-control-material25-independent-applied-v1.py",
+          "sha256": "86d9486c835a76d93e47ca594f4f730ea87fc3a95f37338723bf01fb71027534"
+        },
+        "/tmp/run-root-core25-case-study-guidance-independent-applied-actual-v1.py": {
+          "file": "book/coverage/checks/future25-core/barrier-control/original-tmp/run-root-core25-case-study-guidance-independent-applied-actual-v1.py",
+          "sha256": "2bd675dc1fb48d26ab3b4209f05429c771c2c8c3f1d4afac807b2ff60afc33c2"
+        }
+      },
+      "protected_selected24_source_count": 1144,
+      "scope": "Exact original trial, failed compilation, mathematical review and execution time bytes retained. These are real compiler checks, with no inferred kernel replay, selection, whole-ledger promotion or complete coverage.",
+      "coverage_complete": false
+    },
+    "original_native_pairs": [
+      {
+        "original_record": {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25-standalone.json",
+          "sha256": "0185d2cf48d9f64c04d04838182564566dbaa98721504032c42c1508f024c780"
+        },
+        "entire_original_record_and_time": {
+          "status": "passed",
+          "source": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+          "source_sha256_before": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+          "source_sha256_after": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+          "source_unchanged": true,
+          "exit_code": 0,
+          "command": [
+            "lake",
+            "env",
+            "lean",
+            "SafeLearning/CompleteBarrierControlMaterial25.lean"
+          ],
+          "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+          "checked_at_utc": "2026-10-11T03:32:22.867900+00:00",
+          "elapsed_seconds": 5.5441752720216755,
+          "log": "book/coverage/checks/CompleteBarrierControlMaterial25.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "scope": "Actual standalone compiler execution; aggregate build, kernel replay and axiom audit remain separate."
+        },
+        "raw_log": {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      {
+        "original_record": {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.json",
+          "sha256": "1231b7cc3350cf15f15441b3e2bd4bf32c54fb0fef3d424f059bed4cc99095d9"
+        },
+        "entire_original_record_and_time": {
+          "status": "passed",
+          "source": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+          "source_sha256_before": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+          "source_sha256_after": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+          "source_unchanged": true,
+          "exit_code": 0,
+          "command": [
+            "lake",
+            "build",
+            "SafeLearning.CompleteBarrierControlMaterial25"
+          ],
+          "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+          "checked_at_utc": "2026-10-11T03:32:36.069825+00:00",
+          "elapsed_seconds": 13.019121921999613,
+          "log": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.log",
+          "log_sha256": "242671eeaaf81270b4b84b29c5dd521c3d8d0560fc0a3b59ceb43c6f1edcafd9",
+          "scope": "Actual named module build; aggregate verification, kernel replay and axiom audit remain separate."
+        },
+        "raw_log": {
+          "file": "book/coverage/checks/CompleteBarrierControlMaterial25-named-build.log",
+          "sha256": "242671eeaaf81270b4b84b29c5dd521c3d8d0560fc0a3b59ceb43c6f1edcafd9"
+        }
+      }
+    ],
+    "all_original_TMP_aliases_exact": 21,
+    "complete_root_working_difference_observation": {
+      "file": "book/coverage/checks/future25-core/root-baseline24-current-working-input-difference-observation-v1.json",
+      "sha256": "0d871b1f2ad008e3bb41581996356c0dabf3521fa0f2e459687fd5e893959880"
+    },
+    "scope": "This peer approves only eligibility of the one explicitly pinned frozen draft/current genuinely executed helper metadata update. The entire frozen24 original hash and byte copy remain authoritative history. No selected source, mathematical statement, compiler command/protection logic, raw evidence or original record/time changed. It does not waive any other immutable input or approve a future integrator/binding version or owner installation; those require separate code and actual checks.",
+    "original_first_reader_failure_preserved": {
+      "reason": "The first AST reader evaluated every list including variable-valued compiler command lists. The second reader restricts the archive pattern search to literal-valued lists; reviewed code and evidence unchanged.",
+      "closed_originals": [
+        {
+          "file": "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v1.py",
+          "sha256": "451b8b57670e020dc95a25537811b6bd101996677a533a29e98c6c81b3d249d1"
+        },
+        {
+          "file": "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v1.py",
+          "sha256": "a6f9c9e1fb52847688fb7baa43ed45eb09e237b7b9cbde7c2f26b1481f5c3c61"
+        },
+        {
+          "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.json",
+          "sha256": "4066b3234f44698af00c78aee3ec7bbd917c1191cefd6f76d2ae4351165626e0"
+        },
+        {
+          "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.log",
+          "sha256": "0dbffacae0a5a2a8028c3233c304f0351edf02592bf136bff904c35c3d799e5a"
+        }
+      ]
+    },
+    "original_second_reader_failure_preserved": {
+      "reason": "The second reader expected a singleton outer helper map, but the actual original wrapper also truthfully pins both canonical compiler-check helpers. The third reader requires all three exact before/after/current hashes. No reviewed helper or original record changed.",
+      "closed_originals": [
+        {
+          "file": "book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v2.py",
+          "sha256": "46a21852522490b1d8f5f806290bfc0d961b135a660c1175d856e876a86e7879"
+        },
+        {
+          "file": "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v2.py",
+          "sha256": "081ccd927a8c2d3bd80545387976362e0adfc28ff49f2b1b93cbf016be61c55f"
+        },
+        {
+          "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.json",
+          "sha256": "88e16b5f8827f64fa1763495c012d56db007f08029f06c0cc39c4bb862fce169"
+        },
+        {
+          "file": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.log",
+          "sha256": "705f0b1ad6890a66a6de04cceb12fcc30b0bf1b1e2605ba1e32ebfe26872df8b"
+        }
+      ]
+    }
+  },
+  "reviewed_update": {
+    "file": "book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+    "old_working_sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6",
+    "original_frozen_input": {
+      "file": "reports/full-coverage/checkpoint-24/book/coverage/checks/run_root_barrier_control25_canonical_pair_v1.py",
+      "sha256": "f98e1a5ed31c6641ee15b3ecb00af0f0268bb0518d1cf5f125447320b1554ca6"
+    },
+    "current_sha256": "53d47e49148a10f3dca53fff80514219e814764f557ae8f809c0d3dd28221fc6",
+    "actual_first_execution": {
+      "file": "reports/full-coverage/root-core25-canonical-pair-execution-v1.json",
+      "sha256": "75d258aa0f97e44a2e32cc4077c483571b62bc483619ce0cd451ecbdfcad31c0"
+    },
+    "raw_log": {
+      "file": "reports/full-coverage/root-core25-canonical-pair-execution-v1.log",
+      "sha256": "bba2a064ba66e634777ca3936235b88cc332d86d664cd66bf4cae3652028d51a"
+    },
+    "closed_readiness": {
+      "file": "book/coverage/checks/future25-core/barrier-control/root-barrier-control25-canonical-readiness-v1.json",
+      "sha256": "e5db72443c0531ef5e57aa9799cd6a1578417f2442d7a66190fc108e896495eb"
+    }
+  },
+  "working_difference_observation": {
+    "file": "book/coverage/checks/future25-core/root-baseline24-current-working-input-difference-observation-v1.json",
+    "sha256": "0d871b1f2ad008e3bb41581996356c0dabf3521fa0f2e459687fd5e893959880"
+  },
+  "original_reader_failures_entire_actual_bodies_and_times": [
+    {
+      "status": "failed",
+      "actual_exit_code": 1,
+      "actual_command": [
+        "python3",
+        "/home/oxrexkevin/SafetyBased/book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v1.py"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased",
+      "started_at_utc": "2026-10-11T04:30:16.170230+00:00",
+      "finished_at_utc": "2026-10-11T04:30:16.417349+00:00",
+      "elapsed_seconds": 0.2471187619958073,
+      "checker_sha256_before": "451b8b57670e020dc95a25537811b6bd101996677a533a29e98c6c81b3d249d1",
+      "checker_sha256_after": "451b8b57670e020dc95a25537811b6bd101996677a533a29e98c6c81b3d249d1",
+      "log": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v1.log",
+      "log_sha256": "0dbffacae0a5a2a8028c3233c304f0351edf02592bf136bff904c35c3d799e5a",
+      "actual_runner": "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v1.py",
+      "actual_runner_sha256": "a6f9c9e1fb52847688fb7baa43ed45eb09e237b7b9cbde7c2f26b1481f5c3c61",
+      "scope": "Actual read-only helper delta/source/evidence checker; no original helper/Lean or Root production integration execution."
+    },
+    {
+      "status": "failed",
+      "actual_exit_code": 1,
+      "actual_command": [
+        "python3",
+        "/home/oxrexkevin/SafetyBased/book/coverage/checks/future25-core/check-baseline24-one-working-helper-delta-independent-foundations-v2.py"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased",
+      "started_at_utc": "2026-10-11T04:30:29.264057+00:00",
+      "finished_at_utc": "2026-10-11T04:30:29.499226+00:00",
+      "elapsed_seconds": 0.23516580101568252,
+      "checker_sha256_before": "46a21852522490b1d8f5f806290bfc0d961b135a660c1175d856e876a86e7879",
+      "checker_sha256_after": "46a21852522490b1d8f5f806290bfc0d961b135a660c1175d856e876a86e7879",
+      "log": "book/coverage/checks/future25-core/baseline24-one-working-helper-delta-independent-foundations-actual-v2.log",
+      "log_sha256": "705f0b1ad6890a66a6de04cceb12fcc30b0bf1b1e2605ba1e32ebfe26872df8b",
+      "actual_runner": "book/coverage/checks/future25-core/run-baseline24-one-working-helper-delta-independent-foundations-v2.py",
+      "actual_runner_sha256": "081ccd927a8c2d3bd80545387976362e0adfc28ff49f2b1b93cbf016be61c55f",
+      "scope": "Actual read-only helper delta/source/evidence checker; no original helper/Lean or Root production integration execution."
+    }
+  ]
+}

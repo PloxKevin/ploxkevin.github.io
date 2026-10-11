@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import subprocess,time,json,hashlib
+R=Path('/home/oxrexkevin/SafetyBased');h=Path('/tmp/check-core25-material-candidate-independent-applied-v1.py');p=Path('/tmp/core25-material-candidate-independent-applied-actual-v1');H=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();assert not p.with_suffix('.json').exists() and not p.with_suffix('.log').exists();cmd=['python3',str(h)];t=time.monotonic();start=datetime.now(timezone.utc).isoformat();before=H(h)
+with p.with_suffix('.log').open('wb') as f:a=subprocess.run(cmd,cwd=R,stdout=f,stderr=subprocess.STDOUT)
+r={'status':'passed' if a.returncode==0 else 'failed','actual_exit_code':a.returncode,'actual_command':cmd,'actual_workdir':str(R),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':before,'checker_sha256_after':H(h),'log':str(p.with_suffix('.log')),'log_sha256':H(p.with_suffix('.log')),'outer_runner':str(Path(__file__)),'outer_runner_sha256':H(Path(__file__)),'scope':'Actual independent read-only isolated Core25 candidate checker; no compiler or live owner mutation.'};p.with_suffix('.json').write_text(json.dumps(r,indent=2)+'\n');print(p.with_suffix('.log').read_text()[-6000:]);print(H(p.with_suffix('.json')));raise SystemExit(a.returncode)

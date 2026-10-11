@@ -1,0 +1,55 @@
+from pathlib import Path
+from datetime import datetime, timezone
+import json,hashlib,re
+ROOT=Path('/home/oxrexkevin/SafetyBased')
+H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+J=lambda p:json.loads(Path(p).read_text())
+def P(n):
+ p=Path(n);return p if p.is_absolute()else ROOT/p
+def checked(r):
+ p=P(r['file']);assert p.is_file()and not p.is_symlink()and H(p)==r['sha256'];return p
+def ref(p):return {'file':str(p),'sha256':H(p)}
+req=Path('/tmp/applied-truncated-conditioning-material25-three-literals-full-source-review-request-v1.json')
+assert H(req)=='c27344c4518b85c118d5c0ddd5c2c131be5ad910eafde631ea5a33a7043de538'
+d=J(req);source=checked(d['proof_source']);text=source.read_text()
+assert text==d['entire_complete_Lean_source']and len(re.findall(r'^theorem\s+',text,re.M))==d['expected_declaration_count']==7
+assert not re.search(r'\b(sorry|admit|axiom|unsafe)\b',text)
+inv=J(checked(d['inventory']));assert H(ROOT/'book/coverage/inventory.json')==d['inventory']['sha256']
+units={r['key']:r for r in inv['material_source_units']}
+for row in d['material_units']:assert units[row['key']]==row and H(ROOT/row['source'])==row['source_sha256']
+for ctx in d['direct_complete_contexts']:
+ p=ROOT/ctx['source'];assert H(p)==ctx['source_sha256'];assert ''.join(p.read_text().splitlines(keepends=True)[ctx['start_line']-1:ctx['end_line']])==ctx['entire_exact_context']
+history=d['all_failed_and_passed_trial_history'];assert len(history)==8
+for r in history:checked(r)
+records=[]
+for entry in history:
+ if not entry['file'].endswith('.json'):continue
+ r=J(checked(entry));assert r['source_sha256_before']==r['source_sha256_after']==r['source_snapshot_sha256']==H(P(r['source_snapshot']))
+ assert r['actual_command']==['lake','env','lean',r['source']]and r['actual_workdir']==str(ROOT/'verification/lean')
+ assert H(P(r['log']))==r['log_sha256']and H(P(r['actual_runner']))==r['actual_runner_sha256'];records.append(r)
+assert sorted(r['actual_exit_code']for r in records)==[0,1]
+actual=J(checked(d['actual_standalone']));assert actual==d['entire_original_actual_standalone_body_and_time']and actual['actual_exit_code']==0
+assert H(source)==actual['source_sha256_before']and checked(d['actual_raw_log']).read_text().count('warning:')==1
+apis=[ROOT/'verification/lean/.lake/packages/mathlib/Mathlib/MeasureTheory/Measure/WithDensity.lean',ROOT/'verification/lean/.lake/packages/mathlib/Mathlib/MeasureTheory/Measure/Restrict.lean',ROOT/'verification/lean/.lake/packages/mathlib/Mathlib/MeasureTheory/Function/ConditionalExpectation/Basic.lean']
+for p in apis:assert p.is_file()
+assert 'theorem integral_condExp_indicator'in apis[2].read_text()
+manifest=J(checked(d['baseline23_manifest']));selection=J(ROOT/'reports/full-coverage/checkpoint-23-selection.json')
+assert len(selection['proof_files'])==1131
+for n,row in selection['proof_files'].items():assert H(ROOT/n)==H(ROOT/'reports/full-coverage/checkpoint-23'/n)==row['sha256']
+names=['SafeLearning.CompleteAppliedTruncatedConditioningMaterial25.'+n for n in re.findall(r'^theorem\s+(\w+)',text,re.M)]
+material=[]
+for row in d['material_units']:
+ node=row['key'].rsplit('-',1)[1]
+ if node in ['422','424']:
+  reason='All three density/law bodies were fully read. The actual density is multiplied by the region indicator and divided by its measured probability; measurable withDensity/restriction/scaling identities derive equality of the conditioned measure. The arbitrary measurable RV theorem proves conditioning its preimage and pushing forward equals conditioning the actual pushforward law. Positive-region mass and an actual probability law give genuine normalization and a.e. concentration on the region. A Gaussian action law on its admissible interval and a posterior law on a positive-mass credible set are special applications of this definition; no Gaussian construction, posterior correctness or control guarantee is claimed by the literal. Both the complete composite definition and its entire inner body match these retained measurable/positive-mass hypotheses.'
+  declarations=names[:3]
+  hypotheses=['Measurable real/nonnegative density, measurable RV and conditioning region; original density law is a probability law and the conditioning region has positive mass for normalization.','Gaussian-policy/posterior clauses describe conditioning of the given law on its given region; they assert no additional physical or statistical guarantee.']
+ else:
+  reason='All four nested/tower bodies were fully read. The genuine conditional-measure product rule and measure monotonicity give the lower bound without independence; the actual .95 and .99 specialization yields9405/10000. For arbitrary measurable hyperparameter-box and function-band events with the given conditional lower bounds and errors in[0,1], the product and1-delta1-delta2 floor are derived. The calibration theorem takes the conditional expectation of the actual coverage-event indicator with respect to the sigma-algebra generated by measurable calibration data Y and proves its integral equals the marginal event probability. This is exactly the source averaging clause and supplies no rank-based target level. The text about validation confidence refers to a different repeated-sample experiment, while posterior mass conditions on fixed observed data; its directly read Section6/Section10/Module15 contexts support this probability-type reading instruction. No numerical validation law, repeated-testing protocol, GP posterior construction or conformal coverage bound is inferred.'
+  declarations=names[3:]
+  hypotheses=['A genuine probability measure; measurable conditioning event, actual conditional-event and original-event lower bounds with nonnegative factors. No independence.','Error budgets delta1,delta2 in[0,1]; given box and conditional-band bounds.','Measurable calibration-data RV Y and coverage event; sigma-finite trimmed conditioning measure. In the literal probability setting this condition is satisfied for finite probability measures.','Posterior, test-sample and calibration experiments retain their distinct probability interpretations; no target risk or rank guarantee is assumed proved.']
+ material.append({'key':row['key'],'entire_inventory_record':row,'whole_source_unit_approved':True,'disposition':'whole_mathematical_source_unit_approved','lean_declarations':declarations,'hypotheses':hypotheses,'per_component_reason':reason,'missing_clauses':[]})
+report={'status':'independent_truncated_conditioning25_seven_full_bodies_three_whole_literals_passed','errors':[],'reviewed_at_utc':datetime.now(timezone.utc).isoformat(),'reviewer':'/root/config21_next','original_request':ref(req),'entire_original_request_body_and_time':d,'all_seven_complete_public_bodies_read':True,'material_units':material,'whole_material_unit_count':3,'entire_current52_material_records_and_complete_linked_contexts_exact':True,'primary_actual_import_API_passages_read':[{'module':ref(p),'scope':scope}for p,scope in zip(apis,['withDensity_smul, withDensity_indicator and restrict_withDensity definitions/bodies','actual restrict_map measurable pushforward identity','setIntegral_condExp, integral_condExp and integral_condExp_indicator full statements/bodies'])],'original_actual_standalone_body_time_and_one_warning_retained':actual,'original_failed_and_passed_trial_records_and_times_retained':records,'all1131_selected23_sources_and_frozen_copies_exact':True,'observed_current_live_owner_sha256':{n:H(ROOT/n)for n in ['book/coverage/'+o+'.json'for o in ['core','foundations','applied','modules','applied-promotions']]},'retained_unproved_neighbor_guarantees':['GP posterior/law construction and physical-model correctness','actual safe-control or random validation-model guarantee','rank/exchangeability-based conformal target coverage or repeated-testing protocol'],'coverage_complete':False,'scope':'Fresh TMP-only semantic whole-literal review of the three exact units. Their conditional statements/definitions/averaging and probability-type guidance match with the genuine retained hypotheses; neighboring guarantees are not promoted. Original failed/passed bytes and times are retained. No compiler rerun, canonical/named pair, owner24 offer, source, inventory, ledger, parent exercise/section, aggregate or publication mutation.'}
+out=Path('/tmp/applied-truncated-conditioning25-independent-foundations-full-source-review-v1.json')
+with out.open('x')as f:f.write(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
+print(json.dumps({'status':report['status'],'report':ref(out),'whole_material_units':3}))

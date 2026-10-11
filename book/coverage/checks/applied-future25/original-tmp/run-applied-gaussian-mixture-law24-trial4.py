@@ -1,0 +1,7 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import json,hashlib,subprocess,time
+r=Path('/home/oxrexkevin/SafetyBased');s=Path('/tmp/CompleteAppliedGaussianMixtureLaw24.lean');p=Path('/tmp/applied-gaussian-mixture-law24-trial4');assert not p.with_suffix('.json').exists() and not p.with_suffix('.log').exists()
+H=lambda q:hashlib.sha256(q.read_bytes()).hexdigest();before=H(s);snap=Path(str(p)+'-source.lean');snap.write_bytes(s.read_bytes());start=datetime.now(timezone.utc).isoformat();t=time.monotonic();cmd=['lake','env','lean',str(s)]
+with p.with_suffix('.log').open('wb') as f:a=subprocess.run(cmd,cwd=r/'verification/lean',stdout=f,stderr=subprocess.STDOUT)
+x={'status':'passed' if a.returncode==0 else 'failed','actual_exit_code':a.returncode,'actual_command':cmd,'actual_workdir':str(r/'verification/lean'),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'source':str(s),'source_sha256_before':before,'source_sha256_after':H(s),'source_snapshot':str(snap),'source_snapshot_sha256':H(snap),'log':str(p.with_suffix('.log')),'log_sha256':H(p.with_suffix('.log')),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual TMP-only standalone future24 proof trial. No canonical selection, named build, aggregate or coverage claim.'};p.with_suffix('.json').write_text(json.dumps(x,indent=2)+'\n');print(p.with_suffix('.log').read_text());print(p.with_suffix('.json'),H(p.with_suffix('.json')));raise SystemExit(a.returncode)

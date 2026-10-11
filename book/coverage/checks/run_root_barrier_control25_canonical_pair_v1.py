@@ -42,7 +42,9 @@ assert not canonical.exists()
 for suffix in ['-standalone.json','.log','-named-build.json','-named-build.log']:
     assert not (ROOT/'book/coverage/checks'/(NAME+suffix)).exists()
 originals = {p for pattern in ['root-barrier-control-material25*','root_compile_tmp_core25*',
-            'CompleteBarrierControlMaterial25*','root-core25-case-study-guidance*']
+            'CompleteBarrierControlMaterial25*','root-core25-case-study-guidance*',
+            'check-root-barrier-control-material25*','run-root-barrier-control-material25*',
+            'check-root-core25-case-study-guidance*','run-root-core25-case-study-guidance*']
             for p in TMP.glob(pattern) if p.is_file()}
 assert SOURCE in originals and peer in originals and len(originals) > 10
 archived = {}

@@ -1,0 +1,653 @@
+{
+  "status": "passed_independent_checkpoint25_selector_retainer_code_and_isolated_fixture_review_requires_real_installed_owner25_plan_and_production",
+  "errors": [],
+  "reviewer": "applied_next",
+  "reviewed_at_utc": "2026-10-11T04:14:25.793793+00:00",
+  "helpers_sha256": {
+    "book/coverage/prepare_checkpoint25_selection_v2.py": "d59807891dd60c6a81cb019759a72579b78b7b8144c6bbe7f923a0c3a8cbd648",
+    "book/coverage/retain_baseline_inputs25_v2.py": "d8c4ca86a1f70b63c3403d52e96a085d1695b5d87e2412f6e512bd20741fcc80"
+  },
+  "entire_reviewed_helper_bodies": {
+    "book/coverage/prepare_checkpoint25_selection_v2.py": "\"\"\"Prepare checkpoint25 with exact four-owner historical evidence aliases.\n\nUnexecuted draft: actual Source52 and owner25 installation/global/peer evidence\nare required by the immutable production plan; existence of drafts is insufficient.\n\nThe plan pins installed owner25 ledgers, actual builders, independent mapping\npeers and the current global integrity report. Importing this helper is read-only.\nNo production execution is authorized by the mere existence of candidate offers.\n\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport argparse\nimport copy\nimport hashlib\nimport json\nimport re\n\nfrom lean_names import declarations\nfrom retain_baseline_inputs25_v2 import retain, validate_owner_evidence_aliases, normalized_baseline_owner_evidence\n\nROOT = Path(__file__).resolve().parents[2]\nINVENTORY = 'book/coverage/inventory-after-correction52.json'\nBASELINE = 'reports/full-coverage/checkpoint-24-selection.json'\nBASELINE_SHA = '9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314'\nMANIFEST = 'reports/full-coverage/checkpoint-24-manifest.json'\nMANIFEST_SHA = '5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0'\nAUDIT = 'reports/full-coverage/lean-checkpoint-24/verification-original.json'\nAUDIT_SHA = '900755d1647aee305b0a3e61b4291ca52f8968dc9be183f0cb57cbe43d4fab67'\nDESTINATION = 'reports/full-coverage/checkpoint-25-selection.json'\nCONTENT_MAP = 'book/coverage/checks/frozen24-input-content-bindings25-v1.json'\n\n\ndef safe(name):\n    assert isinstance(name, str) and name\n    path = Path(name)\n    assert not path.is_absolute() and '..' not in path.parts and str(path) == name\n    assert (ROOT / path).resolve().is_relative_to(ROOT.resolve())\n    return ROOT / path\n\n\ndef sha(name):\n    return hashlib.sha256(safe(name).read_bytes()).hexdigest()\n\n\ndef read(name):\n    return json.loads(safe(name).read_text())\n\n\ndef exact(mapping):\n    assert isinstance(mapping, dict)\n    for name, digest in mapping.items():\n        assert isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest)\n        assert sha(name) == digest, name\n\n\ndef checked(pointer):\n    assert set(pointer) == {'file', 'sha256'}\n    assert sha(pointer['file']) == pointer['sha256']\n    return read(pointer['file'])\n\n\ndef actual_exit_zero(record):\n    codes = [record[k] for k in ('actual_exit_code', 'exit_code') if k in record]\n    assert codes and all(type(code) is int and code == 0 for code in codes)\n\n\ndef standalone_success(source, digest, evidence):\n    \"\"\"Locate an original actual standalone record, preserving all path aliases.\n\n    Original JSON fields may spell exit_code/actual_exit_code and source/lean_file.\n    The canonical evidence paths may differ from the raw original log/snapshot\n    names. Every alias is validated by exact bytes, never by filename resemblance.\n    A named lake build or lean -o run does not substitute for standalone evidence.\n    \"\"\"\n    exact(evidence)\n    evidence_hashes = set(evidence.values()) | {digest}\n    matches, named_matches = [], []\n    for name in evidence:\n        if not name.endswith('.json'):\n            continue\n        record = read(name)\n        if not isinstance(record, dict):\n            continue\n        command = record.get('command', record.get('actual_command'))\n        if not isinstance(command, list):\n            continue\n        standalone = len(command) == 4 and command[:3] == ['lake', 'env', 'lean']\n        named_lake = command == ['lake', 'build', 'SafeLearning.' + Path(source).stem]\n        named_lean = len(command) == 6 and command[:4] == ['lake', 'env', 'lean', '-o']\n        if not (standalone or named_lake or named_lean):\n            continue\n        recorded_source = record.get('source', record.get('lean_file'))\n        if recorded_source not in {source, command[-1]}:\n            continue\n        if record.get('source_sha256_before') != digest or record.get('source_sha256_after') != digest:\n            continue\n        actual_exit_zero(record)\n        assert record.get('source_unchanged', True) is True\n        workdir = record.get('actual_workdir', record.get('actual_cwd', record.get('cwd')))\n        assert isinstance(workdir, str) and Path(workdir).resolve() == (ROOT / 'verification/lean').resolve()\n        canonical_input = str(Path(source).relative_to('verification/lean'))\n        if not named_lake and command[-1] != canonical_input:\n            # A historical absolute input needs its exact original source snapshot.\n            assert Path(command[-1]).is_absolute()\n            assert recorded_source == command[-1] or recorded_source == source\n            snapshot_hash = record.get('source_snapshot_sha256', record.get('preserved_source_sha256'))\n            if snapshot_hash is None:\n                # Retain unsupported historical absolute-input executions as\n                # provenance, but do not treat them as canonical pair evidence.\n                # An eligible canonical standalone plus named run is mandatory.\n                continue\n            assert snapshot_hash == digest and snapshot_hash in evidence_hashes\n        log_hash = record.get('log_sha256', record.get('raw_log_sha256'))\n        assert isinstance(log_hash, str)\n        assert any(Path(path).suffix == '.log' and value == log_hash for path, value in evidence.items())\n        snapshot_hash = record.get('source_snapshot_sha256', record.get('preserved_source_sha256'))\n        if snapshot_hash is not None:\n            assert snapshot_hash == digest and snapshot_hash in evidence_hashes\n        (matches if standalone else named_matches).append(name)\n    assert matches, 'No exact actual standalone success: ' + source\n    assert named_matches, 'No exact actual paired named success: ' + source\n    return sorted(matches)[0]\n\n\ndef prepare(plan_name):\n    plan = read(plan_name)\n    assert plan['status'] == 'independently_reviewed_installed_owner25_selection_plan'\n    INVENTORY_SHA = plan['inventory']['sha256']\n    assert isinstance(INVENTORY_SHA, str) and re.fullmatch('[0-9a-f]{64}', INVENTORY_SHA)\n    actual_source = checked(plan['actual_source52_apply'])\n    postwrite = checked(plan['actual_source52_postwrite'])\n    actual_exit_zero(actual_source); actual_exit_zero(postwrite)\n    assert postwrite['inventory_after'] == INVENTORY and postwrite['inventory_after_sha256'] == INVENTORY_SHA\n    source_log = actual_source.get('log', actual_source.get('raw_log'))\n    source_log_sha = actual_source.get('log_sha256', actual_source.get('raw_log_sha256'))\n    assert sha(source_log) == source_log_sha\n    assert sha('SafeLearning/nn-in-the-loop.html') == '1a39cab6587a6fe91dca670facc5e58e7c85cb6c0a2c065f43763656d5b73041'\n    assert plan['inventory'] == {'file': INVENTORY, 'sha256': INVENTORY_SHA}\n    assert sha(INVENTORY) == sha('book/coverage/inventory.json') == INVENTORY_SHA\n    assert not safe(DESTINATION).exists() and not safe(CONTENT_MAP).exists()\n    assert plan['destination'] == DESTINATION and plan['content_map'] == CONTENT_MAP\n    baseline = checked(plan['baseline_selection'])\n    assert plan['baseline_selection'] == {'file': BASELINE, 'sha256': BASELINE_SHA}\n    audit, manifest = checked(plan['baseline_audit']), checked(plan['baseline_manifest'])\n    assert plan['baseline_audit'] == {'file': AUDIT, 'sha256': AUDIT_SHA}\n    assert plan['baseline_manifest'] == {'file': MANIFEST, 'sha256': MANIFEST_SHA}\n    assert audit['status'] == 'passed' and audit['proof_file_count'] == 1144 and audit['theorem_count'] == 9279\n    assert all(row['exit_code'] == 0 for row in audit['checks'])\n    assert len(baseline['proof_files']) == 1144\n    assert audit['proof_sha256'] == {name: row['sha256'] for name, row in baseline['proof_files'].items()}\n    assert manifest['status'] == 'formal_verification_passed_partial_coverage'\n    assert len(manifest['frozen_inputs_sha256']) == 40485\n    assert manifest['selection'] == BASELINE and manifest['selection_sha256'] == BASELINE_SHA\n    exact(plan['helpers_sha256'])\n    assert str(Path(__file__).relative_to(ROOT)) in plan['helpers_sha256']\n    assert 'book/coverage/retain_baseline_inputs25_v2.py' in plan['helpers_sha256']\n    authorization = plan['authorized_baseline_owner_evidence_aliases']\n    aliases = validate_owner_evidence_aliases(ROOT, BASELINE, MANIFEST, authorization)\n    selection = copy.deepcopy(baseline['proof_files'])\n    for source, row in selection.items():\n        assert sha(source) == row['sha256']\n        original = copy.deepcopy(row)\n        normalized, used = normalized_baseline_owner_evidence(original, aliases)\n        if used:\n            assert 'checkpoint25_original_baseline_owner_evidence' not in row\n            row['evidence_sha256'] = normalized\n            row['checkpoint25_original_baseline_owner_evidence'] = {\n                'original_baseline_selection': {'file': BASELINE, 'sha256': BASELINE_SHA},\n                'original_baseline_source': source, 'original_row_body': original,\n                'authorized_original_path_aliases': used}\n        exact(row['evidence_sha256'])\n    first = selection[sorted(selection)[0]]\n    first['evidence_sha256'].update({BASELINE: BASELINE_SHA, MANIFEST: sha(MANIFEST), AUDIT: sha(AUDIT), plan_name: sha(plan_name)})\n    for historical in plan['prior_checkpoint24_selection_provenance'].values():\n        assert set(historical) == {'file', 'sha256'} and sha(historical['file']) == historical['sha256']\n        first['evidence_sha256'][historical['file']] = historical['sha256']\n    preparation_helper = plan['baseline_owner_evidence_alias_plan_preparation_helper']\n    assert set(preparation_helper) == {'file', 'sha256'} and sha(preparation_helper['file']) == preparation_helper['sha256']\n    first['evidence_sha256'][preparation_helper['file']] = preparation_helper['sha256']\n    for path in (ROOT / 'reports/full-coverage/lean-checkpoint-24').rglob('*'):\n        if path.is_file():\n            name = str(path.relative_to(ROOT))\n            first['evidence_sha256'][name] = sha(name)\n    first['checkpoint25_inherited_snapshot_provenance_scope'] = 'Every frozen24 original path and byte hash is retained by the exact content binding map. Original audits, commands and times remain historical.'\n    owners = plan['owners']\n    assert set(owners) == {'core', 'modules', 'foundations', 'applied'}\n    documents, peers, new_sources = {}, {}, set()\n    for owner, refs in owners.items():\n        offer = checked(refs['offer']); documents[owner] = offer\n        ledger_name = 'book/coverage/' + owner + '.json'\n        assert refs['ledger']['file'] == ledger_name\n        ledger = checked(refs['ledger'])\n        assert offer.get('mapped_ledger', offer.get('module_ledger')) == ledger_name\n        assert offer.get('mapped_ledger_sha256', offer.get('module_ledger_sha256')) == refs['ledger']['sha256']\n        assert offer.get('current_inventory_sha256', offer.get('inventory_sha256')) == INVENTORY_SHA\n        exact(offer['source_sha256'])\n        actual_builder = checked(refs['actual_builder'])\n        actual_exit_zero(actual_builder)\n        assert sha(refs['builder']['file']) == refs['builder']['sha256']\n        command = actual_builder.get('command', actual_builder.get('actual_command'))\n        assert isinstance(command, list) and command[0] in {'python', 'python3'}\n        assert command[1] in {refs['builder']['file'], str(safe(refs['builder']['file']))}\n        assert Path(actual_builder['actual_workdir']).resolve() == ROOT.resolve()\n        recorded_builder_hash = actual_builder.get('actual_checker_sha256', actual_builder.get('helper_sha256_after'))\n        assert recorded_builder_hash is not None\n        if isinstance(recorded_builder_hash, dict):\n            before = actual_builder['helper_sha256_before']\n            assert before == recorded_builder_hash\n            basename = Path(refs['builder']['file']).name\n            assert recorded_builder_hash.get(refs['builder']['file'], recorded_builder_hash.get(basename)) == refs['builder']['sha256']\n            exact({name if '/' in name else 'book/coverage/' + name: digest for name, digest in recorded_builder_hash.items()})\n        else:\n            assert recorded_builder_hash == refs['builder']['sha256']\n            if 'helper_sha256_before' in actual_builder:\n                assert actual_builder['helper_sha256_before'] == recorded_builder_hash\n        builder_log = refs['actual_builder_log']\n        assert sha(builder_log['file']) == builder_log['sha256']\n        assert actual_builder.get('log_sha256', actual_builder.get('original_log_sha256')) == builder_log['sha256']\n        peer = checked(refs['independent_mapping_peer'])\n        assert not peer.get('errors', [])\n        assert 'passed' in peer['status'] or 'confirmed' in peer['status']\n        peers[owner] = refs['independent_mapping_peer']\n        first['evidence_sha256'].update({r['file']: r['sha256'] for r in refs.values() if isinstance(r, dict) and set(r) == {'file', 'sha256'}})\n        proofs = offer.get('proof_files', {})\n        assert set(proofs) == set(refs['expected_owned_proof_sources'])\n        for source, row in proofs.items():\n            assert sha(source) == row['sha256']\n            exact(row['evidence_sha256'])\n            if source in selection:\n                assert selection[source]['sha256'] == row['sha256']\n                for evidence_name, evidence_hash in row['evidence_sha256'].items():\n                    assert evidence_name not in selection[source]['evidence_sha256'] or selection[source]['evidence_sha256'][evidence_name] == evidence_hash\n                selection[source]['evidence_sha256'].update(row['evidence_sha256'])\n            else:\n                record = standalone_success(source, row['sha256'], row['evidence_sha256'])\n                selection[source] = copy.deepcopy(row)\n                selection[source]['original_actual_zero_record'] = record\n                new_sources.add(source)\n    assert set(new_sources) == set(plan['expected_new_proof_sources'])\n    assert len(selection) == 1144 + len(new_sources)\n    global_audit = checked(plan['global_integrity'])\n    assert global_audit['integrity_status'] == 'passed' and global_audit['errors'] == []\n    assert global_audit['inventory_sha256'] == INVENTORY_SHA\n    assert {d['domain'] for d in global_audit['domains']} == set(owners)\n    for d in global_audit['domains']:\n        assert d['ledger_sha256'] == owners[d['domain']]['ledger']['sha256']\n    all_names = {d['name'] for source in selection for d in declarations(safe(source).read_text())}\n    for owner in owners:\n        ledger = read(owners[owner]['ledger']['file'])\n        for claim in ledger['material_claims'] + [c for e in ledger['exercises'] for c in e['claims']]:\n            assert set(claim['lean_declarations']) <= all_names, (owner, claim['id'])\n        imports = documents[owner].get('required_external_import_dependencies', {})\n        exact(imports)\n        assert set(imports) <= set(selection)\n    for source in selection:\n        for line in re.findall(r'^import[^\\n]*', safe(source).read_text(), re.M):\n            for dep in line.split()[1:]:\n                if dep.startswith('SafeLearning.'):\n                    assert 'verification/lean/' + dep.replace('.', '/') + '.lean' in selection, (source, dep)\n    extras = copy.deepcopy(baseline['extra_frozen_inputs'])\n    for name, row in extras.items():\n        assert sha(name) == row['sha256']\n    for name, row in plan['additional_frozen_inputs'].items():\n        assert set(row) == {'sha256', 'scope'} and row['scope'] == 'immutable_audit_or_local_source_evidence'\n        assert safe(name).resolve().is_relative_to((ROOT / 'book/coverage').resolve()) or safe(name).resolve().is_relative_to((ROOT / 'reports/full-coverage/source-history').resolve())\n        assert sha(name) == row['sha256']\n        assert row['sha256'] not in set(plan['excluded_full_external_reference_sha256'])\n        assert name not in extras or extras[name] == row\n        extras[name] = row\n    first['evidence_sha256'][plan['global_integrity']['file']] = plan['global_integrity']['sha256']\n    provenance = retain(ROOT, BASELINE, MANIFEST, selection, extras, CONTENT_MAP, authorization)\n    result = dict(status='explicit_current52_source_matched_selection_requires_fresh_aggregate_audit', created_at_utc=datetime.now(timezone.utc).isoformat(), baseline_selection=BASELINE, baseline_selection_sha256=BASELINE_SHA, actual_passing_baseline_audit=AUDIT, actual_passing_baseline_audit_sha256=sha(AUDIT), current_inventory=INVENTORY, current_inventory_sha256=INVENTORY_SHA, offers_sha256={r['offer']['file']:r['offer']['sha256'] for r in owners.values()}, independent_owner_mapping_peers=peers, global_integrity=plan['global_integrity']['file'], global_integrity_sha256=plan['global_integrity']['sha256'], proof_files=dict(sorted(selection.items())), proof_file_count=len(selection), new_file_count=len(new_sources), extra_frozen_inputs=extras, previous_frozen_input_content_binding=provenance, selection_plan=plan_name, selection_plan_sha256=sha(plan_name), deliberate_baseline_source_revisions={}, coverage_complete=False, limits=['All1144 baseline24 proof sources and original evidence remain exact. New source-matched actual standalone evidence requires a fresh frozen25 aggregate build, kernel replay and all-theorem axiom audit.', 'All40485 prior frozen input paths retain their exact original bytes by content fingerprints; retention records are historical provenance, not new executions.', 'Full external references are excluded from additional explicit inputs; any previously inherited audit bytes remain historical.'])\n    with safe(DESTINATION).open('x') as output:\n        output.write(json.dumps(result, indent=2) + '\\n')\n    return {'proofs':len(selection),'new':len(new_sources),'selection_sha256':sha(DESTINATION),'extra_inputs':len(extras),'content_map':provenance}\n\n\nif __name__ == '__main__':\n    parser = argparse.ArgumentParser()\n    parser.add_argument('--plan', required=True, help='Immutable independently reviewed installed-owner production plan')\n    args = parser.parse_args()\n    print(json.dumps(prepare(args.plan)))\n",
+    "book/coverage/retain_baseline_inputs25_v2.py": "\"\"\"Retain prior frozen bytes, allowing exactly the four reviewed old owner aliases.\n\nThe original baseline24 selection and entire original row bodies are immutable,\nincluding their already-present checkpoint24 owner-alias provenance. Only its\nfour historical working-ledger evidence paths may use their actual Root archive\ncopies. Other evidence is never repaired by filename or by a matching digest.\n\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime,timezone\nimport hashlib,json\n\nOWNER_EVIDENCE_PATHS = {'book/coverage/' + owner + '.json' for owner in\n                        ('core', 'foundations', 'applied', 'modules')}\n\ndef validate_owner_evidence_aliases(root, baseline_name, manifest_name, authorization):\n    def safe(name):\n        assert isinstance(name, str) and name\n        path = Path(name)\n        assert not path.is_absolute() and '..' not in path.parts and str(path) == name\n        assert (root / path).resolve().is_relative_to(root.resolve())\n        return root / path\n    def sha(name): return hashlib.sha256(safe(name).read_bytes()).hexdigest()\n    def checked(ref):\n        assert set(ref) == {'file', 'sha256'} and sha(ref['file']) == ref['sha256']\n        return json.loads(safe(ref['file']).read_text())\n    assert set(authorization) == {'actual_integration_execution', 'integration_result', 'aliases'}\n    assert set(authorization['aliases']) == OWNER_EVIDENCE_PATHS\n    baseline = json.loads(safe(baseline_name).read_text())\n    manifest = json.loads(safe(manifest_name).read_text())\n    assert manifest['selection'] == baseline_name and manifest['selection_sha256'] == sha(baseline_name)\n    assert manifest['proof_files'] == baseline['proof_files']\n    result = checked(authorization['integration_result'])\n    execution = checked(authorization['actual_integration_execution'])\n    codes = [execution[k] for k in ('actual_exit_code', 'exit_code') if k in execution]\n    assert codes and all(type(code) is int and code == 0 for code in codes)\n    assert result['status'] == 'four_exact_reviewed_owner25_candidate_bytes_integrated_pending_fresh_global_integrity_and_aggregate25_audit'\n    assert result['applied'] is True\n    command = execution.get('actual_command', execution.get('command'))\n    assert isinstance(command, list) and len(command) == 4 and command[-1] == '--apply'\n    assert command[0] in {'python', 'python3'}\n    helper = result['actual_helper']\n    assert helper == 'book/coverage/checks/root_integrate_owner25_candidates_v2.py'\n    assert command[1] in {helper, str(safe(helper))}\n    assert command[2] in {result['binding_manifest'], str(safe(result['binding_manifest']))}\n    assert Path(execution['actual_workdir']).resolve() == root.resolve()\n    assert sha(helper) == result['actual_helper_sha256']\n    assert sha(result['binding_manifest']) == result['binding_manifest_sha256']\n    before = execution['helper_sha256_before']; after = execution['helper_sha256_after']\n    assert before == after\n    if isinstance(after, dict):\n        assert after[helper] == result['actual_helper_sha256']\n        for name, digest in after.items(): assert sha(name) == digest\n    else: assert after == result['actual_helper_sha256']\n    assert sha(execution['log']) == execution['log_sha256']\n    replacements = {row['destination']: row for row in result['exact_replacements']}\n    assert len(replacements) == 5 and set(replacements) == OWNER_EVIDENCE_PATHS | {'book/coverage/applied-promotions.json'}\n    checked_aliases = {}\n    for name, alias in authorization['aliases'].items():\n        assert set(alias) == {'original_sha256', 'immutable_byte_copy'}\n        old_sha = manifest['working_inputs_sha256'][name]\n        assert alias['original_sha256'] == old_sha\n        row = replacements[name]\n        assert row['before_sha256'] == old_sha\n        expected_archive = 'reports/full-coverage/owner24-originals-before-owner25-integration-v1/' + Path(name).name\n        assert row['original24_byte_copy'] == expected_archive\n        assert alias['immutable_byte_copy'] == {'file': expected_archive, 'sha256': old_sha}\n        assert sha(expected_archive) == old_sha\n        assert sha(name) == row['candidate']['sha256'] == sha(row['candidate']['file'])\n        occurrences = [r for r in baseline['proof_files'].values() if name in r['evidence_sha256']]\n        assert occurrences and all(r['evidence_sha256'][name] == old_sha for r in occurrences)\n        checked_aliases[name] = alias\n    return checked_aliases\n\ndef normalized_baseline_owner_evidence(row, aliases):\n    normalized = dict(row['evidence_sha256'])\n    used = {}\n    for original, alias in aliases.items():\n        if original not in normalized: continue\n        assert normalized.pop(original) == alias['original_sha256']\n        immutable = alias['immutable_byte_copy']\n        assert immutable['file'] not in normalized or normalized[immutable['file']] == immutable['sha256']\n        normalized[immutable['file']] = immutable['sha256']\n        used[original] = alias\n    return normalized, used\n\ndef retain(root,baseline_name,manifest_name,selected,extras,destination_name,authorized_evidence_aliases):\n    def safe(name):\n        path=Path(name)\n        assert isinstance(name,str) and name and not path.is_absolute() and '..' not in path.parts\n        assert str(path)==name and (root/path).resolve().is_relative_to(root.resolve()),name\n        return root/path\n    def sha(name): return hashlib.sha256(safe(name).read_bytes()).hexdigest()\n    for name in (baseline_name,manifest_name,destination_name):safe(name)\n    baseline=json.loads((root/baseline_name).read_text())\n    manifest=json.loads((root/manifest_name).read_text())\n    assert baseline['status'].endswith('requires_fresh_aggregate_audit')\n    assert manifest['status']=='formal_verification_passed_partial_coverage'\n    assert manifest['selection']==baseline_name and manifest['selection_sha256']==sha(baseline_name)\n    assert manifest['proof_files']==baseline['proof_files']\n    aliases = validate_owner_evidence_aliases(root, baseline_name, manifest_name, authorized_evidence_aliases)\n    actual_result = json.loads(safe(authorized_evidence_aliases['integration_result']['file']).read_text())\n    actual_installed_sha256 = {r['destination']: r['candidate']['sha256'] for r in actual_result['exact_replacements']}\n    assert set(baseline['proof_files'])<=set(selected)\n    for name,row in baseline['proof_files'].items():\n        assert selected[name]['sha256']==row['sha256'],name\n        normalized, used = normalized_baseline_owner_evidence(row, aliases)\n        assert all(selected[name]['evidence_sha256'].get(evidence)==digest for evidence,digest in normalized.items()),name\n        for evidence in used:\n            # The selector may separately append a fresh installed-ledger ref.\n            # It must be the actual current bytes, never the old baseline hash.\n            if evidence in selected[name]['evidence_sha256']:\n                assert selected[name]['evidence_sha256'][evidence] != used[evidence]['original_sha256']\n                assert selected[name]['evidence_sha256'][evidence] == actual_installed_sha256[evidence] == sha(evidence)\n        for key, value in row.items():\n            if key != 'evidence_sha256': assert selected[name][key] == value, (name, key)\n        if used:\n            provenance = selected[name]['checkpoint25_original_baseline_owner_evidence']\n            assert provenance == {'original_baseline_selection': {'file': baseline_name, 'sha256': sha(baseline_name)},\n                                  'original_baseline_source': name, 'original_row_body': row,\n                                  'authorized_original_path_aliases': used}, name\n    for name,row in baseline['extra_frozen_inputs'].items():assert extras.get(name)==row,name\n    assert safe(manifest['snapshot']).resolve().is_relative_to((root/'reports/full-coverage').resolve())\n    bound={}\n    def bind(name,digest):\n        assert safe(name).is_file() and sha(name)==digest,name\n        assert name not in bound or bound[name]==digest,name\n        bound[name]=digest\n    for name,row in selected.items():\n        bind(name,row['sha256'])\n        for evidence,digest in row['evidence_sha256'].items():bind(evidence,digest)\n    for name,row in extras.items():bind(name,row['sha256'])\n    by_digest={}\n    for name,digest in sorted(bound.items()):by_digest.setdefault(digest,name)\n    first=selected[sorted(selected)[0]]\n    rows=[];added={};reused=0\n    for name,digest in sorted(manifest['frozen_inputs_sha256'].items()):\n        safe(name)\n        frozen=manifest['snapshot']+'/'+name\n        assert safe(frozen).resolve().is_relative_to(safe(manifest['snapshot']).resolve()) and sha(frozen)==digest,name\n        retained=by_digest.get(digest)\n        if retained is None:\n            retained=frozen;bind(retained,digest);by_digest[digest]=retained\n            first['evidence_sha256'][retained]=digest;added[retained]=digest\n        else:reused+=1\n        assert bound[retained]==digest and sha(retained)==digest\n        rows.append(dict(original_frozen_path=name,sha256=digest,retained_input=retained))\n    assert len(rows)==len(manifest['frozen_inputs_sha256']) and {r['original_frozen_path']:r['sha256'] for r in rows}==manifest['frozen_inputs_sha256']\n    for name in [baseline_name,manifest_name]:\n        bind(name,sha(name));first['evidence_sha256'][name]=sha(name)\n    destination=safe(destination_name);assert not destination.exists()\n    destination.parent.mkdir(parents=True,exist_ok=True)\n    result=dict(status='all_original_frozen_inputs_retained_by_exact_content_fingerprints',prepared_at_utc=datetime.now(timezone.utc).isoformat(),baseline_selection=baseline_name,baseline_selection_sha256=sha(baseline_name),baseline_manifest=manifest_name,baseline_manifest_sha256=sha(manifest_name),original_snapshot=manifest['snapshot'],original_input_count=len(rows),retained_existing_content_rows=reused,new_unique_snapshot_aliases=added,new_unique_snapshot_alias_count=len(added),new_unique_snapshot_alias_bytes=sum((root/name).stat().st_size for name in added),input_bindings=rows,authorized_baseline_owner_evidence_aliases=authorized_evidence_aliases,scope='Every original frozen path and byte hash is recorded. Identical byte sequences may share a retained immutable input; original manifests, audits, commands, logs and times remain unchanged. Exactly four original working-owner evidence paths use the genuine Root archive bytes, with original entire row bodies and path/hash mappings retained. This is provenance, not a new execution.')\n    destination.write_text(json.dumps(result,indent=2)+'\\n')\n    first['evidence_sha256'][destination_name]=sha(destination_name)\n    return dict(file=destination_name,sha256=sha(destination_name),original_inputs=len(rows),new_snapshot_aliases=len(added))\n"
+  },
+  "readiness": {
+    "file": "book/coverage/checks/future25-core/checkpoint25-engineering-unexecuted-draft-readiness-v1.json",
+    "sha256": "6df1d72b5fb8b325cdd576ad3a2293a67ac8c46862f59270e7c627cfde6686c1"
+  },
+  "baseline24": {
+    "selection": {
+      "file": "reports/full-coverage/checkpoint-24-selection.json",
+      "sha256": "9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314"
+    },
+    "manifest": {
+      "file": "reports/full-coverage/checkpoint-24-manifest.json",
+      "sha256": "5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0"
+    },
+    "actual_audit": {
+      "file": "reports/full-coverage/lean-checkpoint-24/verification-original.json",
+      "sha256": "900755d1647aee305b0a3e61b4291ca52f8968dc9be183f0cb57cbe43d4fab67"
+    },
+    "proof_sources": 1144,
+    "public_exports": 9279,
+    "frozen_input_paths": 40485
+  },
+  "actual12_native_new_source_pair_schema_reads": [
+    {
+      "source": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+      "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+      "actual_standalone_record": "book/coverage/checks/CompleteBarrierControlMaterial25-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteFoundationsQuadraticTwentyNet24.lean",
+      "sha256": "3f2caf3abc7f228d63581ce31aba7144c213d830dfe5f0f009878ab2329f2a24",
+      "actual_standalone_record": "book/coverage/checks/foundations-future25/material-batch1/grid1175/CompleteFoundationsQuadraticTwentyNet24-standalone-actual-v1.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteFoundationsScalarCalculusMaterial25.lean",
+      "sha256": "7d24107b1224f26221cefece2cd054070eb78f4d6f2bfae2527707d477b49382",
+      "actual_standalone_record": "book/coverage/checks/foundations-future25/material-batch1/calculus152-154-166/CompleteFoundationsScalarCalculusMaterial25-standalone-actual-v1.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedGaussianMixtureLaw24.lean",
+      "sha256": "752e9f913b909c660bf8ab5ab2dd4ffcdd9ea8c48441f786a4643eff6e2edb03",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianMixtureLaw24-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedGaussianMixtureCDFNumbers24.lean",
+      "sha256": "0c618803406a7b8f92de8697fb1a63f9719a423cfd4bc7cf0bd7be1970c03741",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianMixtureCDFNumbers24-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedGaussianSmallTail24.lean",
+      "sha256": "fb12a8d2b191ccb386a8f1a69ea1077f512fff3994b31b094d266313bc717abe",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianSmallTail24-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedGaussianMixtureConsequences24.lean",
+      "sha256": "1ec54882375105c7075d37ba44b18f4db9c81bee7a5768aaebac98e04976c5ab",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianMixtureConsequences24-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedConditioningAlarmMaterial25.lean",
+      "sha256": "d77aa73c2175cd3f6b9142deaeb208356a7f921bdead906a37b67e4e2387e136",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedConditioningAlarmMaterial25-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedThreeEqualConditionalOutcomes25.lean",
+      "sha256": "74bd4da951b1d46b1b4e70e32f08fbc24b1181a8e2f39769f4d5f249707717db",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedThreeEqualConditionalOutcomes25-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteAppliedTruncatedConditioningMaterial25.lean",
+      "sha256": "1bfdcfe294388ad35fd61beaef95c20b720f236d2986cdc9b6a6ffb543e9980a",
+      "actual_standalone_record": "book/coverage/checks/CompleteAppliedTruncatedConditioningMaterial25-standalone.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteModulesNNDoublyHyperdominant25.lean",
+      "sha256": "42deaceff28eacbcdccba0ae6df087775ad4385d0062af2855e92d7b073c5ce4",
+      "actual_standalone_record": "book/coverage/checks/modules-future25/temporal/CompleteModulesNNDoublyHyperdominant25-standalone-v1.json"
+    },
+    {
+      "source": "verification/lean/SafeLearning/CompleteModulesNNTemporalDiagonal25.lean",
+      "sha256": "89b3100fba1340f670579b83af03ff403450a2a26f8a6c74f1e2ce75e18962c2",
+      "actual_standalone_record": "book/coverage/checks/modules-future25/temporal/CompleteModulesNNTemporalDiagonal25-standalone-v1.json"
+    }
+  ],
+  "real_final_offer_sha256": {
+    "book/coverage/checks/future25-core/core-audit25-candidate-source52-material-additions-v1-reviewed.json": "91289df4410d8f37643d983fc8d49befb1a9510e11778552b61b601d358a5130",
+    "book/coverage/checks/foundations-future25/source52/foundations-audit25-candidate-source52-additions-v1-reviewed.json": "feec17b3c358db319d910d4db8ed5664a1e2b3f18d33d61625b47f539910cf92",
+    "book/coverage/checks/applied-future25/source52/applied-audit25-candidate-source52-additions-v2-reviewed.json": "505e899fc75c92374d30b76b11616c97705891fb90d24add073ac93229a97755",
+    "book/coverage/checks/modules-future25/source52/modules-audit25-candidate-source52-additions-v1-reviewed.json": "1cfaa9eb3fedbf69f092e1db594968f737e6f636feb40cc85e25eac4e79c49be"
+  },
+  "fixtures": [
+    {
+      "label": "exact_four_synthetic_old_archives_and_current_candidate_bytes",
+      "observed": "accepted",
+      "synthetic_only": true
+    },
+    {
+      "label": "missing_owner",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "unauthorized_fifth_owner",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "old_raw_hash_drift",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "pruned_frozen_Applied_substitutes_unpruned_raw",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "archive_hash_drift",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "same_hash_wrong_archive_path",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "execution_pointer_drift",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "result_pointer_drift",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "failed_execution",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "conflicting_exit_codes",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "boolean_exit",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "missing_apply_command",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "wrong_helper_command",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "wrong_workdir",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "changed_helper_after",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "unapplied_dry_run",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "changed_before_hash",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "wrong_archive_field",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "old_archive_current_raw_and_distinct_pruned_frozen_Applied_coexist_full_prior24_metadata",
+      "observed": "accepted",
+      "synthetic_only": true
+    },
+    {
+      "label": "resurfaced_old_raw",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "arbitrary_current_raw",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "pruned_Applied_as_current_raw",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "missing_archive_alias",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "ordinary_evidence_drift",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "original_review_time_drift",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "nested_original24_provenance_drift",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "entire_original_baseline_row_drift",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "proof_hash_drift",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "alias_provenance_drift",
+      "observed": "rejected_before_output",
+      "synthetic_only": true
+    },
+    {
+      "label": "valid_canonical_pair_skips_unsupported_absolute_historical_record",
+      "observed": "accepted",
+      "synthetic_only": true
+    },
+    {
+      "label": "absolute_historical_without_snapshot_plus_named_not_canonical_pair",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "canonical_standalone_without_named",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "named_without_any_standalone",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "missing_actual_log_evidence",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "failed_standalone",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "conflicting_standalone_exit_codes",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "wrong_standalone_workdir",
+      "observed": "rejected",
+      "synthetic_only": true
+    },
+    {
+      "label": "changed_standalone_snapshot_hash",
+      "observed": "rejected",
+      "synthetic_only": true
+    }
+  ],
+  "fixture_count": 39,
+  "fixture_directory": "/tmp/applied-checkpoint25-selector-retainer-fixtures-v2",
+  "fixture_scope": "All fabricated authorization/record schemas are explicitly synthetic isolated files. Only validator functions were called against them. No production prepare, integration, plan assignment, compiler, selector output or aggregate was executed. Existing12 native paired records were separately read and hash-checked.",
+  "baseline24_unique_evidence_rehashed": 25295,
+  "all1144_baseline_sources_rehashed": true,
+  "original_unpruned_Applied24_sha256": "b869af52ff5db1e39b3971cdeb32e1afae4aa87f69c59af31f599e897066464d",
+  "distinct_frozen_pruned_Applied24_sha256": "12da336e7d22d92cb93f2dbf304e54f161f286fde8e34ffba3857b7afd014dd2",
+  "live_owner_inventory_sha256_before_after_exact": {
+    "book/coverage/applied-promotions.json": "5d28d3d8bbcbfa0a7b96dce7b27c63ff4f55dd7f785568c8d44f6acf319815e3",
+    "book/coverage/applied.json": "b869af52ff5db1e39b3971cdeb32e1afae4aa87f69c59af31f599e897066464d",
+    "book/coverage/core.json": "47b676890af40692cc1161c5472b461397b224e1a3724ee6990f03bb64d56bf5",
+    "book/coverage/foundations.json": "e3ff8460281d2a745c6def2d007b6465a1b5c352a1e14d90d486dec64835982b",
+    "book/coverage/inventory.json": "38518673e13ed16537e301b071fb04ec0ed6720269cd14f48b986f4e82c578f3",
+    "book/coverage/modules.json": "1d4395c5b7cb9dc18217b0c4236a04868f67a2445d0ffed18f3a77215d3b2c90"
+  },
+  "future_required_actual_gates": [
+    "actual_owner25_apply0_and_exact_original24_archives",
+    "independent_installed_owner25_interfaces_and_plan",
+    "fresh_global_integrity0",
+    "genuine_production_selector_output",
+    "fresh_frozen25_aggregate_and_publication"
+  ],
+  "coverage_complete": false,
+  "scope": "Code and isolated schema/retention review only; no future actual release or integration result is inferred from draft files.",
+  "previous_independent_peer_entire_body_and_time": {
+    "status": "passed_independent_checkpoint25_selector_retainer_code_and_isolated_fixture_review_requires_real_installed_owner25_plan_and_production",
+    "errors": [],
+    "reviewer": "applied_next",
+    "reviewed_at_utc": "2026-10-11T04:03:51.232367+00:00",
+    "helpers_sha256": {
+      "book/coverage/prepare_checkpoint25_selection_v1.py": "7597ea44c71c4e0da6610dcc59a2daa1d666ba173ae495c630500ef509708633",
+      "book/coverage/retain_baseline_inputs25_v1.py": "07df89cef04a1edc0edcba1ce42af1ad1b547cbeffb1100bcf0b10e66db21218"
+    },
+    "entire_reviewed_helper_bodies": {
+      "book/coverage/prepare_checkpoint25_selection_v1.py": "\"\"\"Prepare checkpoint25 with exact four-owner historical evidence aliases.\n\nUnexecuted draft: actual Source52 and owner25 installation/global/peer evidence\nare required by the immutable production plan; existence of drafts is insufficient.\n\nThe plan pins installed owner25 ledgers, actual builders, independent mapping\npeers and the current global integrity report. Importing this helper is read-only.\nNo production execution is authorized by the mere existence of candidate offers.\n\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport argparse\nimport copy\nimport hashlib\nimport json\nimport re\n\nfrom lean_names import declarations\nfrom retain_baseline_inputs25_v1 import retain, validate_owner_evidence_aliases, normalized_baseline_owner_evidence\n\nROOT = Path(__file__).resolve().parents[2]\nINVENTORY = 'book/coverage/inventory-after-correction52.json'\nBASELINE = 'reports/full-coverage/checkpoint-24-selection.json'\nBASELINE_SHA = '9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314'\nMANIFEST = 'reports/full-coverage/checkpoint-24-manifest.json'\nMANIFEST_SHA = '5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0'\nAUDIT = 'reports/full-coverage/lean-checkpoint-24/verification-original.json'\nAUDIT_SHA = '900755d1647aee305b0a3e61b4291ca52f8968dc9be183f0cb57cbe43d4fab67'\nDESTINATION = 'reports/full-coverage/checkpoint-25-selection.json'\nCONTENT_MAP = 'book/coverage/checks/frozen24-input-content-bindings25-v1.json'\n\n\ndef safe(name):\n    assert isinstance(name, str) and name\n    path = Path(name)\n    assert not path.is_absolute() and '..' not in path.parts and str(path) == name\n    assert (ROOT / path).resolve().is_relative_to(ROOT.resolve())\n    return ROOT / path\n\n\ndef sha(name):\n    return hashlib.sha256(safe(name).read_bytes()).hexdigest()\n\n\ndef read(name):\n    return json.loads(safe(name).read_text())\n\n\ndef exact(mapping):\n    assert isinstance(mapping, dict)\n    for name, digest in mapping.items():\n        assert isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest)\n        assert sha(name) == digest, name\n\n\ndef checked(pointer):\n    assert set(pointer) == {'file', 'sha256'}\n    assert sha(pointer['file']) == pointer['sha256']\n    return read(pointer['file'])\n\n\ndef actual_exit_zero(record):\n    codes = [record[k] for k in ('actual_exit_code', 'exit_code') if k in record]\n    assert codes and all(type(code) is int and code == 0 for code in codes)\n\n\ndef standalone_success(source, digest, evidence):\n    \"\"\"Locate an original actual standalone record, preserving all path aliases.\n\n    Original JSON fields may spell exit_code/actual_exit_code and source/lean_file.\n    The canonical evidence paths may differ from the raw original log/snapshot\n    names. Every alias is validated by exact bytes, never by filename resemblance.\n    A named lake build or lean -o run does not substitute for standalone evidence.\n    \"\"\"\n    exact(evidence)\n    evidence_hashes = set(evidence.values()) | {digest}\n    matches, named_matches = [], []\n    for name in evidence:\n        if not name.endswith('.json'):\n            continue\n        record = read(name)\n        if not isinstance(record, dict):\n            continue\n        command = record.get('command', record.get('actual_command'))\n        if not isinstance(command, list):\n            continue\n        standalone = len(command) == 4 and command[:3] == ['lake', 'env', 'lean']\n        named_lake = command == ['lake', 'build', 'SafeLearning.' + Path(source).stem]\n        named_lean = len(command) == 6 and command[:4] == ['lake', 'env', 'lean', '-o']\n        if not (standalone or named_lake or named_lean):\n            continue\n        recorded_source = record.get('source', record.get('lean_file'))\n        if recorded_source not in {source, command[-1]}:\n            continue\n        if record.get('source_sha256_before') != digest or record.get('source_sha256_after') != digest:\n            continue\n        actual_exit_zero(record)\n        assert record.get('source_unchanged', True) is True\n        workdir = record.get('actual_workdir', record.get('actual_cwd', record.get('cwd')))\n        assert isinstance(workdir, str) and Path(workdir).resolve() == (ROOT / 'verification/lean').resolve()\n        canonical_input = str(Path(source).relative_to('verification/lean'))\n        if not named_lake and command[-1] != canonical_input:\n            # A historical absolute input needs its exact original source snapshot.\n            assert Path(command[-1]).is_absolute()\n            assert recorded_source == command[-1] or recorded_source == source\n            snapshot_hash = record.get('source_snapshot_sha256', record.get('preserved_source_sha256'))\n            if snapshot_hash is None:\n                # Retain unsupported historical absolute-input executions as\n                # provenance, but do not treat them as canonical pair evidence.\n                # An eligible canonical standalone plus named run is mandatory.\n                continue\n            assert snapshot_hash == digest and snapshot_hash in evidence_hashes\n        log_hash = record.get('log_sha256', record.get('raw_log_sha256'))\n        assert isinstance(log_hash, str)\n        assert any(Path(path).suffix == '.log' and value == log_hash for path, value in evidence.items())\n        snapshot_hash = record.get('source_snapshot_sha256', record.get('preserved_source_sha256'))\n        if snapshot_hash is not None:\n            assert snapshot_hash == digest and snapshot_hash in evidence_hashes\n        (matches if standalone else named_matches).append(name)\n    assert matches, 'No exact actual standalone success: ' + source\n    assert named_matches, 'No exact actual paired named success: ' + source\n    return sorted(matches)[0]\n\n\ndef prepare(plan_name):\n    plan = read(plan_name)\n    assert plan['status'] == 'independently_reviewed_installed_owner25_selection_plan'\n    INVENTORY_SHA = plan['inventory']['sha256']\n    assert isinstance(INVENTORY_SHA, str) and re.fullmatch('[0-9a-f]{64}', INVENTORY_SHA)\n    actual_source = checked(plan['actual_source52_apply'])\n    postwrite = checked(plan['actual_source52_postwrite'])\n    actual_exit_zero(actual_source); actual_exit_zero(postwrite)\n    assert postwrite['inventory_after'] == INVENTORY and postwrite['inventory_after_sha256'] == INVENTORY_SHA\n    source_log = actual_source.get('log', actual_source.get('raw_log'))\n    source_log_sha = actual_source.get('log_sha256', actual_source.get('raw_log_sha256'))\n    assert sha(source_log) == source_log_sha\n    assert sha('SafeLearning/nn-in-the-loop.html') == '1a39cab6587a6fe91dca670facc5e58e7c85cb6c0a2c065f43763656d5b73041'\n    assert plan['inventory'] == {'file': INVENTORY, 'sha256': INVENTORY_SHA}\n    assert sha(INVENTORY) == sha('book/coverage/inventory.json') == INVENTORY_SHA\n    assert not safe(DESTINATION).exists() and not safe(CONTENT_MAP).exists()\n    assert plan['destination'] == DESTINATION and plan['content_map'] == CONTENT_MAP\n    baseline = checked(plan['baseline_selection'])\n    assert plan['baseline_selection'] == {'file': BASELINE, 'sha256': BASELINE_SHA}\n    audit, manifest = checked(plan['baseline_audit']), checked(plan['baseline_manifest'])\n    assert plan['baseline_audit'] == {'file': AUDIT, 'sha256': AUDIT_SHA}\n    assert plan['baseline_manifest'] == {'file': MANIFEST, 'sha256': MANIFEST_SHA}\n    assert audit['status'] == 'passed' and audit['proof_file_count'] == 1144 and audit['theorem_count'] == 9279\n    assert all(row['exit_code'] == 0 for row in audit['checks'])\n    assert len(baseline['proof_files']) == 1144\n    assert audit['proof_sha256'] == {name: row['sha256'] for name, row in baseline['proof_files'].items()}\n    assert manifest['status'] == 'formal_verification_passed_partial_coverage'\n    assert len(manifest['frozen_inputs_sha256']) == 40485\n    assert manifest['selection'] == BASELINE and manifest['selection_sha256'] == BASELINE_SHA\n    exact(plan['helpers_sha256'])\n    assert str(Path(__file__).relative_to(ROOT)) in plan['helpers_sha256']\n    assert 'book/coverage/retain_baseline_inputs25_v1.py' in plan['helpers_sha256']\n    authorization = plan['authorized_baseline_owner_evidence_aliases']\n    aliases = validate_owner_evidence_aliases(ROOT, BASELINE, MANIFEST, authorization)\n    selection = copy.deepcopy(baseline['proof_files'])\n    for source, row in selection.items():\n        assert sha(source) == row['sha256']\n        original = copy.deepcopy(row)\n        normalized, used = normalized_baseline_owner_evidence(original, aliases)\n        if used:\n            assert 'checkpoint25_original_baseline_owner_evidence' not in row\n            row['evidence_sha256'] = normalized\n            row['checkpoint25_original_baseline_owner_evidence'] = {\n                'original_baseline_selection': {'file': BASELINE, 'sha256': BASELINE_SHA},\n                'original_baseline_source': source, 'original_row_body': original,\n                'authorized_original_path_aliases': used}\n        exact(row['evidence_sha256'])\n    first = selection[sorted(selection)[0]]\n    first['evidence_sha256'].update({BASELINE: BASELINE_SHA, MANIFEST: sha(MANIFEST), AUDIT: sha(AUDIT), plan_name: sha(plan_name)})\n    for historical in plan['prior_checkpoint24_selection_provenance'].values():\n        assert set(historical) == {'file', 'sha256'} and sha(historical['file']) == historical['sha256']\n        first['evidence_sha256'][historical['file']] = historical['sha256']\n    preparation_helper = plan['baseline_owner_evidence_alias_plan_preparation_helper']\n    assert set(preparation_helper) == {'file', 'sha256'} and sha(preparation_helper['file']) == preparation_helper['sha256']\n    first['evidence_sha256'][preparation_helper['file']] = preparation_helper['sha256']\n    for path in (ROOT / 'reports/full-coverage/lean-checkpoint-24').rglob('*'):\n        if path.is_file():\n            name = str(path.relative_to(ROOT))\n            first['evidence_sha256'][name] = sha(name)\n    first['checkpoint25_inherited_snapshot_provenance_scope'] = 'Every frozen24 original path and byte hash is retained by the exact content binding map. Original audits, commands and times remain historical.'\n    owners = plan['owners']\n    assert set(owners) == {'core', 'modules', 'foundations', 'applied'}\n    documents, peers, new_sources = {}, {}, set()\n    for owner, refs in owners.items():\n        offer = checked(refs['offer']); documents[owner] = offer\n        ledger_name = 'book/coverage/' + owner + '.json'\n        assert refs['ledger']['file'] == ledger_name\n        ledger = checked(refs['ledger'])\n        assert offer.get('mapped_ledger', offer.get('module_ledger')) == ledger_name\n        assert offer.get('mapped_ledger_sha256', offer.get('module_ledger_sha256')) == refs['ledger']['sha256']\n        assert offer.get('current_inventory_sha256', offer.get('inventory_sha256')) == INVENTORY_SHA\n        exact(offer['source_sha256'])\n        actual_builder = checked(refs['actual_builder'])\n        actual_exit_zero(actual_builder)\n        assert sha(refs['builder']['file']) == refs['builder']['sha256']\n        command = actual_builder.get('command', actual_builder.get('actual_command'))\n        assert isinstance(command, list) and command[0] in {'python', 'python3'}\n        assert command[1] in {refs['builder']['file'], str(safe(refs['builder']['file']))}\n        assert Path(actual_builder['actual_workdir']).resolve() == ROOT.resolve()\n        recorded_builder_hash = actual_builder.get('actual_checker_sha256', actual_builder.get('helper_sha256_after'))\n        assert recorded_builder_hash is not None\n        if isinstance(recorded_builder_hash, dict):\n            before = actual_builder['helper_sha256_before']\n            assert before == recorded_builder_hash\n            basename = Path(refs['builder']['file']).name\n            assert recorded_builder_hash.get(refs['builder']['file'], recorded_builder_hash.get(basename)) == refs['builder']['sha256']\n            exact({name if '/' in name else 'book/coverage/' + name: digest for name, digest in recorded_builder_hash.items()})\n        else:\n            assert recorded_builder_hash == refs['builder']['sha256']\n            if 'helper_sha256_before' in actual_builder:\n                assert actual_builder['helper_sha256_before'] == recorded_builder_hash\n        builder_log = refs['actual_builder_log']\n        assert sha(builder_log['file']) == builder_log['sha256']\n        assert actual_builder.get('log_sha256', actual_builder.get('original_log_sha256')) == builder_log['sha256']\n        peer = checked(refs['independent_mapping_peer'])\n        assert not peer.get('errors', [])\n        assert 'passed' in peer['status'] or 'confirmed' in peer['status']\n        peers[owner] = refs['independent_mapping_peer']\n        first['evidence_sha256'].update({r['file']: r['sha256'] for r in refs.values() if isinstance(r, dict) and set(r) == {'file', 'sha256'}})\n        proofs = offer.get('proof_files', {})\n        assert set(proofs) == set(refs['expected_owned_proof_sources'])\n        for source, row in proofs.items():\n            assert sha(source) == row['sha256']\n            exact(row['evidence_sha256'])\n            if source in selection:\n                assert selection[source]['sha256'] == row['sha256']\n                for evidence_name, evidence_hash in row['evidence_sha256'].items():\n                    assert evidence_name not in selection[source]['evidence_sha256'] or selection[source]['evidence_sha256'][evidence_name] == evidence_hash\n                selection[source]['evidence_sha256'].update(row['evidence_sha256'])\n            else:\n                record = standalone_success(source, row['sha256'], row['evidence_sha256'])\n                selection[source] = copy.deepcopy(row)\n                selection[source]['original_actual_zero_record'] = record\n                new_sources.add(source)\n    assert set(new_sources) == set(plan['expected_new_proof_sources'])\n    assert len(selection) == 1144 + len(new_sources)\n    global_audit = checked(plan['global_integrity'])\n    assert global_audit['integrity_status'] == 'passed' and global_audit['errors'] == []\n    assert global_audit['inventory_sha256'] == INVENTORY_SHA\n    assert {d['domain'] for d in global_audit['domains']} == set(owners)\n    for d in global_audit['domains']:\n        assert d['ledger_sha256'] == owners[d['domain']]['ledger']['sha256']\n    all_names = {d['name'] for source in selection for d in declarations(safe(source).read_text())}\n    for owner in owners:\n        ledger = read(owners[owner]['ledger']['file'])\n        for claim in ledger['material_claims'] + [c for e in ledger['exercises'] for c in e['claims']]:\n            assert set(claim['lean_declarations']) <= all_names, (owner, claim['id'])\n        imports = documents[owner].get('required_external_import_dependencies', {})\n        exact(imports)\n        assert set(imports) <= set(selection)\n    for source in selection:\n        for line in re.findall(r'^import[^\\n]*', safe(source).read_text(), re.M):\n            for dep in line.split()[1:]:\n                if dep.startswith('SafeLearning.'):\n                    assert 'verification/lean/' + dep.replace('.', '/') + '.lean' in selection, (source, dep)\n    extras = copy.deepcopy(baseline['extra_frozen_inputs'])\n    for name, row in extras.items():\n        assert sha(name) == row['sha256']\n    for name, row in plan['additional_frozen_inputs'].items():\n        assert set(row) == {'sha256', 'scope'} and row['scope'] == 'immutable_audit_or_local_source_evidence'\n        assert safe(name).resolve().is_relative_to((ROOT / 'book/coverage').resolve()) or safe(name).resolve().is_relative_to((ROOT / 'reports/full-coverage/source-history').resolve())\n        assert sha(name) == row['sha256']\n        assert row['sha256'] not in set(plan['excluded_full_external_reference_sha256'])\n        assert name not in extras or extras[name] == row\n        extras[name] = row\n    first['evidence_sha256'][plan['global_integrity']['file']] = plan['global_integrity']['sha256']\n    provenance = retain(ROOT, BASELINE, MANIFEST, selection, extras, CONTENT_MAP, authorization)\n    result = dict(status='explicit_current52_source_matched_selection_requires_fresh_aggregate_audit', created_at_utc=datetime.now(timezone.utc).isoformat(), baseline_selection=BASELINE, baseline_selection_sha256=BASELINE_SHA, actual_passing_baseline_audit=AUDIT, actual_passing_baseline_audit_sha256=sha(AUDIT), current_inventory=INVENTORY, current_inventory_sha256=INVENTORY_SHA, offers_sha256={r['offer']['file']:r['offer']['sha256'] for r in owners.values()}, independent_owner_mapping_peers=peers, global_integrity=plan['global_integrity']['file'], global_integrity_sha256=plan['global_integrity']['sha256'], proof_files=dict(sorted(selection.items())), proof_file_count=len(selection), new_file_count=len(new_sources), extra_frozen_inputs=extras, previous_frozen_input_content_binding=provenance, selection_plan=plan_name, selection_plan_sha256=sha(plan_name), deliberate_baseline_source_revisions={}, coverage_complete=False, limits=['All1144 baseline24 proof sources and original evidence remain exact. New source-matched actual standalone evidence requires a fresh frozen25 aggregate build, kernel replay and all-theorem axiom audit.', 'All40485 prior frozen input paths retain their exact original bytes by content fingerprints; retention records are historical provenance, not new executions.', 'Full external references are excluded from additional explicit inputs; any previously inherited audit bytes remain historical.'])\n    with safe(DESTINATION).open('x') as output:\n        output.write(json.dumps(result, indent=2) + '\\n')\n    return {'proofs':len(selection),'new':len(new_sources),'selection_sha256':sha(DESTINATION),'extra_inputs':len(extras),'content_map':provenance}\n\n\nif __name__ == '__main__':\n    parser = argparse.ArgumentParser()\n    parser.add_argument('--plan', required=True, help='Immutable independently reviewed installed-owner production plan')\n    args = parser.parse_args()\n    print(json.dumps(prepare(args.plan)))\n",
+      "book/coverage/retain_baseline_inputs25_v1.py": "\"\"\"Retain prior frozen bytes, allowing exactly the four reviewed old owner aliases.\n\nThe original baseline24 selection and entire original row bodies are immutable,\nincluding their already-present checkpoint24 owner-alias provenance. Only its\nfour historical working-ledger evidence paths may use their actual Root archive\ncopies. Other evidence is never repaired by filename or by a matching digest.\n\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime,timezone\nimport hashlib,json\n\nOWNER_EVIDENCE_PATHS = {'book/coverage/' + owner + '.json' for owner in\n                        ('core', 'foundations', 'applied', 'modules')}\n\ndef validate_owner_evidence_aliases(root, baseline_name, manifest_name, authorization):\n    def safe(name):\n        assert isinstance(name, str) and name\n        path = Path(name)\n        assert not path.is_absolute() and '..' not in path.parts and str(path) == name\n        assert (root / path).resolve().is_relative_to(root.resolve())\n        return root / path\n    def sha(name): return hashlib.sha256(safe(name).read_bytes()).hexdigest()\n    def checked(ref):\n        assert set(ref) == {'file', 'sha256'} and sha(ref['file']) == ref['sha256']\n        return json.loads(safe(ref['file']).read_text())\n    assert set(authorization) == {'actual_integration_execution', 'integration_result', 'aliases'}\n    assert set(authorization['aliases']) == OWNER_EVIDENCE_PATHS\n    baseline = json.loads(safe(baseline_name).read_text())\n    manifest = json.loads(safe(manifest_name).read_text())\n    assert manifest['selection'] == baseline_name and manifest['selection_sha256'] == sha(baseline_name)\n    assert manifest['proof_files'] == baseline['proof_files']\n    result = checked(authorization['integration_result'])\n    execution = checked(authorization['actual_integration_execution'])\n    codes = [execution[k] for k in ('actual_exit_code', 'exit_code') if k in execution]\n    assert codes and all(type(code) is int and code == 0 for code in codes)\n    assert result['status'] == 'four_exact_reviewed_owner25_candidate_bytes_integrated_pending_fresh_global_integrity_and_aggregate25_audit'\n    assert result['applied'] is True\n    command = execution.get('actual_command', execution.get('command'))\n    assert isinstance(command, list) and len(command) == 4 and command[-1] == '--apply'\n    assert command[0] in {'python', 'python3'}\n    helper = result['actual_helper']\n    assert helper == 'book/coverage/checks/root_integrate_owner25_candidates_v1.py'\n    assert command[1] in {helper, str(safe(helper))}\n    assert command[2] in {result['binding_manifest'], str(safe(result['binding_manifest']))}\n    assert Path(execution['actual_workdir']).resolve() == root.resolve()\n    assert sha(helper) == result['actual_helper_sha256']\n    assert sha(result['binding_manifest']) == result['binding_manifest_sha256']\n    before = execution['helper_sha256_before']; after = execution['helper_sha256_after']\n    assert before == after\n    if isinstance(after, dict):\n        assert after[helper] == result['actual_helper_sha256']\n        for name, digest in after.items(): assert sha(name) == digest\n    else: assert after == result['actual_helper_sha256']\n    assert sha(execution['log']) == execution['log_sha256']\n    replacements = {row['destination']: row for row in result['exact_replacements']}\n    assert len(replacements) == 5 and set(replacements) == OWNER_EVIDENCE_PATHS | {'book/coverage/applied-promotions.json'}\n    checked_aliases = {}\n    for name, alias in authorization['aliases'].items():\n        assert set(alias) == {'original_sha256', 'immutable_byte_copy'}\n        old_sha = manifest['working_inputs_sha256'][name]\n        assert alias['original_sha256'] == old_sha\n        row = replacements[name]\n        assert row['before_sha256'] == old_sha\n        expected_archive = 'reports/full-coverage/owner24-originals-before-owner25-integration-v1/' + Path(name).name\n        assert row['original24_byte_copy'] == expected_archive\n        assert alias['immutable_byte_copy'] == {'file': expected_archive, 'sha256': old_sha}\n        assert sha(expected_archive) == old_sha\n        assert sha(name) == row['candidate']['sha256'] == sha(row['candidate']['file'])\n        occurrences = [r for r in baseline['proof_files'].values() if name in r['evidence_sha256']]\n        assert occurrences and all(r['evidence_sha256'][name] == old_sha for r in occurrences)\n        checked_aliases[name] = alias\n    return checked_aliases\n\ndef normalized_baseline_owner_evidence(row, aliases):\n    normalized = dict(row['evidence_sha256'])\n    used = {}\n    for original, alias in aliases.items():\n        if original not in normalized: continue\n        assert normalized.pop(original) == alias['original_sha256']\n        immutable = alias['immutable_byte_copy']\n        assert immutable['file'] not in normalized or normalized[immutable['file']] == immutable['sha256']\n        normalized[immutable['file']] = immutable['sha256']\n        used[original] = alias\n    return normalized, used\n\ndef retain(root,baseline_name,manifest_name,selected,extras,destination_name,authorized_evidence_aliases):\n    def safe(name):\n        path=Path(name)\n        assert isinstance(name,str) and name and not path.is_absolute() and '..' not in path.parts\n        assert str(path)==name and (root/path).resolve().is_relative_to(root.resolve()),name\n        return root/path\n    def sha(name): return hashlib.sha256(safe(name).read_bytes()).hexdigest()\n    for name in (baseline_name,manifest_name,destination_name):safe(name)\n    baseline=json.loads((root/baseline_name).read_text())\n    manifest=json.loads((root/manifest_name).read_text())\n    assert baseline['status'].endswith('requires_fresh_aggregate_audit')\n    assert manifest['status']=='formal_verification_passed_partial_coverage'\n    assert manifest['selection']==baseline_name and manifest['selection_sha256']==sha(baseline_name)\n    assert manifest['proof_files']==baseline['proof_files']\n    aliases = validate_owner_evidence_aliases(root, baseline_name, manifest_name, authorized_evidence_aliases)\n    actual_result = json.loads(safe(authorized_evidence_aliases['integration_result']['file']).read_text())\n    actual_installed_sha256 = {r['destination']: r['candidate']['sha256'] for r in actual_result['exact_replacements']}\n    assert set(baseline['proof_files'])<=set(selected)\n    for name,row in baseline['proof_files'].items():\n        assert selected[name]['sha256']==row['sha256'],name\n        normalized, used = normalized_baseline_owner_evidence(row, aliases)\n        assert all(selected[name]['evidence_sha256'].get(evidence)==digest for evidence,digest in normalized.items()),name\n        for evidence in used:\n            # The selector may separately append a fresh installed-ledger ref.\n            # It must be the actual current bytes, never the old baseline hash.\n            if evidence in selected[name]['evidence_sha256']:\n                assert selected[name]['evidence_sha256'][evidence] != used[evidence]['original_sha256']\n                assert selected[name]['evidence_sha256'][evidence] == actual_installed_sha256[evidence] == sha(evidence)\n        for key, value in row.items():\n            if key != 'evidence_sha256': assert selected[name][key] == value, (name, key)\n        if used:\n            provenance = selected[name]['checkpoint25_original_baseline_owner_evidence']\n            assert provenance == {'original_baseline_selection': {'file': baseline_name, 'sha256': sha(baseline_name)},\n                                  'original_baseline_source': name, 'original_row_body': row,\n                                  'authorized_original_path_aliases': used}, name\n    for name,row in baseline['extra_frozen_inputs'].items():assert extras.get(name)==row,name\n    assert safe(manifest['snapshot']).resolve().is_relative_to((root/'reports/full-coverage').resolve())\n    bound={}\n    def bind(name,digest):\n        assert safe(name).is_file() and sha(name)==digest,name\n        assert name not in bound or bound[name]==digest,name\n        bound[name]=digest\n    for name,row in selected.items():\n        bind(name,row['sha256'])\n        for evidence,digest in row['evidence_sha256'].items():bind(evidence,digest)\n    for name,row in extras.items():bind(name,row['sha256'])\n    by_digest={}\n    for name,digest in sorted(bound.items()):by_digest.setdefault(digest,name)\n    first=selected[sorted(selected)[0]]\n    rows=[];added={};reused=0\n    for name,digest in sorted(manifest['frozen_inputs_sha256'].items()):\n        safe(name)\n        frozen=manifest['snapshot']+'/'+name\n        assert safe(frozen).resolve().is_relative_to(safe(manifest['snapshot']).resolve()) and sha(frozen)==digest,name\n        retained=by_digest.get(digest)\n        if retained is None:\n            retained=frozen;bind(retained,digest);by_digest[digest]=retained\n            first['evidence_sha256'][retained]=digest;added[retained]=digest\n        else:reused+=1\n        assert bound[retained]==digest and sha(retained)==digest\n        rows.append(dict(original_frozen_path=name,sha256=digest,retained_input=retained))\n    assert len(rows)==len(manifest['frozen_inputs_sha256']) and {r['original_frozen_path']:r['sha256'] for r in rows}==manifest['frozen_inputs_sha256']\n    for name in [baseline_name,manifest_name]:\n        bind(name,sha(name));first['evidence_sha256'][name]=sha(name)\n    destination=safe(destination_name);assert not destination.exists()\n    destination.parent.mkdir(parents=True,exist_ok=True)\n    result=dict(status='all_original_frozen_inputs_retained_by_exact_content_fingerprints',prepared_at_utc=datetime.now(timezone.utc).isoformat(),baseline_selection=baseline_name,baseline_selection_sha256=sha(baseline_name),baseline_manifest=manifest_name,baseline_manifest_sha256=sha(manifest_name),original_snapshot=manifest['snapshot'],original_input_count=len(rows),retained_existing_content_rows=reused,new_unique_snapshot_aliases=added,new_unique_snapshot_alias_count=len(added),new_unique_snapshot_alias_bytes=sum((root/name).stat().st_size for name in added),input_bindings=rows,authorized_baseline_owner_evidence_aliases=authorized_evidence_aliases,scope='Every original frozen path and byte hash is recorded. Identical byte sequences may share a retained immutable input; original manifests, audits, commands, logs and times remain unchanged. Exactly four original working-owner evidence paths use the genuine Root archive bytes, with original entire row bodies and path/hash mappings retained. This is provenance, not a new execution.')\n    destination.write_text(json.dumps(result,indent=2)+'\\n')\n    first['evidence_sha256'][destination_name]=sha(destination_name)\n    return dict(file=destination_name,sha256=sha(destination_name),original_inputs=len(rows),new_snapshot_aliases=len(added))\n"
+    },
+    "readiness": {
+      "file": "book/coverage/checks/future25-core/checkpoint25-engineering-unexecuted-draft-readiness-v1.json",
+      "sha256": "6df1d72b5fb8b325cdd576ad3a2293a67ac8c46862f59270e7c627cfde6686c1"
+    },
+    "baseline24": {
+      "selection": {
+        "file": "reports/full-coverage/checkpoint-24-selection.json",
+        "sha256": "9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314"
+      },
+      "manifest": {
+        "file": "reports/full-coverage/checkpoint-24-manifest.json",
+        "sha256": "5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0"
+      },
+      "actual_audit": {
+        "file": "reports/full-coverage/lean-checkpoint-24/verification-original.json",
+        "sha256": "900755d1647aee305b0a3e61b4291ca52f8968dc9be183f0cb57cbe43d4fab67"
+      },
+      "proof_sources": 1144,
+      "public_exports": 9279,
+      "frozen_input_paths": 40485
+    },
+    "actual12_native_new_source_pair_schema_reads": [
+      {
+        "source": "verification/lean/SafeLearning/CompleteBarrierControlMaterial25.lean",
+        "sha256": "b76e4f44209d8a75da1d3fd62aae6402ccf0e6d78e2a5c3e7e97507c71e517a8",
+        "actual_standalone_record": "book/coverage/checks/CompleteBarrierControlMaterial25-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteFoundationsQuadraticTwentyNet24.lean",
+        "sha256": "3f2caf3abc7f228d63581ce31aba7144c213d830dfe5f0f009878ab2329f2a24",
+        "actual_standalone_record": "book/coverage/checks/foundations-future25/material-batch1/grid1175/CompleteFoundationsQuadraticTwentyNet24-standalone-actual-v1.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteFoundationsScalarCalculusMaterial25.lean",
+        "sha256": "7d24107b1224f26221cefece2cd054070eb78f4d6f2bfae2527707d477b49382",
+        "actual_standalone_record": "book/coverage/checks/foundations-future25/material-batch1/calculus152-154-166/CompleteFoundationsScalarCalculusMaterial25-standalone-actual-v1.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedGaussianMixtureLaw24.lean",
+        "sha256": "752e9f913b909c660bf8ab5ab2dd4ffcdd9ea8c48441f786a4643eff6e2edb03",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianMixtureLaw24-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedGaussianMixtureCDFNumbers24.lean",
+        "sha256": "0c618803406a7b8f92de8697fb1a63f9719a423cfd4bc7cf0bd7be1970c03741",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianMixtureCDFNumbers24-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedGaussianSmallTail24.lean",
+        "sha256": "fb12a8d2b191ccb386a8f1a69ea1077f512fff3994b31b094d266313bc717abe",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianSmallTail24-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedGaussianMixtureConsequences24.lean",
+        "sha256": "1ec54882375105c7075d37ba44b18f4db9c81bee7a5768aaebac98e04976c5ab",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedGaussianMixtureConsequences24-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedConditioningAlarmMaterial25.lean",
+        "sha256": "d77aa73c2175cd3f6b9142deaeb208356a7f921bdead906a37b67e4e2387e136",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedConditioningAlarmMaterial25-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedThreeEqualConditionalOutcomes25.lean",
+        "sha256": "74bd4da951b1d46b1b4e70e32f08fbc24b1181a8e2f39769f4d5f249707717db",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedThreeEqualConditionalOutcomes25-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteAppliedTruncatedConditioningMaterial25.lean",
+        "sha256": "1bfdcfe294388ad35fd61beaef95c20b720f236d2986cdc9b6a6ffb543e9980a",
+        "actual_standalone_record": "book/coverage/checks/CompleteAppliedTruncatedConditioningMaterial25-standalone.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteModulesNNDoublyHyperdominant25.lean",
+        "sha256": "42deaceff28eacbcdccba0ae6df087775ad4385d0062af2855e92d7b073c5ce4",
+        "actual_standalone_record": "book/coverage/checks/modules-future25/temporal/CompleteModulesNNDoublyHyperdominant25-standalone-v1.json"
+      },
+      {
+        "source": "verification/lean/SafeLearning/CompleteModulesNNTemporalDiagonal25.lean",
+        "sha256": "89b3100fba1340f670579b83af03ff403450a2a26f8a6c74f1e2ce75e18962c2",
+        "actual_standalone_record": "book/coverage/checks/modules-future25/temporal/CompleteModulesNNTemporalDiagonal25-standalone-v1.json"
+      }
+    ],
+    "real_final_offer_sha256": {
+      "book/coverage/checks/future25-core/core-audit25-candidate-source52-material-additions-v1-reviewed.json": "91289df4410d8f37643d983fc8d49befb1a9510e11778552b61b601d358a5130",
+      "book/coverage/checks/foundations-future25/source52/foundations-audit25-candidate-source52-additions-v1-reviewed.json": "feec17b3c358db319d910d4db8ed5664a1e2b3f18d33d61625b47f539910cf92",
+      "book/coverage/checks/applied-future25/source52/applied-audit25-candidate-source52-additions-v2-reviewed.json": "505e899fc75c92374d30b76b11616c97705891fb90d24add073ac93229a97755",
+      "book/coverage/checks/modules-future25/source52/modules-audit25-candidate-source52-additions-v1-reviewed.json": "1cfaa9eb3fedbf69f092e1db594968f737e6f636feb40cc85e25eac4e79c49be"
+    },
+    "fixtures": [
+      {
+        "label": "exact_four_synthetic_old_archives_and_current_candidate_bytes",
+        "observed": "accepted",
+        "synthetic_only": true
+      },
+      {
+        "label": "missing_owner",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "unauthorized_fifth_owner",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "old_raw_hash_drift",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "pruned_frozen_Applied_substitutes_unpruned_raw",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "archive_hash_drift",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "same_hash_wrong_archive_path",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "execution_pointer_drift",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "result_pointer_drift",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "failed_execution",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "conflicting_exit_codes",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "boolean_exit",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "missing_apply_command",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "wrong_helper_command",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "wrong_workdir",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "changed_helper_after",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "unapplied_dry_run",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "changed_before_hash",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "wrong_archive_field",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "old_archive_current_raw_and_distinct_pruned_frozen_Applied_coexist_full_prior24_metadata",
+        "observed": "accepted",
+        "synthetic_only": true
+      },
+      {
+        "label": "resurfaced_old_raw",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "arbitrary_current_raw",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "pruned_Applied_as_current_raw",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "missing_archive_alias",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "ordinary_evidence_drift",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "original_review_time_drift",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "nested_original24_provenance_drift",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "entire_original_baseline_row_drift",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "proof_hash_drift",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "alias_provenance_drift",
+        "observed": "rejected_before_output",
+        "synthetic_only": true
+      },
+      {
+        "label": "valid_canonical_pair_skips_unsupported_absolute_historical_record",
+        "observed": "accepted",
+        "synthetic_only": true
+      },
+      {
+        "label": "absolute_historical_without_snapshot_plus_named_not_canonical_pair",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "canonical_standalone_without_named",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "named_without_any_standalone",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "missing_actual_log_evidence",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "failed_standalone",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "conflicting_standalone_exit_codes",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "wrong_standalone_workdir",
+        "observed": "rejected",
+        "synthetic_only": true
+      },
+      {
+        "label": "changed_standalone_snapshot_hash",
+        "observed": "rejected",
+        "synthetic_only": true
+      }
+    ],
+    "fixture_count": 39,
+    "fixture_directory": "/tmp/applied-checkpoint25-selector-retainer-fixtures-v1",
+    "fixture_scope": "All fabricated authorization/record schemas are explicitly synthetic isolated files. Only validator functions were called against them. No production prepare, integration, plan assignment, compiler, selector output or aggregate was executed. Existing12 native paired records were separately read and hash-checked.",
+    "baseline24_unique_evidence_rehashed": 25295,
+    "all1144_baseline_sources_rehashed": true,
+    "original_unpruned_Applied24_sha256": "b869af52ff5db1e39b3971cdeb32e1afae4aa87f69c59af31f599e897066464d",
+    "distinct_frozen_pruned_Applied24_sha256": "12da336e7d22d92cb93f2dbf304e54f161f286fde8e34ffba3857b7afd014dd2",
+    "live_owner_inventory_sha256_before_after_exact": {
+      "book/coverage/applied-promotions.json": "5d28d3d8bbcbfa0a7b96dce7b27c63ff4f55dd7f785568c8d44f6acf319815e3",
+      "book/coverage/applied.json": "b869af52ff5db1e39b3971cdeb32e1afae4aa87f69c59af31f599e897066464d",
+      "book/coverage/core.json": "47b676890af40692cc1161c5472b461397b224e1a3724ee6990f03bb64d56bf5",
+      "book/coverage/foundations.json": "e3ff8460281d2a745c6def2d007b6465a1b5c352a1e14d90d486dec64835982b",
+      "book/coverage/inventory.json": "38518673e13ed16537e301b071fb04ec0ed6720269cd14f48b986f4e82c578f3",
+      "book/coverage/modules.json": "1d4395c5b7cb9dc18217b0c4236a04868f67a2445d0ffed18f3a77215d3b2c90"
+    },
+    "future_required_actual_gates": [
+      "actual_owner25_apply0_and_exact_original24_archives",
+      "independent_installed_owner25_interfaces_and_plan",
+      "fresh_global_integrity0",
+      "genuine_production_selector_output",
+      "fresh_frozen25_aggregate_and_publication"
+    ],
+    "coverage_complete": false,
+    "scope": "Code and isolated schema/retention review only; no future actual release or integration result is inferred from draft files."
+  },
+  "previous_independent_peer": {
+    "file": "book/coverage/checks/future25-core/checkpoint25-selector-retainer-independent-applied-review-v1.json",
+    "sha256": "e31bc2d34c0134c9cc26b14ab39046305295a8af7d7a998e5e2adfa58ed71e77"
+  },
+  "only_declared_code_delta": "Strict authorization requires the newly independently reviewed Root integration_v2 path; selector import and helper-plan key point to unchanged retainer_v2. Existing actual production gates remain unmet."
+}

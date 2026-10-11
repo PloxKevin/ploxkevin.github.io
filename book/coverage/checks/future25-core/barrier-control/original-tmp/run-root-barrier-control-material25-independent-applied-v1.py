@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+R=Path('/home/oxrexkevin/SafetyBased');helper=Path('/tmp/check-root-barrier-control-material25-independent-applied-v1.py');prefix=Path('/tmp/root-barrier-control-material25-independent-applied-actual-v1');out=prefix.with_suffix('.json');log=prefix.with_suffix('.log');assert not out.exists() and not log.exists();H=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();start=datetime.now(timezone.utc).isoformat();t=time.monotonic();cmd=['python3',str(helper)];before=H(helper)
+with log.open('wb') as f:a=subprocess.run(cmd,cwd=R,stdout=f,stderr=subprocess.STDOUT)
+out.write_text(json.dumps({'status':'passed' if a.returncode==0 else 'failed','actual_exit_code':a.returncode,'actual_command':cmd,'actual_workdir':str(R),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'helper_sha256_before':before,'helper_sha256_after':H(helper),'log':str(log),'log_sha256':H(log),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual independent read-only mechanical binding checker for completed semantic full-literal review; no Lean reexecution or live mutation.'},indent=2)+'\n');print(log.read_text());print(out,H(out));raise SystemExit(a.returncode)
