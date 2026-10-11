@@ -36,8 +36,10 @@ sources. [The manifest](checkpoint-27-manifest.json) fingerprints the frozen
 inputs. Exact content bindings preserve all 47,277 prior frozen paths and
 bytes. Original review bodies, hypotheses, commands, failed and passing
 outputs and times remain unchanged. Checkpoint 26's completed GitHub Pages
-and live delivery remain in the progress history. Checkpoint 27 delivery
-awaits an actual push, Pages build and live asset-hash checks.
+and live delivery remain in the progress history. Checkpoint 27 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/8607bd45ce4a4c81697c5ac92aa1e554ea5c16b6).
+The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38139371850)
+completed successfully, and [live delivery](live-checkpoint-27-attempt1.json)
+matched all 31 book asset hashes and the built commit exactly. Full coverage work continues.
 
 Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Reproduce checks into new output paths:
