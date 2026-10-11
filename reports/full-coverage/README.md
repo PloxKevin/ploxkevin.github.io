@@ -45,12 +45,14 @@ all bindings. Located source excerpts remain audit evidence; full external
 papers retain their separate attributed reference scope. Original failed
 selection, integration-interface and interrupted executions remain preserved.
 
-Checkpoint 22 has passed formal verification and is being prepared for GitHub
-publication. Its push, actual Pages build and exact live asset checks remain
-pending. Checkpoint 21 was delivered as
-[`6228449`](https://github.com/PloxKevin/ploxkevin.github.io/commit/622844911b14afc0049ee3db720fd03c7ffadd86),
-with [a successful Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38094471523)
-and [exact live delivery](live-checkpoint-21-attempt1.json).
+Checkpoint 22 was pushed as
+[`a775ca7`](https://github.com/PloxKevin/ploxkevin.github.io/commit/a775ca72d65f62fb480563eb8c63d6cb98725ad6).
+[The actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38099002036)
+built and deployed successfully. [Live delivery](live-checkpoint-22-attempt1.json)
+matched all 31 frozen asset hashes, and [the Pages API](pages-checkpoint-22-attempt1.json)
+reported that exact commit built. The retained Pages artifact comprises
+328,588,765 bytes. This delivery verifies checkpoint 22's partial coverage;
+future23 candidates remain unselected.
 Complete audit archives and
 [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Literal archive exclusions keep the current book, partial
