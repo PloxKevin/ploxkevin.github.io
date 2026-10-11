@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+R=Path('/home/oxrexkevin/SafetyBased');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();C=Path('/tmp/check-foundations27-current55-canonical-final-mapping-independent-applied-v1.py');O=Path('/tmp/foundations27-current55-canonical-final-mapping-independent-applied-actual-v1.json');L=O.with_suffix('.log');assert not O.exists()and not L.exists();t=time.monotonic();s=datetime.now(timezone.utc).isoformat();h=H(C)
+with L.open('xb')as f:r=subprocess.run(['python3',str(C)],cwd=R,stdout=f,stderr=subprocess.STDOUT)
+O.write_text(json.dumps({'status':'actual_read_only_foundation27_final_canonical_mapping_mechanics_checker','actual_exit_code':r.returncode,'actual_command':['python3',str(C)],'actual_workdir':str(R),'started_at_utc':s,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':h,'checker_sha256_after':H(C),'raw_log':str(L),'raw_log_sha256':H(L),'scope':'Read-only independent mechanics; no compiler or live/canonical/PUB/Git mutation.'},indent=2)+'\n');print(json.dumps({'actual':str(O),'sha256':H(O),'actual_exit_code':r.returncode,'raw_log_sha256':H(L)}));raise SystemExit(r.returncode)

@@ -1,0 +1,439 @@
+{
+  "status": "passed_independent_full_source_precise_component_review",
+  "errors": [],
+  "reviewer": "modules",
+  "reviewed_at_utc": "2026-10-11T07:51:03.780545+00:00",
+  "source": {
+    "file": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v4.lean",
+    "sha256": "39f7fbe849ab0e4ade3d2fb77941cc597ba8c93ba2beb0c351436392167a90cd"
+  },
+  "entire_source": "import Mathlib.Topology.Order.IntermediateValue\nimport Mathlib.Analysis.Convex.Basic\nimport Mathlib.Analysis.Normed.Module.Basic\nimport Mathlib.Analysis.Normed.Operator.Basic\nimport Mathlib.Tactic\n\nset_option autoImplicit false\nnoncomputable section\nopen Set\n\nnamespace SafeLearning.CompleteCoreMPCLocalBootstrap27\n\n/-- A local quadratic upper bound plus continuity rules out leaving the local\nLyapunov sublevel before the end of a sufficiently short line segment. The\nbound is assumed only where the Lyapunov value is already local. -/\ntheorem continuous_local_quadratic_bound_bootstraps_the_endpoint\n    (V : ℝ → ℝ) (delta c : ℝ) (hdelta : 0 < delta) (hc : 0 ≤ c)\n    (hsmall : c ≤ delta) (hcontinuous : ContinuousOn V (Icc 0 1))\n    (hzero : V 0 = 0)\n    (hlocal : ∀ t ∈ Icc 0 1, V t ≤ delta → V t ≤ c * t ^ 2) :\n    V 1 ≤ c := by\n  have hendpoint : V 1 ≤ delta := by\n    by_contra hnot\n    have habove : delta < V 1 := lt_of_not_ge hnot\n    obtain ⟨t, ht, heq⟩ := intermediate_value_Ioo (show (0 : ℝ) ≤ 1 by norm_num)\n      hcontinuous (show delta ∈ Ioo (V 0) (V 1) by simpa [hzero] using And.intro hdelta habove)\n    have hbound := hlocal t ⟨ht.1.le, ht.2.le⟩ (by simpa [heq])\n    have hsq : t ^ 2 < 1 := by nlinarith [ht.1, ht.2]\n    have hmult : c * t ^ 2 ≤ delta * t ^ 2 :=\n      mul_le_mul_of_nonneg_right hsmall (sq_nonneg t)\n    have hstrict : delta * t ^ 2 < delta := by nlinarith\n    rw [heq] at hbound\n    linarith\n  simpa using hlocal 1 (by norm_num) hendpoint\n\nend SafeLearning.CompleteCoreMPCLocalBootstrap27\n\nnamespace SafeLearning.CompleteCoreMPCLocalBootstrap27\n\ntheorem continuous_local_quadratic_state_bound_bootstraps_small_state_error\n    {S : Type*} [NormedAddCommGroup S] [NormedSpace ℝ S]\n    (X : Set S) (hX : Convex ℝ X) (V : S → ℝ) (z x : S)\n    (hz : z ∈ X) (hx : x ∈ X) (delta cU : ℝ)\n    (hdelta : 0 < delta) (hcU : 0 ≤ cU)\n    (hsmall : cU * ‖x - z‖ ^ 2 ≤ delta)\n    (hcontinuous : ContinuousOn V X) (hzero : V z = 0)\n    (hlocal : ∀ y ∈ X, V y ≤ delta → V y ≤ cU * ‖y - z‖ ^ 2) :\n    V x ≤ cU * ‖x - z‖ ^ 2 := by\n  let path : ℝ → S := fun t => z + t • (x - z)\n  have hpath : ∀ t ∈ Icc 0 1, path t ∈ X := by\n    intro t ht\n    exact hX.add_smul_sub_mem hz hx ht\n  have hpcontinuous : Continuous path :=\n    continuous_const.add (continuous_id.smul continuous_const)\n  have hvcontinuous : ContinuousOn (fun t => V (path t)) (Icc 0 1) :=\n    hcontinuous.comp hpcontinuous.continuousOn hpath\n  have hpzero : path 0 = z := by simp [path]\n  have hpone : path 1 = x := by simp [path]\n  have hbound := continuous_local_quadratic_bound_bootstraps_the_endpoint\n    (fun t => V (path t)) delta (cU * ‖x - z‖ ^ 2) hdelta\n    (mul_nonneg hcU (sq_nonneg _)) hsmall hvcontinuous (by simpa [hpzero] using hzero)\n    (by\n      intro t ht hvalue\n      have hh := hlocal (path t) (hpath t ht) hvalue\n      have hpnorm : ‖path t - z‖ = t * ‖x - z‖ := by\n        simp only [path, add_sub_cancel_left, norm_smul, Real.norm_eq_abs,\n          abs_of_nonneg ht.1]\n      rw [hpnorm] at hh\n      convert hh using 1 <;> ring)\n  simpa [hpone] using hbound\n\nend SafeLearning.CompleteCoreMPCLocalBootstrap27\n\nnamespace SafeLearning.CompleteCoreMPCLocalBootstrap27\n\ndef polytopicStateSet {S J : Type*} [NormedAddCommGroup S] [NormedSpace ℝ S]\n    (rows : J → S →L[ℝ] ℝ) (margin : ℝ) : Set S :=\n  {state | ∀ j, rows j state ≤ 1 - margin}\n\ntheorem actual_linear_constraint_margin_covers_every_bounded_state_perturbation\n    {S J : Type*} [NormedAddCommGroup S] [NormedSpace ℝ S]\n    (rows : J → S →L[ℝ] ℝ) (z x : S) (H radius margin : ℝ)\n    (hH : 0 ≤ H) (hrows : ∀ j, ‖rows j‖ ≤ H)\n    (hz : z ∈ polytopicStateSet rows margin)\n    (herror : ‖x - z‖ ≤ radius) (hmargin : H * radius ≤ margin) :\n    x ∈ polytopicStateSet rows 0 := by\n  intro j\n  have hlinear : rows j x = rows j z + rows j (x - z) := by\n    rw [map_sub]\n    ring\n  have hnorm := (rows j).le_opNorm (x - z)\n  have hrowerror : rows j (x - z) ≤ H * radius := by\n    calc\n      rows j (x - z) ≤ ‖rows j (x - z)‖ := by\n        simpa only [Real.norm_eq_abs] using le_abs_self (rows j (x - z))\n      _ ≤ ‖rows j‖ * ‖x - z‖ := hnorm\n      _ ≤ H * ‖x - z‖ := mul_le_mul_of_nonneg_right (hrows j) (norm_nonneg _)\n      _ ≤ H * radius := mul_le_mul_of_nonneg_left herror hH\n  have hnominal := hz j\n  rw [hlinear]\n  linarith\n\nend SafeLearning.CompleteCoreMPCLocalBootstrap27\n",
+  "all_public_theorem_names": [
+    "SafeLearning.CompleteCoreMPCLocalBootstrap27.continuous_local_quadratic_bound_bootstraps_the_endpoint",
+    "SafeLearning.CompleteCoreMPCLocalBootstrap27.continuous_local_quadratic_state_bound_bootstraps_small_state_error",
+    "SafeLearning.CompleteCoreMPCLocalBootstrap27.actual_linear_constraint_margin_covers_every_bounded_state_perturbation"
+  ],
+  "all_three_complete_proof_bodies_read": true,
+  "components": [
+    {
+      "id": "continuous_local_first_crossing_bootstrap",
+      "declarations": [
+        "SafeLearning.CompleteCoreMPCLocalBootstrap27.continuous_local_quadratic_bound_bootstraps_the_endpoint"
+      ],
+      "status": "approved_precise_component",
+      "missing_clauses": [],
+      "hypotheses": [
+        "V continuous on [0,1], V(0)=0",
+        "delta>0, 0<=c<=delta",
+        "For each t in [0,1], only when V(t)<=delta, V(t)<=c*t^2"
+      ],
+      "reason": "The proof does not assume the endpoint lies in the local sublevel. If V(1)>delta, the intermediate value theorem gives 0<t<1 with V(t)=delta. The conditional local estimate and c<=delta then give delta<=c*t^2<=delta*t^2<delta, contradiction. At the endpoint the local estimate yields V(1)<=c. Positivity of delta supplies the strict inequality even at c=delta."
+    },
+    {
+      "id": "actual_convex_state_path_bootstrap",
+      "declarations": [
+        "SafeLearning.CompleteCoreMPCLocalBootstrap27.continuous_local_quadratic_state_bound_bootstraps_small_state_error"
+      ],
+      "status": "approved_precise_component",
+      "missing_clauses": [],
+      "hypotheses": [
+        "Real normed state space, convex X; both z and x belong to X",
+        "V continuous on X, V(z)=0",
+        "delta>0,cU>=0,cU*norm(x-z)^2<=delta",
+        "Conditional upper quadratic bound for every y in X with V(y)<=delta"
+      ],
+      "reason": "The actual path z+t*(x-z) lies in X by convexity. Composition gives continuous V along that path; its endpoints are z and x. Norm homogeneity for 0<=t<=1 transforms the local estimate into c*t^2 with c=cU*norm(x-z)^2. The first-crossing theorem therefore proves the small-error endpoint estimate without assuming V(x)<=delta."
+    },
+    {
+      "id": "actual_linear_constraint_margin_under_bounded_state_error",
+      "declarations": [
+        "SafeLearning.CompleteCoreMPCLocalBootstrap27.actual_linear_constraint_margin_covers_every_bounded_state_perturbation"
+      ],
+      "status": "approved_precise_component",
+      "missing_clauses": [],
+      "hypotheses": [
+        "Rows are real continuous linear functionals on the chosen normed state space",
+        "H>=0 and every row operator norm<=H",
+        "Every nominal row value<=1-margin",
+        "norm(x-z)<=radius and H*radius<=margin"
+      ],
+      "reason": "Actual linearity writes row(x)=row(z)+row(x-z). The continuous-linear-map operator bound controls the latter term by H*norm(x-z)<=H*radius. Nominal tightening plus the margin inequality then proves every actual row(x)<=1. The generic theorem does not silently substitute a coordinate sup norm for the chosen state norm."
+    }
+  ],
+  "whole_exercise_approved": false,
+  "whole_material_unit_approved": false,
+  "source_literal_bindings": [
+    {
+      "key": "lyapunov-mpc.html::node-737",
+      "source": "SafeLearning/lyapunov-mpc.html",
+      "locator": "::node-737",
+      "line": 506,
+      "tag": "div",
+      "classes": [
+        "definition-box"
+      ],
+      "source_text": "Definition — The robust-design assumptions of Hertneck et al. (2018, Assumptions 1–4 and eq. 9)\n        Assumption 1 (local incremental stabilisability). There are a feedback $\\kappa(x,z,v)$, a $\\delta$-Lyapunov function $V_\\delta(x,z,v)\\ge0$ with $V_\\delta(z,z,v)=0$, and constants $c_{\\delta,l},c_{\\delta,u},\\delta_{\\rm loc},k_{\\max}\\gt0$, $\\rho\\in(0,1)$ such that, whenever $V_\\delta(x,z,v)\\le\\delta_{\\rm loc}$,\n        $$c_{\\delta,l}\\|x-z\\|^2\\le V_\\delta(x,z,v)\\le c_{\\delta,u}\\|x-z\\|^2,\\qquad\\|\\kappa(x,z,v)-v\\|\\le k_{\\max}\\|x-z\\|,\\qquad V_\\delta(x^+,z^+,v^+)\\le\\rho\\,V_\\delta(x,z,v),$$\n        with $x^+=f(x,\\kappa(x,z,v))$ and $z^+=f(z,v)$: a feedback that lets the true state $x$ track a nominal trajectory $z$ driven by inputs $v$, the squared tracking error shrinking by the factor $\\rho$ per step.\n        Assumption 2. $\\|f(x,u+d)-f(x,u)\\|\\le\\lambda\\|d\\|_\\infty$ for $x\\in X$ and $u,\\,u+d\\in U$.\n        Assumption 3. $\\eta\\le\\lambda^{-1}\\sqrt{\\delta_{\\rm loc}/c_{\\delta,u}}$.\n        Tightening (eq. 9). With $X=\\{x:Hx\\le\\mathbf 1\\}$ and $U_t=\\{u:L_tu\\le\\mathbf 1\\}$: $\\epsilon:=\\eta\\lambda\\sqrt{c_{\\delta,u}/c_{\\delta,l}}\\,\\max\\{\\|H\\|_\\infty,\\|L_t\\|_\\infty k_{\\max}\\}$ and $\\epsilon_k=\\epsilon\\sum_{j=0}^{k-1}\\sqrt\\rho^{\\,j}$.\n        Assumption 4 (terminal set). $V_f(x)=x^\\top Px$, $X_f=\\{V_f\\le\\alpha_f\\}$ and a controller $k_f$ with, for all $x\\in X_f$: $f(x,k_f(x))+w\\in X_f$ for every $\\|w\\|\\le\\lambda\\eta\\sqrt{\\rho^Nc_{\\delta,u}/c_{\\delta,l}}$; $V_f(f(x,k_f(x)))\\le V_f(x)-\\big(x^\\top Qx+k_f(x)^\\top Rk_f(x)\\big)$; $(x,k_f(x))\\in\\bar X_N\\times\\bar U_N$.\n        In words. An input error $\\|d\\|_\\infty\\le\\eta$ moves the next state by at most $\\lambda\\eta$ (Assumption 2), so the re-planned trajectory starts within $V_\\delta\\le c_{\\delta,u}\\lambda^2\\eta^2\\le\\delta_{\\rm loc}$ of the old plan: Assumption 3 is exactly what keeps this inside the region where the tracking certificate holds. Afterwards $\\sqrt{V_\\delta}$ shrinks by $\\sqrt\\rho$ per step, so $k$ steps later the state is within $\\sqrt\\rho^{\\,k}\\lambda\\eta\\sqrt{c_{\\delta,u}/c_{\\delta,l}}$ of the old plan; in constraint units (factors $\\|H\\|_\\infty$, and $\\|L_t\\|_\\infty k_{\\max}$ for inputs) this is at most $\\epsilon\\sqrt\\rho^{\\,k}=\\epsilon_{k+1}-\\epsilon_k$, the increment of the tightening. What is left after $N$ steps is the ball the terminal set must absorb. All of this is checked before learning; validation only estimates how often the network stays within $\\eta$.\n      ",
+      "text_sha256": "e5b831324a8846cf16f690ccd21b42b146cef419050ba10fb669356e3b9cd3a4",
+      "source_sha256": "5e21c5319d41968468781ee0bf9b18aec5147666f764827f3a96e9e73d0138af",
+      "inventory_kind": "source_unit_needs_claim_review"
+    },
+    {
+      "key": "lyapunov-mpc.html::node-739",
+      "source": "SafeLearning/lyapunov-mpc.html",
+      "locator": "::node-739",
+      "line": 506,
+      "tag": "div",
+      "classes": [],
+      "source_text": "\n        Assumption 1 (local incremental stabilisability). There are a feedback $\\kappa(x,z,v)$, a $\\delta$-Lyapunov function $V_\\delta(x,z,v)\\ge0$ with $V_\\delta(z,z,v)=0$, and constants $c_{\\delta,l},c_{\\delta,u},\\delta_{\\rm loc},k_{\\max}\\gt0$, $\\rho\\in(0,1)$ such that, whenever $V_\\delta(x,z,v)\\le\\delta_{\\rm loc}$,\n        $$c_{\\delta,l}\\|x-z\\|^2\\le V_\\delta(x,z,v)\\le c_{\\delta,u}\\|x-z\\|^2,\\qquad\\|\\kappa(x,z,v)-v\\|\\le k_{\\max}\\|x-z\\|,\\qquad V_\\delta(x^+,z^+,v^+)\\le\\rho\\,V_\\delta(x,z,v),$$\n        with $x^+=f(x,\\kappa(x,z,v))$ and $z^+=f(z,v)$: a feedback that lets the true state $x$ track a nominal trajectory $z$ driven by inputs $v$, the squared tracking error shrinking by the factor $\\rho$ per step.\n        Assumption 2. $\\|f(x,u+d)-f(x,u)\\|\\le\\lambda\\|d\\|_\\infty$ for $x\\in X$ and $u,\\,u+d\\in U$.\n        Assumption 3. $\\eta\\le\\lambda^{-1}\\sqrt{\\delta_{\\rm loc}/c_{\\delta,u}}$.\n        Tightening (eq. 9). With $X=\\{x:Hx\\le\\mathbf 1\\}$ and $U_t=\\{u:L_tu\\le\\mathbf 1\\}$: $\\epsilon:=\\eta\\lambda\\sqrt{c_{\\delta,u}/c_{\\delta,l}}\\,\\max\\{\\|H\\|_\\infty,\\|L_t\\|_\\infty k_{\\max}\\}$ and $\\epsilon_k=\\epsilon\\sum_{j=0}^{k-1}\\sqrt\\rho^{\\,j}$.\n        Assumption 4 (terminal set). $V_f(x)=x^\\top Px$, $X_f=\\{V_f\\le\\alpha_f\\}$ and a controller $k_f$ with, for all $x\\in X_f$: $f(x,k_f(x))+w\\in X_f$ for every $\\|w\\|\\le\\lambda\\eta\\sqrt{\\rho^Nc_{\\delta,u}/c_{\\delta,l}}$; $V_f(f(x,k_f(x)))\\le V_f(x)-\\big(x^\\top Qx+k_f(x)^\\top Rk_f(x)\\big)$; $(x,k_f(x))\\in\\bar X_N\\times\\bar U_N$.\n        In words. An input error $\\|d\\|_\\infty\\le\\eta$ moves the next state by at most $\\lambda\\eta$ (Assumption 2), so the re-planned trajectory starts within $V_\\delta\\le c_{\\delta,u}\\lambda^2\\eta^2\\le\\delta_{\\rm loc}$ of the old plan: Assumption 3 is exactly what keeps this inside the region where the tracking certificate holds. Afterwards $\\sqrt{V_\\delta}$ shrinks by $\\sqrt\\rho$ per step, so $k$ steps later the state is within $\\sqrt\\rho^{\\,k}\\lambda\\eta\\sqrt{c_{\\delta,u}/c_{\\delta,l}}$ of the old plan; in constraint units (factors $\\|H\\|_\\infty$, and $\\|L_t\\|_\\infty k_{\\max}$ for inputs) this is at most $\\epsilon\\sqrt\\rho^{\\,k}=\\epsilon_{k+1}-\\epsilon_k$, the increment of the tightening. What is left after $N$ steps is the ball the terminal set must absorb. All of this is checked before learning; validation only estimates how often the network stays within $\\eta$.\n      ",
+      "text_sha256": "0a40faaf2cd49b4d5c0cf9fce3856d14845a0bd25541616976bbbf46676523ba",
+      "source_sha256": "5e21c5319d41968468781ee0bf9b18aec5147666f764827f3a96e9e73d0138af",
+      "inventory_kind": "surrounding_prose_needs_semantic_classification"
+    }
+  ],
+  "current_source_context": {
+    "file": "SafeLearning/lyapunov-mpc.html",
+    "sha256": "5e21c5319d41968468781ee0bf9b18aec5147666f764827f3a96e9e73d0138af",
+    "complete_lines504_514": "    <p><a class=\"cite\" href=\"https://arxiv.org/abs/1806.04167\" target=\"_blank\" rel=\"noopener\">Hertneck, K&ouml;hler, Trimpe &amp; Allg&ouml;wer, L-CSS 2018</a> make the MPC tolerate the error it will later suffer: treat $\\pi_{\\mathrm{approx}}(x)=\\pi_{\\mathrm{MPC}}(x)+d$, $\\|d\\|_\\infty\\le\\eta$, as an input disturbance. The robust MPC is a nominal MPC with terminal set $X_f$ and tightened constraints $\\bar X_k=(1-\\epsilon_k)X$, $\\bar U_k=(1-\\epsilon_k)U_t$, $U_t=U\\ominus\\{\\|d\\|_\\infty\\le\\eta\\}$, $\\epsilon_k=\\epsilon(1-\\sqrt\\rho^{\\,k})/(1-\\sqrt\\rho)$ growing like a tube. Assumptions 1&ndash;4: local incremental stabilisability (a $\\delta$-Lyapunov function contracting at rate $\\rho\\lt1$), $\\|f(x,u+d)-f(x,u)\\|\\le\\lambda\\|d\\|_\\infty$, a bound on $\\eta$, and a robustly invariant terminal set with a local control Lyapunov function. Written out:</p>\n\n    <div class=\"definition-box\"><div class=\"box-label\">Definition &mdash; The robust-design assumptions of Hertneck et al. (2018, Assumptions 1&ndash;4 and eq. 9)</div><div>\n        <em>Assumption 1 (local incremental stabilisability).</em> There are a feedback $\\kappa(x,z,v)$, a <em>$\\delta$-Lyapunov function</em> $V_\\delta(x,z,v)\\ge0$ with $V_\\delta(z,z,v)=0$, and constants $c_{\\delta,l},c_{\\delta,u},\\delta_{\\rm loc},k_{\\max}\\gt0$, $\\rho\\in(0,1)$ such that, whenever $V_\\delta(x,z,v)\\le\\delta_{\\rm loc}$,\n        $$c_{\\delta,l}\\|x-z\\|^2\\le V_\\delta(x,z,v)\\le c_{\\delta,u}\\|x-z\\|^2,\\qquad\\|\\kappa(x,z,v)-v\\|\\le k_{\\max}\\|x-z\\|,\\qquad V_\\delta(x^+,z^+,v^+)\\le\\rho\\,V_\\delta(x,z,v),$$\n        with $x^+=f(x,\\kappa(x,z,v))$ and $z^+=f(z,v)$: a feedback that lets the true state $x$ track a nominal trajectory $z$ driven by inputs $v$, the squared tracking error shrinking by the factor $\\rho$ per step.<br>\n        <em>Assumption 2.</em> $\\|f(x,u+d)-f(x,u)\\|\\le\\lambda\\|d\\|_\\infty$ for $x\\in X$ and $u,\\,u+d\\in U$.<br>\n        <em>Assumption 3.</em> $\\eta\\le\\lambda^{-1}\\sqrt{\\delta_{\\rm loc}/c_{\\delta,u}}$.<br>\n        <em>Tightening (eq. 9).</em> With $X=\\{x:Hx\\le\\mathbf 1\\}$ and $U_t=\\{u:L_tu\\le\\mathbf 1\\}$: <span class=\"math-scroll\">$\\epsilon:=\\eta\\lambda\\sqrt{c_{\\delta,u}/c_{\\delta,l}}\\,\\max\\{\\|H\\|_\\infty,\\|L_t\\|_\\infty k_{\\max}\\}$</span> and $\\epsilon_k=\\epsilon\\sum_{j=0}^{k-1}\\sqrt\\rho^{\\,j}$.<br>\n        <em>Assumption 4 (terminal set).</em> $V_f(x)=x^\\top Px$, $X_f=\\{V_f\\le\\alpha_f\\}$ and a controller $k_f$ with, for all $x\\in X_f$: $f(x,k_f(x))+w\\in X_f$ for every $\\|w\\|\\le\\lambda\\eta\\sqrt{\\rho^Nc_{\\delta,u}/c_{\\delta,l}}$; $V_f(f(x,k_f(x)))\\le V_f(x)-\\big(x^\\top Qx+k_f(x)^\\top Rk_f(x)\\big)$; $(x,k_f(x))\\in\\bar X_N\\times\\bar U_N$.<br>\n        <em>In words.</em> An input error $\\|d\\|_\\infty\\le\\eta$ moves the next state by at most $\\lambda\\eta$ (Assumption 2), so the re-planned trajectory starts within $V_\\delta\\le c_{\\delta,u}\\lambda^2\\eta^2\\le\\delta_{\\rm loc}$ of the old plan: Assumption 3 is exactly what keeps this inside the region where the tracking certificate holds. Afterwards $\\sqrt{V_\\delta}$ shrinks by $\\sqrt\\rho$ per step, so $k$ steps later the state is within $\\sqrt\\rho^{\\,k}\\lambda\\eta\\sqrt{c_{\\delta,u}/c_{\\delta,l}}$ of the old plan; in constraint units (factors $\\|H\\|_\\infty$, and $\\|L_t\\|_\\infty k_{\\max}$ for inputs) this is at most $\\epsilon\\sqrt\\rho^{\\,k}=\\epsilon_{k+1}-\\epsilon_k$, the increment of the tightening. What is left after $N$ steps is the ball the terminal set must absorb. All of this is checked before learning; validation only estimates how often the network stays within $\\eta$."
+  },
+  "primary_source": {
+    "file": "sources/text/hertneck.txt",
+    "sha256": "f0d8687a0368e2c4eec9ea3a6bad70ea5456793c5a275b9c0f1b4a8942746c97"
+  },
+  "primary_complete_lines166_234": "η. The following assumption will be used in order to design           ing Assumption on the terminal set to guarantee recursive\nthe RMPC:                                                             feasibility and closed-loop stability similar to [16]:\n   Assumption 1: (Local incremental stabilizability [17], [18])          Assumption 4: (Terminal set) There exists a local con-\nThere exists a control law κ : X × X × U → Rm ,                                                                       2\n                                                                      trol Lyapunov function Vf (x) = kxkP , a terminal set\na δ-Lyapunov function Vδ : X × X × U → R≥0 ,                          Xf = {x : Vf (x) ≤ αf } and a control law kf (x), such\nthat is continuous in the first argument and satisfies                that ∀x ∈ Xf :\nVδ (x, x, v) = 0 ∀x ∈ X , ∀v ∈ U, and parameters cδ,l , cδ,u\nδloc , kmax ∈ R>0 , ρ ∈ (0, 1), such that the following properties        f (x, kf (x)) + w ∈ Xf , ∀w ∈ WN ,                       (10)\nhold for all (x, z, v) ∈ X × X × U, (z + , v + ) ∈ X × U with                                               2           2\n                                                                          Vf (f (x, kf (x))) ≤ Vf (x) − (kxkQ + kkf (x)kR ),       (11)\nVδ (x, z, v) ≤ δloc :\n                                                                                (x, kf (x)) ⊆ (X̄N × ŪN ).                        (12)\n                     2                                      2\n         cδ,l kx − zk ≤ Vδ (x, z, v) ≤ cδ,u kx − zk ,           (5)\n                                                                      It is always possible to design P, Xf and kf to satisfy\n                    kκ(x, z, v) − vk ≤ kmax kx − zk,            (6)   Assumption 4, if the linearization of the system is stabilizable,\n                     Vδ (x+ , z + , v + ) ≤ ρVδ (x, z, v)       (7)   (0, 0) lies in the interior of X ×U and η is small enough. Now,\n                                                                      we are ready to state a theorem that guarantees stability and\nwith x+ = f (x, κ(x, z, v)), z + = f (z, v).                          constraint satisfaction for the RMPC despite bounded input\nThis assumption is quite general. Sufficient conditions for this      disturbances:\nproperty can be formulated based on the linearization, pro-\n                                                                         Theorem 5: Let Assumption 1, 2, 3 and 4 hold. Then, for\nvided that f is locally Lipschitz, compare [18]. The concept of\n                                                                      all initial conditions x(0) ∈ Xfeas , the RMPC closed-loop (4)\nincremental stability [17] describes an incremental robustness\n                                                                      satisfies (x(t), u(t)) ∈ Xfeas × U ∀t ≥ 0. Furthermore, the\nproperty, and is thus suited for the constraint tightening along\n                                                                      closed-loop system (4) converges to a robust positive invariant\nthe prediction horizon. To overestimate the influence from\n                                                                      set ZRPI around the origin.\nthe system input on the system state, we use the following\n                                                                            Proof: The proof is a straightforward adaption of [17],\nassumption:\n                                                                      for details see [20].\n   Assumption 2: (Local Lipschitz continuity) There exists a\n                                                                         Remark 6: The size of ZRPI depends on the input error\nλ ∈ R, such that ∀x ∈ X , ∀u ∈ U, ∀u + d ∈ U\n                                                                      bound η. If η is chosen small enough, ZRPI ⊆ Xf and asymp-\n              kf (x, u + d) − f (x, u)k ≤ λkdk∞ .               (8)   totic stability of the origin can be guaranteed by applying the\n                                                                      terminal controller in the terminal set.\nWith this assumption, we can introduce a bound on the\nadmissible input disturbance which will be used in the proof\nof robust stability and recursive feasibility for the RMPC:                            IV. L EARNING THE RMPC\n   Assumption 3: (Bound on the input\n                                   q disturbance) The input              In this section, we discuss how the RMPC can be approx-\ndisturbance bound satisfies η ≤ λ1 cδδ,uloc\n                                            .                         imated with supervised learning methods. We also present\nTo guarantee robust constraint satisfaction we use a grow-            a method for the validation of πapprox based on Hoeffding’s\ning tube inspired constraint tightening, based on the in-             Inequality to obtain guarantees on stability and constraint\ncremental stabilizability property in Assumption 1 as in              satisfaction.\n[17]. Consider the polytopic tightened set Ut = U           W\n= {u ∈ Rm : Lt u ≤ 1p }. This set ensures that u + d ∈                A. Supervised learning\nU, ∀u ∈ Ut , ∀d ∈ W. We set\n                                                                        To learn the RMPC, we generate an arbitrary number\n                     cδ,u\n                  r\n         \u000f := ηλ          max {kHk∞ , kLt k∞ kmax } .       (9)       of samples (x, πMPC (x)) ∈ Xfeas × U. Supervised learning\n                     cδ,l                                             methods can be used to obtain the approximation πapprox of\nThe constraint tightening is achieved with a scalar tightening        πMPC . To preserve guarantees from the RMPC under the\n                       √\n                     1− ρk                                            approximation, we will show that\nparameter \u000fk := \u000f 1−√ρ , k ∈ {0, ..., N } based on the\nasymptotic decay rate ρ and \u000f. The tightened constraint sets                          kπapprox (x) − πMPC (x)k∞ ≤ η                (13)\nare given by\n                                                                      holds for all relevant states with the chosen η from Assump-\n     X̄k := (1 − \u000fk )X = {x ∈ Rn : Hx ≤ (1 − \u000fk )1p },                tion 3. An approximation with a sufficient small approxima-\n                                                                      tion error is possible with state-of-the-art machine learning\n     Ūk := (1 − \u000fk )Ut = {u ∈ Rm : Lt u ≤ (1 − \u000fk )1q }.",
+  "primary_additional_domain_and_notation_context_lines78_149": "                                          c 2018 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any current or future media, including\n                                         reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for resale or redistribution to servers or lists, or reuse of any\n                                         copyrighted component of this work in other works.\n\n      Related work: In the literature, there exist several ap-      A. Problem formulation\nproaches to obtain offline an approximate solution for an MPC.        We consider the following nonlinear discrete-time system\nIn [3], a semi-explicit MPC for linear systems is presented that\nensures stability and constraint satisfaction with a decreased                             x(t + 1) = f (x(t), u(t))                   (1)\nonline computational demand, by combining a subspace clus-          with the state x(t) ∈ Rn , the control input u(t) ∈ Rm , the\ntering with a feasibility refinement strategy. In [4], a learning   time step t ∈ N, and f continuous with f (0, 0) = 0. We\nalgorithm is presented with additional constraints to guarantee     consider compact polytopic constraints\nstability and constraint satisfaction of the approximate MPC\nfor linear systems. Both approaches stand in contrast to our            X = {x ∈ Rn |Hx ≤ 1p } , U = {u ∈ Rm |Lu ≤ 1q } .\napproach, which can be used with any learning method and\n                                                                    The control objective is to ensure stability of x = 0, constraint\nsupports nonlinear systems.\n                                                                    satisfaction, i.e. (x(t), u(t)) ∈ X × U ∀t ≥ 0, and optimize\n   One approach to approximate a nonlinear MPC is convex\n                                                                    some cost function. We shall consider these objectives under\nmulti-parametric nonlinear programming [5], [6]. Approximat-\n                                                                    initial conditions x(0) ∈ Xfeas , where Xfeas is a feasible\ning an MPC by NNs, as also done herein, has for example been\n                                                                    set to be made precise later. The resulting controller should\nproposed in [7], [8]. In contrast to the proposed framework,\n                                                                    be implementable on cheap hardware for systems with high\nthese approaches cannot guarantee stability and constraint\n                                                                    sampling rates.\nsatisfaction for the resulting AMPC. In [9], [10], it is shown,\nthat guarantees on stability and constraint satisfaction are\npreserved for arbitrary small approximation errors (due to in-      B. General approach\nherent robustness properties). In [11], an MPC with Lipschitz         The controller synthesis with the proposed framework works\nbased constraint tightening is learned that provides guarantees     as follows: An MPC is designed for (1) that is robust to\nfor a non vanishing approximation error. The admissible             inaccurate inputs u within chosen bounds. The RMPC is\napproximation error deduced in [9], [10], [11] is typically not     sampled offline over the set of feasible states Xfeas and\nachievable (compare example) and is thus not suited within          approximated using supervised learning techniques based from\nproposed framework.                                                 these samples. In this paper, we will use NNs to approximate\n   Neural networks have recently been increasingly popular as       the RMPC, but any other supervised learning technique or\ncontrol policies for complex tasks, [12]. One powerful frame-       regression method can be used likewise. The learning yields\nwork for training (deep) NN policies is guided policy search        an AMPC πapprox : Xfeas → U |u = πapprox (x). With this\n(GPS) [13], which uses trajectory-centric control to generate       controller, the closed-loop system is given by\nsamples for training the NN policy via supervised learning.\n                                                                                       x(t + 1) = f (x(t), πapprox (x(t))).            (2)\nIn [14], an MPC is used with GPS for generating the training\nsamples. While that work is conceptually similar, it does not       Stability of the closed loop (2) is guaranteed if the approx-\nprovide closed-loop guarantees for the learned controller as        imation error is below the admissible bound on the input\nwe do herein. The main novelty of the proposed framework            disturbance from the RMPC. We use a validation method\nlies in the approximation of a robust control technique and         based on Hoeffding’s Inequality to guarantee this bound.\nits combination with a suitable validation approach. The\nvalidation method has resemblances to [15], where statistical                              III. I NPUT ROBUST MPC\nguarantees for robustness are derived based on the Chernoff\n                                                                       In this section, we present an input robust MPC design\nbound.\n                                                                    with robust guarantees on stability and constraint satisfaction\n      Outline: This paper is structured as follows: We formu-       for bounded additive input disturbances. To achieve the ro-\nlate the problem and present our main idea in Section II. In        bustness, we combine a standard MPC formulation [16] with\nSection III, the RMPC design is presented. In Section IV, we        a robust constraint tightening [17]. The RMPC optimization\npresent a validation method and propose a procedure to learn        problem can be formulated as\nan MPC with guarantees. A numerical example to show the\n                                                                                N −1\napplicability of the proposed framework is given in Section V.                  X              2              2               2\nSection VI concludes the paper.                                        min             kx(k|t)kQ + ku(k|t)kR + kx(N |t)kP             (3a)\n                                                                       u(·|t)\n                                                                                k=0\n      Notation: The euclidean norm with respect to a positive\n                                                                        s.t. x(0|t) = x(t),         x(N |t) ∈ Xf ,                    (3b)\ndefinite matrix Q = Q> is denoted by kxk2Q = x> Qx.\nThe Pontryagin set difference is defined by X              Y :=              x(k + 1|t) = f (x(k|t), u(k|t)),                         (3c)\n{z ∈ Rn : z + y ∈ X, ∀y ∈ Y }. For X a random variable,                      x(k|t) ∈ X̄k ,        u(k|t) ∈ Ūk , k = 0, ..., N − 1   (3d)\nE(X) denotes the expectation of X, and P [X ≥ x] denotes\nthe probability for X ≥ x. We denote 1p = [1, .., 1]> ∈ Rp . .      We denote the set of states x where (3) is feasible by Xfeas . The\n                                                                    solution to the RMPC optimization problem (3) is denoted by\n                                                                    u∗ (·|t). The MPC feedback law is πMPC (x(t)) := u∗ (0|t). The",
+  "norm_convention": "State norm instantiated as Euclidean as in primary; additive input disturbance uses infinity norm. Generic theorem3 continuous-linear-row operator norms belong to the chosen state norm. No automatic identification with printed matrix infinity norm is claimed.",
+  "remaining_gaps": [
+    {
+      "id": "missing_primary_continuity_in_current_site",
+      "status": "prerequisite_and_source_correction_needed",
+      "reason": "The primary Assumption 1 expressly says V_delta is continuous in its first argument. Current complete node737/739 does not state that condition. Both bootstrap theorems require it; this review does not infer continuity from the displayed conditional quadratic bounds. A later reviewed source correction must explicitly retain it."
+    },
+    {
+      "id": "state_domain_and_norm_identification",
+      "status": "explicit_application_bridge_pending",
+      "reason": "The state-path theorem requires both endpoints in convex X. For the paper, X is a polytopic state set and V(y)=V_delta(y,z,v) for fixed nominal z and v. The margin lemma can establish endpoint membership only after the actual matrix rows and their bounds are instantiated. None of these three declarations exports Euclidean row-operator norm<=the printed matrix infinity row-sum bound, or the actual input-infinity disturbance through Assumption 2 to the Euclidean state radius lambda*eta."
+    },
+    {
+      "id": "complete_robust_MPC_certificate",
+      "status": "pending_outside_three_components",
+      "reason": "These declarations do not prove the complete incremental-feedback contraction/input tightening pipeline, predicted shifted-plan feasibility, online optimizer existence, all-horizon robust MPC recursion or the full Theorem5/certificate. No whole Exercise18, material1387 or assumption-definition approval follows."
+    }
+  ],
+  "preserved_first_reader_failure": {
+    "record": {
+      "file": "/tmp/root-mpc-local-bootstrap27-independent-modules-actual-v1.json",
+      "sha256": "531b325b0d5fad300b0c4f69a77cb947e0ab246ea5e22d5008764c97d492eed4"
+    },
+    "entire_original_record": {
+      "status": "failed_actual_independent_component_reader",
+      "actual_command": [
+        "python3",
+        "/tmp/review-root-mpc-local-bootstrap27-independent-modules-v1.py"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased",
+      "actual_exit_code": 1,
+      "started_at_utc": "2026-10-11T07:50:37.339550+00:00",
+      "finished_at_utc": "2026-10-11T07:50:37.408532+00:00",
+      "duration_seconds": 0.0689802689885255,
+      "helper_sha256_before": "87774b400eda6d100dd625cf451069270c27ec9ea01eba0b2581e951b34952ef",
+      "helper_sha256_after": "87774b400eda6d100dd625cf451069270c27ec9ea01eba0b2581e951b34952ef",
+      "raw_log": "/tmp/root-mpc-local-bootstrap27-independent-modules-actual-v1.log",
+      "raw_log_sha256": "8d07918b2bcde9aa0080eea13e0952b4f86b45e2243b0e550e1b221792ee1287",
+      "actual_runner": "/tmp/run-root-mpc-local-bootstrap27-independent-modules-actual-v1.py",
+      "actual_runner_sha256": "45d4a50dcb3380fc1d574ae23b8880eecec10f3210a698ad41fa6bf7c7dba093",
+      "scope": "Genuine independent full-body source correspondence reader of three existing MPC bootstrap components; no new compiler/producer execution."
+    },
+    "reason": "Reader counted the warning word in a linter hint as a diagnostic. NEW v2 counts native diagnostic-prefix lines; source/compiler evidence unchanged."
+  },
+  "actual_standalone_execution": {
+    "record": {
+      "file": "/tmp/root-mpc-local-bootstrap27-trial2.json",
+      "sha256": "aa96a30b2f8cb43ddab7a503e38bf0dcca40df23bb3ef50ce9a12dff42eec206"
+    },
+    "entire_original_record": {
+      "status": "passed_actual_tmp_lean_only",
+      "actual_exit_code": 0,
+      "actual_runner_exit_code": 0,
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v4.lean"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+      "started_at_utc": "2026-10-11T07:35:25.424076+00:00",
+      "finished_at_utc": "2026-10-11T07:35:28.795297+00:00",
+      "elapsed_seconds": 3.8013696009875275,
+      "source": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v4.lean",
+      "source_sha256_before": "39f7fbe849ab0e4ade3d2fb77941cc597ba8c93ba2beb0c351436392167a90cd",
+      "source_sha256_after": "39f7fbe849ab0e4ade3d2fb77941cc597ba8c93ba2beb0c351436392167a90cd",
+      "source_unchanged": true,
+      "source_snapshot": "/tmp/root-mpc-local-bootstrap27-trial2-source.lean",
+      "source_snapshot_sha256": "39f7fbe849ab0e4ade3d2fb77941cc597ba8c93ba2beb0c351436392167a90cd",
+      "raw_log": "/tmp/root-mpc-local-bootstrap27-trial2.log",
+      "raw_log_sha256": "59cd3c1a9e528dabd6306715f2ec38e7b10abe8ea8312f5e81d3d91281684395",
+      "original_actual_runner": {
+        "file": "/tmp/root_tmp_lean27_runner_v2.py",
+        "sha256": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4"
+      },
+      "actual_installed26_selection": {
+        "file": "reports/full-coverage/checkpoint-26-selection.json",
+        "sha256": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f"
+      },
+      "actual_installed26_global_integrity": {
+        "file": "reports/full-coverage/root-source53-final-owner-integration26-v1.json",
+        "sha256": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d"
+      },
+      "protected_proof_sources": 1167,
+      "unchanged_baseline25_selected_proof_sources": 1156,
+      "unchanged_canonical_new26_proof_sources": 11,
+      "unchanged_current53_book_assets": 31,
+      "unchanged_installed26_live_owners": 5,
+      "installed26_owner_sha256": {
+        "book/coverage/applied.json": "a0e087260288c8e8abc45eb0806eb3b09d17da463f5e918966c3a0686f3976a6",
+        "book/coverage/applied-promotions.json": "fa58595aacac0b82f9cd9d3bfe41718365113a2ebf76879001edcf3ab4b68fcb",
+        "book/coverage/core.json": "1aeba23aee0fab8a64df0070928ef18bbfc708d32655ce16862b446862d62c38",
+        "book/coverage/foundations.json": "60b1ebaa5d44b3e371466d89cc9af68572ccdc069127504940a5c6c7ecd48b3a",
+        "book/coverage/modules.json": "c1e25f304082945e44212cdc5f1943108caf9b5052d0b3afae586e8700492231"
+      },
+      "original_installed26_provenance_sha256": {
+        "reports/full-coverage/checkpoint-26-selection.json": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f",
+        "reports/full-coverage/checkpoint-25-selection.json": "3559445215b6b5b9bd176363ded8d307a93724b2b68c1ba9845dc709a3b4ddff",
+        "reports/full-coverage/checkpoint-25-manifest.json": "0329596719e09459730f34c9c84e9bacf4f3698a7c1699c4f848cef975ee5363",
+        "book/coverage/checks/root-owner26-reviewed-candidate-bindings-v1.json": "00a94eefea80aff4bd57ee2d511d3102f1a8652dfda1977272aefd9b7fe41cfb",
+        "reports/full-coverage/owner26-reviewed-candidate-integration-v1.json": "7fa88d829c47797ab8258eb84ff5c7ce3399da66c9b03b591ea9820ca1eca06e",
+        "reports/full-coverage/root-source53-final-owner-integration26-v1.json": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d",
+        "book/coverage/inventory.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/inventory-after-correction53.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/material-corrections.json": "e63524a0d9fd13775e08b055d548fffc24036c1ae52825c196afe8583c95741d",
+        "book/coverage/checks/root_integrate_owner26_candidates_v2.py": "0ad44698e172d8d3b9c52794d2d5a6531c0d19c7828cdad22cd380c26a44fe5c",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.json": "b5ebb6a3714585bb6854120e8d7fa5aec586e5dffaf33ade8c4fad9381b31e08",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.log": "e5f248540370cc7b9111e73a0fc06c9c33c3f1407f44b937dc28a903fa7438cc",
+        "book/coverage/validate.py": "2c19bed432a7d6fdd1755b42a8f57442985e18fc2e20f9ed1cf904f09874d015",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.json": "0752c050f5a2062349e312e982443ff355b35e896d827dd6498e2b095c9764ef",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.log": "cab14f45377175ac5ffe13cc5ab728c677b9555144a92abf36efa33a73ceebcd",
+        "book/coverage/prepare_checkpoint26_selection_v2.py": "9e130aa89131e3fb9cd860ee898d95a9fd92e6fbe33723913c5ff5c86dcde3d9",
+        "book/coverage/retain_baseline_inputs26_v2.py": "86ecc3a33de29841aaa6e117d56390305502e6f238151674890ce2e67c60302e",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.json": "0fe336702f1184c3362c9fa9bc771182f310e55efa2e527a8ea0f16a4254eb2a",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.log": "91d44001f457db7a8e8b7dfe3cb0c7dfad301734088c867b1a734d32039850fd",
+        "verification/lean/lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
+        "verification/lean/lakefile.toml": "22cc482cc757e5d0a6478af0fbfc2dd535158b2b4257858eae9f14959577e5c8",
+        "verification/lean/lake-manifest.json": "b07e21b7d390a09e599b81c8319f2e6a003f30117316395531373c376029fb8e"
+      },
+      "protection_errors": [],
+      "canonical_installation_or_aggregate_verification_claimed": false
+    },
+    "raw_log": {
+      "file": "/tmp/root-mpc-local-bootstrap27-trial2.log",
+      "sha256": "59cd3c1a9e528dabd6306715f2ec38e7b10abe8ea8312f5e81d3d91281684395"
+    }
+  },
+  "original_failed_trial_preserved": {
+    "record": {
+      "file": "/tmp/root-mpc-local-bootstrap27-trial1.json",
+      "sha256": "7a68cfb4beb1b3da2628dbf702e37162b41c4261867016c76b3a88686fab8b5f"
+    },
+    "entire_original_record": {
+      "status": "failed_actual_tmp_lean_or_protection",
+      "actual_exit_code": 1,
+      "actual_runner_exit_code": 1,
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v3.lean"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+      "started_at_utc": "2026-10-11T07:31:05.399820+00:00",
+      "finished_at_utc": "2026-10-11T07:31:10.954943+00:00",
+      "elapsed_seconds": 5.9774072139989585,
+      "source": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v3.lean",
+      "source_sha256_before": "db1c2dabf40d916773451f08efe15c9906ba71fe083fcde22e0edc6120cf7030",
+      "source_sha256_after": "db1c2dabf40d916773451f08efe15c9906ba71fe083fcde22e0edc6120cf7030",
+      "source_unchanged": true,
+      "source_snapshot": "/tmp/root-mpc-local-bootstrap27-trial1-source.lean",
+      "source_snapshot_sha256": "db1c2dabf40d916773451f08efe15c9906ba71fe083fcde22e0edc6120cf7030",
+      "raw_log": "/tmp/root-mpc-local-bootstrap27-trial1.log",
+      "raw_log_sha256": "d8151a74b95888640eaae07d74dca5d1f12dc7489d4df5a6186cccfe8271577e",
+      "original_actual_runner": {
+        "file": "/tmp/root_tmp_lean27_runner_v2.py",
+        "sha256": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4"
+      },
+      "actual_installed26_selection": {
+        "file": "reports/full-coverage/checkpoint-26-selection.json",
+        "sha256": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f"
+      },
+      "actual_installed26_global_integrity": {
+        "file": "reports/full-coverage/root-source53-final-owner-integration26-v1.json",
+        "sha256": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d"
+      },
+      "protected_proof_sources": 1167,
+      "unchanged_baseline25_selected_proof_sources": 1156,
+      "unchanged_canonical_new26_proof_sources": 11,
+      "unchanged_current53_book_assets": 31,
+      "unchanged_installed26_live_owners": 5,
+      "installed26_owner_sha256": {
+        "book/coverage/applied.json": "a0e087260288c8e8abc45eb0806eb3b09d17da463f5e918966c3a0686f3976a6",
+        "book/coverage/applied-promotions.json": "fa58595aacac0b82f9cd9d3bfe41718365113a2ebf76879001edcf3ab4b68fcb",
+        "book/coverage/core.json": "1aeba23aee0fab8a64df0070928ef18bbfc708d32655ce16862b446862d62c38",
+        "book/coverage/foundations.json": "60b1ebaa5d44b3e371466d89cc9af68572ccdc069127504940a5c6c7ecd48b3a",
+        "book/coverage/modules.json": "c1e25f304082945e44212cdc5f1943108caf9b5052d0b3afae586e8700492231"
+      },
+      "original_installed26_provenance_sha256": {
+        "reports/full-coverage/checkpoint-26-selection.json": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f",
+        "reports/full-coverage/checkpoint-25-selection.json": "3559445215b6b5b9bd176363ded8d307a93724b2b68c1ba9845dc709a3b4ddff",
+        "reports/full-coverage/checkpoint-25-manifest.json": "0329596719e09459730f34c9c84e9bacf4f3698a7c1699c4f848cef975ee5363",
+        "book/coverage/checks/root-owner26-reviewed-candidate-bindings-v1.json": "00a94eefea80aff4bd57ee2d511d3102f1a8652dfda1977272aefd9b7fe41cfb",
+        "reports/full-coverage/owner26-reviewed-candidate-integration-v1.json": "7fa88d829c47797ab8258eb84ff5c7ce3399da66c9b03b591ea9820ca1eca06e",
+        "reports/full-coverage/root-source53-final-owner-integration26-v1.json": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d",
+        "book/coverage/inventory.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/inventory-after-correction53.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/material-corrections.json": "e63524a0d9fd13775e08b055d548fffc24036c1ae52825c196afe8583c95741d",
+        "book/coverage/checks/root_integrate_owner26_candidates_v2.py": "0ad44698e172d8d3b9c52794d2d5a6531c0d19c7828cdad22cd380c26a44fe5c",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.json": "b5ebb6a3714585bb6854120e8d7fa5aec586e5dffaf33ade8c4fad9381b31e08",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.log": "e5f248540370cc7b9111e73a0fc06c9c33c3f1407f44b937dc28a903fa7438cc",
+        "book/coverage/validate.py": "2c19bed432a7d6fdd1755b42a8f57442985e18fc2e20f9ed1cf904f09874d015",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.json": "0752c050f5a2062349e312e982443ff355b35e896d827dd6498e2b095c9764ef",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.log": "cab14f45377175ac5ffe13cc5ab728c677b9555144a92abf36efa33a73ceebcd",
+        "book/coverage/prepare_checkpoint26_selection_v2.py": "9e130aa89131e3fb9cd860ee898d95a9fd92e6fbe33723913c5ff5c86dcde3d9",
+        "book/coverage/retain_baseline_inputs26_v2.py": "86ecc3a33de29841aaa6e117d56390305502e6f238151674890ce2e67c60302e",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.json": "0fe336702f1184c3362c9fa9bc771182f310e55efa2e527a8ea0f16a4254eb2a",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.log": "91d44001f457db7a8e8b7dfe3cb0c7dfad301734088c867b1a734d32039850fd",
+        "verification/lean/lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
+        "verification/lean/lakefile.toml": "22cc482cc757e5d0a6478af0fbfc2dd535158b2b4257858eae9f14959577e5c8",
+        "verification/lean/lake-manifest.json": "b07e21b7d390a09e599b81c8319f2e6a003f30117316395531373c376029fb8e"
+      },
+      "protection_errors": [],
+      "canonical_installation_or_aggregate_verification_claimed": false
+    },
+    "raw_log": {
+      "file": "/tmp/root-mpc-local-bootstrap27-trial1.log",
+      "sha256": "d8151a74b95888640eaae07d74dca5d1f12dc7489d4df5a6186cccfe8271577e"
+    }
+  },
+  "original_prior_applied_semantic_review": {
+    "record": {
+      "file": "/tmp/root-mpc-local-bootstrap27-independent-applied-semantic-review-v1.json",
+      "sha256": "eccda58d7ea420e340a366d6a1bc3d07fc9783e252e78718dc86ed71a92b135e"
+    },
+    "entire_original_body": {
+      "status": "completed_independent_read_only_uncompiled_bootstrap_semantic_review",
+      "reviewer": "/root/applied_next",
+      "review_time_utc": "2026-10-11T07:28:08.858014+00:00",
+      "inputs": [
+        {
+          "file": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v1.lean",
+          "sha256": "7ee8824064bf9f182d9a34113797a7525873a848f5ac9454261dbec9affe0a71"
+        },
+        {
+          "file": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v2.lean",
+          "sha256": "25153342ceacb43ffc8b7357805f2736fcfeb5d7e1ab2433fbc1255a254f6453"
+        },
+        {
+          "file": "/home/oxrexkevin/SafetyBased/SafeLearning/lyapunov-mpc.html",
+          "sha256": "5e21c5319d41968468781ee0bf9b18aec5147666f764827f3a96e9e73d0138af"
+        },
+        {
+          "file": "/home/oxrexkevin/SafetyBased/sources/text/hertneck.txt",
+          "sha256": "f0d8687a0368e2c4eec9ea3a6bad70ea5456793c5a275b9c0f1b4a8942746c97"
+        },
+        {
+          "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Topology/Order/IntermediateValue.lean",
+          "sha256": "786525c2a6ff8f69c77a2e49049d3f89901d0bd08482adaa28581c154a39687f"
+        },
+        {
+          "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/Convex/Basic.lean",
+          "sha256": "9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf"
+        }
+      ],
+      "draft_bodies": [
+        {
+          "file": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v1.lean",
+          "entire_source": "import Mathlib.Topology.Order.IntermediateValue\nimport Mathlib.Tactic\n\nset_option autoImplicit false\nnoncomputable section\nopen Set\n\nnamespace SafeLearning.CompleteCoreMPCLocalBootstrap27\n\n/-- A local quadratic upper bound plus continuity rules out leaving the local\nLyapunov sublevel before the end of a sufficiently short line segment. The\nbound is assumed only where the Lyapunov value is already local. -/\ntheorem continuous_local_quadratic_bound_bootstraps_the_endpoint\n    (V : ℝ → ℝ) (delta c : ℝ) (hdelta : 0 < delta) (hc : 0 ≤ c)\n    (hsmall : c ≤ delta) (hcontinuous : ContinuousOn V (Icc 0 1))\n    (hzero : V 0 = 0)\n    (hlocal : ∀ t ∈ Icc 0 1, V t ≤ delta → V t ≤ c * t ^ 2) :\n    V 1 ≤ c := by\n  have hendpoint : V 1 ≤ delta := by\n    by_contra hnot\n    have habove : delta < V 1 := lt_of_not_ge hnot\n    obtain ⟨t, ht, heq⟩ := intermediate_value_Ioo (show (0 : ℝ) ≤ 1 by norm_num)\n      hcontinuous (show delta ∈ Ioo (V 0) (V 1) by simpa [hzero] using And.intro hdelta habove)\n    have hbound := hlocal t ⟨ht.1.le, ht.2.le⟩ (by simpa [heq])\n    have hsq : t ^ 2 < 1 := by nlinarith [ht.1, ht.2]\n    have hmult : c * t ^ 2 ≤ delta * t ^ 2 :=\n      mul_le_mul_of_nonneg_right hsmall (sq_nonneg t)\n    have hstrict : delta * t ^ 2 < delta := by nlinarith\n    rw [heq] at hbound\n    linarith\n  simpa using hlocal 1 (by norm_num) hendpoint\n\nend SafeLearning.CompleteCoreMPCLocalBootstrap27\n"
+        },
+        {
+          "file": "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v2.lean",
+          "entire_source": "import Mathlib.Topology.Order.IntermediateValue\nimport Mathlib.Analysis.Convex.Basic\nimport Mathlib.Analysis.Normed.Module.Basic\nimport Mathlib.Tactic\n\nset_option autoImplicit false\nnoncomputable section\nopen Set\n\nnamespace SafeLearning.CompleteCoreMPCLocalBootstrap27\n\n/-- A local quadratic upper bound plus continuity rules out leaving the local\nLyapunov sublevel before the end of a sufficiently short line segment. The\nbound is assumed only where the Lyapunov value is already local. -/\ntheorem continuous_local_quadratic_bound_bootstraps_the_endpoint\n    (V : ℝ → ℝ) (delta c : ℝ) (hdelta : 0 < delta) (hc : 0 ≤ c)\n    (hsmall : c ≤ delta) (hcontinuous : ContinuousOn V (Icc 0 1))\n    (hzero : V 0 = 0)\n    (hlocal : ∀ t ∈ Icc 0 1, V t ≤ delta → V t ≤ c * t ^ 2) :\n    V 1 ≤ c := by\n  have hendpoint : V 1 ≤ delta := by\n    by_contra hnot\n    have habove : delta < V 1 := lt_of_not_ge hnot\n    obtain ⟨t, ht, heq⟩ := intermediate_value_Ioo (show (0 : ℝ) ≤ 1 by norm_num)\n      hcontinuous (show delta ∈ Ioo (V 0) (V 1) by simpa [hzero] using And.intro hdelta habove)\n    have hbound := hlocal t ⟨ht.1.le, ht.2.le⟩ (by simpa [heq])\n    have hsq : t ^ 2 < 1 := by nlinarith [ht.1, ht.2]\n    have hmult : c * t ^ 2 ≤ delta * t ^ 2 :=\n      mul_le_mul_of_nonneg_right hsmall (sq_nonneg t)\n    have hstrict : delta * t ^ 2 < delta := by nlinarith\n    rw [heq] at hbound\n    linarith\n  simpa using hlocal 1 (by norm_num) hendpoint\n\nend SafeLearning.CompleteCoreMPCLocalBootstrap27\n\nnamespace SafeLearning.CompleteCoreMPCLocalBootstrap27\n\ntheorem continuous_local_quadratic_state_bound_bootstraps_small_state_error\n    {S : Type*} [NormedAddCommGroup S] [NormedSpace ℝ S]\n    (X : Set S) (hX : Convex ℝ X) (V : S → ℝ) (z x : S)\n    (hz : z ∈ X) (hx : x ∈ X) (delta cU : ℝ)\n    (hdelta : 0 < delta) (hcU : 0 ≤ cU)\n    (hsmall : cU * ‖x - z‖ ^ 2 ≤ delta)\n    (hcontinuous : ContinuousOn V X) (hzero : V z = 0)\n    (hlocal : ∀ y ∈ X, V y ≤ delta → V y ≤ cU * ‖y - z‖ ^ 2) :\n    V x ≤ cU * ‖x - z‖ ^ 2 := by\n  let path : ℝ → S := fun t => z + t • (x - z)\n  have hpath : ∀ t ∈ Icc 0 1, path t ∈ X := by\n    intro t ht\n    exact hX.add_smul_sub_mem hz hx ht\n  have hpcontinuous : Continuous path :=\n    continuous_const.add (continuous_id.smul continuous_const)\n  have hvcontinuous : ContinuousOn (fun t => V (path t)) (Icc 0 1) :=\n    hcontinuous.comp hpcontinuous.continuousOn hpath\n  have hpzero : path 0 = z := by simp [path]\n  have hpone : path 1 = x := by simp [path]\n  have hbound := continuous_local_quadratic_bound_bootstraps_the_endpoint\n    (fun t => V (path t)) delta (cU * ‖x - z‖ ^ 2) hdelta\n    (mul_nonneg hcU (sq_nonneg _)) hsmall hvcontinuous (by simpa [hpzero] using hzero)\n    (by\n      intro t ht hvalue\n      have hh := hlocal (path t) (hpath t ht) hvalue\n      have hpnorm : ‖path t - z‖ = t * ‖x - z‖ := by\n        simp only [path, add_sub_cancel_left, norm_smul, Real.norm_eq_abs,\n          abs_of_nonneg ht.1]\n      rw [hpnorm] at hh\n      convert hh using 1 <;> ring)\n  simpa [hpone] using hbound\n\nend SafeLearning.CompleteCoreMPCLocalBootstrap27\n"
+        }
+      ],
+      "mathematical_statement_approved_in_explicit_scope": true,
+      "compiler_execution": null,
+      "canonical_or_owner_write": false,
+      "source_scope": "Hertneck Assumption 1, fixed nominal state z and nominal input v; only conditional local quadratic upper bound and continuity bootstrap.",
+      "source_primary": {
+        "url": "https://arxiv.org/pdf/1806.04167",
+        "local_text": {
+          "file": "/home/oxrexkevin/SafetyBased/sources/text/hertneck.txt",
+          "sha256": "f0d8687a0368e2c4eec9ea3a6bad70ea5456793c5a275b9c0f1b4a8942746c97"
+        },
+        "relevant_lines": [
+          166,
+          181
+        ],
+        "paraphrase": "The primary explicitly requires continuity in the first state argument and a local upper quadratic estimate. Its domain is X×X×U; X is polytopic."
+      },
+      "argument": [
+        "If the endpoint value exceeded delta, continuity and V(0)=0 give an interior t with V(t)=delta.",
+        "At that t, the conditional local estimate gives delta≤c*t²≤delta*t²<delta, a contradiction.",
+        "Thus the endpoint is in the local sublevel and the original conditional estimate applies at t=1.",
+        "For the state version, convexity keeps z+t*(x-z) in X and its distance to z equals t times the endpoint distance."
+      ],
+      "hypotheses_retained": [
+        "delta>0",
+        "c or cU nonnegative",
+        "quadratic endpoint error≤delta",
+        "continuity on the entire connecting interval/domain",
+        "both state endpoints belong to X",
+        "V(z)=0",
+        "the local estimate is valid at every point in X whose value is≤delta",
+        "nominal input v lies in U when instantiated to the source Vδ"
+      ],
+      "remaining_obligations": [
+        "Disturbed endpoint x+∈X must be established independently by constraint tightening before using the source-domain lemma; hx cannot assume the safety conclusion being proved.",
+        "Nominal next state and nominal input domain membership remain required for any later contraction use.",
+        "No contraction, controller-input estimate, recursive feasibility, convergence, probabilistic validation, or complete robust-MPC certificate follows from these two lemmas alone.",
+        "The current site Assumption 1 display omits the primary explicit continuity clause; correspondence must retain continuity explicitly."
+      ],
+      "proof_reading_notes": [
+        "v1 and v2 mathematical arguments are sound, including equality c=delta.",
+        "v1 nonnegativity hc is stronger than required for this proof but harmless.",
+        "The intermediate-value and convex segment APIs were read directly; Lean elaboration remains unverified.",
+        "The theorem exports only the endpoint bound; its explanatory path interpretation does not itself export an all-prefix bound."
+      ],
+      "missing_mathematical_clauses_in_stated_lemmas": []
+    },
+    "scope": "Original earlier two-component review retained without retiming; the present independent three-component read has its own time."
+  },
+  "evidence_sha256": {
+    "/tmp/review-root-mpc-local-bootstrap27-independent-modules-v1.py": "87774b400eda6d100dd625cf451069270c27ec9ea01eba0b2581e951b34952ef",
+    "/tmp/run-root-mpc-local-bootstrap27-independent-modules-actual-v1.py": "45d4a50dcb3380fc1d574ae23b8880eecec10f3210a698ad41fa6bf7c7dba093",
+    "/tmp/root-mpc-local-bootstrap27-independent-modules-actual-v1.json": "531b325b0d5fad300b0c4f69a77cb947e0ab246ea5e22d5008764c97d492eed4",
+    "/tmp/root-mpc-local-bootstrap27-independent-modules-actual-v1.log": "8d07918b2bcde9aa0080eea13e0952b4f86b45e2243b0e550e1b221792ee1287",
+    "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v4.lean": "39f7fbe849ab0e4ade3d2fb77941cc597ba8c93ba2beb0c351436392167a90cd",
+    "/tmp/root-mpc-local-bootstrap27-trial2.json": "aa96a30b2f8cb43ddab7a503e38bf0dcca40df23bb3ef50ce9a12dff42eec206",
+    "/tmp/root-mpc-local-bootstrap27-trial2-source.lean": "39f7fbe849ab0e4ade3d2fb77941cc597ba8c93ba2beb0c351436392167a90cd",
+    "/tmp/root-mpc-local-bootstrap27-trial2.log": "59cd3c1a9e528dabd6306715f2ec38e7b10abe8ea8312f5e81d3d91281684395",
+    "/tmp/root-mpc-local-bootstrap27-trial1.json": "7a68cfb4beb1b3da2628dbf702e37162b41c4261867016c76b3a88686fab8b5f",
+    "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v3.lean": "db1c2dabf40d916773451f08efe15c9906ba71fe083fcde22e0edc6120cf7030",
+    "/tmp/root-mpc-local-bootstrap27-trial1-source.lean": "db1c2dabf40d916773451f08efe15c9906ba71fe083fcde22e0edc6120cf7030",
+    "/tmp/root-mpc-local-bootstrap27-trial1.log": "d8151a74b95888640eaae07d74dca5d1f12dc7489d4df5a6186cccfe8271577e",
+    "book/coverage/inventory.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+    "sources/text/hertneck.txt": "f0d8687a0368e2c4eec9ea3a6bad70ea5456793c5a275b9c0f1b4a8942746c97",
+    "reports/full-coverage/checkpoint-26-selection.json": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f",
+    "reports/full-coverage/browser-corrections-26-inputs.json": "0a13a96e4110765006c03168ba5b77d4a04e2b14cd3af54681845f367cf7c634",
+    "/tmp/root_tmp_lean27_runner_v2.py": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4",
+    "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v1.lean": "7ee8824064bf9f182d9a34113797a7525873a848f5ac9454261dbec9affe0a71",
+    "/tmp/CompleteCoreMPCLocalBootstrap27-draft-v2.lean": "25153342ceacb43ffc8b7357805f2736fcfeb5d7e1ab2433fbc1255a254f6453",
+    "/tmp/root-mpc-local-bootstrap27-independent-applied-semantic-review-v1.json": "eccda58d7ea420e340a366d6a1bc3d07fc9783e252e78718dc86ed71a92b135e"
+  },
+  "protected_counts": {
+    "selected_proof_sources": 1167,
+    "current_book_assets": 31,
+    "installed_owner_files": 5
+  },
+  "limits": [
+    "Read-only independent source correspondence and actual evidence check; no new Lean compile.",
+    "TMP only, no canonical source/named build, live owner mutation or aggregate verification.",
+    "Three complete conditional components only; explicit continuity omission and norm/application bridges retained."
+  ]
+}

@@ -1,0 +1,3122 @@
+Student Thesis 204
+
+
+
+
+Learning an Approximate Model Predictive Controller with
+                     Guarantees
+
+
+
+                     Student Thesis
+
+                         Michael Hertneck
+
+                          March 12, 2018
+
+
+
+            Examiner:     Prof. Dr.-Ing. Frank Allgöwer
+           Supervisor:    Johannes Köhler, M.Sc.
+                          Dr.sc. Sebastian Trimpe
+
+
+     Institute for Systems Theory and Automatic Control
+                     University of Stuttgart
+                 Prof. Dr.-Ing. Frank Allgöwer
+
+            Intelligent Control Systems Group
+    Max Planck Institute for Intelligent Systems Stuttgart
+Abstract
+
+In this thesis, a supervised learning framework to approximate a model
+predictive controller (MPC) with guarantees on stability and constraint satis-
+faction is proposed. The approximate controller has a reduced computational
+complexity in comparison to standard MPC which makes it possible to im-
+plement the resulting controller for systems with a high sampling rate on a
+cheap hardware. The framework can be used for a wide class of nonlinear
+systems.
+  In order to obtain closed-loop guarantees for the approximate MPC, a
+robust MPC (RMPC) with robustness to bounded input disturbances is
+used which guarantees stability and constraint satisfaction if the input is
+approximated with a bound on the approximation error.
+   The RMPC can be sampled offline and hence, any standard supervised
+learning technique can be used to approximate the MPC from samples. Neu-
+ral networks (NN) are discussed in this thesis as one suitable approximation
+method.
+  To guarantee a bound on the approximation error, statistical learning
+bounds are used. A method based on Hoeffding’s Inequality is proposed
+to validate that the approximate MPC satisfies these bounds with high
+confidence. This validation method is suited for any approximation method.
+The result is a closed-loop statistical guarantee on stability and constraint
+satisfaction for the approximated MPC.
+   Within this thesis, an algorithm to obtain automatically an approximate
+controller is proposed. The proposed learning-based MPC framework is
+illustrated on a nonlinear benchmark problem for which we learn a neural-
+network controller that guarantees stability and constraint satisfaction.
+  The combination of robust control and statistical validation can also be
+used for other learning based control methods to obtain guarantees on
+stability and constraint satisfaction.
+
+
+
+                                                                            3
+  Parts of this thesis have been submitted for publication at the IEEE Control
+Systems Letters. The title of the submitted paper is "Learning an Approx-
+imate Model Predictive Controller with Guarantees". The authors of the
+paper are Michael Hertneck, Johannes Köhler, Sebastian Trimpe and Frank
+Allgöwer.
+
+
+
+
+4
+Contents
+
+
+1 Introduction                                                                   7
+  1.1 Problem description . . . . . . . . . . . . . . . . . . . . . . . .        7
+  1.2 Proposed approach . . . . . . . . . . . . . . . . . . . . . . . . .        7
+  1.3 Contribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     9
+  1.4 Literature review . . . . . . . . . . . . . . . . . . . . . . . . . .     10
+  1.5 Outline . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   10
+  1.6 Notation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    11
+
+2 Model Predictive Control - Theory                                             13
+  2.1 MPC problem formulation . . . . . . . . . . . . . . . . . . . . .         13
+  2.2 Robust MPC . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      15
+  2.3 Approximate MPC . . . . . . . . . . . . . . . . . . . . . . . . .         17
+
+3 Main approach                                                                 19
+  3.1 Problem formulation . . . . . . . . . . . . . . . . . . . . . . . .       19
+  3.2 General approach . . . . . . . . . . . . . . . . . . . . . . . . . .      20
+
+4 Input robust MPC                                                              21
+  4.1 RMPC formulation . . . . . . . . . . . . . . . . . . . . . . . . .        21
+  4.2 Constraint tightening . . . . . . . . . . . . . . . . . . . . . . . .     22
+  4.3 Stability and constraint satisfaction . . . . . . . . . . . . . . . .     25
+       4.3.1 Recursive feasibility . . . . . . . . . . . . . . . . . . . .      25
+       4.3.2 Closed loop stability . . . . . . . . . . . . . . . . . . . .      29
+
+5 Approximation of the RMPC                                                     35
+  5.1 Machine learning . . . . . . . . . . . . . . . . . . . . . . . . . .      35
+  5.2 Neural networks . . . . . . . . . . . . . . . . . . . . . . . . . .       36
+      5.2.1 Neural network basics . . . . . . . . . . . . . . . . . . .         36
+      5.2.2 Learning neural networks . . . . . . . . . . . . . . . . .          39
+  5.3 Hoeffding’s Inequality for validation . . . . . . . . . . . . . . .       44
+
+
+
+                                                                                 5
+Contents
+
+
+6 Automatic AMPC synthesis with guarantees                                     49
+  6.1 AMPC synthesis . . . . . . . . . . . . . . . . . . . . . . . . . . .     49
+  6.2 Automatic AMPC synthesis - step by step . . . . . . . . . . . .          50
+      6.2.1 Step 1: Show incremental stabilizability and Lipschitz
+             constant . . . . . . . . . . . . . . . . . . . . . . . . . . .    50
+      6.2.2 Step 2: Set accuracy . . . . . . . . . . . . . . . . . . . .       54
+      6.2.3 Step 3: Design of the RMPC . . . . . . . . . . . . . . .           54
+      6.2.4 Step 4, 5 and 6: Learning and validation . . . . . . . .           57
+
+7 Numerical example                                                            59
+  7.1 System modeling . . . . . . . . . . . . . . . . . . . . . . . . . .      59
+  7.2 Computation of the AMPC using Algorithm 1 . . . . . . . . .              60
+  7.3 Simulation results . . . . . . . . . . . . . . . . . . . . . . . . . .   63
+      7.3.1 Comparison to LQR . . . . . . . . . . . . . . . . . . . .          64
+      7.3.2 Online computational demand . . . . . . . . . . . . . .            65
+
+8 Conclusion                                                                   67
+  8.1 Summary . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    67
+  8.2 Future work . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    68
+
+Appendix                                                                       71
+  A.1 Numerical values for the verification of the local incremental
+       stabilizability assumption . . . . . . . . . . . . . . . . . . . . .    71
+
+
+
+
+6
+1 Introduction
+
+1.1 Problem description
+Model predictive control (MPC) [1] is a modern control method which has
+been actively researched in the last years. It is based on repeatedly solving
+an optimization problem online. Applications in industry are widespread.
+An advantage of MPC is the guaranteed satisfaction of hard constraints
+and the optimality of the solution with respect to a certain cost function
+for nonlinear systems. One major drawback of MPC is the computational
+effort that arises when solving optimization problems online under real time
+requirements. This happens especially for settings with a large number of
+optimization variables, e.g if the prediction horizon is large, or if a high
+sampling rate is required.
+   For linear systems, the optimization problem can be solved offline i.e.
+before the runtime of the system under some mild assumptions [2]. Thus an
+explicit control law is obtained. The extension of [2] to nonlinear systems
+is not straightforward. Hence, the goal of this thesis is to develop a frame-
+work for approximating a nonlinear MPC through supervised learning with
+statistical guarantees on stability and constraint satisfaction.
+
+
+1.2 Proposed approach
+In this thesis, we propose a framework to learn a controller with guaranteed
+stability and constraint satisfaction. The key idea is to approximate a robust
+MPC (RMPC) with robustness to bounded input disturbances with a ma-
+chine learning technique. Any3 regression method is admissible within the
+proposed framework, if the method is capable to satisfy the chosen bound
+on the approximation error. There are several machine learning techniques
+that can achieve an arbitrary small approximation error. In this thesis, we
+focus on neural networks which can approximate any nonlinear function
+with a finite number of nonlinearities arbitrary well [3]. However, in general,
+guaranteeing a bound on the approximation error for machine learning
+techniques can be challenging.
+
+
+
+                                                                             7
+1 Introduction
+
+
+              Robust MPC
+           u = πMPC ( x ) + d       Theorem 7 and
+         Guarantees if kdk∞ ≤ η      Theorem 14
+
+
+           Machine Learning
+          Sample robust MPC                         Approximate MPC
+         Learn: πapprox ≈ πMPC        Lemma 20
+                                                                Theorem 23
+               Validation
+                                                    Statistical guarantees
+         Hoeffding’s Inequallity:
+                                                    Constraint satisfac-
+ P
+                              
+         πapprox − πMPC ∞ ≤ η ≈ 1
+                                                     tion and stability
+
+
+Figure 1.1: Diagram of the proposed framework. We design an MPC πMPC
+with robustness to input disturbances d. The resulting feedback law is
+sampled offline and approximated (πapprox ) via machine learning techniques.
+Hoeffding’s Inequality is used for validation to provide a bound on the error
+between approximate controller and MPC in order to guarantee stability and
+constraint satisfaction. The result is a controller with statistical guarantees.
+
+
+
+   A probabilistic approach to provide a bound on the approximation error
+is to use Hoeffding’s Inequality [4]. The resulting validation method is
+based on sampling the approximated RMPC and evaluate weather the
+approximation error satisfies a chosen bound. This probabilistic validation in
+combination with a learning method that is suitable to achieve any bound on
+the approximation error enables us to guarantee stability and the satisfaction
+of hard constraints with any desired probability. Therewith, a new method
+to obtain an approximate MPC can be established. A sketch of a complete
+framework for the controller synthesis based on the proposed methods is
+given in Figure 1.1.
+  Advantages are the guarantees on stability and constraint satisfaction
+and a cheap implementable controller. The framework is suited to design
+controller for a wide class of nonlinear systems in an automatic fashion.
+   Instead of MPC and NN, other learning based control approaches as e.g.
+[5, 6, 7] can be adapted similar to the proposed framework, if a robust control
+method is used in combination with the proposed validation method. Thus,
+the proposed framework is also relevant for other learning based control
+methods.
+
+
+
+8
+                                                              1.3 Contribution
+
+
+1.3 Contribution
+
+
+This thesis makes contributions to the theory of learning based control and
+approximate MPC (AMPC). The main purpose is to propose a framework
+for the synthesis of an AMPC with guarantees on stability and satisfaction
+of hard constraints. The framework is applicable to a wide class of nonlinear
+systems. The controller synthesis using this framework works automated
+with few design parameters to choose.
+
+  One contribution of this thesis is to adjust results from tube based RMPC
+with guaranteed stability and constraint satisfaction for nonlinear systems [8]
+into a terminal cost/ terminal constraint setting with additive input distur-
+bance. The resulting RMPC guarantees stability and satisfaction of hard
+constraints under disturbance.
+
+   Another contribution of this thesis is a validation method that delivers
+guarantees on the approximation error in a probabilistic fashion based on
+Hoeffding’s Inequality [4]. Therefore, the learned control law is compared
+to the RMPC along trajectories. The key idea is, that stability and constraint
+satisfaction can be guaranteed for the closed loop system, if the approxima-
+tion error of the learned control law is smaller than the admissible input
+disturbance for the robust MPC. The bound on the approximation error is
+guaranteed probabilistic due to the validation method.
+
+  The combination of this contributions delivers a framework for the auto-
+matic controller synthesis to obtain an approximate MPC with guarantees
+on stability and constraint satisfaction.
+
+   The last contribution of this thesis is the application of the proposed
+framework to a continuous stirred tank reactor from [9] as benchmark. We
+show the practicability of the framework and substantiate that this method
+can yield a controller which guarantees closed loop stability and constraint
+satisfaction with a low computational complexity.
+
+  Parts of this thesis have been submitted for publication at the IEEE Control
+Systems Letters. The title of the submitted paper is "Learning an Approx-
+imate Model Predictive Controller with Guarantees". The authors of the
+paper are Michael Hertneck, Johannes Köhler, Sebastian Trimpe and Frank
+Allgöwer.
+
+
+
+                                                                             9
+1 Introduction
+
+
+1.4 Literature review
+For linear systems, the optimization problem can be solved offline i.e. before
+the runtime of the system under some mild assumptions [2]. Thus an
+explicit control law is obtained. The extension of [2] to nonlinear systems
+is not straight forward and there are also computational complexity issues
+concerning the method from [2].
+   Hence, there exist several approaches to obtain an approximative solution
+for the MPC optimization. For linear systems, in [10] a learning algorithm is
+presented with additional constraints to guarantee stability and constraint
+satisfaction of the approximate MPC. This stands in contrast to our method,
+which uses standard learning methods and is applicable to nonlinear sys-
+tems.
+   For nonlinear systems, there are several approaches. One approach to ap-
+proximate MPC is convex multi parametric nonlinear programming [11, 12],
+where a suboptimal approximation of the MPC control law is computed.
+Another approach is to approximate an MPC with machine learning tech-
+niques. This is done by neural networks in [13, 14, 15]. These methods can
+in general not provide guarantees on stability or constraint satisfaction for
+the approximated MPC which is especially crucial if hard state constraints
+are considered.
+   In [5], a support vector machine informed method is used to approximate
+the MPC. Stability and constraint satisfaction can be guaranteed for arbitrary
+small approximation errors based on inherent robustness properties. In [16],
+an MPC with Lipschitz based constraint tightening is approximated, which
+ensures stability for non vanishing approximation errors. The approximation
+error deduced in [5, 16] is typically not achievable for practical application
+(compare example in Chapter 7) and is thus not suited for the proposed
+framework.
+
+
+1.5 Outline
+This thesis is structured as follows: In Chapter 2, we recap results from
+the theory of MPC. In Chapter 3, we formulate the problem and present
+our main ideas. The input robust MPC is presented in Chapter 4. In
+Chapter 5, we discuss supervised learning and present a validation method
+to obtain guarantees on the learned MPC. In Chapter 6, the proposed
+framework is summarized and an algorithm to compute the approximate
+
+
+
+10
+                                                                  1.6 Notation
+
+
+MPC offline is given. Chapter 7 contains a numerical benchmark example
+for the framework. Chapter 8 concludes the thesis.
+
+
+1.6 Notation
+In this thesis, the following notation is used: The positive real numbers are
+denote by R>0 , := {r ∈ R|r > 0}, and respectively, R≥0 = R>0 ∪ {0}. A
+function f is positive definite if f (0) = 0 and f ( x ) > 0 ∀ x ∈ R ∪ {0}. The
+function sign( x ) is defined as
+                                                   
+                                    1     i f x > 0
+                        sign( x ) = −1     if x < 0 .
+                                     0      else
+                                                   
+
+
+Class K functions
+A continuous function α : R≥0 → R≥0 is a class K function if it is strictly
+increasing and α(0) = 0.
+
+
+Sets and set operations
+A set S is a robust positive invariant (RPI) set under some dynamics
+x (t + 1) = f ( x (t),w(t)), if x (t + 1) ∈ S ∀ x (t) ∈ S , ∀w(t) ∈ W . The
+Minkovski set addition is defined as X ⊕ Y := { x + y : x ∈ X, y ∈ Y }. The
+Pontryagin set difference is defined by X  Y := {z ∈ Rn : z + y ∈ X, ∀y ∈ Y }.
+
+
+Norms
+The quadratic norm k x k2 = x > x is denoted by k·k . The quadratic norm with
+respect to a positive definite matrix Q = Q> is denoted by k x k2Q = x > Qx.
+
+
+Eigenvalues
+The minimum and maximum eigenvalue of a symmetric matrix Q = Q>
+are indicated by λmin ( Q) and λmax ( Q). λmax ( P/Q) and λmin ( P/Q) denote
+the largest and smallest generalized eigenvalue of ( P − λQ)v = 0. P > 0
+implies that λmin ( P) > 0 and P > Q denotes that λmin ( P − Q) > 0.
+
+
+
+                                                                            11
+1 Introduction
+
+
+Probabilistic expressions
+Let X be a random variable. P [ X ≥ x ] denotes the probability for X ≥ x.
+
+
+
+
+12
+2 Model Predictive Control - Theory
+
+This chapter gives a brief overview over relevant MPC theory. First we recap
+some standard MPC methods to ensure stability and constraint satisfaction.
+Then, RMPC and AMPC are reviewed. A more detailed overview over well
+established results in MPC theory can be found in [1].
+  The basic idea of MPC is to use a dynamic model of a system to forecast
+the system behavior. Therewith an optimal input sequence can be computed
+and the first input of this sequence is used as feedback. Thus, contrary
+to most other control techniques, the control law is only implicit defined
+as the solution to an optimization problem. Satisfaction of constraints can
+be ensured by a suitable formulation of the optimization problem. An
+advantage of MPC is that complex nonlinear dynamics can be handled. We
+present a formulation for the MPC optimization problem that guarantees
+stability and constraint satisfaction in the next section.
+
+
+
+2.1 MPC problem formulation
+
+We consider the nonlinear discrete time dynamics x (t + 1) = f ( x (t),u(t))
+with continuous f , satisfying f (0,0) = 0, where x ∈ Rn denotes the system
+state and u ∈ Rm are the system inputs. The MPC optimization problem
+for setpoint stabilization for discrete time systems, the setpoint ( x,u) = (0,0)
+and a positive definite stage cost l ( x,u) can be stated as follows: For each
+time step, solve
+
+
+         VN ( x ) = min JN ( x (t),u(·|t))
+                   u(·|t)
+                            N −1
+                 = min ∑ l ( x (k + t|t),u(k + t|t)) + Vf ( x (t + N |t))
+                   u(·|t) k =0
+
+
+
+
+                                                                              13
+2 Model Predictive Control - Theory
+
+
+subject to constraints
+
+                             x ( t | t ) = x ( t ),
+                    x (k + t + 1|t) = f ( x (k + t|t),u(k + t|t)),
+                         x (k + t|t) ∈ X , k = 0,...,N − 1,
+                         u(k + t|t) ∈ U , k = 0,...,N − 1,
+                       x (t + N |t) ∈ X f ,
+
+and apply u(t) = u? (t|t). The state and input constraints are denoted by
+Rn ⊇ X ⊇ 0 and Rm ⊇ U ⊇ 0, Vf ( x ) the terminal cost and JN the open
+loop cost. The prediction for x (k + t) at time t is denoted by x (k + t|t). The
+solutions of the MPC optimization problem is denoted with u? (·|t), x ? (·|t)
+and the value function VN ( x (t)). For continuous time systems, a similar
+formulation is possible, for details see [1].
+  We call the MPC problem feasible at time t, if there exists at least one
+input ũ(·|t) that satisfies the constraints . The MPC problem is recursive
+feasible if feasibility at time t implies feasibility for all times k + t, k ∈ N. We
+assume in the following chapters that the state can be measured. If the state
+can only be estimated, robust output feedback MPC is required, compare
+e.g. [17].
+
+Stability results for MPC
+The goals of model predictive control are to achieve stability of the origin
+x = 0 for the resulting closed loop system and guaranteed satisfaction of
+state and input constraints for all times. Therefore, recursive feasibility of the
+optimization problem and closed loop stability have to be established using
+the finite horizon MPC optimization problem. Suitably designed terminal
+constraints and terminal costs for the MPC problem can be used to obtain
+this guarantees [18]. We sketch this procedure in this section.
+   To guarantee stability and constraint satisfaction, we use a suitable termi-
+nal cost Vf and a suitable terminal set X f [18]. Within the terminal set, an
+explicit control law k f ( x ) ∈ U ∀ x ∈ X f ⊆ X , with
+
+                             f ( x,k f ( x )) ∈ X f ∀ x ∈ X f ,
+
+needs to exist. Furthermore,
+
+                    Vf ( f ( x,k f ( x ))) − Vf ( x ) ≤ −l ( x,k f ( x ))
+
+
+
+14
+                                                               2.2 Robust MPC
+
+
+must hold ∀ x ∈ X f . Then recursive feasibility of the MPC problem can be
+proven by considering the candidate solution
+                                 (
+                                   u(k + t|t)           k = 1,...,N − 1
+            u ( k + t | t + 1) =                                        ,
+                                   k f ( x ( N )|t + 1) k = N
+
+which guarantees that a solution that satisfies all constraints will exist at
+t + 1 if it exists at t due to the terminal constraints. To show stability of the
+MPC, the value function VN ( x ) can be used as Lyapunov function.
+   In [18], a procedure to compute terminal costs, a terminal set and a ter-
+minal controller for continuous time systems with stabilizable linearization
+at the origin and quadratic stage costs is provided. The method is termed
+Quasi Infinite Horizon MPC [18] as the cost function JN is an approximation
+of the infinite horizon cost.
+   On possibility to satisfies the assumptions on the terminal ingredients is a
+zero terminal constraint with Vf ( x ) = 0, X f = {0} and k f ( x ) = 0. However,
+under disturbance, the satisfaction of this zero terminal constraint cannot
+be robustified using standard approaches.. Thus, for robust MPC, a zero
+terminal constraint is not suitable.
+
+Further MPC schemes
+There exist a lot of further MPC schemes with guarantees. In MPC without
+terminal constraints, stability of the closed loop system can be shown by
+choosing the prediction horizon large enough under some controllability
+assumptions [19, 20]. This can bring computational benefits in comparison
+to MPC with terminal constraints but a longer prediction horizon may be
+necessary and the required controllability condition can be hard to verify.
+MPC without terminal constraints is equally applicable to our setup.
+   In economic MPC [21], the stage cost for the MPC optimization problem
+is not requested to be positive definite. As a result, the closed-loop system
+might not converge to an equilibrium, if other trajectories (e.g. periodic)
+exist, that lead to a better performance. The proposed framework is with
+modifications in the RMPC also applicable to economic MPC.
+
+
+2.2 Robust MPC
+In this section we review existing RMPC techniques. One of this methods
+will be extended in Chapter 4 to be robust with respect to input disturbances.
+
+
+
+                                                                              15
+2 Model Predictive Control - Theory
+
+
+This will enable us to approximate the RMPC algorithm with a machine
+learning tool to obtain an explicit MPC control law.
+RMPC has to guarantee stability and constraint satisfaction for an uncertain
+(nonlinear) system for all possible realizations of the uncertainty. This is
+typically achieved by a constraint tightening. Assume an additive, bounded
+disturbance. Then, the disturbed system can be formulated as
+
+                        x (t + 1) = f ( x (t),u(t)) + w(t)
+
+with w(t) ∈ W : {w(t) ∈ Rn | kw(t)k∞ ≤ wmax , }.
+   Under some assumptions, inherent robustness properties of standard MPC
+formulations can be provided [22]. For inherent robustness, only arbitrary
+small disturbances may be admissible.
+   In Min-Max schemes the optimization problem is extended to find a
+control input that minimizes the predicted cost for the worst case disturbance,
+i.e. the disturbance that maximizes the cost. An overview over this approach
+is given in [23]. A disadvantage of Min-Max schemes is that the optimization
+may be computational intractable.
+   A compromise between inherent robustness and Min-Max schemes are
+tube based approaches. For linear systems, there are two main tube based
+approaches. In [24] an additional error feedback is used to keep the real
+system state in a tube around the nominal system state for the system dy-
+namics without disturbance. The tube is an RPI set for the system with error
+feedback under disturbance. The optimal nominal state for a given real sys-
+tem state is used as an additional optimization variable in the optimization
+problem. To achieve recursive feasibility, the state constraints are tightened
+by the size of the tube. The input constraints must be tightened according to
+the error feedback.
+   In [25], a constraint tightening with growing tubes is used for linear
+systems. If the system is stabilizable, a stabilizing controller can be used
+to obtain a bounded representation of the reachable system states after
+each time step along the prediction horizon if a disturbance occurs at the
+actual time step. The constraints are tightened such that the untightened
+constraints are still satisfied if one of this reachable system states occur. Since
+the pre-stabilized system is stable, the necessary constraint tightening is
+bounded for a bounded disturbance.
+   For nonlinear systems, there exist several tube based approaches. In
+Lipschitz based methods (e.g. [26]), a tightening of the state constraints
+based on a Lipschitz constant of the system is used. For unstable nonlinear
+
+
+
+16
+                                                        2.3 Approximate MPC
+
+
+system dynamics, this approach leads to a constraint tightening which grows
+exponentially with the prediction horizon. Hence, the constraint tightening
+may be quite restrictive since the set of admissible states can decrease fast
+with growing prediction horizon. This can decrease the initial feasible region
+and the possible prediction horizon even for small disturbances. Even for
+small disturbances and a small prediction horizon, the tightened constraint
+set may be empty.
+  In [27], a RMPC with constraint tightening founded on an incremental
+input to state stability (δISS) using a δISS-Lyapunov function for uncertain
+systems is proposed. Based on the concept of local incremental stabilizability,
+[8] uses a constraint tightening similar, to the growing tubes approach
+for linear systems. With this approach a system with an additive state
+disturbance can be robustly stabilized. The constraint tightening grows
+along the prediction horizon but is bounded by a maximum value. This
+value depends on the maximum admissible disturbance. For small enough
+disturbances, this leads to a non empty constraint set for arbitrary large
+prediction horizons.
+  It may be perhaps premature to select a particular approach at the current
+stage of research [1]. Nevertheless, we present in Chapter 4 an adaption of
+[8] to bounded input disturbances and terminal constraints and costs since
+this method allows a good trade off between computational complexity and
+limited conservatism.
+
+
+2.3 Approximate MPC
+One major drawback of MPC is the required computational effort for the
+online solution of the MPC optimization problem. Especially for settings
+with a large number of optimization variables, e.g. if the prediction horizon
+is large, or if a high sampling rate is required, the online optimization can
+get intractable for a lot of applications.
+   The goal of approximate MPC is to decrease the online computational
+effort by approximating the solution to the MPC optimization problem
+offline. This subsection deals with the problem of solving the optimization
+for the MPC algorithm offline to obtain an approximate control law. We
+require, that the control law can be written as a function of the states and
+does not need any iteration to solve it. Clearly, fast online evaluation of the
+approximate MPC control law must be possible.
+   For linear systems with polytopic state constraints, this MPC optimization
+
+
+
+                                                                            17
+2 Model Predictive Control - Theory
+
+
+can be solved offline according to [2]. Therein, the MPC optimization is
+formulated as a multi parametric quadratic program. This can be used with
+the Karush-Kuhn-Tucker (KKT) conditions to obtain an explicit piece wise
+affine control law that guarantees the satisfaction of hard constraints.
+   Since the extension of [2] to nonlinear systems is not straight forward
+and since there are also complexity issues concerning the method from
+[2], there exist several approximate MPC approaches. For linear systems,
+[10] proposed to add constraints to the learning problem to ensure stabil-
+ity and constraint satisfaction of the suboptimal learned control law. An
+ansatz to approximate nonlinear MPC is convex multi parametric nonlinear
+programming [11, 12], where a suboptimal approximation of the MPC is
+computed. The approximation of an MPC by neural networks, as also done
+herein, has for example been proposed in [14, 15]. These methods can in
+general not provide guarantees on stability or constraint satisfaction with
+the approximated MPC. This is especially crucial if hard state constraints
+are considered.
+   In [5], a support vector machine informed method is used to approximate
+an MPC. Stability and constraint satisfaction can be guaranteed for arbitrary
+small approximation errors based on inherent robustness properties. In [16],
+an MPC with Lipschitz based constraint tightening is approximated, which
+ensures stability for non vanishing approximation errors. This method has
+the same drawbacks as Lipschitz based RMPC since the constraint tightening
+is too conservative which makes it impractical for the application to most
+nonlinear systems (compare e.g. the example in Chapter 7).
+   We will present a novel approximate MPC approach with guarantees on
+stability and constraint satisfaction based on approximation of a RMPC in
+combination with a validation method based on Hoeffding’s Inequality in
+Chapter 6.
+
+
+
+
+18
+3 Main approach
+
+In this chapter, we pose the control problem and present the proposed
+approach.
+
+
+3.1 Problem formulation
+In this section, we introduce the control problem. We consider the following
+nonlinear discrete time system
+
+                           x (t + 1) = f ( x (t),u(t)),                   (3.1)
+
+with the state x (t) ∈ Rn , the control input u(t) ∈ Rm , the time step t ∈ N,
+and continuous f , satisfying f (0,0) = 0. We consider compact polytopic
+constraints
+
+            X = x ∈ Rn | Hx ≤ 1 p , U = u ∈ Rm | Lu ≤ 1 p ,
+                                            
+
+
+and a quadratic stage cost
+
+                             l ( x,u) = k x k2Q + kuk2R ,                 (3.2)
+
+with a positive definite Q and a positive semidefinite R. The control objective
+is to ensure constraint satisfaction, i.e.
+
+                        ( x (t),u(t)) ∈ (X × U ) ∀t ≥ 0,
+
+stability of the resulting system, which means
+
+                                 lim x (t) → ZRPI
+                                t→∞
+
+for suitable initial conditions and a RPI set ZRPI , and to minimize some cost
+function
+                                  ∞
+                                 ∑ l (x(k),u(k)).
+                                 k =0
+
+
+
+                                                                            19
+3 Main approach
+
+
+The resulting controller should be implementable on cheap hardware for
+systems with high sampling rates.
+  Our goal is to develop a framework for automatic controller synthesis.
+The framework has to be such that all computations can be done numerically
+with few design parameters.
+
+
+3.2 General approach
+We propose a framework based on approximating an MPC. The guarantees
+for stability and constraint satisfaction from MPC must be preserved under
+the approximation. This is achieved by modifying the MPC to be robust to
+bounded input disturbances.
+   The controller synthesis with the proposed framework works as follows:
+We set up an RMPC. The RMPC scheme guarantees stability and constraint
+satisfaction for u(t) = πMPC ( x (t)) + d(t) with kd(t)k∞ ≤ η with a chosen
+bound on the input error η and the RMPC feedback law πMPC . The RMPC
+is sampled offline over the set of feasible states Xfeas . The RMPC feedback is
+approximated using supervised learning techniques based on these samples.
+In this thesis we use NN to approximate the RMPC, even though any other
+supervised learning technique can be used within the framework. The
+learning yields an AMPC
+
+                    πapprox : Xfeas → U |u = πapprox ( x ).
+
+With this controller, the closed-loop system is given by
+
+                      x (t + 1) = f ( x (t),πapprox ( x (t))).            (3.3)
+
+Hence, the AMPC feedback πapprox ( x ) guarantees stability and constraint
+satisfaction if the approximation error πMPC − πapprox ∞ is bounded by the
+disturbance bound η, because then guarantees from the RMPC are preserved
+under approximation. We use a validation method based on Hoeffding’s
+Inequality to guarantee a desired bound η on the approximation error. The
+overall framework will be summarized in Algorithm 1.
+
+
+
+
+20
+4 Input robust MPC
+
+In this chapter, we present a formulation of an RMPC algorithm which pre-
+serves its guarantees on stability and constraint satisfaction under additive
+input disturbances. Hence, guarantees on stability and constraint satisfaction
+will be preserved if the RMPC is approximated with any approximation
+technique as long as the approximation error is below the bound on the
+admissible input disturbance of the RMPC. The chapter is organized as
+follows:
+   An RMPC formulation with robustness to additive input disturbances
+based on a constraint tightening is introduced in Section 4.1. The scheme
+is an adaption of [8], where a robust MPC scheme for systems under state
+disturbances and without terminal constraints is presented. In Section 4.2,
+we present the constraint tightening method based on a growing tube along
+the prediction horizon for open loop trajectories in the RMPC optimization
+problem. The tube is subtracted from the constraint set. In the last section,
+recursive feasibility and closed loop stability for the perturbed system with
+bounded input disturbance are proven.
+
+
+
+4.1 RMPC formulation
+
+To achieve the robustness of the RMPC, we use a quasi infinite horizon
+MPC formulation [18] with robust constraint tightening [8], which can be
+formulated as
+
+
+    VN ( x (t)) = min JN (( x (t)),u(·|t))
+                 u(·|t)
+                          N −1
+              = min       ∑ l (x(k + t|t),u(k + t|t)) + Vf (x( N + t|t))
+                 u(·|t) k =0
+                                                                           (4.1a)
+
+
+
+
+                                                                              21
+4 Input robust MPC
+
+
+subject to constraints
+                             x ( t | t ) = x ( t ),                          (4.1b)
+                    x (k + t + 1|t) = f ( x (k + t|t),u(k + t|t)),           (4.1c)
+                         x (k + t|t) ∈ X̄k , k = 0,...,N − 1,                (4.1d)
+                         u(k + t|t) ∈ Ūk , k = 0,...,N − 1,                 (4.1e)
+                       x ( N + t|t) ∈ X f .                                  (4.1f)
+We denote the set of states where (4.1) is feasible by Xfeas . The solution
+of the RMPC optimization problem (4.1) is denoted by u? (·|t). The RMPC
+feedback at time t is πMPC ( x (t)) := u? (t|t). The state and input constraints
+from standard MPC formulations are replaced by tightened constraints X̄k
+and Ūk . The design of the terminal ingredients X f and Vf will be made
+precise later. The closed loop of the RMPC under disturbance is given by
+                     x (t + 1) = f ( x (t),πMPC ( x (t)) + d(t)),             (4.2)
+with
+                d ( t ) ∈ W = { d ∈ Rm : k d k ∞ ≤ η } , ∀ t ≥ 0        (4.3)
+for some η. We present in the next subsection, how the constraint tightening
+for the RMPC is done for a chosen bound on the input disturbance.
+
+4.2 Constraint tightening
+In this section, we state the constraint tightening and necessary assump-
+tions for the RMPC to guarantee stability and constraint satisfaction under
+approximation. The constraint tightening is based on a local incremental
+stabilizability condition and depends on an exponential contraction rate ρ.
+Hence, the following assumption is used in order to design the RMPC:
+Assumption 1. (Local incremental stabilizability [8, 28]) There exists a control law
+κ : X × X × U → Rm , a δ-Lyapunov function Vδ : X × X × U → R≥0 , that is
+continuous in the first argument and satisfies Vδ ( x,x,v) = 0 ∀ x ∈ X , ∀v ∈
+U , and parameters cδ,l , cδ,u δloc , kmax ∈ R>0 , ρ ∈ (0,1), such that the fol-
+lowing properties hold for all ( x,z,v) ∈ X × X × U , (z+ ,v+ ) ∈ X × U with
+Vδ ( x,z,v) ≤ δloc :
+                    cδ,l k x − zk2 ≤ Vδ ( x,z,v) ≤ cδ,u k x − zk2 ,           (4.4)
+                               kκ ( x,z,v) − vk ≤ kmax k x − zk,              (4.5)
+                                Vδ ( x + ,z+ ,v+ ) ≤ ρVδ ( x,z,v),            (4.6)
+
+
+
+22
+                                                                 4.2 Constraint tightening
+
+
+with
+
+                           x + = f ( x,κ ( x,z,v)), z+ = f (z,v).
+
+Remark 2. Assumption 1 is for example fulfilled, if the linearized dynamics at any
+point ( x,v) ∈ X × U are stabilizable with a common quadratic Lyapunov function
+V = x > Px and f is locally Lipschitz. Hence, Assumption 1 is not very restrictive.
+  The concept of incremental stability [8] describes incremental robustness
+properties, and is thus suited for the analysis of perturbed trajectories in the
+RMPC design. Note that neither Vδ nor κ need to be known explicitly to
+design the RMPC. Only the exponential decay rate ρ and bounds cδ,l , cδ,u
+and kmax are used within the RMPC design for the constraint tightening.
+These parameters are computed for an example system in Chapter 7.
+  To overestimate the influence from the system input on the system state,
+we use the following assumption:
+Assumption 3. (Local Lipschitz continuity of the input) There exists a λ ∈ R,
+such that ∀ x ∈ X , ∀u ∈ U , ∀u + d ∈ U
+
+                           k f ( x,u + d) − f ( x,u)k ≤ λkdk∞ .                      (4.7)
+
+  With this assumption, we can introduce a bound on the admissible input
+disturbance which will be used in the proof of robust stability and recursive
+feasibility for the RMPC:
+Assumption 4. (Bound on the input disturbance) The input disturbance bound
+satisfies   q
+  η ≤ η1 := λ1    δloc
+                  cδ,u .
+
+  Note that the polytopic set W contains all admissible input disturbances.
+The set
+                               Ut = U W
+ensures that u + d ∈ U ∀u ∈ Ut . Since U and W are polytopic, we can write
+Ut as
+                        U t = u ∈ Rm | L t u ≤ 1 p .
+                             
+
+We set                      s                           s
+                                cδ,u                        cδ,u
+               ex := ηλ              k H k∞ , eu = ηλ            k Lt k∞ kmax .      (4.8)
+                                cδ,l                        cδ,l
+
+
+
+                                                                                       23
+4 Input robust MPC
+
+
+Therewith, the constraint tightening is achieved with scalar tightening pa-
+rameters
+                         √                  √
+                      1 − ρk             1 − ρk
+           ek,x := ex    √ , ek,u := eu      √ , k ∈ {0, ..., N },
+                      1− ρ               1− ρ
+
+based on the exponential contraction rate ρ, ex and eu . The tightened
+constraint sets are given by
+
+               X̄k := (1 − ek,x )X = { x ∈ Rn | Hx ≤ (1 − ek,x )1 p },
+
+               Ūk := (1 − ek,u )Ut = {u ∈ Rm | Lt u ≤ (1 − ek,u )1q }.
+Note that, if k approaches infinity, we get
+                                                                   ex            eu
+X∞ := (1 − e∞,x )X , U∞ := (1 − e∞,u )Ut , e∞,x :=                  √ , e∞,u :=   √ .
+                                                                  1− ρ          1− ρ
+
+   Contrary to Lipschitz based tightening approaches as in [26], the constraint
+tightening is bounded even as k approaches infinity. If η is chosen small
+enough, the tightened constraint sets are not empty for all k.
+   Clearly, the size of the tightened constraints depends on ex and eu and
+thus on η. Hence, decreasing the approximation accuracy η increases the
+feasible region.
+   The maximum influence of a disturbance at the current time step on the
+predicted system state x ( N + t|t) is described by
+                           (                    s          )
+                                   n                  cδ,u
+                   W N = x ∈ R : k x k ≤ λη ρ       N        .            (4.9)
+                                                      cδ,l
+
+We use the following Assumption on the terminal set to guarantee recursive
+feasibility and closed loop stability similar to [18, 29, 30]
+Assumption 5. (Terminal set) There
+                                n exists a local control
+                                                      o Lyapunov function
+Vf ( x ) = k x k2P , a terminal set X f =     x ∈ Rn | Vf ( x ) ≤ α f          and a control law k f
+such that ∀ x ∈ X f
+
+                       f ( x, k f ( x )) + w ∈ X f , ∀w ∈ W N ,                               (4.10)
+                       Vf ( f ( x,k f ( x ))) ≤ Vf ( x ) − l ( x,k f ( x )),                  (4.11)
+                               ( x,k f ( x )) ⊆ (X̄ N × Ū N ).                               (4.12)
+
+
+
+24
+                                               4.3 Stability and constraint satisfaction
+
+
+Remark 6. For continuous time systems [18] provides the existence of a terminal
+set if the linearization of (3.1) is stabilizable and (0,0) lies in the interior of X × U .
+Furthermore an approach to calculate the terminal set is stated. In [30], the results
+from [18] are adapted to discrete time systems. These approaches are both for systems
+without disturbances. For a disturbed system, a terminal set can be calculated by
+using the approach from [30] for X̄ N × Ū N instead of X × U . Then, there will
+always be a small enough η or a large enough N to ensure that (4.10) is satisfied.
+This has resemblances to [29]. We show, how this can be done in Section 6.2.3.
+
+
+4.3 Stability and constraint satisfaction
+In this section we study the properties of the RMPC closed loop system (4.2)
+under disturbance. First, recursive feasibility of the RMPC under disturbance
+for an initial feasible point is proven in Theorem 7. Then, Lemma 11 and
+Propositions 12 and 13 deliver the prerequisites to prove the stability of the
+closed loop system as it is done in Theorem 14.
+
+
+4.3.1 Recursive feasibility
+First we show recursive feasibility of the MPC-algorithm with the following
+theorem:
+Theorem 7. Let Assumptions 1, 3, 4 and 5 hold. Assuming that there is a
+feasible input sequence u? (·|t) for problem (4.1) at time t, a feasible input sequence
+ū(·|t + 1) for system (4.2) under input disturbance at time t+1 can be constructed
+as follows:
+
+    ū(k + t|t + 1)
+        (
+          κ ( x̄ (k + t|t + 1),x ? (k + t|t),u? (k + t|t)),         1 ≤ k ≤ N−1
+     =                                                                          , (4.13)
+          κ ( x̄ (k + t|t + 1),x ? (k + t|t),k f ( x ? (k + t|t))), k = N
+
+The corresponding state sequence is given by x̄ (k + t|t + 1), k = 1, . . . ,N with
+
+      x̄ (k + t + 1|t + 1) = f ( x̄ (k + t|t + 1),ū(k + t|t + 1)), k = 1,...,N,
+          x̄ (t + 1|t + 1) = x (t + 1) = f ( x (t|t),u? (t|t) + d(t)), kd(t)k∞ ≤ η.
+                           = x ? (t + 1|t) + 4 x,   k4 x k ≤ λη,
+
+.
+
+
+
+                                                                                       25
+4 Input robust MPC
+
+
+Proof. The proof is composed of two parts. Part I shows the satisfaction of
+state constraints (4.1d) and input constraints (4.1e). Part II establishes the
+satisfaction of the terminal constraint (4.1f).
+Part I: For k ≤ N, it holds that x ? (k + t|t) ∈ X̄k due to (4.1d) and (4.1f).
+By (4.1e), u? (k + t|t) ∈ Ūk for k < N. Furthermore, define u? ( N + t|t) =
+k f ( x ? (t + N |t)) with k f ( x ? (t + N |t)) ∈ Ū N by (4.12) and (4.1f) as input at
+time t + N. By Assumption 3 and (3.3) it holds that
+
+            k x̄ (t + 1|t + 1) − x ? (t + 1|t)k ≤ λku(t) − u? (t|t)k∞ ≤ λη.
+
+
+The bound η ≤ η1 from Assumption 4 implies Vδ ( x (t + 1),x ? (t + 1|t),u? (t +
+1|t)) ≤ δloc . Using (4.6) recursively, we get
+
+      Vδ ( x̄ (k + t|t + 1),x ? (k + t|t),u? (k + t|t)) ≤ ρk−1 cδ,u λ2 η 2 ≤ δloc .    (4.14)
+
+     With (4.4) and (4.5) this yields
+                                                        s
+                                       ?                             cδ,u
+                k x̄ (k + t|t + 1) − x (k + t|t)k ≤         ρ k −1        λη,          (4.15)
+                                                                     cδ,l
+                                                        s
+                                       ?                             cδ,u
+                kū(k + t|t + 1) − u (k + t|t)k ≤           ρ k −1        kmax λη.     (4.16)
+                                                                     cδ,l
+
+Note that k.k∞ ≤ k.k and
+
+        H x̄ (k + t|t + 1) − Hx ? (k + t|t) = H ( x̄ (k + t|t + 1) − x ? (k + t|t)).
+
+With the choice of ex from (4.8) we can overestimate
+                                              s
+                                                    cδ,u
+  H x̄ (k + t|t + 1) ≤ Hx ? (k + t|t) + k H k∞ ρk−1      λη1 p
+                                                    cδ,l
+                      (4.8)                   √ k −1                 √
+                       ≤ Hx ? (k + t|t) +      ρ ex 1 p ≤ (1 − ek,x + ρk−1 ex )1 p
+                       = (1 − ek−1,x )1 p .                                            (4.17)
+
+     The same procedure for the input with
+
+
+       Lt ū(k + t|t + 1) − Lt u? (k + t|t)) = Lt (ū(k + t|t + 1) − u? (k + t|t))
+
+
+
+26
+                                                  4.3 Stability and constraint satisfaction
+
+
+delivers
+                                                    q
+Lt ū(k + t|t + 1) ≤ Lt u? (k + t|t) + k Lt k∞          ρk−1 cδ,l kmax λη1q
+                  (4.8)                           √ k −1                √
+                   ≤ L t u ? ( k + t | t + 1) +    ρ eu 1q ≤ (1 − ek,u + ρk−1 eu )1q
+                   = (1 − ek−1,u )1q .                                              (4.18)
+  From (4.17) and (4.18) it follows that
+           ū(k + t|t + 1) ∈ Ūk−1 , x̄ (k + t|t + 1) ∈ X̄k−1 , 1 ≤ k ≤ N.
+The choice of Ut , i.e. U0 = Ut guarantees u? (t|t) + d(t) ∈ U , ∀d(t) ∈ W .
+
+   Part II: recursive satisfaction of the terminal constraints The recursive satis-
+faction of the terminal constraints is guaranteed by the application of the
+terminal controller for ū( N + t|t + 1). For the unperturbed system at time
+t + N + 1 predicted at time t if k f is applied at time t + N, it holds that
+
+                  x ? ( N + 1 + t|t) = f ( x ? ( N + t|t),u? ( N + t|t)),
+                          u? ( N + t|t) =k f ( x ? ( N + t|t)).
+Due to (4.15) it holds that
+              x̄ (t + N + 1|t + 1) = x ? (t + N + 1|t) + w, w ∈ W N .
+  Therefore with (4.10) and x ? (t + N |t) ∈ X f from (4.1f), the recursive
+satisfaction of the terminal constraint can be shown with
+           x̄ (t + N + 1|t + 1) = x ? (t + N + 1|t) + w ∈ X f ∀ w ∈ W N .
+
+
+
+Remark 8. Instead of choosing an approximation accuracy η, it is also possible to
+chose a maximum constraint tightening. This induces a bound on ex and eu . Then,
+η must be chosen such that it satisfies the following inequalities:
+                              η ≤ η1                                                (4.19)
+                                           s
+                                               cδ,l   ex
+                              η ≤ η2 : =                                            (4.20)
+                                               cδ,u λk H k∞
+                                           s
+                                               cδ,l       eu
+                              η ≤ η3 : =                          .                 (4.21)
+                                               cδ,u λk Lt k∞ kmax
+
+
+
+                                                                                        27
+4 Input robust MPC
+
+
+Corollary 9. If (4.5) from Assumption 1 is modified to
+                                              q
+                      kκ ( x,z,v) − vk ≤ k̃max Vδ ( x,z,v),
+
+then, the less conservative bound
+                                      √
+                               eu = ηλ cδ,u k̃max k Lt k∞
+
+can be used.
+
+Proof. Replace (4.16) in the proof for Theorem 7 by
+
+           kū(k + t|t + 1) − u? (k + t|t)k
+          =kκ ( x̄ (k + t|t + 1),x ? (k + t|t),u? (k + t|t)) − u? (k + t|t)k
+                  q
+          ≤k̃ max Vδ ( x̄ (k + t|t + 1),x ? (t + 1|t),u? (t + 1|t))
+                  q
+          ≤k̃max ρk−1 cδ,u λη.
+
+Then the remainder of the proof for Theorem 7 can be used.
+
+Corollary 10. Suppose that Assumption 1 is satisfied with Vδ ( x,z,v) = k x − zk2Pr
+and κ ( x,z,v) = K ( x − z) + v with Kr , Pr matrices parameterized by the point
+r = (z,v). Assume further, that
+
+                         k x − zk2Pr ≤ 1 ⇒ k H ( x − z)k∞ ≤ c1                      (4.22)
+
+and
+                       k x − zk2Pr ≤ 1 ⇒ k Lt Kr ( x − z)k∞ ≤ c2 .                  (4.23)
+Then we can replace ex and eu from (4.8) by the less conservative constraints
+                                   √                  √
+                          ẽx := ηλ cδ,u c1 , ẽu = ηλ cδ,u c2 .
+
+Proof. (4.14) delivers
+
+                        Vδ ( x,z,v) = k x − zk2Pr ≤ ρk−1 cδ,u λ2 η 2
+
+which implies due to (4.22)
+                                                             q
+               k H ( x̄ (k + t|t + 1) − x ? (k + t|t))k∞ ≤       ρk−1 cδ,u λc1 η.
+
+
+
+28
+                                             4.3 Stability and constraint satisfaction
+
+
+Hence, (4.17) can be rewritten as
+
+   H x̄ (k + t|t + 1) ≤ Hx ? (k + t|t) + k H ( x̄ (k + t|t + 1) − x ? (k + t|t))k∞ 1 p
+                                         q
+                      ≤ Hx ? (k + t|t) + ρk−1 cδ,u λc1 η1 p
+                                     √
+                      ≤(1 − ẽk,x + ρk−1 ẽx )1 p = (1 − ẽk−1,x )1 p .
+
+The proof for ū(k + t|t + 1) can be done in the same way.
+
+   This may deliver a less conservative constraint tightening, but the verifica-
+tion of (4.22) and (4.23) may be more challenging than the computation of
+the bounds in Assumption 1.
+
+
+4.3.2 Closed loop stability
+Due to the input disturbance, asymptotic stability of a setpoint cannot be
+guaranteed. Instead, we show that an RPI set Z RPI can be stabilized. Since
+we do not assume control invariance of the constraint set X , convergence
+can only be established for all initial conditions in some region of attraction
+Xfeas . The shape of the set Z RPI can be characterized with the following
+Lemma.
+Lemma 11. ([8] Lemma 7) Let the value function VN satisfy
+
+                        k x (t)k2Q ≤ VN ( x (t)) ≤ γk x (t)k2Q                     (4.24)
+
+                   VN ( x (t + 1)) − VN ( x (t)) ≤ −k x (t)k2Q + w̄                (4.25)
+
+for all x (t) ∈ XROA = { x |VN ( x ) ≤ Vmax }, with constants γ, w̄, Vmax ∈ R>0 .
+For Vmax ≥ γw̄ =: VRPI , the set Z RPI := { x |VN ( x ) ≤ VRPI } is robustly stabi-
+lized for all initial conditions x (0) ∈ XROA .
+  In Proposition 12 a continuity like property of the value function VN ( x )
+will be established. This helps us to apply Lemma 11 in the proof of
+convergence.
+Proposition 12. Let Assumptions 1, 3, 4 and 5 hold. Given a Vmax ∈ R>0 . Then
+the value function VN satisfies for all x (t) ∈ { x |VN ( x ) ≤ Vmax }
+
+              VN ( x (t + 1)) − VN ( x (t)) ≤ −k x (t)k2Q + αη,Vmax (η )
+
+
+
+                                                                                         29
+4 Input robust MPC
+
+
+where αη,Vmax is a class K function with
+                                                                    √
+                           1 − ρN                                1 − ρN
+                                  cmax λ2 η 2 + 2 Vmax cmax
+                                                 p
+           αη,Vmax (η ) =                                            √ λη
+                            1−ρ                                   1− ρ
+                            q
+                          +2 α f dmax ρ N λη + dmax ρ N λ2 η 2 .                 (4.26)
+                                               c                             c
+with cmax := (λmax ( Q) + k2max λmax ( R)) cδ,u
+                                            δ,l
+                                                and dmax := λmax ( P) cδ,u
+                                                                       δ,l
+                                                                           .
+
+Proof. Consider the candidate solution (4.13). Since this is a feasible solution,
+is holds that
+VN ( x (t + 1)) ≤ JN (( x̄ (t + 1)),ū(·|t + 1))
+                    N
+                = ∑ l ( x̄ (k + t|t + 1),ū(k + t|t + 1)) + Vf ( x̄ ( N + t + 1|t + 1)).
+                   k =1
+
+The quadratic stage cost of the candidate solution (4.13) satisfies for
+1<k<N
+                l ( x̄ (k + t|t + 1),ū(k + t|t + 1))
+              =k x̄ (k + t|t + 1)k2Q + kū(k + t|t + 1)k2R
+              =k x ? (k + t|t) + ( x̄ (k + t|t + 1) − x ? (k + t|t))k2Q
+                 + ku? (k + t|t) + (ū(k + t|t + 1) − u? (k + t|t))k2R
+              ≤k x ? (k + t|t)k2Q + ku? (k + t|t)k2R
+                 + k x̄ (k + t|t + 1) − x ? (k + t|t)k2Q
+                 + kū(k + t|t + 1) − u? (k + t|t)k2R
+                 + 2k x ? (k + t|t)kQ k x̄ (k + t|t + 1) − x ? (k + t|t)kQ
+                 + 2ku? (k + t|t)k R kū(k + t|t + 1) − u? (k + t|t)k R .        (4.27)
+From (4.15) and (4.16) we can derive
+
+k x̄ (k + t|t + 1) − x ? (k + t|t)k2Q + kū(k + t|t + 1) − u? (k + t|t)k2R ≤ cmax ρk−1 λ2 η 2
+                                                   c
+with cmax := (λmax ( Q) + k2max λmax ( R)) cδ,u
+                                            δ,l
+                                                . Given a Vmax ∈ R>0 with
+VN ( x (t)) ≤ Vmax it follows that
+             l ( x ? (k + t|t),u? (k + t|t)) ≤ Vmax , ∀k ∈ {0,...,N − 1}.
+
+
+
+30
+                                                4.3 Stability and constraint satisfaction
+
+
+Hence, (4.27) implies
+
+
+           l ( x̄ (k + t|t + 1),ū(k + t|t + 1)) ≤ l ( x ? (k + t|t),u? (k + t|t))
+
+
+                                                           √
+                           + cmax ρk−1 λ2 η 2 + 2 Vmax cmax ρk−1 λη.
+                                                 p
+                                                                                     (4.28)
+
+Furthermore, with x ? ( N + 1 + t|t) = f ( x ? ( N + t|t),k f ( x ? ( N + t|t)) the ter-
+minal costs satisfy
+
+
+  Vf ( x̄ (t + N + 1|t + 1)) = k x̄ (t + N + 1|t + 1)k2P
+=k x ? (t + N + 1|t) + ( x̄ (t + N + 1|t + 1) − x ? (t + N + 1|t))k2P
+≤k x ? (t + N + 1|t)k2P + 2k x ? (t + N + 1|t)k P k x̄ (t + N + 1|t + 1) − x ? (t + N + 1|t)k P
+ + k x̄ (t + N + 1|t + 1) − x ? (t + N + 1|t)k2P
+                            q
+≤Vf ( x ? (t + N + 1|t)) + 2 α f dmax ρ N λη + dmax ρ N λ2 η 2                       (4.29)
+
+                               c
+with dmax := λmax ( P) cδ,u
+                        δ,l
+                            and Vf ( x ? (t + N + 1|t + 1)) ≤ α f . Consider
+
+
+           VN ( x (t + 1)) − VN ( x (t))
+                N
+        ≤ ∑ l ( x̄ (k + t|t + 1),ū(k + t|t + 1)) + Vf ( x̄ ( N + 1 + t|t + 1))
+           k =1
+                    N −1
+           − ∑ l ( x ? (k + t|t),u? (k + t|t)) − Vf ( x ? ( N + t|t))
+                    k =0
+       (4.28)
+        ≤ l ( x̄ ( N + t|t + 1),ū( N + t|t + 1)) + Vf ( x̄ ( N + 1 + t|t + 1))
+             N −1 
+                                                      √            
+         + ∑ cmax ρk−1 λ2 η 2 − 2 Vmax cmax ρk−1 λη
+                                          p
+
+                    k =1
+           − l ( x ? (t|t),u? (t|t)) − Vf ( x ? ( N + t|t)).
+
+
+With (4.11), (4.28), (4.29) and u? (t + N |t) = k f ( x ? (t + N |t)) where
+
+
+
+                                                                                        31
+4 Input robust MPC
+
+
+x ? (t + N |t) ∈ X f this can be modified to
+
+              VN ( x (t + 1)) − VN ( x (t))
+     (4.28),(4.29)
+          ≤          l ( x ? ( N + t|t),u? ( N + t|t)) + Vf ( x ? ( N + 1 + t|t + 1))
+              − l ( x ? (t|t),u? (t|t)) − Vf ( x ? ( N + t|t))
+                  N 
+                                                             √ 
+              + ∑ cmax ρk−1 λ2 η 2 − 2 Vmax cmax ρk−1 λη
+                                              p
+
+                 k =1
+                 q
+              + 2 α f dmax ρ N λη + dmax ρ N λη
+          ≤Vf ( x ? ( N + 1 + t|t + 1)) + l ( x ? ( N + t|t),k f ( x ? ( N + t|t))
+              − Vf ( x ? ( N + t|t)) − l ( x ? (t|t),u? (t|t)) + αη,Vmax (η )
+        (4.11)
+          ≤ − l ( x ? (t|t),u? (t|t)) + αη,Vmax (η ).
+
+Note that
+                           l ( x (t),u(t)) = k x k2Q + kuk2R ≥ k x k2Q .
+Therefore it holds that
+
+                 VN ( x (t + 1)) − VN ( x (t)) ≤ −k x k2Q + αη,Vmax (η ).               (4.30)
+
+
+
+   Another prerequisite for the proof of stability of the closed loop system
+(3.3) is a bound on VN ( x ) in terms of k x k2Q . This bound is established in the
+following proposition:
+Proposition 13. Let Assumption 5 hold. Given Vmax ∈ R>0 . Then for all
+VN ( x ) ≤ Vmax it holds that
+
+                                  k x k2Q ≤ VN ( x ) ≤ γk x k2Q
+                                   n             o
+                                       Vmax
+with γ := λmax ( P/Q)max                α f ,1       .
+
+Proof. For all x ∈ X f , it holds that
+
+               k x kQ ≤ VN ( x ) ≤ Vf ( x ) = k x k2P ≤ λmax ( P/Q)k x k2Q .
+
+
+
+32
+                                             4.3 Stability and constraint satisfaction
+
+
+With
+                             k x k2Q λmax ( P/Q) ≥ k x k2P
+and Assumption 5, it follows for all x ∈
+                                       / Xf ,
+                                               αf
+                               k x k2Q >                  .
+                                           λmax ( P/Q)
+Together with VN ( x ) ≤ Vmax , this implies
+                                     Vmax
+                        VN ( x ) ≤        λmax ( P/Q)k x k2Q .
+                                      αf
+
+As a result, it holds that
+                                                          (          )
+                                                              Vmax
+                  VN ( x ) ≤ k x k2Q λmax ( P/Q) max               ,1 .        (4.31)
+                                                               αf
+                                     |              {z               }
+                                                    :=γ
+
+The lower bound follows direct from the definition of VN ( x ).
+
+  Now we are ready to state the theorem which guarantees closed loop
+convergence to Z RPI :
+Theorem 14. Let Assumptions 1, 3, 4 and 5 hold. Given Vmax ∈ R>0 . Then
+for the closed loop system (3.3) the set Z RPI := { x |VN ( x ) ≤ VRPI } with VRPI :=
+αη,Vmax (η )γ ≤ Vmax is stabilized for all initial conditions x (0) ∈ XROA
+= { x |VN ( x ) ≤ Vmax } ⊆ Xfeas and all disturbances d(t) ∈ W .
+Proof. By Proposition 12, (4.30) holds for all initial conditions x (0) ∈ XROA =
+{ x |VN ( x ) ≤ Vmax }. From the initial feasibility follows as proven in Theo-
+rem 7 the recursive feasibility. Take αη,Vmax from Proposition 12 and γ
+form Proposition 13. Since VN ( x (t + 1)) − VN ( x (t)) ≤ −k x k2Q + αη,Vmax (η )
+and k x k2Q ≤ VN ( x (t)) ≤ γk x (t)k2Q , Lemma 11 can be used. Hence, the
+set ZRPI := { x |VN ( x ) = VRPI } with VRPI := αη,Vmax (η )γ is stabilized for all
+initial conditions x (0) ∈ XROA = { x |VN ( x ) ≤ Vmax } and all disturbances
+d(t) ∈ W .
+
+Corollary 15. The size of ZRPI from Theorem 14 depends on the input error bound
+η. If η is chosen small enough, ZRPI ∈ X f and asymptotic stability of the origin
+can be guaranteed by applying the terminal controller once the system state enters
+the terminal set.
+
+
+
+                                                                                   33
+4 Input robust MPC
+
+
+Proof. Due to (4.31) it holds that
+
+                                              αη,Vmax (η )γ
+                                                           
+               ZRPI ⊆ Z̃ := x ∈ Rn | k x k2 ≤                 .
+                                               λmax ( Q)
+Furthermore, it holds that
+                                                                     
+                                                             αf
+                  X f ⊇ X̃ f :=       x ∈ Rn | k x k2 ≤                   .
+                                                          λmin ( P)
+The condition
+                                              λmax ( Q)α f
+                           αη,Vmax (η ) <                                     (4.32)
+                                               λmin ( P)γ
+implies
+                             ZRPI ⊆ Z̃ ⊆ X˜ f ⊆ X f .
+   Since αη,Vmax is a class K function in η, η > 0 can be chosen such that αη,Vmax
+can get arbitrary small and hence (4.32) holds. Thus, if the disturbance is
+small enough, Z RPI lies in X f and the system converges to the interior of
+X f . Inside X f , the terminal controller can be applied to achieve asymptotic
+stability.
+
+
+
+
+34
+5 Approximation of the RMPC
+
+In this chapter, we state an approach to learn a control law using supervised
+learning in detail. First we recap useful results from machine learning theory
+to approximate the RMPC. Then, we introduce a probabilistic validation
+method for the resulting controller.
+   The chapter is structured as follows: In Section 5.1 we present machine
+learning in general. In Section 5.2, we recap important results from the
+theory of NN and discuss how a NN can be used to learn the RMPC.
+Since it is challenging to verify a bound on the approximation error for a
+learned control law, in Section 5.3 we present a validation method based on
+Hoeffding’s Inequality. With this validation method, it is possible to deliver
+a probabilistic bound on the approximation error of the learned control law
+and hence to deliver guarantees on stability and constraint satisfaction for
+the AMPC what will be the subject of the Chapter 6.
+
+
+5.1 Machine learning
+
+This section covers the topic of machine learning in general. According to
+[31], machine learning can be described as the process of how a machine
+can learn specific tasks by an algorithm to obtain a general rule. This
+rule has to work on examples which were used to learn and has to be
+generalizable to previously unseen, new examples. According to [32] this
+is based on data and not on modeling the rule. [32] distinguishes between
+three types of learning. For supervised learning, learning data contains
+explicit example inputs and corresponding outputs for the desired task.
+Reinforcement learning is based on input data without the target output.
+Instead, it contains some possible output together with a measure how
+good that output is. Unsupervised learning does not depend on output
+information for the learning data. Therefore it is rather a clustering of inputs
+which may belong together. In the following, we focus on the supervised
+learning problem since we can compute a unique output for an arbitrary
+number of inputs x ∈ Xfeas for the RMPC algorithm (4.1).
+
+
+
+                                                                             35
+5 Approximation of the RMPC
+
+
+The supervised learning problem
+We define the supervised learning problem similar to [32] as follows:
+Definition 16. (Supervised learning) There is an input x ∈ Xfeas , an output
+u ∈ U and an unknown target function πMPC : Xfeas → U where Xfeas is
+the input space and U is the output space. There is a data set D of Π samples
+of inputs and corresponding outputs ( xi ,ui ) with ui = πMPC ( xi ), i = 1,...,Π.
+Furthermore, there is a learning algorithm that uses the data set D to pick a function
+πapprox : Xfeas → U that approximates πMPC from a hypothesis set H. The process
+of choosing πapprox is called supervised learning.
+  Clearly, we can produce an arbitrary number of samples ( x,πMPC ( x )) to
+use them for the learning step.
+  According to [31], we distinguish further between regression and classifi-
+cation. For classification problems, the output space contains a finite number
+of elements, the classes. Regression problems have an output space with
+infinite many elements. The problem of learning an MPC is a regression
+problem since the desired output πMPC is continuous valued. We focus in
+this thesis on NN which can be used for both, regression and classification.
+  Other function approximator that can learn essentially any nonlinear
+function arbitrary well are for example Gaussian processes [33] and support
+vector machines [34]. They could be used in our AMPC framework as well
+instead of NN.
+
+
+5.2 Neural networks
+In this section we recap NN for regression according to [35, 36]. NN can be
+learned to deliver a function πapprox which can approximate any nonlinear
+function with finitely many discontinuities arbitrary well [3] without a priori
+knowledge of the approximated function. Hence NN are suited for the
+learning task. We recap some basic results for NN in the next subsection.
+
+5.2.1 Neural network basics
+NN are networks of simple computation units called neurons. The outputs
+of the neurons are connected to the inputs of other neurons which enables
+the network to perform complex computations. This principle is inspired
+from the human brain. A NN can be described as graph G = (V,E) with
+neurons as nodes V and links between the neurons as edges E. We focus on
+
+
+
+36
+                                                                        5.2 Neural networks
+
+
+                              b
+              x1    w1
+               ..                    a( x )              0.5
+
+
+
+
+                .   wk        ∑                −4   −2
+                                                         −0.5
+                                                                2   4
+                                                                         o(x)
+              xk
+
+
+                         Figure 5.1: Neuron model .
+
+
+feedforward NNs which do not contain cycles in the underlying graph. The
+restriction on feedforward NN simplifies the learning process. Furthermore,
+this architecture is sufficient for an arbitrary small approximation accuracy
+of the NN.
+
+The neuron model
+Each neuron is modeled with a simple scalar transfer function σ : R → R,
+called the activation function. Appropriate choices for the activation function
+are e.g.
+                                    (
+                                      a a≥0                  1
+          σ( a) = sign( a), σ( a) =          , σ( a) =               .
+                                      0 else           1 + exp(− a)
+
+The last one is a smooth approximation of the threshold function σ ( a) =
+1
+2 (1 + sign ( a )). The input of a neuron consist of a weighted sum of the
+outputs of all neurons connected to it. Furthermore, the input of each
+neuron can have additional bias b that is added to the sum of weighted
+inputs. The output o of the neuron is computed with the activation function
+as follows:
+                                     k
+                            o = σ ( ∑ ( wi x i ) + b )
+                                    i =1
+where wi are the edge weights and xi are the outputs of the previous neurons.
+wi and b are the optimization variables in the learning task. A sketch of this
+neuron model is given in Figure 5.1.
+
+The network structure
+We assume that the network is organized in Λ layers. Since we consider
+only feedforward NN, the outputs of the nodes of layer i are only connected
+
+
+
+                                                                                        37
+5 Approximation of the RMPC
+
+
+to the inputs of the nodes of layer i + 1. For simplicity, we consider fully
+connected feedforward NN. Fully connected means that each neuron of a
+layer has a connection to each neuron of the next layer. This simplifies the
+description of the network. The set of nodes can hence be decomposed into
+Λ disjoint subsets Vi , i = 1,...,Λ. The layer which produces the NN output
+is called the output layer. All other layers are called hidden layers. In [35]
+the inputs are referred to as input layer and modeled as neuron. We omit
+this here as done in [36].
+
+Each layer Vi has a weight matrix Wi that connects the outputs from Vi−1
+to the inputs of Vi , a bias vector b̄i and an output vector ōi . Let the ith layer
+consist of j neurons. Therewith we can define the output vector
+
+                                 ōi = σ̄i (Wi ōi−1 + b̄i ),
+
+of layer i recursively, where
+                                     h                               i>
+                          σ̄i ( x ) = σi,1 ( x1 ), ..., σi,j ( x j )
+
+is the vector of the activation functions σi,j of the ith layer and ō0 is the NN
+input. The NN output is ōΛ . The activation of Vi is At = (Wi ōi−1 + b̄i ). As a
+result, we get the network representation (V,E,σ̄1 ,...,σ̄Λ ,W1 ,...,WΛ ,b̄1 ,...,b̄Λ ).
+
+Universal approximation
+The following theorem guarantees that a NN satisfying any desired ap-
+proximation accuracy exists, if the RMPC output has only finitely many
+discontinuities. For the theorem, we need the following definition:
+Definition 17. A function σ is sigmoidal if
+
+                                    1 as t → +∞
+                                               
+                        σ( a) →                   .                               (5.1)
+                                    0 as t → −∞
+
+  Therewith, we can state the theorem as follows:
+Theorem 18. [3] A feedforward network with only one hidden layer with sig-
+moidal activation functions and linear activation functions at the output layer can
+approximate any nonlinear function with finitely many discontinuities arbitrary
+well.
+
+
+
+38
+                                                               5.2 Neural networks
+
+
+  This is called the universal approximator theorem that yields a universal
+approximation property. Hence, we can find a NN that satisfies
+
+                   πapprox ( x ) − πMPC ( x ) ∞ ≤ η, ∀ x ∈ Xfeas ,             (5.2)
+
+and thus guarantees stability and constraint satisfaction in combination with
+the RMPC for any choice of η. However, to achieve a certain quality of
+approximation, a large amount of neurons and sampled input data may be
+necessary. Also, the optimal weights must be found what can be challenging
+in the optimization step.
+
+
+5.2.2 Learning neural networks
+In this subsection, we recap results for the learning of neural networks with
+supervised learning. This process is also often referred to as training.
+   The learning for NN has to be such, that it can be done in an automated
+fashion. Precomputed learning samples ( x,πMPC ( x )) can be used. The
+widespread learning methods for NN are based on optimization using the
+gradient of a performance criterion with respect to parameters of the NN
+for some learning data. We recap in this section how the gradient can be
+computed for the mean squared error as performance function and how
+the gradient can be used for the optimization to achieve a NN with good
+performance.
+   To keep the learning effort tractable, we define the hypothesis set H by
+fixing V, E, and σ̄1 ,...,σ̄Λ before we start the gradient computation. Therefore,
+(V, E, σ̄1 , ..., σ̄Λ ) is called the architecture of the network [35]. We assume
+that the the RMPC algorithm has only finitely many discontinuities. Then an
+architecture with one sigmoidal hidden layer and a linear output layer can
+be sufficient to satisfy Assumption 4 for any choice of η. Nevertheless, an
+other network structure could be easier to learn. Often, multilayer networks
+can be learned faster and need less optimization parameters and hence
+less operations to evaluate them. This can also make it possible to use the
+resulting controller on cheap hardware. There is no general theory how to
+choose the optimal network structure. One possibility to derive the structure
+is Bayesian optimization (see e.g. [37] and [38]). Alternatively a line search
+can be used, if offline computational time requirements play a subordinate
+role. An example for a possible network structure is given in Figure 5.2. The
+remaining degrees of freedom if the network architecture is fixed are the
+weight matrices and bias W1 ,...,WΛ , b̄1 , ..., b̄Λ . A certain choice of the weight
+
+
+
+                                                                                  39
+5 Approximation of the RMPC
+
+
+                                                      b2,1                        b3,1
+
+
+                                                           0.5                         0.5
+
+
+
+
+                                                 −4   −2          2   4      −4   −2          2   4
+
+                                                           −0.5                        −0.5
+
+
+
+
+                      b1,1                            b2,2                        b3,2                        b4,1
+
+
+NN input                                                                                                                          NN output
+                           0.5                             0.5                         0.5                         0.5
+
+
+
+
+                 −4   −2          2   4          −4   −2          2   4      −4   −2          2   4      −4   −2          2   4
+
+                           −0.5                            −0.5                        −0.5                        −0.5
+
+
+
+
+                                                      b2,3                        b3,3
+                                                                                                      Output layer
+              Hidden layer
+                                                           0.5                         0.5
+
+
+
+
+                                                 −4   −2          2   4      −4   −2          2   4
+
+                                                           −0.5                        −0.5
+
+
+
+
+                                              Hidden layer                Hidden layer
+
+
+
+           Figure 5.2: Example for a NN with three hidden layers.
+
+
+matrices delivers one hypothesis from the hypothesis set H. A performance
+measure for the network is given by the mean squared error (mse), which is
+defined as
+
+                                      1 Λ
+                                      Λ i∑
+  mse(πapprox ,D) =                         (πMPC ( xi ) − πapprox ( xi ))2 , ( xi ,πMPC ( xi )) ∈ D .
+                                         =1
+
+  The parameters W1 , ...,WΛ ,b̄1 ,...,b̄Λ are initialized randomly. Then the
+network is learned by optimizing the values of weight matrices and bias to
+minimizing the mse what enhances the network performance. To find good
+parameters W1 , ...,WΛ ,b̄1 ,...,b̄Λ , gradient based optimization can be used.
+  The gradient or respectively the Jacobi matrix of a NN can be computed
+with backpropagation [35, pp. 278-281]. With the resulting gradient, any
+standard numerical optimization can be used to learn the NN. Indeed
+there are some methods that have shown excellent performance for neural
+networks. A list of possible algorithms and benchmarks for algorithms are
+given in [36].
+  The optimal learning algorithm depends heavily on the learning task.
+
+
+
+40
+                                                          5.2 Neural networks
+
+
+In [36] this issue is investigated by experiments on sample recursion and
+classification problems for different learning algorithms. Their result is that
+the Marquardt-Levenberg algorithm [39] delivers the smallest approximation
+error for regression problems and is hence especially suitable, if very accu-
+rate learning is required. This algorithm approximates Newton’s Method.
+Newton’s Method is a second order method and needs hence the Hessian
+matrix. The Marquardt-Levenberg algorithm approximates the Hessian ma-
+trix by the squared gradient of the NN. However, for networks with a large
+number of weights the Marquardt-Levenberg algorithm may be computa-
+tional inefficient since its computational effort increases geometrically. Then
+other algorithms like the scaled conjugate gradient algorithm [40] may be
+better.
+   We can spend some computational effort in learning the neural network
+and need an approximation error that satisfies a predefined bound. Fur-
+thermore, the RPI set Z RPI of the RMPC algorithm gets smaller if the
+approximation error of the NN decreases. Hence it can be advantageous
+to spend more offline computation time for the learning to derive a better
+learned controller. Therefore we use the Marquardt-Levenberg algorithm.
+Now we discuss some details of how to facilitate the learning and to improve
+the approximation accuracy.
+   The learning of the NN is iteratively repeated until the mse of the NN
+for a set of validation data, that is independent from the learning data set,
+begins to increase or until the difference of the performance between two
+iterations is below a user defined bound. Using the validation data ensures
+the avoidance of overfitting of the NN to the set of learning data.
+
+Remark 19. For systems with m multiple inputs, i.e. if u ∈ Rm , a NN can
+be computed for each input separately. This can have benefits in the learning.
+Furthermore, the computation of the AMPC feedback can then be parallelized by
+using m separate computation units.
+
+
+Incremental learning and batch learning
+
+There are different ways to learn NN [36]. One possibility is incremental
+learning, which updates the weights and biases at each time an input/output
+pair is presented to the network only for this pair. Another learning method
+is batch learning where the learning is performed after all Π inputs and
+outputs for the network that shall be used for the learning are present
+at once. We focus in this thesis on batch learning. Incremental training
+
+
+
+                                                                            41
+5 Approximation of the RMPC
+
+
+may be necessary if the learning data exceeds the memory limits of the
+computer. Furthermore, depending on the used learning procedure, Mini
+Batch learning, where only a part of the Π samples is used, may improve
+the learning performance. For details see e.g. [41].
+
+Initializing the optimization parameters
+Another important issue concerning the learning of NN is the initialization
+of the weights and biases. It can happen that the weights and biases of the
+network converge to a local but not global minimum [36]. In order to avoid
+such local minima and ensure a smaller approximation error, the learning
+procedure is started multiple times using random initial weights. This
+process is repeated until a NN with sufficiently small approximation error is
+found. The performance is validated with samples which are independent
+from the learning samples. If no such network can be found, the network
+architecture must be changed, e.g. using Bayesian optimization, or by using
+more learning samples (e.g. created by a more dense sampling).
+
+Preprocessing
+The performance of the NN learning can be enhanced by preprocessing
+and postprocessing steps [36]. If sigmoidal transfer functions are used, the
+activation of a neuron becomes saturated for a large input. Then, the gradient
+gets small, which causes a slow learning. To avoid this, a preprocessing
+step can be performed to normalize the input and output of the supervised
+learning problem. We normalize the neural NN inputs as well as the NN
+outputs such that the learning data falls in the range of [−1,1]. For details
+on preprocessing and more complex methods see e.g. [36].
+
+Sampling the RMPC algorithm
+To learn a NN, we need learning data that contains enough information
+about the control law π MPC on the whole feasible set of the MPC. This
+learning data can be obtained by sampling the RMPC.
+   One simple possibility is sampling with a uniform grid. The question
+that arises is how dense this grid needs to be. To keep the computational
+effort tractable, it is important to sample not with too high resolution. In
+general the question for the optimal density is hard to answer and depends
+heavily on the system to control. The density can be estimated empirically by
+
+
+
+42
+                                                                                               5.2 Neural networks
+
+
+   0.25                                                             0.25
+
+    0.2                                                              0.2
+
+   0.15                                                             0.15
+
+    0.1                                                              0.1
+
+   0.05                                                             0.05
+
+      0                                                                0
+
+   -0.05                                                            -0.05
+
+    -0.1                                                             -0.1
+       -0.2         -0.1           0            0.1         0.2         -0.2         -0.1           0            0.1         0.2
+
+
+
+
+      2                                                                2
+
+
+      1                                                                1
+
+
+      0                                                                0
+
+
+     -1                                                               -1
+    0.4                                                              0.4
+              0.2                                             0.2              0.2                                             0.2
+                                                      0.1                                                              0.1
+                     0                           0                                    0                           0
+                                         -0.1                                                             -0.1
+                           -0.2   -0.2                                                      -0.2   -0.2
+
+
+
+Figure 5.3: Comparison of different sampling strategies for the numerical
+example from Chapter 7.
+
+
+
+trying to learn the MPC algorithm for a small region with several different
+densities and to choose the sparsest density for which a NN that satisfies
+Assumption 4 can be found.
+   Another sampling strategy is adaptive mesh refinement. For this strategy,
+the set X is divided into a user defined number of polytopes of the same size.
+The RMPC is sampled for all corner points of the polytope. If the output
+error between two corner points exceeds a user defined bound, the polytope
+is partitioned into n2 smaller polytopes of equal size. The aim of this strategy
+is to decrease the number of required samples. It has resemblances to [42].
+A comparison for adaptive mesh refinement and a uniform grid is given in
+Figure 5.3, in which both strategies are used with the same number of total
+samples for an example system. Note that infeasible samples are discarded
+for both methods.
+
+
+
+                                                                                                                              43
+5 Approximation of the RMPC
+
+
+MPC tailored learning
+To enhance the learning, it can be helpful to classify active input constraints
+and learn the NN only where no input constraint is active. In case of
+multidimensional inputs, this may only be simple if the input constraints are
+not coupled. Then, this method is done for each input separately. In a first
+step, a sampling with a uniform grid is used. With the resulting samples, a
+classifier can be trained to classify the samples as infeasible samples, feasible
+samples with an active input constraint (one class for each active constraint)
+and feasible samples where no constraint is active. For this purpose, a NN
+with softmax activation functions in the output layer and one output neuron
+for each class can be used [36]. It is important that this classification NN
+generalizes well, i.e. there is no overfitting to the learning data. Then, each
+output of the classification NN represents the probability for the affiliation
+of its input to one certain class.
+   Using this classification, the learning is only performed for learning
+samples that belong with a certain, user defined probability, e.g. over 0.1%,
+to the feasible samples without active constraint. This increases the learning
+speed since only fewer learning samples are used and a smaller region has to
+be covered by the NN. The AMPC can then be computed as follows: First, the
+state is classified with the classifier. If the probability for the state to belong
+to the feasible class without active constraint is high (e.g. 1%, if previously
+0.1% was chosen), then the output must be computed with the regression
+NN. Otherwise, the output is computed based on the classification result by
+choosing the constrained output for which the classifier delivers the highest
+probability. Details on the performance of this technique are still open to
+investigation.
+
+
+5.3 Hoeffding’s Inequality for validation
+
+In this Section, we present a method to validate πapprox based on Hoeffding’s
+Inequality. Equation (5.2) implies
+
+                          πapprox ( x ) = πMPC ( x ) + d
+
+with kdk∞ ≤ η. Thus, stability and constraint satisfaction are guaranteed
+by Theorem 7 and Theorem 14 if (5.2) holds. To validate (5.2), we consider
+trajectories of the system (3.3), which is controlled by the approximate MPC.
+
+
+
+44
+                                               5.3 Hoeffding’s Inequality for validation
+
+
+We introduce
+
+          Xi := { x (t), t ∈ {0, . . . , Ti } : x (0) = xi ∈ Xfeas , x ( Ti ) ∈ X f
+                   and x (t + 1) = f ( x (t),πapprox ( x (t)))}                       (5.3)
+
+to denote a trajectory of (3.3) starting at x (0) = xi ∈ Xfeas and ending in
+X f , where we can guarantee stability and constraint satisfaction with the
+terminal controller.
+   Then, let
+                       (
+                         1 if πMPC ( x ) − πapprox ( x ) ∞ ≤ η, ∀ x ∈ Xi
+          I ( Xi ) : =
+                         0 otherwise
+
+be an indicator function, which indicates weather a learned control law
+πapprox satisfies the posed accuracy η along a trajectory until the terminal
+set is reached.
+  For the validation, we consider p trajectories X j , j = 1,...,p with initial
+conditions x (0) independently sampled from some distribution Ω over Xfeas .
+Because the initial conditions are independent, identically distributed (iid),
+also X j and thus I ( X j ) are iid. Next, we state a statistical bound for the
+approximation accuracy of πapprox along iid trajectories (5.3). Define the
+empirical risk as
+                                           p
+                                       1
+                                  µ̃ := ∑ I ( X j ).                       (5.4)
+                                       p j =1
+
+The RMPC guarantees stability and constraint satisfaction if
+
+                       I ( Xi ) = 1, ∀ Xi with x (0) = xi ∈ Xfeas                     (5.5)
+
+holds. The probability for I ( Xi ) = 1 is µ := P[ I ( Xi ) = 1] for Xi with
+iid initial condition x j (0) ∈ Xfeas from the distribution Ω. Thus, µ is the
+probability hat the approximation error satisfies (5.2) along a trajectory and
+hence a lower bound for the probability of stability and constraint satisfaction
+for a randomly chosen trajectory. We can use Hoeffding’s Inequality to
+estimate µ from the empirical risk µ̃:
+Lemma 20. (Hoeffding’s Inequality [4],[31, pp. 667-669])
+Let I ( X j ) j = 1,...,p be p iid random variables with 0 ≤ I ( X j ) ≤ 1. Then,
+                                                             
+                            P [|µ̃ − µ| ≥ eh ] ≤ 2 exp −2pe2h .                       (5.6)
+
+
+
+                                                                                        45
+5 Approximation of the RMPC
+
+
+  Denote δh := 2 exp −2pe2h as the confidence level. Then (5.6) implies
+                              
+
+that with confidence of at least 1 − δh ,
+
+                          P[ I ( Xi ) = 1] = µ ≥ µ̃ − eh .                     (5.7)
+
+Hence, with confidence 1 − δh , the probability that the approximation error is
+below the chosen bound η along a trajectory with a random initial condition
+from Ω is larger than µ̃ − eh .
+   We can use this to establish a validation method to guarantee a chosen
+              !
+bound µcrit ≤ P [ I ( Xi ) = 1] and a chosen confidence δh . If, for a number of
+samples p, the empirical risk µ̃ satisfies
+                                              v     
+                                              u
+                                              u ln δh
+                                                     2
+                        µcrit ≤ µ̃ − eh = µ̃ − −
+                                              t
+                                                        ,                  (5.8)
+                                                   2p
+
+we can rewrite (5.7) as P [ I ( Xi ) = 1] ≥ µcrit , which holds at least with
+confidence level 1 − δh . We use this for validation as follows: for chosen
+desired confidence δh and µcrit , we compute µ̃ and eh for a given number
+p of samples. If (5.8) holds for this p, the validation is successful. If (5.8)
+does not hold for this p, the number of samples for the validation p is
+increased, which decreases eh . The validation is then repeated iteratively
+while increasing p. We say the validation is failed, if p exceeds a maximum
+number of samples
+                                          ln( δ2h )
+                           pmax ≥ −
+                                       2(1 − µcrit )2
+and stop the validation. Then the learning has to be repeated and improved
+(to increase µ̃). The proposed validation method is independent of the
+chosen learning method.
+   Given this validation method, a procedure to compute an approximate
+MPC will be presented in the next Chapter.
+Remark 21. Instead of validating Assumption 4, a different indicator function can
+be used to directly verify stability, constraint satisfaction or certain performance
+bounds. This can facilitate the learning process.
+Remark 22. This way of validating properties based on samples with stochastic
+guarantees has resemblances to the ideas in [43]. The validation is independent
+of the approximation method. Hence, it can also be applied to other learning
+methods within the proposed framework and can be adapted for the use within other
+
+
+
+46
+                                          5.3 Hoeffding’s Inequality for validation
+
+
+learning based control approaches to achieve guarantees on stability and constraint
+satisfaction.
+
+
+
+
+                                                                                47
+5 Approximation of the RMPC
+
+
+
+
+48
+6 Automatic AMPC synthesis with
+  guarantees
+
+In this chapter, we summarize the controller synthesis and give a step by
+step algorithm to approximate an MPC. Section 6.1 contains Algorithm 1 to
+compute the AMPC and Theorem 23, which provides guarantees on stability
+and constraint satisfaction for the learned AMPC. In Section 6.2, the steps of
+the algorithm are discussed in detail.
+
+
+6.1 AMPC synthesis
+
+Suppose that the stage cost, the constraint and the prediction horizon are
+given based on a nominal MPC design. Then, Algorithm 1 can be used with
+design parameters µcrit , δh , pmax and η to obtain an AMPC.
+   Using Algorithm 1, the following theorem guarantees stability and con-
+straint satisfaction for a learned RMPC:
+
+Theorem 23. Let Assumptions 1, 3, 4 and 5 hold. Suppose that Algorithm 1 is
+used with suitable chosen η, µcrit , δh and pmax and with an approximation method
+that can achieve an approximation error smaller than the required bound η. Then
+Algorithm 1 terminates. With a confidence level of 1 − δh , the resulting AMPC
+ensures closed-loop stability and constraint satisfaction for a fraction of µcrit of the
+random initial conditions distributed according to Ω.
+
+
+Proof. Algorithm 1 terminates, because we use an approximation method,
+that can achieve any desired bound on the approximation error, and suitable
+chosen design parameters for the validation. Hence, (5.8) holds and thus,
+Lemma 20 implies (5.7). We thus have P [ I ( Xi ) = 1] ≥ µcrit with confidence
+at least 1 − δh . That is, with confidence 1 − δh , for at least a fraction of µcrit
+trajectories Xi , we have I ( Xi ) = 1 , which implies stability and constraint
+satisfaction by Theorem 7 and Theorem 14.
+
+
+
+                                                                                     49
+6 Automatic AMPC synthesis with guarantees
+
+
+Algorithm 1 Learn approximate model predictive controller
+
+     1. Show incremental stabilizability. Compute λ (Assumptions 1 and 3).
+
+     2. Choose an accuracy η (Assumption 4).
+
+     3. Design the RMPC:
+          a) Set e according to (4.8).
+          b) Compute terminal ingredients k f , Vf and X f (Assumption 5).
+          c) Check weather (4.10) from Assumption 5 holds. If not, decrease
+             η (or increase N).
+
+     4. Learn πapprox ≈ πMPC , e.g. with a NN (Chapter 5).
+
+     5. Validate πapprox using Hoeffding’s Inequality according to Lemma 20.
+
+     6. If the validation fails, repeat the learning from step 4.
+
+
+
+6.2 Automatic AMPC synthesis - step by step
+Now we go step by step through Algorithm 1 and show how each step can
+be done numerically.
+
+6.2.1 Step 1: Show incremental stabilizability and Lipschitz
+      constant
+In this subsection, we present how the local incremental stabilizability con-
+dition (Assumption 1) can be established numerically for compact X × U
+and how the Lipschitz constant from Assumption 3 can be computed for
+nonlinear systems.
+
+Satisfaction of the local incremental stabilizability condition
+To show that Assumption 1 holds and to compute ρ, kmax , cδ,u , cδ,l and δloc
+we use an approach similar to [28]. We first recap some results which deliver
+sufficient conditions for Assumption 1. Then we show how these conditions
+can be verified within the setup of the proposed framework and how the
+parameters for the RMPC design ρ, cδ,u , cδ,l , δloc and kmax can be obtained.
+
+
+
+50
+                                         6.2 Automatic AMPC synthesis - step by step
+
+
+    Assuming that f is at least twice continuously differentiable, we can write
+the first order Taylor-approximation of f around a point r = (z,v) ∈ Z =
+(X × U ) for compact Z as
+                                                
+                                  ∂f              ∂f
+ f (z + 4 x,v + 4u) = f (z,v) +             4x +           4u + Φr (4 x, 4u),
+                                   ∂x (z,v)       ∂u (z,v)
+                                 | {z }          | {z }
+                                         =:Ar            := Br
+                                                                                  (6.1)
+with
+                      kΦr (4 x, 4u)k ≤ T (k4 x k2 + k4uk2 ).                      (6.2)
+This helps us together with the following Assumption to show that a system
+is local incremental stabilizable:
+Assumption 24. [28, Assumption 2] For any point r = (z,v) ∈ Z , there exists a
+matrix Kr ∈ Rm×n and positive definite matrices Pr , Qr ∈ Rn×n continuous in r
+such that for any point r + = (z+ ,v+ ) ∈ Z with z+ = f (z,v)
+
+                    Pr − ( Ar + Br Kr )> Pr+ ( Ar + Br Kr ) ≥ Qr ,                (6.3)
+
+is satisfied.
+  With this assumption, we can state the following proposition:
+Proposition 25. [28, Proposition 1] Let Z be compact and let Assumption 24
+hold. Assume that f is twice continuous differentiable on Z . Then Assumption 1 is
+satisfied with
+
+                Vδ ( x,z,v) = k x − zk2Pr , κ ( x,z,v) = v + Kr ( x − z),         (6.4)
+
+with Kr , Pr matrices based on the point r = (z,v). The corresponding parameters
+from Assumption 1 are given by
+
+  el = minλmin ( Qr ), cδ,u := max λmax ( Pr ), cδ,l := min λmin ( Pr ),
+         r ∈Z                     r ∈Z                      r ∈Z
+             e
+   ρ := 1 − l ∈ (0,1), kmax := maxkKr k
+            2cδ,u                     r ∈Z
+                       (                            2                           )
+                                       el                             el
+  and δloc := cδ,l min                                  ,                           ,
+                          (cδ,u ( T (1 + kmax2 ))2 )      4cδ,u ( T (1 + kmax2 ))
+
+with Qr from (6.3).
+
+
+
+                                                                                    51
+6 Automatic AMPC synthesis with guarantees
+
+
+  Thus, we need to compute matrices Pr and Kr satisfying Assumption 24
+for any point within the constraints to show that Assumption 1 holds. The
+condition (6.3) is equivalent to
+
+                          Yr Ar> + Xr> Br>    Yr Q1/2       Xr> R1/2
+                                                                    
+               Yr
+        Ar Yr + Br Xr          Yr+              0              0    
+                                                                     ≥ 0.      (6.5)
+        Q1/2 Yr                 0                I             0    
+            R1/2 Xr              0               0              I
+
+with Yr = Pr−1 and Xr = Kr Yr and can be used to verify Assumption 1 due
+to the following lemma:
+Lemma 26. [44, Lemma 10],[45, p. 21] Suppose that there exists matrices
+Xr , Yr continuous in r, that satisfy the constraints (6.5) for all r ∈ Z and all
+r + = (z+ ,v+ ) ∈ Z , z+ = f (z,v). Then Pr = Yr−1 and Kr = Xr Yr−1 satisfy
+Assumption 1.
+  To obtain Pr and Kr numerically, we use a griding on the constraint set
+X × U and minimize
+                         min − log(det(Ymax ))                      (6.6)
+                              Yr ,Xr
+subject to a constraint according to (6.5) and a constraint Ymax ≥ Yr for each
+grid point. Hence, we can verify Assumption 1 by solving multiple LMI’s.
+Remark 27. Solving the LMI’s only for the points of the grid is under some mild
+assumptions equivalent to solving it for all points, if the grid is dense enough. For
+details see [46, p. 260].
+  In [28] constant matrices Pr and Kr are used for a numerical example.
+Depending on the system dynamics (3.1) and the constraints X and U ,
+parameter varying Pr and Kr with parameters continuous in r may be
+necessary. Such a parameter varying approach may also deliver a smaller ρ.
+Remark 28. A parameterization can be derived by replacing all nonlinearities in f
+by parameters ti (r ) continuous in r. Then, the linearization (6.1) can be written as
+a linear combination of the form
+                         Ar = ∑ Ai ti (r ), Br = ∑ Bi ti (r )
+                                    i              i
+
+and matrices Ai , Bi and the parameter varying ansatz
+                   Yr = Y0 + ∑ Yi ti (r ), Xr = X0 + ∑ Xi ti (r ),               (6.7)
+                                i                       i
+
+
+
+52
+                                      6.2 Automatic AMPC synthesis - step by step
+
+
+can be used. Thus, Pr+ has to be computed with the parameters ti (r + ),
+r + = (z+ ,v+ ) with z+ = f (z,v) and for all v+ which can occur at z+ . The
+coverage of all v+ can be done by a further griding of the constraint sets. Alterna-
+tively, one parametrizes Yr only with parameters ti which do not depend v to avoid
+this further griding.
+
+  The computation of δloc and ρ with the Lipschitz bound T from (6.2) is
+conservative. To overcome this, it is possible to choose one (small) fixed
+value for δloc and compute ρ such that Assumption 1 holds. This can be
+done by a further griding of the set. We set
+
+                                                  Vδ ( x + ,z+ ,v+ )
+                         ρ=        max
+                              x,z,v,x + ,z+ ,v+      Vδ ( x,z,v)
+
+s. t.
+
+                         x + = f ( x,κ ( x,z,v)), z+ = f (z,v)
+                      ( x,z,v) ∈X × Z , ( x + ,z+ ,v+ ) ∈ X × Z ,
+                   Vδ ( x,z,v) ≤δloc ,
+
+
+The computation of cδ,l , cδ,u and kmax can then be done by the same griding
+of the constraint set using Proposition 25. Hence, we have presented a
+procedure to verify Assumption 1 and to compute the necessary parameters
+for the RMPC design numerically.
+
+Remark 29. To use the less conservative bound on eu according to Remark 9, k̃max
+can be computed as
+                                                     −1
+                              k̃max = max Pr 2 Kr .
+                                         r ∈Z
+
+Therewith, k̃max can be determined based on the same griding of the constraint set
+that is used to compute kmax .
+
+
+Computation of the Lipschitz constant λ
+
+First, we cover the widespread case of input affine systems with
+
+                              f ( x,u) = g( x ) + h( x )u,
+
+
+
+                                                                                 53
+6 Automatic AMPC synthesis with guarantees
+
+
+with a scalar u. Therefore, it holds that
+
+                k f ( x,u + d) − f ( x,u)k
+               =k g( x ) + h( x )(u + d) − g( x ) − h( x )uk = kh( x )dk
+               ≤maxkh( x )kkdk∞ = λkdk∞ ∀ x ∈ X .
+                 x ∈X
+
+This implies
+                                   λ = maxk h( x )k.
+                                         x ∈X
+For systems that are not input affine, the assumption can be verified by
+directly optimizing
+
+                                                k f ( x,u + d) − f ( x,u)k
+                 λ=            max                                         .
+                        x1 ,x2 ∈X ,u∈U ,u+d∈U              kdk∞
+In this case, the computation can be made less conservative by choosing
+kdk∞ ≤ d1 for some d1 and introducing an additional bound η ≤ d1 .
+
+6.2.2 Step 2: Set accuracy
+In this step, an important design parameter is chosen. The accuracy η
+is chosen subject to the constraint η ≤ η1 . A too small approximation
+accuracy η makes the learning more difficult. On the other hand, a too
+large approximation accuracy η decreases Xfeas . It is up to the user of the
+framework to decide on the choice of η.
+
+6.2.3 Step 3: Design of the RMPC
+The purpose of this subsection is to design the RMPC, and in particular to
+design the terminal ingredients. The constants ex and eu can be computed
+directly. Now, we first present a method to compute terminal ingredients
+Vf , k f and X f which satisfy (4.11) and (4.12). Then, we propose a method to
+validate that (4.10) holds for a chosen approximation accuracy η.
+
+Terminal ingredients
+In this section, we present a method to chose the terminal ingredients. Let
+                                              
+                          ∂f                    ∂f
+                    Φ=                    Γ=
+                          ∂x (0,0)              ∂u (0,0)
+
+
+
+54
+                                      6.2 Automatic AMPC synthesis - step by step
+
+
+denote the linearization of f at the origin.The following Lemma guaran-
+tees the existence of terminal ingredients to satisfy (4.11) and (4.12) for
+stabilizable (Φ,Γ) :
+Lemma 30. [30, Lemma 1] Assume (Φ,Γ) is stabilizable and (0,0) lies in the
+interior of X̄ N × Ū N . Due to the stabilizability of (Ω,Γ), there exists a linear
+controller u( x ) = −Kterm x such that Φc = A − ΓKterm has all eigenvalues strictly
+inside the unit disk. Furthermore, there exists a matrix P, which solves the Lyapunov
+equation Φ>                    ∗                         ∗          >
+            c PΦc − P = −( Q + 4 Q ), 4 Q > 0, Q = Q + Kterm RKterm , such
+that the terminal controller K f ( x ) = −Kterm x, the terminal cost Vf ( x ) = k x k2P
+                            n                      o
+and the terminal set X f = x ∈ Rn |k x k2P ≤ α f satisfy the conditions (4.11) and
+(4.12) in Assumption 5.
+  Typically, the discrete time linear quadratic regulator (LQR) is considered
+as terminal controller k f ( x ) = −Kterm x. Now, we discuss how α f can be
+chosen. First we demonstrate, how to choose α f such that (4.12) holds. For
+this purpose, we use the following lemma:
+Lemma 31. [44, 45] The maximum admissible value α1, f such that the terminal set
+      n                       o
+X f := x ∈ Rn | x > Px ≤ α1, f satisfies (4.12), can be computed with the linear
+program
+                                      α1, f = max α f ,
+                                                  αf
+                                      2
+              s.t. P−1/2 Kterm Lt,i       α f ≤ (1 − e N,u )2 i = 1, . . . ,q
+                                      2
+                          P−1/2 Hj        α f ≤ (1 − e N,x )2 , j = 1, . . . ,p,
+
+where Lt,i is the i-th row of Lt and Hj is the j-th row of H.
+   Hence, we use this linear programming and chose α f ≤ α1, f to satisfy
+(4.12). An admissible value for α f to satisfy (4.11) can be obtained by seeking
+a region for which
+                                      kΨ( x )k
+                                                      
+                       LΨ := sup               |x ∈ X f ,
+                                        kxk
+with Ψ( x ) = f ( x,k f ( x )) − Φc ( x ), satisfies
+                            q
+                               k PΦc k2 + λmin (4 Q)k Pk − k PΦc k
+                  LΨ ≤                                             .               (6.8)
+                                                 k Pk
+
+
+                                                                                     55
+6 Automatic AMPC synthesis with guarantees
+
+
+Algorithm 2 Compute the size of the terminal set
+
+     1. Set α f = α1, f .
+
+                                     kΨ( x )k
+                                 n                                      o
+     2. Compute LΨ = sup              kxk
+                                              | x ∈ Rn | x > Px ≤ α f       e.g. using nonlinear
+        programming.
+                  q
+                      k PΦc k2 +λmin (4 Q)k Pk−k PΦc k             α
+     3. If LΨ >                    k Pk
+                                                       , set α f = 2f and goto 2.
+
+     4. Return α f .
+
+
+
+Using this, α f can be computed iteratively with Algorithm 2. The detailed
+procedure can be reviewed in [30]. There this procedure is stated as Method 1.
+Another approach [30, Method 2] is to characterize the terminal set by seeking
+the largest possible α f ≤ α1, f such that
+
+                arg max(− x > 4 Qx + 2Ψ( x )> PΦc x + Ψ( x )> PΨ( x ))
+                    x
+
+remains negative in X f . Method 2 can be less conservative than Method 1,
+but is only relevant if α f < α1, f after Method 1 was used. Both methods are
+adoptions of the methods for continuous time systems from [18]. Now, it
+remains to show that (4.10) from Assumption 5 holds.
+
+Invariance of the terminal set to input disturbances
+Now, we provide a method to show that (4.10) holds. To achieve this, we
+use the following proposition:
+Proposition 32. Consider the disturbance W N = { x ∈ Rn | k x k ≤ w N }. The
+terminal ingredients satisfy (4.10), if
+                                        q              αf
+                  w2N λmax ( P) + 2w N λmax ( P)α f ≤                   (6.9)
+                                                      γterm
+
+holds with γterm = λmax ( P Q∗ ).
+                              
+
+Proof. Obviously,
+                              k x k2Q? ≤ k x k2P ≤ γterm k x k2Q?
+
+
+
+56
+                                        6.2 Automatic AMPC synthesis - step by step
+
+
+holds. For the disturbed system, we have with Vf ( x ) = k x k2P :
+
+              Vf ( f ( x, − Kterm x ) + w) =k f ( x, − Kterm x ) + wk2P
+                                           ≤Vf ( f ( x, − Kterm x )) + kwk2P
+                                              + 2k f ( x, − Kterm x k P kwk P      (6.10)
+
+with w ∈ W N . Due to (4.11), it holds that
+
+                       Vf ( f ( x, − Kterm x )) ≤ Vf ( x ) − k x k2Q? .            (6.11)
+
+Furthermore, define
+
+       kwk2P + 2k f ( x, − Kterm x k P kwk P ≤ kwk2P + 2 α f kwk P := w̄.
+                                                        p
+                                                                                   (6.12)
+
+Plugging (6.11) and (6.12) into (6.10), we obtain
+
+                Vf ( f ( x, − Kterm x ) + w) − Vf ( x ) ≤ −k x k2Q? + w̄.
+
+With this result, we can
+                     n apply Lemma 11 to showothe robust stability of the
+terminal set X f :=       x ∈ Rn | x > Px ≤ α f = Vmax
+                                                   with Vmax ≥ γterm w̄ =:
+                               αf
+VRPI . Hence, we require w̄ ≤ γterm . From the definition of W N , we know
+                                                        q
+that kwk ≤ w N which implies w̄ ≤ w2N λmax ( P) + 2w N λmax ( P)α f . Thus,
+if
+                                             q                      αf
+                     w2N λmax ( P) + 2w N        λmax ( P)α f ≤                    (6.13)
+                                                                  γterm
+is satisfied, (4.10) holds ∀w ∈ W N .
+                                             q
+                                                    c
+     For the RMPC, we have w N = λη              ρ N cδ,u
+                                                      δ,l
+                                                          . If (6.13) does not hold, η can
+be decreased or N can be increased to achieve that (4.10) holds. Hence, we
+have demonstrated, how terminal ingredients for the RMPC can be designed
+to satisfy Assumption 5.
+
+
+6.2.4 Step 4, 5 and 6: Learning and validation
+Now we summarize the remaining steps of Algorithm 1.
+
+
+
+                                                                                       57
+6 Automatic AMPC synthesis with guarantees
+
+
+Step 4: Learning
+The learning step can be done by any learning method that can achieve
+an approximation error below η. According to Chapter 5, NN are suited.
+The difficulty can be to find a suitable NN architecture and to achieve
+convergence. It can be chosen by starting with a small network and enlarging
+it until the validation is successful, or with Bayesian optimization. We show
+how this can be done for an example system in Chapter 7.
+Remark 33. Any required bound on the approximation error can be achieved
+with a sufficient large NN. Choosing a suitable network structure and achieving
+convergence in the learning are a separate problem (compare Chapter 5).
+
+Step 5 Validation
+The validation is straight forward. The choice of the design parameters
+depends on the use-cases. If µcrit is close to µ, which is especially the case
+if µcrit is close to 1, and if δh is close to 0, a large pmax may be necessary. µ̃
+can be computed directly by comparing the output of the learned controller
+with the output of the RMPC along a trajectory. Clearly, the probability dis-
+tribution for the validation must be the same as the probability distribution
+Ω of initial conditions under which we run the AMPC later. Thus we need
+knowledge of Ω. Note, that the validation can be parallelized on several
+computers, which decreases the runtime of Algorithm 1.
+
+
+
+
+58
+7 Numerical example
+
+In this section, we demonstrate the AMPC framework with a numerical
+benchmark example. We go step by step through Algorithm 1 and show
+how the steps of Algorithm 1 can be executed in an automated fashion. We
+perform simulations with the resulting controller and compare it to an LQR.
+The comparison emphasizes that the AMPC has performance advantages
+for nonlinear systems in comparison to the LQR, which is easy to compute,
+but does not include nonlinearities in the controller synthesis.
+
+
+7.1 System modeling
+We demonstrate the AMPC scheme with a continuous stirred tank reactor
+with
+                                                              −M
+                                                                         !
+                                           (1− x̃1 )
+           ˙x̃ = f c ( x̃,ũ) =               θ      − k x̃1 e x̃2
+                                x f − x̃2           −M
+                                    θ     + k x̃1 e x̃2 − αũ( x̃2 − xc)
+where x1 is the temperature, x2 is the concentration and u is the coolant flow.
+This system is a common benchmark taken from1 [9]. Since the system is
+input affine, it can be written in the form
+
+                                   f c ( x̃,ũ) = gc ( x̃ ) + hc ( x̃ )ũ.                       (7.1)
+The system is discretized with a simple Euler approach. The discrete time
+system is given by
+                                                                                                  
+                                                                    (1− x̃1 )               − x̃M
+                                                    x̃ 1 +    h        θ      −    k x̃ 1 e     2
+
+x̃ + = f ( x̃,ũ) = x̃ + h f c ( x̃,ũ) = 
+                                                                                                    
+                                                                                                    ,
+                                                       x f − x̃2            − x̃M                   
+                                            x̃2 + h         θ      + k x̃1 e 2 − αũ( x̃2 − xc )
+                                                                 (7.2)
+with sampling time h = 0.1 s. We consider the unstable steady state
+xe = (0.2632, 0.6519) with steady state input ue = 0.7853. To achieve
+ 1
+     The parameters are θ = 20, k = 300, M = 5, x f = 0.3947, xc = 0.3816, α = 0.117.
+
+
+
+
+                                                                                                    59
+7 Numerical example
+
+
+
+                          Table 7.1: State and input constraints
+                    Variable minimum Value maximum Value
+                     u + ue              0                   2
+                       x1              −0.2                 0.2
+                       x2              −0.2                 0.2
+
+
+f (0,0) = 0, we use the transformed coordinates x = x̃ − xe and u = ũ − ue
+The constraints that are considered are summarized in Table 7.1. Further-
+more, we consider the stage cost Q = I, R = 10−4 and use N = 180 for the
+prediction horizon. Now we can go step by step through Algorithm 1.
+
+
+7.2 Computation of the AMPC using Algorithm 1
+In this section, we demonstrate the AMPC synthesis using the proposed
+framework.
+
+
+Step 1: Incremental stabilizability and Lipschitz constant
+The set Z = X × U is compact. Hence, the verification of the local in-
+cremental stability assumption is done according to Section 6.2.1. We use
+Vδ ( x,z) = k x − zk2Pr and κ ( x,z,v) = v + Kr ( x − z) with matrices2 Pr and Kr
+continuous in r = ( x,u) ∈ X × U . To obtain Pr and Kr , we use a griding of
+the constraint set and an approach according to (6.7). We construct multiple
+LMI’s containing one LMI according to (6.5) for each grid point. The LMI’s
+can be solved with Yalmip [47]. As result, we obtain
+
+cδl = 12.33, cδu = 199.03, kmax = 45.72, k̃max = 3.6455, ρ = 0.9913, δloc = 0.01.
+
+The Lipschitz bound is λ = 5.5 · 10−3 and was computed with the method
+for input affine systems.
+
+
+Step 2: Set accuracy
+For the approximation accuracy η, we choose η = 5.1 · 10−3 ≤ η1 = 1.29.
+ 2
+     For numerical values of Pr and Kr , see Appendix A.1
+
+
+
+
+60
+                                           7.2 Computation of the AMPC using Algorithm 1
+
+
+Step 3: Design of the RMPC
+Using k̃max according to Remark 9, we obtain3 ex = eu = 2.2 · 10−3 .
+   The terminal cost and controller are computed as detailed in Subsec-
+tion 6.2.3, yielding k f ( x ) = −Kterm x and Vf ( x ) = x > Px, with
+                                                                                       
+                                                                    33.21        −3.61
+                   Kterm = −46.01               101.74 , P =                              .
+                                                                     −3.61        6.65
+
+Due to the input constraints, we obtain α f ,1 = 9.2 · 10−5 .                                      Since
+                                                  q
+                                                            2
+                                                      k PΦc k +λmin (4 Q)k Pk−k PΦc k
+LΨ = 3.8 · 10−3 for this α and                                    k Pk
+                                                                                           = 1.53 · 10−2 ,
+Algorithm 2 terminates in one step and we obtain α f = 9.2 · 10−5 . Since the
+input constraint is active for α f , using Method 2 would bring no advantage.
+To verify that (4.10) holds, we obtain γterm = 28.97 which yields
+                             s             !2                      s
+                                    cδ,u                                       cδ,u
+               w̄ ≤     λη       ρN             λmax ( P) + 2λη         ρN          λmax ( P)α f
+                                    cδ,l                                       cδ,l
+                                                                   αf
+                   = 2.938 · 10−6 < 3.185 · 10−6 =                       .
+                                                                 γterm
+Hence, (4.10) holds for the chosen η and N. As a result, Assumption 5
+holds. In Figure 7.1, the constraint tightening is visualized along an example
+trajectory.
+
+Step 4: Learn RMPC
+A fully connected feed forward NN with 2 neurons in the first hidden
+layer and two further hidden layers with 50 neurons in each is trained
+as the AMPC. The activations in the hidden layers are hyperbolic tangent
+sigmoid functions. In the output layer, linear activations are used. To
+create the learning samples, the RMPC is sampled over X with a uniform
+grid using Casadi 2.4.2 [48] on Python 2.7.2. We use a grid size of 2.5 ·
+10−4 . Therewith, 1.6 · 106 feasible samples of data points ( x,πMPC ( x )) are
+generated for learning. The neural network is trained with the Marquardt-
+Levenberg algorithm using Matlabs neural network toolbox on R2017a. To
+                                                                     
+                                        √                         kHk
+ 3
+     For simplicity, we use ex = eu = ηλ cδ,u max k̃max k Lt k∞ , √c ∞ , which leads to a constraint
+                                                                         δ,l
+      tightening of X̄∞ and Ū∞ to 51.7% of the size of X̄0 and Ū0 .
+
+
+
+
+                                                                                                       61
+7 Numerical example
+
+
+
+
+Figure 7.1: Concentration vs. temperature: Trajectory of AMPC (blue line)
+and growing tube (red ellipsoids). The constraint tightening is done by
+subtracting the ellipsoids from the untightened constraints.
+
+
+enhance the learning speed, we start the learning with a reduced number of
+samples and enhance the number of used samples as the mse decreases. The
+resulting AMPC over the Xfeas is given in Figure 7.2.
+
+Step 5 Validation results
+We choose δh = 0.01 and µcrit = 0.99. As validation data, we sample
+initial conditions uniformly from Xfeas . Algorithm 1 terminates, with
+µ̃ = 0.9987 for p = 34980 trajectories. This implies µcrit < µ̃ − eh and
+hence, we achieve the desired guarantees. We thus conclude from Theo-
+rem 23 that, with a confidence of 99%, the closed-loop system (3.3) is stable
+and satisfies constraints for a ratio of at last 99% of random initial conditions
+
+
+
+62
+                                                          7.3 Simulation results
+
+
+
+
+     Figure 7.2: Approximate MPC πapprox over the feasible set Xfeas .
+
+
+with distribution Ω. A histogram of the approximation error for 81000 of
+the learning samples is given in Figure 7.3. As we can see, the in-sample
+error is below 10−4 for most points, whereas 5.1 · 10−3 is the bound.
+  The overall time to execute Algorithm 1 was roughly 500 hours on a Quad-
+Core PC. It is possible to significantly reduce this time, e.g., by parallelizing
+the sampling and the validation.
+  As result, we obtain an AMPC with the proposed framework in an auto-
+mated fashion. In the next section, we investigate this controller applied to
+the benchmark system (7.2).
+
+
+7.3 Simulation results
+In this section, we evaluate the AMPC from Section 7.2. We compare it to an
+LQR controller and measure the time to evaluate the AMPC in comparison
+
+
+
+                                                                              63
+7 Numerical example
+
+
+
+
+Figure 7.3: Histogram of the absolute in-sample error for a part of the
+learning samples
+
+
+to the online optimization of the RMPC.
+
+
+7.3.1 Comparison to LQR
+In this subsection, we compare the performance of the AMPC to the sat-
+urated LQR that results from the same stage costs, but saturated with U .
+Contrary to the AMPC, the LQR does not guarantee stability and constraint
+satisfaction for general nonlinear constrained systems. The convergence of
+both controllers applied on the system is illustrated in Figure 7.4 for some
+exemplary initial conditions.
+   While for some initial conditions, the AMPC and LQR trajectories are
+close (when nonlinearities play a subordinate role), there are significant
+differences for others. For example, in Figure 7.4 (bottom), the input flow is
+shown for the marked trajectory (top). Initially, the opposite input constraint
+is active for the LQR in comparison to the AMPC. This causes an initial
+divergence of the LQR trajectory leading to over three times higher costs.
+Due to the small approximation error, the trajectories of the AMPC are
+virtually indistinguishable from the original RMPC.
+
+Remark 34. In principle, the RMPC method from [16] could also be used within
+the framework. However, the admissible approximation error for this method would
+be at most η = 10−41 , which makes the learning intractable.
+
+
+
+64
+                                                      7.3 Simulation results
+
+
+
+
+Figure 7.4: Concentration vs. temperature: Trajectories of AMPC (solid blue
+line) and LQR (dashed red line) and Xfeas (grey area)
+
+
+7.3.2 Online computational demand
+To investigate the achievable sampling time of the AMPC, we evaluated
+the AMPC and the online solution of the RMPC optimization problem for
+100 random points over Xfeas . For the evaluation of the RMPC, Casadi was
+used. The AMPC was computed with Matlab. Evaluating the AMPC was
+possible in an average time of 3ms, whereas solving the optimal control
+problem for this initial conditions needed an average of 0.71s. This is over
+200 times faster and further speed up may be obtained by alternative NN
+implementations. Detailed results are given in Table 7.2.
+  Thus, the AMPC delivers a cost optimized, stabilizing feedback law for a
+nonlinear constrained example which can be evaluated online on a cheap
+hardware with a high sampling rate.
+
+
+
+
+                                                                         65
+7 Numerical example
+
+
+
+
+     0.2
+
+
+       0
+
+
+     -0.2
+            0               5                     10                    15
+
+
+     0.2
+
+
+       0
+
+
+     -0.2
+            0               5                     10                    15
+
+
+       2
+
+
+       0
+
+
+      -2
+            0               5                     10                    15
+
+
+Figure 7.5: Comparison of trajectories for concentration (top), temperature
+(middle) and coolant flow (bottom) for AMPC (solid blue line) and LQR
+(dashed red line)
+
+
+
+
+Table 7.2: Time to evaluate RMPC and AMPC for random initial conditions
+      Controller minimum time average time maximum time
+      AMPC               2.8ms         3ms           5.6ms
+      RMPC               0.55s        0.71s          1.22s
+
+
+
+
+66
+8 Conclusion
+
+This chapter summarizes the results of this thesis and gives an outlook on
+future work building on the results of this thesis.
+
+
+8.1 Summary
+The overall goal of this thesis was to develop a framework for the synthesis
+of an AMPC with guarantees on stability and constraint satisfaction.
+   Within the framework, we presented first an RMPC scheme with ro-
+bustness to bounded input disturbances. A proof for robust stability and
+constraint satisfaction for this RMPC was given. This proof is an extension
+of [8].
+   The RMPC can be learned with any machine learning procedure. We
+discussed NN as a suitable method to learn the RMPC since NN have the
+property that they can approximate any nonlinear function with finitely
+many discontinuities arbitrary well [3]. The difficulty using NN was to
+guarantee a specific bound on the approximation error for a learned NN.
+   Hence, we proposed a probabilistic method for validation of the AMPC to
+give guarantees on stability and constraint satisfaction. This method is based
+on Hoeffding’s Inequality [4] and is independent from the approximation
+method.
+   The combination of the RMPC with NN and the validation method yields
+a framework for the synthesis of an AMPC with guarantees on stability and
+constraint satisfaction for a wide class of nonlinear systems. An algorithm
+was given to use the proposed framework in an automatic fashion. We have
+shown step by step how this algorithm can be executed automatic with the
+choice of a small number of design parameters.
+   The practicability of the framework was demonstrated with a numerical
+example. Guarantees on stability and constraint satisfaction were given for
+the example and the AMPC could be evaluated in a short deterministic
+time. Hence, the proposed framework is suitable for systems with real-time
+requirements on cheap hardware.
+
+
+
+                                                                           67
+8 Conclusion
+
+
+  The proposed methods can also be used within other learning based
+control approaches. Thus, the results of this thesis are also relevant for other
+approaches than MPC.
+
+
+8.2 Future work
+Future work could cover the application of robust control methods in combi-
+nation with the proposed validation method to other learning based control
+approaches. Deriving a controller for systems of higher order with the pro-
+posed framework is still open to investigate. Designing learning techniques
+tailored to MPC, e.g. by exploiting the active constraints with a suitable
+classification as proposed in Chapter 5, is also part of future work.
+
+
+
+
+68
+Eigenständigkeitserklärung
+
+Ich versichere hiermit, dass ich, Michael Hertneck, die vorliegende Arbeit
+selbstständig angefertigt, keine anderen als die angegebenen Hilfsmittel be-
+nutzt und sowohl wörtliche, als auch sinngemäß entlehnte Stellen als solche
+kenntlich gemacht habe. Die Arbeit hat in gleicher oder ähnlicher Form noch
+keiner anderen Prüfungsbehörde vorgelegen. Weiterhin bestätige ich, dass
+das elektronische Exemplar mit den anderen Exemplaren übereinstimmt.
+
+
+
+
+Ort, Datum                                 Unterschrift
+
+
+
+
+                                                                         69
+8 Conclusion
+
+
+
+
+70
+Appendix
+
+A.1 Numerical values for the verification of the local
+    incremental stabilizability assumption
+The continuous stirred tank reactor (7.2) can be written as quasi linear
+parameter varying system
+
+                                         x + = Ar x + Br u
+
+with
+           1 − kht1 (r ) − hθ
+                                                                                              
+                                           −kht4 (r )                              0
+Ar =                                                             , Br =
+            − hθ + kht1 (r )                             h
+                                 kht4 (r ) − αht2 (r ) − θ + 1            − (αh (t3 (r ) − xc ))
+
+using the parametrization according to Table A.1. Therewith, the solution to
+the multiple LMI’s are
+
+                                   Pr = Yr−1 , Kr = Xr Yr− 1
+
+with
+                                   4                           4
+                    Yr = Y0 + ∑ ti (r )Yri , Xr = X0 + ∑ ti (r ) Xri ,
+                                  i =1                       i =1
+with Y0 ,Yri ,X0 ,Xri according to Table A.2.
+
+
+
+
+                                Tabelle A.1: Parametrization
+                                     t1 (r ) = e(− M/x2)
+                                     t2 (r ) = u
+                                     t3 (r ) = x2
+                                                    ( −xM
+                                                        2 )
+                                     t4 (r ) = x1 Mex2
+                                                     2
+
+
+
+
+                                                                                         71
+Appendix
+
+
+
+
+           Tabelle A.2: Solution for the Multiple LMI’s
+                     2.744 · 10−3 5.997 · 10−3
+                                                   
+             Y0 =               −3 3.589 · 10−3
+                   5.997 · 10            
+                       7.782     −6.919
+             Yr1 =
+                   −6.919        9.687
+                      −1.762 · 10−5        3.154 · 10−5
+                                                         
+             Yr2 =                −5                  −6
+                    3.154 · 10 −2 −5.130 · 10 −3 
+                      −2.700 · 10         −3.589 · 10
+             Yr3 =                                   −3
+                     − 3.589 · 10 − 3   7.713 · 10
+                       5.863     0.6192
+             Yr4 =
+                      0.6192 −2.554
+             X0 = −5.667 · 10−3 −
+                                                  
+                                          0.4525
+             Xr1 = 3.450 −12.967
+             Xr2 = −8.154 · 10−4 8.919         · 10−4
+                                                      
+
+             Xr3 = 1.062 · 10−2 1.193
+                                             
+                                       
+             Xr4 = 8.196 −10.36
+
+
+
+
+72
+Literaturverzeichnis
+
+[1] James Blake Rawlings and David Q Mayne. Model predictive control:
+    Theory and design. Nob Hill Pub., 2009.
+
+[2] Alberto Bemporad, Manfred Morari, Vivek Dua, and Efstratios N Pis-
+    tikopoulos. The explicit linear quadratic regulator for constrained
+    systems. Automatica, 38(1):3–20, 2002.
+
+[3] George Cybenko. Approximation by superpositions of a sigmoidal
+    function. Mathematics of Control, Signals, and Systems (MCSS), 2(4):303–
+    314, 1989.
+
+[4] Wassily Hoeffding. Probability inequalities for sums of bounded ran-
+    dom variables. Journal of the American statistical association, 58(301):13–30,
+    1963.
+
+[5] Ankush Chakrabarty, Vu Dinh, Martin J Corless, Ann E Rundell, Sta-
+    nisław H Żak, and Gregery T Buzzard. Support vector machine infor-
+    med explicit nonlinear model predictive control using low-discrepancy
+    sequences. IEEE Transactions on Automatic Control, 62(1):135–148, 2017.
+
+[6] Tianhao Zhang, Gregory Kahn, Sergey Levine, and Pieter Abbeel. Lear-
+    ning deep control policies for autonomous aerial vehicles with MPC-
+    guided policy search. In IEEE International Conference on Robotics and
+    Automation (ICRA), pages 528–535, 2016.
+
+[7] Aviv Tamar, Yi Wu, Garrett Thomas, Sergey Levine, and Pieter Abbeel.
+    Value iteration networks. In Advances in Neural Information Processing
+    Systems, pages 2154–2162, 2016.
+
+[8] Johannes Köhler, Matthias A. Müller, and Frank Allgöwer. A novel
+    constraint tightening approach for nonlinear robust model predictive
+    control. In American Control Conference (ACC), 2018. to appear.
+
+
+
+                                                                               73
+Literaturverzeichnis
+
+
+ [9] David Q Mayne, Erric C Kerrigan, EJ Van Wyk, and P Falugi. Tube-
+     based robust nonlinear model predictive control. International Journal of
+     Robust and Nonlinear Control, 21(11):1341–1353, 2011.
+
+[10] Alexander Domahidi, Melanie N Zeilinger, Manfred Morari, and Co-
+     lin N Jones. Learning a feasible and stabilizing explicit model predictive
+     control law by robust optimization. In 50th IEEE Conference on Decision
+     and Control and European Control Conference (CDC-ECC), pages 513–519,
+     2011.
+
+[11] Tor A Johansen. Approximate explicit receding horizon control of
+     constrained nonlinear systems. Automatica, 40(2):293–300, 2004.
+
+[12] Alexandra Grancharova and Tor A Johansen. Computation, approxi-
+     mation and stability of explicit feedback min–max nonlinear model
+     predictive control. Automatica, 45(5):1134–1143, 2009.
+
+[13] Thomas Parisini and Riccardo Zoppoli. A receding-horizon regulator
+     for nonlinear systems and a neural approximation. Automatica, 31(10):
+     1443–1451, 1995.
+
+[14] T Parisini, M Sanguineti, and R Zoppoli. Nonlinear stabilization by
+     receding-horizon neural regulators. International Journal of Control, 70
+     (3):341–362, 1998.
+
+[15] Bernt M Åkesson and Hannu T Toivonen. A neural network model
+     predictive controller. Journal of Process Control, 16(9):937–946, 2006.
+
+[16] Gilberto Pin, Marco Filippo, Felice Andrea Pellegrino, Gianfranco Fenu,
+     and Thomas Parisini. Approximate model predictive control laws for
+     constrained nonlinear discrete-time systems: analysis and offline design.
+     International Journal of Control, 86(5):804–820, 2013.
+
+[17] David Q Mayne, SV Raković, Rolf Findeisen, and Frank Allgöwer.
+     Robust output feedback model predictive control of constrained linear
+     systems. Automatica, 42(7):1217–1222, 2006.
+
+[18] Hong Chen and Frank Allgöwer. A quasi-infinite horizon nonlinear
+     model predictive control scheme with guaranteed stability. Automatica,
+     34(10):1205–1217, 1998.
+
+
+
+74
+                                                          Literaturverzeichnis
+
+
+[19] Daniel Limón, Teodoro Alamo, Francisco Salas, and Eduardo F Cama-
+     cho. On the stability of constrained mpc without terminal constraint.
+     IEEE Transactions on automatic control, 51(5):832–836, 2006.
+
+[20] Lars Grüne. NMPC without terminal constraints. In 4th IFAC Nonlinear
+     Model Predictive Control Conference (NMPC 2012), volume 4, pages 1–13,
+     2012.
+
+[21] Matthias A Müller and Frank Allgöwer. Economic and distributed
+     model predictive control: Recent developments in optimization-based
+     control. SICE Journal of Control, Measurement, and System Integration, 10
+     (2):39–52, 2017.
+
+[22] Shuyou Yu, Marcus Reble, Hong Chen, and Frank Allgöwer. Inherent
+     robustness properties of quasi-infinite horizon MPC. In 18th World
+     Congress of the International Federation of Automatic Control, pages 179–
+     184, 2011.
+
+[23] Davide Martino Raimondo, Daniel Limon, Mircea Lazar, Lalo Magni,
+     and Eduardo Fernandez Camacho. Min-max model predictive control
+     of nonlinear systems: A unifying overview on stability. European Journal
+     of Control, 15(1):5–21, 2009.
+
+[24] David Q Mayne, Maria M Seron, and SV Rakovic. Robust model predic-
+     tive control of constrained linear systems with bounded disturbances.
+     Automatica, 41(2):219–224, 2005.
+
+[25] Luigi Chisci, J Anthony Rossiter, and Giovanni Zappa. Systems with
+     persistent disturbances: predictive control with restricted constraints.
+     Automatica, 37(7):1019–1028, 2001.
+
+[26] D Limon Marruedo, T Alamo, and EF Camacho. Input-to-state stable
+     mpc for constrained discrete-time nonlinear systems with bounded
+     additive uncertainties. In Proceedings of the 41st IEEE Conference on
+     Decision and Control, volume 4, pages 4619–4624. IEEE, 2002.
+
+[27] Florian Bayer, Mathias Burger, and Frank Allgower. Discrete-time
+     incremental ISS: A framework for robust nmpc. In European Control
+     Conference (ECC), pages 2068–2073. IEEE, 2013.
+
+
+
+                                                                           75
+Literaturverzeichnis
+
+
+[28] Johannes Köhler, Matthias A. Müller, and Frank Allgöwer. Nonlinear
+     reference tracking: An economic model predictive control perspective.
+     IEEE Transaction on Automatic Control, 2018. to appear.
+[29] I Alvarado, D Limon, D Munoz de la Pena, T Alamo, and EF Camacho.
+     Enhanced ISS nominal MPC based on constraint tightening for cons-
+     trained linear systems. In Proc. UKACC International Conf. on Control
+     (CONTROL), pages 67–72, 2010.
+[30] Chinmay Rajhans, Sachin C. Patwardhan, and Harish Pillai. Discrete
+     time formulation of quasi infinite horizon nonlinear model predictive
+     control scheme with guaranteed stability. Proceedings of the 20th IFAC
+     World Congress, pages 7181–7186, 2017.
+[31] Ulrike Von Luxburg and Bernhard Schölkopf. Statistical learning theo-
+     ry: Models, concepts, and results. In Handbook of the History of Logic,
+     volume 10, pages 651–706. Elsevier, 2011.
+[32] Yaser S Abu-Mostafa, Malik Magdon-Ismail, and Hsuan-Tien Lin. Lear-
+     ning from data, volume 4. AMLBook New York, NY, USA:, 2012.
+[33] Christopher KI Williams and Carl Edward Rasmussen. Gaussian pro-
+     cesses for regression. In Advances in neural information processing systems,
+     pages 514–520, 1996.
+[34] Alex J Smola and Bernhard Schölkopf. A tutorial on support vector
+     regression. Statistics and computing, 14(3):199–222, 2004.
+[35] Shai Shalev-Shwartz and Shai Ben-David. Understanding machine lear-
+     ning: From theory to algorithms. Cambridge university press, 2014.
+[36] Mark Hudson Beale, Martin T Hagan, and Howard B Demuth. Neural
+     network toolbox TM user’s guide. The Mathworks Inc, 1992.
+[37] Eric Brochu, Vlad M Cora, and Nando De Freitas. A tutorial on bayesian
+     optimization of expensive cost functions, with application to active user
+     modeling and hierarchical reinforcement learning. Depz. Comput. Sci.,
+     University of British Columbia, Vancouver, Canada, Tech. Rep. UBC TR-2009-
+     23, 2009.
+[38] Jasper Snoek, Hugo Larochelle, and Ryan P Adams. Practical bayesian
+     optimization of machine learning algorithms. In Advances in neural
+     information processing systems, pages 2951–2959, 2012.
+
+
+
+76
+                                                           Literaturverzeichnis
+
+
+[39] Martin T Hagan and Mohammad B Menhaj. Training feedforward
+     networks with the marquardt algorithm. IEEE Transactions on Neural
+     Networks, 5(6):989–993, 1994.
+
+[40] Martin Fodslette Møller. A scaled conjugate gradient algorithm for fast
+     supervised learning. Neural networks, 6(4):525–533, 1993.
+
+[41] Yoshua Bengio. Practical recommendations for gradient-based training
+     of deep architectures. In Neural networks: Tricks of the trade, pages 437–
+     478. Springer, 2012.
+
+[42] Marsha J Berger and Phillip Colella. Local adaptive mesh refinement
+     for shock hydrodynamics. Journal of computational Physics, 82(1):64–84,
+     1989.
+
+[43] Roberto Tempo, Er-Wei Bai, and Fabrizio Dabbene. Probabilistic robust-
+     ness analysis: Explicit bounds for the minimum number of samples.
+     Systems & Control Letters, 30(5):237–242, 1997.
+
+[44] Christian Conte, Colin N Jones, Manfred Morari, and Melanie N Zei-
+     linger. Distributed synthesis and stability of cooperative distributed
+     model predictive control for linear systems. Automatica, 69:117–125,
+     2016.
+
+[45] Johannes Köhler. Distributed economic model predictive control under
+     inexact minimization with application to power systems. Master’s
+     thesis, Univerity Stuttgart, 2017.
+
+[46] Carsten Scherer and Siep Weiland. Linear matrix inequalities in con-
+     trol. Lecture Notes, Dutch Institute for Systems and Control, Delft, The
+     Netherlands, 3, 2000.
+
+[47] J. Löfberg. Yalmip : A toolbox for modeling and optimization in matlab.
+     In In Proceedings of the CACSD Conference, Taipei, Taiwan, 2004.
+
+[48] Joel Andersson. A General-Purpose Software Framework for Dynamic Opti-
+     mization. PhD thesis, Arenberg Doctoral School, KU Leuven, Belgium,
+     2013.
+
+
+
+
+                                                                            77
+

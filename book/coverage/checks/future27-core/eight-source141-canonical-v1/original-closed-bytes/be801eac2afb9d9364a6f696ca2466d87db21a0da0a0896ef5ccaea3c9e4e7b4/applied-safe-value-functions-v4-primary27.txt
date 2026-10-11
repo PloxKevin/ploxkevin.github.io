@@ -1,0 +1,1211 @@
+                                          MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                                                           1
+
+
+
+
+                                                                                          Safe Value Functions
+                                                      Pierre-François Massiani              , Steve Heim           , Friedrich Solowjow             , and Sebastian Trimpe
+
+
+
+                                             Abstract—Safety constraints and optimality are important                       resulting value function enforces safety, and when it is a mere
+                                          but sometimes conflicting criteria for controllers. Although                      heuristic [2, 3]. Furthermore, as adding a penalty is essentially
+                                          these criteria are often solved separately with different tools                   a form of reward shaping, it is unclear whether it affects the
+                                          to maintain formal guarantees, it is also common practice in
+                                          reinforcement learning to simply modify reward functions by                       optimality of the value function with respect to the original
+                                          penalizing failures, with the penalty treated as a mere heuristic.                task.
+                                          We rigorously examine the relationship of both safety and                            We examine the problem from the perspective of viability
+
+
+
+
+arXiv:2105.12204v4 [eess.SY] 1 Dec 2022
+                                          optimality to penalties, and formalize sufficient conditions for                  theory [4]: a state is in the viability kernel if there exists at
+                                          safe value functions (SVFs): value functions that are both optimal                least one evolution of the system that never fails. Our core
+                                          for a given task, and enforce safety constraints. We reveal this
+                                          structure by examining when rewards preserve viability under                      contribution is to examine when rewards preserve viability
+                                          optimal control, and show that there always exists a finite penalty               under optimal control. We frame this as a condition on the
+                                          that induces a safe value function. This penalty is not unique,                   value function, thus exposing the structure of safe value
+                                          but upper-unbounded: larger penalties do not harm optimality.                     function (SVFs): a value function that is both optimal for
+                                          Although it is often not possible to compute the minimum                          the original (constrained) task, and avoids failure whenever
+                                          required penalty, we reveal clear structure of how the penalty,
+                                          rewards, discount factor, and dynamics interact. This insight                     possible. We then examine how to obtain SVFs by penalizing
+                                          suggests practical, theory-guided heuristics to design reward                     failure, and show that there always exists a finite penalty that
+                                          functions for control problems where safety is important.                         induces an SVF. Furthermore, larger penalties do not lose
+                                             Index Terms—Value Functions, Safety, Optimal Control,                          this property. This insight allows for qualitative predictions
+                                          Strong Duality, Reinforcement Learning, Viability                                 on the effects of reward shaping, and provides theory-backed
+                                                                                                                            heuristics for designing reward functions when perfect system
+                                                                     I. I NTRODUCTION                                       information is unavailable. We also examine how SVFs relate
+                                                                                                                            to existing concepts and practices, such as strong duality. This
+
+                                          V      ALUE functions concisely represent the global behavior
+                                                 of a dynamical system in a scalar function, and have been
+                                          well studied in both classical control theory and reinforcement
+                                                                                                                            result is of interest for any approach that employs penalties to
+                                                                                                                            discourage constraint violation in dynamical systems.
+                                          learning (RL). Before solving for the value function, a desired
+                                          task needs to be accurately translated into a reward function                     A. Related Work
+                                          and discount factor. Often, the main challenge of an engineer                        Safety in dynamical systems requires constraints to be
+                                          is to design a reward that approximates the desired task, but                     enforced along entire trajectories, making path planning and
+                                          is also dense throughout the state space.                                         tracking a natural approach [5]. However, this approach
+                                             Safety often also needs to be encoded, as many tasks                           is often too computationally demanding to be run online
+                                          implicitly require that a set of failure states is never visited.                 for complex systems. To ease computational burden,
+                                          This is particularly challenging, as there may be states                          constraints are often only enforced on trajectories of finite
+                                          that are not failures themselves, but are still unsafe: all                       horizon, such as in sequential trajectory planning [6, 7]
+                                          trajectories starting from such states end in failure. This                       and model-predictive control (MPC) [1, 8]. Since these
+                                          requirement is most naturally written mathematically as a                         methods only enforce constraints along partial trajectories,
+                                          state-space constraint, which can be directly enforced along                      guaranteeing safety requires additional conditions to be met.
+                                          entire trajectories, such as in model-predictive control [1]. It                  For example, in MPC, it is known that the choice of
+                                          is less clear how the notion of safety can be directly integrated                 terminal constraint plays an important role in guaranteeing
+                                          into value functions through rewards. A common approach is                        safety [1, Section 2.2]. To forego this terminal constraint
+                                          to simply put a large penalty on failing. However, it is still                    typically requires assumptions of local controllability towards
+                                          unclear under what conditions this penalty ensures that the                       equilibrium [9], [10, Chapter 6], which implies viability, to
+                                                                                                                            guarantee feasibility and avoid trivially infinite costs. The latter
+                                             This work was supported in part by the Cyber Valley Initiative and the
+                                          International Max Planck Research School for Intelligent Systems.                 has also been addressed by introducing discounting [11], but
+                                             P.-F.    Massiani    (massiani@dsme.rwth-aachen.de),       F.   Solowjow       viability is still assumed for feasibility. In contrast, we do not
+                                          (solowjow@dsme.rwth-aachen.de), and S. Trimpe (trimpe@dsme.rwth-                  assume viability, but study how costs/rewards can be used to
+                                          aachen.de) are with the Institute for Data Science in Mechanical Engineering,
+                                          RWTH Aachen University, 52068 Aachen, Germany.                                    guarantee the whole viability kernel’s invariance under optimal
+                                             P.-F. Massiani, S. Heim (heim.steve@gmail.com), F. Solowjow, and S.            control.
+                                          Trimpe are with the Intelligent Control Systems Group, Max Planck Institute          Trajectory evaluations can be sidestepped by constraining
+                                          for Intelligent Systems, 70569 Stuttgart, Germany.
+                                             S. Heim is with the Biomimetic Robotics Lab, Department of Mechanical          the system to remain in a controlled positive invariant
+                                          Engineering, Massachusetts Institute of Technology, 02139 Cambridge, USA.         set. However, these sets are often difficult to compute in
+                                          Accepted final version. Accepted for publication in: IEEE Transactions on Automatic Control, Special Issue on Learning and Control, 2023.
+                                          ©2022 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any current or future media, including
+                                          reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for resale or redistribution to servers or lists, or
+                                          reuse of any copyrighted component of this work in other works. DOI: 10.1109/TAC.2022.3200948.
+2                                                                                                MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+practice. One approach is to formulate safety as an ad-hoc          and/or an ill-conditioned problem. Such numerical issues are
+optimal control problem, as studied in Hamilton-Jacobi (HJ)         well known in penalty methods used in classical constrained
+reachability analysis [12]. The resulting value function can        optimization [40, Section 5.4]. Algorithms such as augmented
+then be used to enforce safety using a backup controller [13,       Lagrangian methods address this by iteratively adjusting the
+14], and is completely agnostic in the task formulation.            penalty, such that it remains small yet sufficiently large to
+Another closely related approach is control barrier functions       converge to within an arbitrary approximation error [39].
+(CBFs) [15, 16], which generalizes the backup controller of         For clarity of exposition, we keep the focus of this article
+HJ reachability with sets of safety-preserving control inputs,      on the mathematical objects, and do not tackle the issue of
+which can again be used as task-agnostic backup controllers.        approximation errors, which is an active field of research [28].
+This specialized function can be combined with any existing         It is reasonable to expect that, just as in penalty methods, it
+controller to ensure safety. However, designing a valid CBF is      is desirable to choose the smallest sufficiently large penalty,
+very challenging in practice, and still requires solving an often   even though in theory larger penalties still result in SVFs.
+equally challenging task of designing an optimal controller.        The conditions we derive reveal clear structure of how a
+In this article, we present SVFs as the natural combination         sufficiently large penalty depends on discounting, properties of
+of safety and optimality in a single object, and examine the        the system dynamics, and reward shaping. Although a closed-
+conditions and requirements such that guarantees are not lost.      form solution is often not attainable, this structure nonetheless
+In particular, the guarantees will rely on choosing a high          provides clear intuition for choosing useful penalties in
+enough penalty, and only require mild assumptions on the            practice.
+system dynamics. Because of this, we expect that SVFs will             Optimizing a return under a running-cost constraint is
+be amenable to popular reinforcement learning algorithms.           also studied as constrained Markov decision processes
+   Even when accurate models are available, finding reachable       (CMDPs) [41]. They provide the necessary theory to describe
+sets or CBFs typically requires extensive system knowledge or       the solutions to problems with bounded-risk constraints. We
+computational effort [17, 18]. This has motivated the interest      explain in detail how our problem relates to general CMDPs
+in learning or refining these objects from data [19, 20, 21,        and, specifically, to their duality properties. It is also known
+22]. A novel approach aims at opening up the toolbox of             that tools for unconstrained MDPs such as value functions are
+reinforcement learning (RL) for the computation of reachable        only marginally useful for the analysis of general CMDPs [41,
+sets [23, 7]. In the usual case where the optimal behavior is       42]. These concerns are void for our problem and, in fact, our
+also learned from data, however, a competition arises between       analysis heavily relies on value functions. Indeed, we show
+exploring for safety and for optimality. This creates the need      that our problem is essentially an unconstrained MDP in a
+for exploration strategies that balance these two separate          controlled-invariant set (the viability kernel).
+objectives [24, 25]. SVFs are immediately relevant to this             Finally, there is substantial work that aims at iteratively
+branch of research, as they are also amenable to standard           solving the constrained optimal control problem while
+reinforcement learning methods.                                     guaranteeing safety of the (potentially still suboptimal)
+   The idea of accounting for failure directly in the control       controller at every iteration [38, 43, 25, 7]. These approaches
+objective is not new [26]. A pragmatic way of doing this            typically restrict exploration to enforce safety, and often allow
+is by penalizing failure states. The penalty is then seen as a      for convergence to a safe but suboptimal (with respect to
+design choice controlling the risk of optimal controllers [27],     the original problem statement) controller. Our work is of
+or as a parameter that must be optimized over to allow              independent interest; we do not focus on learning safely, but on
+for the least conservative safe behavior [5, 28]. From a            the safety and optimality properties of the optimal controller
+theoretical perspective, it is still unclear whether optimal        for the unconstrained problem.
+controllers of penalized problems are optimal with respect
+to the original constrained task [2, 29], or if they even
+enjoy safety guarantees; recent literature suggest that they
+only achieve a weak form of safety [3, Section 2.1.3]. From         B. Outline
+a practical perspective, the penalty choice is treated as a
+heuristic; nonetheless, controllers obtained with this approach        The article is organized as follows. In Section II, we begin
+often yield good results [30, 31, 32], and are frequently           with preliminaries and notations. In Section III, we state the
+deployed on real system [33, 34, 35, 36]. Indeed, a recent          considered problem. In Section IV, we continue with our two
+benchmark [37, Section 5.3] reports that penalty methods            main contributions, i) the concept of safe value functions; and
+find nontrivial, constraint-satisfying controllers on the safety-   ii) how to enforce it with penalties. In Section V, we discuss
+gym suite, outperforming constrained RL algorithms such as          the connections between SVFs and related approaches such
+CPO [38]. Our results reconcile this gap between theory and         as strong duality in depth. In Section VI, we illustrate the
+practice. We prove that there always exists a finite penalty,       exposed structure in different settings with simple examples,
+such that the resulting value function is both safe and optimal.    and interpret the structure to suggest practical heuristics
+Furthermore, larger penalties still enjoy this property.            for choosing penalties, thresholds, and reward functions. In
+   In practice, policies and value functions are typically          Section VII, we conclude with a brief summary, discussion,
+parameterized and solved numerically. In such cases, choosing       and outlook. Appendix A contains the proof of our main
+an arbitrarily large penalty may result in poor exploration [39]    theorem and Appendix B illustrates Remark 3 with examples.
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                                 3
+
+
+
+            II. P RELIMINARIES AND N OTATIONS                         2) Optimal Control and Value Function: We consider
+  This section introduces the necessary mathematical objects       the classical setting of Lagrange optimal control and
+to define safety and optimality. In particular, we address         reinforcement learning: given an initial state distribution on
+dynamical systems, value functions, and viability theory.          X , find a controller that maximizes the expected value of the
+                                                                   return (3). Such a controller will be called optimal. If the
+                                                                   maximization is subject to some safety constraint, we say that
+A. Dynamical Systems                                               the controller is optimal for the constrained problem.
+   Our core contributions holds in both continuous- and               A natural object for finding and analysing optimal
+discrete-time; unless otherwise stated, we present both results    controllers in RL is the (optimal) value function:
+together. For brevity, we consider the time variable t belonging
+to the set T, defined as R+ or N as appropriate. Integrals on                        v : x ∈ X 7→ sup G(x, u).                     (5)
+                                                                                                     u∈U
+T are defined with the Lebesgue measure when T = R+ , and
+with the counting measure when T = N.                              Finding this value function iteratively from data is the goal
+   1) Continuous-Time System: In continuous time, we               of a large branch of reinforcement learning [44, Section 3.6].
+consider the following deterministic dynamical system:             An important property of v is that it satisfies the dynamic
+                                                                   programming identity for all t ∈ T and x ∈ X [45, Lemma I–
+                    ẋ(t) = f (x(t), u(x(t))),               (1)   4.2]:
+                                                                                         Z t
+where t ∈ R+ is time, x(t) ∈ X ⊂ Rn is the state, u(x(t)) ∈                                       s
+                                                                             v(x) = sup       e− τ · r(φux (s), ûx (s))ds
+U ⊂ Rm is a control input, and f : X × U → Rn is the                                 u∈U    0
+dynamics. The function u : X → U is a feedback controller,                                                                   (6)
+                                                                                             − t+δt   u
+and is assumed to be measurable. We denote U the set of                                  +e τ v(φx (t + δt)) ,
+measurable feedback controllers. Our results rely heavily on
+trajectories: we define φux : R+ → X as the trajectory starting    where δt is 1 if T = N, and 0 otherwise.
+in x ∈ X and following the controller u ∈ U. We assume
+that trajectories are well-defined and continuous for all time,    C. Safety and Viability
+which can be enforced with appropriate assumptions on f .             We consider safety as a state-space constraint: there is an
+   2) Discrete-Time System: In discrete-time, we consider the      absorbing, closed failure set XF ⊂ X of states that the system
+following deterministic dynamical system:                          should never visit. Safety is defined as avoiding the failure set.
+                      xt+1 = f (xt , u(xt )),                (2)      Failure is challenging to cope with, even though it is often
+                                                                   straightforward to define. Indeed, it is insufficient to simply
+where t ∈ N. The discrete-time setting allows for weaker           constrain the controller to stay in the complement of the failure
+assumptions, such as non-continuous dynamics f or finite           set at each step, as this constraint might eventually become
+sets. Our results readily generalize when stochastic controllers   infeasible: there may be states that have not failed yet but from
+are allowed: we mainly describe properties of unconstrained        which failure can no longer be avoided within finite time. This
+optimal control problems, whose optimal controllers can            is addressed through viability theory [4, Chapter 2]:
+always be chosen to be deterministic. Stochasticity is not
+considered here for clarity; we will discuss this more in          Definition 1 (Viability kernel). The viability kernel XV is the
+Remark 5.                                                          set of states from where failure can be avoided for all time:
+                                                                           XV = {x ∈ X , ∃u ∈ U, ∀t ∈ T, φux (t) ∈
+                                                                                                                 / XF } .          (7)
+B. Optimality
+                                                                      We call its complement the unviability kernel, and denote it
+  1) Reward and Return: We assume a measurable and                 as XU = X \XV . Trajectories can stay in XV for an arbitrarily
+bounded reward function r : X × U → R. For a given                 long time, but as soon as they leave it, they fail within finite
+controller u ∈ U and initial state x ∈ X , the return G is:        time. The viability kernel is therefore the largest safe set.
+                      Z
+                           t                                       Remark 1. By definition, trajectories starting in XU fail
+            G(x, u) =   e− τ · r(φux (t), ûx (t)) dt,  (3)
+                         T                                         within finite time. We reconcile this with infinite time-horizon
+where we use the shorthand ûx (t) = u(φux (t)), and τ is a        by instantly transitioning the system to an invariant sink state
+positive discount rate. In discrete time, the discount factor γ    when it reaches the failure set. We forego introducing this
+is commonly used instead, with:                                    formally, as it adds notational burden with no practical benefit.
+                                    1                                A safe controller can thus be defined as:
+                             γ = e− τ .                      (4)
+                                                                   Definition 2 (Safe controller). We say that a controller u ∈ U
+The discount rate quantifies the problem-specific time-horizon:
+                                                                   is safe for the point x ∈ X if the trajectory φux avoids XF for
+the smaller τ , the less influence rewards far in the future
+                                                                   all time:
+have on G(x, u). Delayed rewards can nonetheless overcome
+                                                                                         ∀t ∈ T, φux (t) ∈
+                                                                                                         / XF .                (8)
+the effects of discounting if they are large: the effective time
+horizon results from these competing effects. Since the reward     Additionally, we say that a controller is safe if it is safe for all
+is bounded, the return is finite for every u ∈ U and x ∈ X .       points x ∈ XV . We define Usafe (x) as the set of controllers that
+4                                                                                                            MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+                                                       T
+are safe for the point x ∈ X , and Usafe =                 x∈XV Usafe (x) as   programming principle, it indirectly encodes the regions of
+the set of safe controllers.                                                   the state space that will be visited, and those that will be
+                                                                               avoided. We can thus define safety of optimal controllers as
+   From the definition of XV , it is immediately clear that
+                                                                               a property of the value function directly; we call such value
+Equation (8) can be replaced with φux (t) ∈ XV for all t ∈ T.
+                                                                               functions safe. We first combine this observation with viability
+   We will later formulate a constrained optimization problem
+                                                                               theory to identify the properties and sufficient conditions for
+over the set of safe controllers, and consider dual relaxations
+                                                                               SVFs. We then show in detail how we can leverage penalties
+of this problem: we therefore describe Usafe (x) as a level set.
+                                                                               to manipulate the value function and enforce safety.
+Lemma 1. For x ∈ X and u ∈ U, define the (discounted) risk
+ρ as:               Z                                                          A. Safety as a Property of the Value Function
+                                    − τt                                          The standard definition of safety is a point-wise statement
+               ρ(x, u) =        e          · δXF (φux (t))dt,            (9)
+                            T                                                  for a fixed controller (cf. Definition 2). For this definition, the
+where δXF is the Dirac distribution in continuous time, or the                 trajectory must be unrolled to check if it ever enters the failure
+indicator function in discrete time. A controller u ∈ U is safe                set. We generalize this point-wise definition to a uniform
+for x ∈ X if, and only if, ρ(x, u) = 0.                                        notion of safety over optimal controllers. These controllers are
+                                                                               directly induced by the value function; therefore their safety
+      Proof: The lemma follows from the definition of δXF :                    can naturally be stated as a condition on the value function:
+this integral evaluates to e−tf /τ , where tf ∈ T ∪ {∞} is the
+time-to-failure of u from x, infinite if the trajectory never fails.           Definition 3 (Safe value function). Consider a value function
+By Definition 2, u is safe for x if, and only if, φux (t) ∈  / XF              v as given in (5). We say that v is a safe value function if
+for all t ∈ T, i.e., if, and only if, tf = ∞. This concludes the               all of its optimal controllers are both safe and optimal with
+proof.                                                                         respect to (C).
+   Although the discount term e−t/τ is not necessary for the                      We emphasize that all SVFs are value functions in the
+lemma to hold, it will be useful later to linearly combine the                 classical RL sense.
+risk ρ with the return G.
+                                                                               Proposition 1. Consider Vp as given in (P). If Vp is an SVF,
+                                                                               then:
+      III. P ROBLEM S TATEMENT: S AFETY T HROUGH
+                                                                                               Vp (x) = V (x), ∀x ∈ XV ,               (10)
+                     P ENALIZATION
+   We consider a standard control or reinforcement learning                    where V is the constrained value function:
+problem with dynamics f (cf. Section II-A), failure set XF ,                                   V : x ∈ XV 7→ sup G(x, u).                      (11)
+viability kernel XV , and return G as defined in (3). Our                                                        u∈Usafe
+
+goal is to find an optimal controller for the safety-constrained
+problem:                                                                             Proof: This directly follows from Definition 3 and the
+                      sup Ex∼µ [G(x, u)] ,                   (C)               fact that ρ(x, u) = 0 for x ∈ XV and u ∈ Usafe . Since optimal
+                     u∈Usafe                                                   controllers of Vp are in Usafe , they also maximize G(x, u) over
+where µ is the initial state probability distribution, whose                   Usafe , which is the definition of V .
+support is included in XV . Since solving constrained optimal                     Proposition 1 illustrates how, in an SVF, optimality is
+control problems is hard in general, a common approach is to                   decoupled from safety. Crucially, optimal trajectories starting
+relax the constraint u ∈ Usafe and penalize reaching the failure               from initial conditions inside the viability kernel XV remain
+set XF . This is done by replacing the reward r by r − p · δXF ,               viable and, therefore, the values in XV are unaffected by the
+where p ∈ R+ is a (constant) penalty chosen by the designer.                   values outside of it; here, Vp|XV does not depend on p if Vp
+We call this unconstrained problem the penalized problem, and                  is an SVF. This prompts the more general observation that, as
+define its value function as                                                   long as the reward in XV is the same as in (C), then all SVFs
+                                                                               have the same value in XV . It follows that modifications of the
+           Vp : x ∈ X 7→ sup G(x, u) − p · ρ(x, u).                     (P)    reward that only affect the value of XU can be used as a degree
+                           u∈U
+                                                                               of freedom to ensure safety, without affecting optimality. This
+We assume that the supremum is attained and refer to solutions                 can be difficult to do in practice, as the viability kernel itself is
+as optimal controllers of Vp . The question we answer is:                      rarely known with accuracy. We will show sufficient conditions
+Problem 1. Under what conditions on p are solutions of the                     for failure penalties to stop affecting values in XV and only
+penalized problem also solutions of the constrained problem?                   affect XU , resulting in an SVF. To do so, we first derive a more
+In other words, when are the solutions of (P) both safe and                    practical condition to check that a value function is safe.
+optimal for (C)?                                                                  1) The Zeroth-Order Condition for Safety: Our key
+                                                                               intuition is that, for an optimal controller to be safe, it
+                                                                               is sufficient that states outside the viability kernel XV are
+                       IV. M AIN R ESULT
+                                                                               less attractive than states inside XV . We first introduce the
+  This section presents our main result: any large enough                      notations
+penalty results in safe and optimal controllers. Since the
+value function induces optimal controllers via the dynamic                                  RQU = sup r,        and RQV = inf r,
+                                                                                                      QU                        QV
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                              5
+
+
+
+as well as QV = f −1 (XV ) ⊂ XV ×U and QU = (X ×U)\QV               for all x ∈ XU . The first term of the right-hand side (RHS) of
+for T = N. Intuitively, QV is the set of state-control pairs that   this equation is upper-bounded by:
+transition into the viability kernel [46].                                                                T
+                                                                                                              
+                                                                                                         − τf
+                                                                                        RXU · τ 1 − e           ,              (15)
+Theorem 1 (Zeroth-order condition). Consider Vp as given
+in (P). Assume that the following zeroth-order condition holds:
+                                                                    when T = R+ , and:
+                                                                                                   1 − γ Tf +1
+              sup Vp < inf V,                 if T = R+ , (Za)                             RXU ·               ,               (16)
+              XU           XV                                                                        1−γ
+  RQU + γ · sup Vp < RQV + γ · inf V, if T = N.            (Zb)     when T = N. Now, we use the fact that the time to failure
+              XU                        XV
+                                                                    from x ∈ XU is upper bounded by Tf uniformly in u ∈ U to
+Then, the value function Vp is safe.                                bound the second term:
+                                                                                      Z Tf
+     Proof: See Appendix A.                                                                   t                     Tf
+
+   Condition (Z) ensures that an optimal controller never                   ρ(x, u) =      e− τ δXF (φux (t))dt ≥ e− τ . (17)
+                                                                                           0
+chooses to leave the viability kernel by ensuring that unsafe
+                                                                    Since this is valid for all x ∈ XU , this proves (ii).
+actions are immediately sub-optimal. The “zeroth-order”
+                                                                       The main insight we gain from this lemma is in (12):
+terminology comes from the fact that it directly compares the
+                                                                    the supremum of Vp on the unviability kernel can be made
+value of Vp in different states.
+                                                                    arbitrarily low by increasing the penalty. Therefore, there is a
+                                                                    threshold penalty above which the value function is safe:
+B. The Penalty Should Be Big Enough
+   The intuition for penalizing the failure set XF is that it       Theorem 2. Under Assumption 1, there exists p? ∈ R+ such
+reduces the values along trajectories that end in failure. A        that, for all p > p? , the penalized value function Vp is safe
+natural question is then if this strategy leads to an SVF.          and the zeroth-order condition (Z) holds, with:
+                                                                                              T
+We will now show that, under an additional assumption, it              ?                           f
+
+does: increasing penalties causes Vp to decrease arbitrarily          p = RXU · τ − inf V · e τ − RXU · τ,
+                                                                                        XV
+and monotonically in XU . From Proposition 1, this also
+                                                                             if T = R+ ,                             (18a)
+ensures that Vp converges to V inside XV . It is, therefore,                                                    
+                                                                                        Tf +1
+always possible to enforce the zeroth-order condition (Z). The                     1−γ          RQU − RQV            1
+                                                                      p ? = R XU ·            +           − inf V · Tf ,
+following assumption makes the above reasoning hold:                                 1−γ            γ       XV     γ
+                                                                             if T = N .                              (18b)
+Assumption 1. The time to failure in XU is uniformly upper-
+bounded by Tf ∈ T.
+   The time Tf bounds the finite time-to-failure in XU given           Proof: This is an immediate consequence of Lemma 2.
+by viability theory. It can be understood as the time-scale of   Indeed, with the value of p? given in (18), the upper
+failure for the system of interest.                              bound (12) ensures that (Z) holds.
+Lemma 2 (Influence of the penalty). Under Assumption 1, the         As the penalty p increases, the penalized objective Vp (x)
+following holds:                                                 decreases.   For x ∈ XV , Vp (x) is lower bounded, and after p
+                                                                            ?
+  (i) For every x ∈ X , the function p 7→ Vp (x) is              passes   p   the value coincides with V (x). For x ∈ / XV , the
+      nonincreasing;                                             value  V p (x) goes to −∞   as p goes  to  ∞.
+ (ii) The value function is uniformly upper bounded on XU :         Finally, we can answer Problem 1 and describe how
+                                                               penalized and constrained problems relate to each other. For
+                                  Tf              Tf                                 ?
+      sup Vp ≤ RXU τ 1 − e− τ − p · e− τ , if T = R+ , penalties p > p , the two problems are equivalent. In a
+      XU                                                         nutshell, we provide theoretical justification for penalizing
+                                                           (12a) failures based on the following arguments:
+                        1 − γ Tf +1                                (i) The critical threshold p? is finite;
+      sup Vp ≤ RXU ·                 − p · γ Tf ,    if T = N ,
+      XU                   1−γ                                    (ii) All maximizers of (P) for p > p? are safe;
+                                                          (12b) (iii) All maximizers of (P) for p > p? are optimal for the
+       where Tf is given in Assumption 1, and where we define          constrained problem (C);
+      RXU as:                                                    (iv)  The critical threshold p? explicitly depends on the
+                          RXU = sup r.                      (13)       maximum time to failure, reward function, and discount
+                                   XU ×U                               rate.
+                                                                 In practice, (iv) is critical for scaling the penalty. For
+      Proof: Statement (i) is an immediate consequence of the example, the ratio Tf /τ measures how the time-scale of
+fact that the supremum over U preserves inequalities. We failure compares to the agent’s inner time horizon. Due to
+prove (ii) by using classic results on the sup function:         the exponential dependency, the required penalties can be
+                                                                 extremely large if the agent is short-sighted, i.e., τ is much
+            Vp (x) ≤ sup G(x, u) − p · inf ρ(x, u),         (14) smaller than T .
+                      u∈U               u∈U                                       f
+6                                                                                              MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+Remark 2. Theorem 2 extends to the case where failure is non        where QV [x] ⊂ U is the slice of QV in state x and QV is
+absorbing by increasing the threshold penalty p? accordingly.      defined in Theorem 1.
+The key idea is to adapt Equation (12) to account for the
+                                                                        Proof: This is an immediate consequence of (Z).
+additional reward that can be collected after failure, which
+is bounded due to discounting. For brevity, we leave this          Remark 4. The simple expression of XV of (19a) also holds
+derivation to the interested reader.                               in discrete time with further assumptions on the value function.
+                                                                   Assume that:
+Remark 3. The zeroth-order condition (Z) is a sufficient
+                                                                                            inf V > sup Vp .                   (20)
+condition for a discontinuous value function to be safe, and                              XV        XU
+Assumption 1 is a sufficient condition to enforce this zeroth-
+                                                                   Then, Equation (19a) holds for discrete time as well with the
+order condition. Both require non-Lipschitz dynamics [47,
+                                                                   same values of αinf and αsup as for continuous time. Note that,
+Proposition 3.1].
+                                                                   under Assumption 1, (20) can always be enforced by further
+   This is because when the state-control space is continuous      increasing the penalty p. A sufficient lower value of p for this
+and T = R+ , the dynamics determine whether SVFs are               to hold can be derived from Lemma 2.
+continuous or discontinuous. To extend the presented results
+                                                                      Expressing safe sets as level sets is at the heart of HJ
+to models with Lipschitz dynamics, higher-order conditions
+                                                                   reachability and CBFs. We explore their connections to SVFs.
+are needed. Alternatively, one may approximate a Lipschitz
+                                                                      1) Hamilton-Jacobi Reachability: The goal of HJ
+model, for example with hybrid dynamics, to account for
+                                                                   reachability is to find the set of states from where the
+Assumption 1 and use the zeroth-order condition. Indeed,
+                                                                   system can be robustly driven into a target set, which is
+models with Lipschitz dynamics often make predictions
+                                                                   called the backwards-rechable tube of the target set [12].
+of unbounded time-to-failure that do not match empirical
+                                                                   For example, the backwards-reachable tube of the failure set
+observations, even when they are accurate and useful for
+                                                                   is the unviability kernel XU . The main method [23, 17] is
+control. This mismatch between model predictions and
+                                                                   to cast this as an optimal control problem and find a value
+observations lends itself to the common adage “all models
+                                                                   function VBRT defined similarly as in (5), but where the
+are wrong, some are useful” [48]; Lipschitz-continuity is a
+                                                                   integral is replaced with an infimum over time:
+very useful assumption for control, where we typically wish
+to stay well within the viability kernel, but the same models                  VBRT : x ∈ X 7→ sup inf r(φux (t)).             (21)
+are typically not accurate for bounding the time-to-failure. We                                   u∈U t≥0
+
+include in Appendix B two examples where Assumption 1 is           Here, the function r is the signed distance to the failure
+reasonable for a system that is otherwise well-modeled with        set. Its main difference with the reward used in this article
+a Lipschitz dynamics model.                                        is that VBRT does not have an integral structure over a
+                                                                   trajectory; in technical terms, VBRT is not a Lagrange-type
+   V. C ONNECTIONS TO OTHER A PPROACHES FOR S AFE                  value function [47, Section III.3]. It instead captures the
+                            C ONTROL                               minimum value of r over the trajectory; VBRT (x) is the closest
+   We explicitly connect SVFs to Hamilton-Jacobi (HJ) distance between the trajectory and the failure set. Once this
+reachability and control barrier functions (CBFs). In particular, value function is known, the backwards-reachable tube (i.e.,
+we pinpoint their conceptual differences with SVFs despite the unviability kernel) can be recovered as a level set. It can
+apparent similarities. Further, we put our results into then be used to solve a classic optimal control problem with
+perspective to well-known duality theorems from constrained safety guarantees, for instance by applying a backup controller
+Markov decision processes (CMDPs).                                 when the system is about to exit the viability kernel [13, 17].
+                                                                   Hsu et al. [49] combine this formulation with a task-related
+                                                                   reward, and achieve a value function that is both task-optimal
+A. The Viability Kernel as a Level Set
+                                                                   and safe, though not a Lagrange-type one.
+   A common approach to safety is to constrain the system             For clarity of exposition, we have defined SVFs for
+within a known safe set: a set of states which can be made Lagrange-type value functions only. Nonetheless, they extend
+positive invariant through control. The viability kernel XV is to other forms of optimal control by changing the cost
+the largest safe set, and can be recovered from SVFs by simple functional G appropriately in (5) and (C). A key advantage
+thresholding under the zeroth-order conditions (Z):                of the Lagrange cost (3) is its compatibility with classical RL.
+Proposition 2 (Thresholding). Assume Vp is a safe value               2) Control Barrier Functions: To connect SVFs to CBFs,
+function such that the zeroth-order condition (Z) holds. Let       we  limit the problem setting to continuous time, T = R+ . For
+αinf and αsup be the left-hand side and right-hand side of (Z), details, including other formulations of CBFs, we recommend
+respectively, for the corresponding T. For all α ∈ (αinf , αsup ], the review by Ames et al. [15].
+we have:                                                              In a nutshell, a CBF of a closed set C ⊂ X is a continuously
+                                                                   differentiable function h : D → R, with C ⊆ D, such that
+XV = {x, Vp (x) ≥ α} ,                               if T = R+ , C is the 0-superlevel set of h. Additionally, h must satisfy
+                                                           (19a) the following two properties: it increases along trajectories in
+XV = {x, ∃u ∈ QV [x], r(x, u) + γVp (x) ≥ α} , if T = N , D \ C, and can locally increase at the boundary of C. This
+                                                           (19b) means that for every state at the boundary of C, there exists a
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                                             7
+
+
+
+control input that makes the derivative of h along the trajectory   this result. Finally, we pinpoint the special properties of the
+nonnegative at this point. For brevity, we will not introduce a     0-risk CMDP that make the above concerns void.
+formal definition of CBFs and refer to [15, Definition 2]. The         The results presented here are reinterpretations of results
+following proposition connects SVFs to CBFs:                        from [41, Chapter 3] and [51] enabled by our previous results
+Proposition 3. Let Vp be a safe value function such that            and general duality in optimization [52, Chapter 5]. We restrict
+the zeroth-order condition (Z) holds. Assume that Vp|XV is          ourselves to discrete time and finite state-control sets X × U.
+continuously differentiable and XV is compact. Also assume             1) Strong Duality does not Guarantee Safety: The
+     ∂Vp|XV                                                         bounded-risk CMDP (Cη ) differs from (C) in that the risk
+that ∂x     (x) 6= 0 for all x ∈ ∂XV , where ∂XV is the
+boundary of XV . Then, for all α ∈ (αinf , αsup ], the function     should only be lower than some threshold η > 0 in the
+h = Vp|XV − α is a control barrier function of XV .                 constraint:
+
+   Here, αinf and αsup are defined in Proposition 2. This result                         sup     Ex∼µ [G(x, u)] ,
+                                                                                         u∈U                                                 (Cη )
+extends the one presented in [16] for value functions coming
+from HJ reachability analysis.                                                           s.t.   ρ(x, u) ≤ η,      ∀x ∈ XV .
+     Proof: The fact that XV is the 0-superlevel set of h is
+                                                                    In contrast, (C) is equivalent to (Cη ) with η = 0. Strong duality
+immediate from Proposition 2. We use [15, Theorem 3], which
+                                                                    is known to hold in general for (Cη ) [41, Theorem 3.6], [51].
+states that a differentiable indicator function g : C → R of a
+                                                      ∂g            Here, strong duality guarantees the existence of a penalty p?
+compact set C is a barrier function of this set if i) ∂x (x) 6= 0
+                                                                    such that there is at least one controller u? ∈ U such that u?
+for all x on ∂C; and ii) there exists a control law that renders
+                                                                    is feasible and optimal for both the original problem (Cη ) and
+C invariant. We take C = XV and g = h. The first condition
+                                                                    the penalized problem (P) [52, Section 5.5.5]. However, not all
+is assumed, and the second comes from the definition of XV .
+                                                                    solutions of the penalized problem (P) satisfy the constraints
+                                                                    of (Cη ). In other words, some solutions of the dual1 are not
+   It is worth noting that CBFs are typically used to enforce
+                                                                    feasible for the primal [52, Section 5.5.5]. The outcome of
+positive invariance of a conservative subset of XV that is
+                                                                    an RL algorithm is therefore not guaranteed to be safe when
+specified a priori, and not the entire viability kernel XV .
+                                                                    η > 0, even with the optimal penalty p? . In fact, primal-
+Specifying such a set is often non-trivial, since not all subsets
+                                                                    dual algorithms for RL typically assume feasibility of the
+of XV can be made positive invariant. Indeed, choosing
+                                                                    found solutions [53, Assumption 2]. We explain below how
+h = Vp|XV − α for α > αsup may not yield a CBF unless
+                                                                    optimal but unsafe solutions can arise, based on an example
+stronger assumptions are made for the the system dynamics
+                                                                    and theoretical results from [41, Chapter 3].
+and/or reward function [21, 49]. Alternatively to learning a
+value-function that is also a CBF, a CBF can also be learned
+from samples of dynamics transitions alone [20, 50]: this
+is because positive invariance is a property of the system                    u1                u2
+dynamics, and separate from optimality and rewards.
+                                                                                    x1                      x2                    σ
+                                                                     r=0                        r=1                 r = −p                  r=0
+B. Duality Properties of Constrained Markov Decision                 c=0                        c=1                 c=0                     c=0
+Processes
+   There is a more general set of problems modeled as CMDPs,        Fig. 1. The failure set is XF = {x2 }, and the viability kernel XV = {x1 }.
+which deal with maximizing a return while simultaneously            The system is initialized in x1 . Two control inputs are available: u1 , which
+                                                                    keeps the system in x1 , and u2 , which transitions it to x2 first and then the
+constraining a running cost under a given threshold [41]. Our       sink state σ (in accordance with Remark 1). The reward and cost are both
+definition of safety is therefore a special case of CMDPs where     0 for u1 , and 1 for u2 . The transition to the sink state σ is penalized with
+the running cost is ρ and the threshold is 0; we refer to it as     penalty p ∈ R+ , which is equivalent to a reward of −p. Here, the maximum
+                                                                    time-to-failure is Tf = 0, since the agent immediately lands in XF after
+the 0-risk CMDP, as opposed to bounded-risk CMDPs.                  leaving XV .
+   We will now demonstrate that our results do not generally
+extend to probabilistic safety with a non-zero threshold. More
+                                                                    Example 1 (Unsafe Solutions with 0 Duality Gap). Consider
+specifically, it is not always possible to find a penalty such
+                                                                    the MDP presented in Figure 1, with γ = 0.1 and η = 0.01.
+that all solutions of the penalized problem are both feasible
+                                                                    The corresponding bounded-risk CMDP is:
+and optimal for the bounded-risk CMDP. This shows that
+penalties alone are ill-suited to solve RL tasks where a non-                              argmax E [G(x1 , u)] ,
+zero risk is allowed. The key argument is that solutions                                        u                                            (22)
+to CMDPs are qualitatively different from the ones of                                               s.t. E [ρ(x1 , u)] ≤ η,
+MDPs; optimal controllers are stochastic in general [41,
+Theorem 3.6 , Theorem 3.8]. We illustrate below how this            where the controller is allowed to be stochastic, thus requiring
+allows the penalized problem to admit solutions that are either     expected values. This problem boils down to finding the
+unsafe or suboptimal for the bounded-risk CMDP. We also
+emphasize why strong duality – which is known to hold for             1 We abuse notation here by not considering the constant term p? · η in the
+CMDPs [41, Theorem 3.6], [51] – is not contradictory with           dual problem (P), which is harmless as we only consider the argmax.
+8                                                                                                  MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+optimal probability θ? that should be assigned to the control      high enough penalties give low enough values to states in XU ,
+input u2 :                                                         such that optimal controllers are deterministic and stay in XV .
+                      argmax γ · θ,                                Remark 5. Since the 0-risk problem is essentially an
+                       θ∈[0,1]                             (23)    unconstrained MDP in XV , it has deterministic optimal
+                             s.t. γ · θ ≤ η,                       controllers. Its optimal controllers also do not depend on the
+which has solution θ? = 0.1. Now, consider the penalized           initial state distribution µ. This justifies a posteriori the fact
+problem, with p ∈ R+ :                                             that we can restrict ourselves to deterministic controllers to
+                                                                   solve (C) without loss of generality and why µ does not play
+                  argmax γ · θ · (1 − γ · p).              (24)    a role in our results. These properties are not true for general
+                   θ∈[0,1]
+                                                                   CMDPs [41, Chapter 3]; this is why we allowed stochastic
+Strong duality holds with penalty p = p? = 10, such that           controllers in Example 1.
+(1 − γp) = 0; this is the only penalty for which θ? = 0.1 also
+maximizes (24). However, we trivially see that any θ ∈ [0, 1]       VI. S AFE VALUE F UNCTIONS AND D ESIGNING R EWARD
+has the same objective value for (24).                                                  F UNCTIONS
+   We observe the following:                                          The structure revealed in Equations (Z) and (18) provide
+  (i) The set of optimal policies of (24) does not depend on η     important guidelines not just for choosing p? and α, but for
+      as long as η > 0;                                            the general problem of designing a reward function. We first
+ (ii) Not all solutions of the penalized problem (24) are          solve a continuous-time example analytically to highlight the
+      solutions of the bounded-risk problem (22); other            relationship of discount rate, time-to-failure, and penalties.
+      solutions are either suboptimal or infeasible;               Then we present a discretized example to illustrate how
+(iii) The solution of (22) is stochastic.                          various forms of reward shaping affect the minimum penalty
+   Example 1 illustrates the reasons why simply penalizing         and thresholds. The code to reproduce these (and more)
+failure to solve bounded-risk CMDPs may be problematic.            examples is publicly available2 .
+In general, solutions of bounded-risk CMDPs are stochastic,
+contrary to unconstrained MDPs [41, Theorems 3.6 and 3.8].         A. Continuous-time Example
+Intuitively, this stochasticity enables a tradeoff between           To illustrate the influence of the penalty on the value
+visiting high-cost and high-reward regions (XF in Example 1)       function, we solve the penalized problem analytically on a
+and low-cost but low-reward ones (XV in Example 1).                simple continuous-time example. We consider the following
+Unconstrained MDPs can only yield such stochastic                  piecewise-affine system:
+controllers when multiple control inputs in a given state                                L
+have the same value [44, Chapter 3]. Therefore, the optimal                             − Tf ,
+                                                                                                  if x ∈ (−L, 0),
+penalty p? is the one that makes the values of safe control                     ẋ(t) = u(x(t)), if x ∈ [0, L),           (25)
+inputs equal to the ones of unsafe control inputs; in Example 1,                        
+                                                                                        
+                                                                                         0,        otherwise,
+controls u1 and u2 both have value 0 for p = p? . Consequently,
+the optimal return does not depend on how optimal controllers      with state space X = [−L, L] and finite control space
+choose between such control inputs, and the whole spectrum         U = {−v, 0, v}, where L and v are positive constants. We
+between being overly conservative and always failing is            define failure with XF = {−L}; the trajectory immediately
+allowed. This shows that some solutions of the penalized           stops when it enters XF . This results in the viability kernel
+problem are suboptimal for the bounded-risk problem, and that      XV = [0, L] and unviability kernel XU = (−L, 0). It
+others can be infeasible. For this reason, strong duality alone    is straightforward to verify that Assumption 1 holds with
+guarantees neither safety nor optimality of the solutions of       constant Tf . Intuitively, this model can be thought of as a
+the penalized problem when η > 0. In that sense, our result is     robot driving on a shelf of size [0, L]; the robot can move
+stronger than strong duality, as we explain in the next section.   forward or backward at constant speed ±v. If, however, the
+   2) An Unconstrained MDP in the Viability Kernel: The            robot crosses the ledge of the shelf at x = 0, it falls at constant
+above analysis stresses the special and beneficial properties      speed L/Tf until it reaches the ground at x = −L and breaks.
+of the 0-risk problem (C). It is fundamentally different from         We use the following reward function:
+general bounded-risk CMDPs (Cη ), with η > 0. In a nutshell,                              
+                                                                                          
+                                                                                          −1, if x ∈ [0, L),
+the 0-risk problem reduces to an unconstrained MDP inside
+of XV .                                                                           r(x) = 1,        if x ∈ (−L, 0),                (26)
+                                                                                          
+                                                                                          
+   The constraint in (C) exhibits a very specific property                                   0,    if x ∈ {−L, L}.
+compared to other bounded-risk constraints, in that it can be
+                                                                   This reward leads the agent to failure from some viable states.
+directly translated as a constraint on trajectories. Namely,
+                                                                   We therefore also penalize failure with the penalty p; the total
+trajectories should be confined in the viability kernel XV .
+                                                                   reward is r − p · δXF . We illustrate with this example how
+Therefore, the constrained problem (C) can be reformulated
+                                                                   a choice of p > p? yields an SVF and how p? , τ , and Tf
+as an unconstrained problem with state space XV and state-
+                                                                   interact.
+dependent control space U(x) = QV [x]. This interpretation
+makes very clear why penalization is effective in this case:         2 https://github.com/sheim/vibly/tree/TAC22/demos/TAC22
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                                                                        9
+
+
+
+   1) Scaling the Penalty: The optimal control consists in
+either going to and remaining at x = L, or falling from the
+shelf. From this observation we deduce the value function for               −100
+x ∈ XV :                                                             Vp (x) − 1          αsup − 1
+                                                                                      αinf − 1                                                               p=0
+                           x−L
+      Vp (x) = max τ e v·τ − 1 ,                                                                                                                                p = p?
+                                                                                                                                                                p = 2 · p?
+                                 Tf
+                                                                          −101
+                                             x
+                       τ    2 − e− τ · e− v·τ − 1        (27)                            −1.00      −0.75   −0.50     −0.25     0.00
+                                                                                                                                 x
+                                                                                                                                       0.25        0.50       0.75    1.00
+
+                                  Tf + x
+                                         
+                                       v
+                          −p · e− τ        .                                                                                                                    p∗ (τ )
+                                                                                    10                                                                          − inf XV V
+                                                                                                                                                                      
+                                                                                                                                                                        T
+In contrast, in XU , the trajectory goes to failure at speed TLf ;                                                                                              exp τf
+                                                                          p∗ (τ )
+we get the following expression for x ∈ XU :                                         5
+                         Tf
+                                             Tf
+     Vp (x) = τ 1 − e− τ (1+ L ) − p · e− τ (1+ L ) .
+                                 x                  x
+                                                            (28)
+                                                                                     0
+                                                                                         0.0        2.5         5.0   7.5       10.0   12.5        15.0       17.5    20.0
+The agent thus remains in XV for all time if, and only if, the                                                                    τ
+max in (27) is equal to its first argument in x = 0. This yields
+the minimum value for p for an SVF:                                                102
+                   h           L
+                                 i Tf
+             p > τ 2 − e− v·τ · e τ − τ =     ˙ p? .        (29)        p∗ (Tf )
+                                                                                   101
+The RHS is equal to p? as defined in (18a); we recover
+Theorem 2 without directly using it.
+                                                                                   100
+   As p passes p? , values in XU keep decreasing and the                                   0                1               2          3                  4            5
+difference between the thresholds αinf and αsup increases                                                                        Tf
+(Fig. 2, top). The viability kernel can easily be recovered
+via thresholding thanks to the discontinuity in x = 0.               Fig. 2. (Top) The penalized value function Vp for different values of p with
+                                                                     τ = 1. The value on the viability kernel XV = [0, 1] is not influenced by the
+Nevertheless, the value α = 0 is not a suitable threshold; this      penalty when p ≥ p? . For p > p? , the zeroth-order condition holds and Vp
+is due to the negative values of the reward in XV . We further       is discontinuous. (Middle) The dependency of p? in the discount rate τ with
+                                                                                                                                              Tf
+illustrate this in Section VI-E.                                     Tf = 1. For small values of τ , the dependency e τ dominates. For large
+   2) Discount Rate, Time-to-Failure, and Penalties: While           values of τ , the infimum of V on XV decreases due to the negative rewards
+                                                                     in XV ; p? increases again. (Bottom) The exponential dependency of p? in
+Equation (18) is in general only an upper-bound, it is tight         Tf , for τ = 1. All plots use L = 1 and v = 0.2.
+on this example; p? is the lowest penalty such that Vp is safe
+for p > p? . This emphasizes the role of the discount rate τ
+and time-to-failure Tf on the minimum penalty (Fig. 2, middle        we can numerically compute and visualize both the viability
+and bottom). A large Tf can lead to a large penalty due to the       kernel and value functions. The system dynamics are
+exponential dependency p? ∝ eTf /τ . A higher discount rate                                                 ẋ1 = x2 ,
+may help mitigate that problem; it more easily propagates the                                                        g                                                (30)
+penalty signal up a failed trajectory. However, the discount                                                ẋ2 = − 2 + ω 2 x1 + u,
+                                                                                                                    x1
+rate is also a crucial parameter determining the safe, optimal
+behavior. In fact, if the reward function can be negative inside     with state x = (x1 , x2 ) ∈ [0, 16] × [−5, 7], control input
+XV , a large τ can actually lower inf XV V (the RHS of (Z)),         u ∈ [−1, 1], and system parameters g = 10 and ω = 0.1. The
+increase p? , and thus encourage failure.                            dynamics can be loosely interpreted as a satellite orbiting at
+   A suitable choice of τ needs to consider both of these            constant angular velocity ω, with g/x21 the gravitational force,
+independent criteria, even if the time-to-failure Tf is the main     ω 2 x1 the centripetal force, and u a radial thruster. To keep
+driver of this choice. A long Tf essentially indicates that          the computation time of value functions low, we discretize
+there exist controllers that can delay an inevitable failure.        the system in space with a 401×301 grid over the states,
+While it may seem unintuitive that the existence of such             and discretize in time by applying the control input u with
+controllers increases the relative gravity of failure, it adds       a zero-order-hold for a period of 1 second, and integrating the
+a new interpretation to the benefit of “fail fast”. We may           continuous time dynamics. This allows us to explore different
+conclude that if there are two causally related unviable states,     combinations of penalties, rewards, and discount factors, and
+it is advantageous to penalize the one that occurs first.            easily visualize the results.
+                                                                        The failure set is XF = {x : x1 ≤ 1 or x1 ≥ 15},
+                                                                     representing the satellite crashing or moving beyond radio
+B. Numerical Example                                                 communication range. The continuous-time dynamics (30)
+  To illustrate the influence of the reward on the value             don’t satisfy Assumption 1; nevertheless, the discretized
+function, we use a simple two dimensional system for which           system trivially satisfies it since its state-control space is finite.
+10                                                                                                       MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+   All value functions in the following are computed by brute                                      Reward Function
+force using value iteration [54, Chapter 7.3], with a discount         15
+factor γ = 0.6, and p? is rounded off to integer values.
+                                                                       10
+
+C. Success and Failure are Conceptually Independent                     5
+   Intuition tells us that success implies avoiding failure,            x1
+yet avoiding failure does not imply success. This intuition                  x2 −4          −2           0          2           4           6
+becomes clear when a task is translated into a parsimonious
+reward function. Arguably, the most parsimonious reward                               reward r = 1                          penalty r = −p
+describing a task is to simply assign a positive reward for states
+associated with task success, and zero reward everywhere                               Safe Value Function with p = 1 (p∗ = 0)
+else. The definition of a failure set implies that task success        15
+should only involve states inside the viability kernel XV ; the
+                                                                       10
+value function for such a reward function is naturally zero
+outside XV , and at least zero inside. In fact, the value inside
+                                                                        5
+XV is zero only for states from which the task cannot be
+                                                                        x1
+successfully completed. We thus see that task success and
+failure are separate concepts: although the value function (and              x2 −4          −2           0          2           4           6
+optimal controller) of a parsimonious reward is automatically
+safe whenever the task can be successfully completed, it does                  Value
+not enforce the strict inequality condition in (Z). At the same                           −1                         0                          1
+time, the penalty has no effect on values in XV , and the value
+function is made safe by any penalty greater than zero.
+                                                                     Fig. 3. A parsimonious reward function and penalty (top), and the resulting
+   Consider as desired task for our satellite model to reach         SVF (bottom). The boundary of the viability kernel is outlined in yellow. In
+the equilibrium point at x = (10, 0). A parsimonious reward          this setting, the positive reward is only propagated to its backwards-reachable
+function is to return one at equilibrium and zero everywhere         set, which in this case is the entire viability kernel XV . Conversely, the
+                                                                     negative penalty is only propagated along trajectories that cannot avoid failure;
+else. An SVF for the parsimonious reward function, with              that is, to the complement of XV . As such, any penalty will ensure an SVF.
+penalty p = 1 assigned to the failure set XF = {x : x1 ≤             The threshold range is α ∈ [−0.0054, 0].
+1 or x1 ≥ 15}, is shown in Fig. 3. Note that for this system,
+a penalty is not strictly necessary to enforce safety, since the
+equilibrium point can be reached from any state x ∈ XV .             under-approximations are sometimes known from domain
+                                                                     knowledge [55], and for certain classes of systems, they can
+                                                                     be estimated [50, 56, 57].
+D. Recovering the Viability Kernel                                      1) Benign Rewards: Adding positive rewards to states in
+   The independence of success and failure suggests that we          XV and/or negative rewards in X \ XV does not increase p?
+can consider safety independently from any specific task; this       and can, in fact, potentially decrease it. Such modifications can
+property provides the simplest parameters for recovering the         only increase the RHS and decrease the left-hand side (LHS)
+viability kernel. The degenerate reward function r(x, u) = 0         of Equation (Z), and thus relaxes the condition for SVFs.
+does not require even estimates of XV to design. It can be              If only benign rewards are used to describe a task, the
+immediately seen in Equation (18) that all terms in p? go to         resulting value function may no longer be optimal compared
+zero, and any non-zero penalty will induce an SVF. We see            to a parsimonious reward function, but it remains safe and
+from the RHS of Equation (Z) that αsup is also zero, and             easy to specify: we have p? = 0 and α = 0. When combined
+thus XV can be recovered by thresholding Vp with α = 0, as           with other types of rewards, benign rewards reduce p? .
+shown in Fig. 4.                                                        2) Positive Rewards Outside XV : Assigning positive
+                                                                     rewards outside XV can increase RQU , which we see in
+E. Reward Shaping Guidelines                                         Equation (18) increases the minimum penalty p? . We illustrate
+                                                                     this effect with a surrogate reward function that encourages
+   Parsimonious reward functions are rarely used in practice:        the satellite to remain within a threshold of the equilibrium
+they are typically too sparse, and it may not be known how to        position, without considering its velocity (Fig. 5 top):
+describe task success mathematically. It is common to design                                    (
+a surrogate reward that is denser, or has a smooth structure                                      1 if, |x1 − 10| ≤ 1
+                                                                                     r(x, u) =                                    (31)
+more amenable to optimization. This practice is called reward                                     0 otherwise.
+shaping. It is when this surrogate reward function is poorly
+specified that penalties become critical.                              Although the peak of the value function remains centered
+   We distinguish three categories of modifications, based           around the equilibrium point, a relatively high penalty of p =
+on whether the reward is positive or negative, and lies              111 is needed to recover an SVF (Fig. 5 bottom).
+inside or outside XV , and examine their effect on p? and              Positive rewards outside XV can also increase the LHS
+α. Although XV is typically unknown a priori, over- and              of Equation (Z), and consequently αinf in Equation (19),
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                                                          11
+
+
+
+
+                              Reward Function                                                                    Reward Function
+  15                                                                                  15
+
+  10                                                                                  10
+
+   5                                                                                   5
+   x1                                                                                  x1
+        x2 −4          −2            0         2           4           6                    x2 −4          −2          0          2          4           6
+                 no reward                             penalty r = −p                                reward r = 1                         penalty r = −p
+
+
+                 Safe Value Function with p = 1 (p∗ = 0)                                              Value Function with p = 1 (p∗ = 110)
+  15                                                                                  15
+
+  10                                                                                  10
+
+   5                                                                                   5
+   x1
+                                                                                       x1
+        x2 −4          −2            0         2           4           6                    x2 −4          −2          0          2          4           6
+
+           Value                                                                      15
+                                −2                   −1                    0
+                                                                                      10
+
+Fig. 4. A degenerate reward function and penalty (top), and the resulting SVF
+                                                                                       5
+(bottom). This setting essentially only considers safety, with no notion of task-
+related optimality. The resulting SVF is strictly negative outside XV for any          x1
+positive value of p, and the viability kernel XV can be easily recovered with
+the threshold α = 0. This setting allows the viability kernel to be recovered               x2 −4          −2          0          2          4           6
+with a trivial choice of problem parameters. The threshold range is α ∈
+[−0.0054, 0].                                                                               Value
+                                                                                                    −100        −50            0         1         2
+                                                                                                                              α sup
+making the choice of a thresholding value α more difficult.
+Nonetheless, if only positive rewards are used, αsup must be                        Fig. 5. A positive reward function and penalty (top), an insufficiently
+                                                                                    penalized value function (middle), and an SVF (bottom). If a reward function
+non-negative. There is then always a p > p? such that the                           assigns positive rewards outside XV (top), a larger penalty is required to
+threshold α = 0 recovers the viability kernel from an SVF.                          recover an SVF: with the relatively small penalty of p = 1, large portions of
+   3) Negative Rewards inside XV : Assigning negative                               X \ XV are already marked with a low value; however, some regions still
+                                                                                    have a higher value than inside XV . It is only with a penalty of p = 111, two
+rewards inside XV can decrease inf XV V and RQV , which                             orders of magnitude greater than the reward, that we recover a value function
+again leads to a higher minimum penalty p? . We illustrate this                     that is safe everywhere. The threshold range is α ∈ [−0.004, 0]: we see that,
+effect with a surrogate reward function that discourages the                        if only positive rewards are used, the viability kernel can still be recovered
+                                                                                    with a simple threshold at α = 0.
+satellite from high velocities, without considering its position,
+together with a quadratic cost on the control input (Fig. 6 top):
+                         (                                                          sufficient condition for safety, which builds on the intuition
+                           −1 − u2 if, |x2 | ≥ 2                                    that unsafe states should be suboptimal. Furthermore, we have
+               r(x, u) =                                     (32)
+                           −u2         otherwise.                                   shown under mild assumptions that the SVF structure can
+                                                                                    always be enforced by simply shaping the reward function
+  Again, the peak of the value function remains centered
+                                                                                    with any sufficiently large penalty on the failure set. We show
+correctly; however, there are regions of the viability kernel
+                                                                                    how the upper bound for the minimum penalty depends on
+XV that have a lower value than regions outside, until the
+                                                                                    the reward, discount rate, and system dynamics, and provide
+penalty is increased to at least p = 136 (Fig. 6 bottom).
+                                                                                    an explicit formula (cf. (18)) to compute it. Although the
+  Furthermore, negative rewards can influence both the RHS
+                                                                                    inputs to this formula are often difficult to obtain in practice,
+and LHS of (Z), making it substantially more difficult to
+                                                                                    they provide insight into the problem, and we discuss several
+choose a thresholding value α.
+                                                                                    theory-backed heuristics for designing an appropriate reward
+                                                                                    function. We expect the insight developed in this article will
+                 VII. D ISCUSSION AND O UTLOOK                                      allow engineers to design reward functions more effectively,
+   We have identified how rewards can preserve viability                            while also offering better interpretability of penalty terms.
+through the necessary structure of an SVF: a value function                            The new notion of safe value function has many connections
+that is both optimal with respect to a given task, and safely                       to existing tools for safe control, such as Hamilton-Jacobi
+avoids a given failure set. We then provide the zeroth-order                        reachability and control barrier functions. We examine when
+12                                                                                                             MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+
+                                Reward Function                                    We expect our results to extend to this setting by considering
+     15                                                                            the notion of invariance kernel [4, Definition 2.9.2], sometimes
+                                                                                   called the discriminating kernel [13], a robust extension of
+     10                                                                            the viability kernel. When this invariance kernel is empty,
+                                                                                   our definition of safety is not suited to describe the system,
+      5                                                                            and one should consider an alternative such as bounded risk
+     x1                                                                            constraints. In this case, we expect that penalizing failures
+                                                                                   actually harms the optimality of penalized-optimal controllers.
+          x2 −4            −2           0       2          4          6
+                                                                                      Our long-term goal is to learn provably safe, optimal
+                    reward r = −1                      penalty r = −p
+                                                                                   controllers for the constrained problem. In practice, value
+                                                                                   functions and controllers are parameterized to allow for
+                     Value Function with p = 1 (p∗ = 135)
+                                                                                   efficient representations in high dimensions, e.g., with deep
+     15
+                                                                                   neural networks. The previous analysis breaks down in
+     10
+                                                                                   this case, as the optimal dynamic programming identity
+                                                                                   is no longer satisfied and values inside and outside the
+      5                                                                            viability kernel are no longer independent. Whether a
+     x1
+                                                                                   finite penalty ensures safety and constrained-optimality of
+                                                                                   penalized-optimal, parameterized controllers then remains an
+          x2 −4            −2       0           2         4           6            important open question.
+                   Safe Value Function with p = 136 (p∗ = 135)
+     15
+                                                                                                             A PPENDIX
+     10                                                                            A. Proof of Theorem 1
+                                                                                     We show that any controller that achieves Vp for all x must
+      5                                                                            be safe. We start with the following lemma:
+     x1
+                                                                                   Lemma 3. The following conditions are equivalent:
+          x2 −4            −2           0       2          4          6
+                                                                                    (i) for all x ∈ XV :
+          Value
+                                                                                                   argmax (G − pρ)(x, u) ⊂ Usafe (x);
+                  −100.0        −50.0       −4.5         −2.0        0.0
+                                            α sup                                                    u∈U
+
+
+Fig. 6. A negative reward function and penalty (top), an insufficiently
+                                                                                   (ii) for all x ∈ XV :
+penalized value function (middle), and an SVF (bottom). Note, the quadratic
+cost on u is not visualized. If negative rewards are assigned inside XV , it              V (x) > G(x, uF ) − pρ(x, uF ), ∀uF ∈ U \ Usafe (x).
+becomes more difficult to choose not only the penalty p, but also the threshold
+α: here the threshold range is α ∈ [−4.54, −4.53]. We see in the SVF
+that a choice of α = 0 does not recover the viability kernel, but rather a
+conservative subset. Note that it may not be possible to render these subsets          Proof: To prove the first implication, let x ∈ XV and
+forward invariant; in other words, it is not guaranteed that there exist control   uF ∈ U \ Usafe (x). We have:
+barrier functions for these subsets.
+                                                                                             (G − pρ)(x, uF ) < max(G − pρ)(x, u),
+                                                                                                                 u∈U
+                                                                                                                                               (33)
+these objects are equivalent and when they differ. Since                                                      = max G(x, u) = V (x),
+                                                                                                                u∈Usafe
+important objects like the viability kernel can easily be
+recovered, safe value functions do not lose the advantages of                      where we used (i) twice (first to have a strict inequality, and
+considering safety constraints as separate objects. We have also                   then to restrict the maximization domain to Usafe ) and the fact
+shown that penalizing failure is not suited to deal with general                   that ρ(x, u) = 0 for all u ∈ Usafe . This proves (i) =⇒ (ii).
+bounded-risk constraints. This result suggests that it is neither                    We now assume (ii). From weak duality:
+necessary nor easier to resort to more elaborate definitions of
+                                                                                      max (G − p · ρ)(x, u) ≥ max G(x, u) = V (x),             (34)
+safety when the dynamics has controllable invariant sets.                              u∈U                       u∈Usafe
+   The zeroth-order condition we provide is only a sufficient                      because ρ(x, u) = 0 for u ∈ Usafe . Now, from (ii), we have
+condition, and only applies to systems with discontinuous                          (G − p · ρ)(x, uF ) < V (x) for uF ∈ U \ Usafe (x). Weak
+value functions. An exciting open question is to derive higher-                    duality (34) therefore implies that uF is not in argmaxU (G −
+order conditions for safety of continuous value functions. This                    p · ρ)(x, ·). This proves that
+would open the way to other classes of reward shaping for
+which safety can be checked a priori and thus, facilitate the                           argmax (G − p · ρ)(x, u) ∩ (U \ Usafe (x)) = ∅         (35)
+design of rewards for multiple criteria.                                                  u∈U
+
+   We have restricted our attention to deterministic dynamics.                     for all x ∈ XV , which is equivalent to (i).
+Many practical applications account for uncertainty in the                            Next, we move on to the proof of the main result. We show
+model in the form of process noise or exogenous disturbances.                      that (Z) is sufficient for (ii) to hold.
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                                                          13
+
+
+
+     Let x ∈ XV . For uF ∈ U \ Usafe (x), consider                                   where we have used V (φux (T +  + δt)) ≥ inf XV V and the
+                                                                                     fact that ûx = uˆF x for t between 0 and T − .
+                    T = sup{t ∈ T, φuxF (t) ∈ XV }.                           (36)
+                                                                                        We are now ready to conclude. We take  → 0 in (38)
+Such a T is finite, because uF is unsafe for x. We now discuss                       and (42). When T = R+ , this gives:
+two cases, depending on whether y = φuxF (T + δt) is in XF .                                                         T
+                                                                                                                    e τ · V (x) ≥ inf V + I0 ,               (43)
+   First, assume that y ∈  / XF ; i.e., y is either in XU or in                                                                           XV
+XV (more precisely, on its boundary). Since XF is closed,                                                   T
+                                                                                                          e τ · (G − pρ)(x) ≤ sup Vp + I0 ,                  (44)
+this means that the trajectory spends some time in XU before                                                                              X \XV
+reaching XF . We define a time  slightly differently depending
+                                                                                     where we used the fact δt = 0. When T = N, we have instead
+on whether T = R+ or T = N. For T = R+ , we pick ¯ > 0
+                                                                                     δt = 1 and use the counting measure for integration, which
+such that the trajectory φuxF stays in XU until T + ¯. Next, we
+                                                                                     yields:
+simply pick  ∈ (0, ¯). For T = N, we pick instead ¯ ≥ 0 such
+                                                                                                         T +1                                     1
+that the trajectory stays in XU until T + δt + ¯ and choose any                                        e τ · V (x) ≥ inf V + I0 + e τ · RQV ,               (45)
+                                                                                                                            XV
+ ∈ [0, ¯] ∩ N. This distinction is needed to make  go to 0                                T +1                                                     1
+later. The dynamic programming identity for (G − pρ)(x, uF )                             e     τ    · (G − pρ)(x) ≤ sup Vp + I0 + e · RQU .           τ      (46)
+                                                                                                                            X \XV
+at time T +  yields:
+                         Z T +                                                      For completeness, we should now discuss the case when y =
+                                   t
+    (G − pρ)(x, uF ) =          e− τ r(φuxF (t), uˆF x (t))dt                        φuxF (T + δt) is in XF ; i.e., when an ¯ cannot be chosen as
+                           0                                  (37)                   described after (36). The previous computations still hold by
+                                                                T ++δt
+                               + (G − pρ) (y , uF )e−             τ      ,          simply writing the dynamic programming equations until time
+where we use the shorthand y = φuxF (T + δt + ). Since y ∈                        T instead of T + , and defining the controller u with some
+XU , we can upper bound (G − pρ)(y , uF ) by the supremum                            ∈ T small enough. Therefore, Equations (43)–(46) hold in
+of Vp on XU :                                                                        this case as well.
+                                                                                        Since the zeroth-order condition (Z) holds, these
+     T ++δt
+ e      τ      · (G − pρ)(x, uF ) ≤ sup Vp + I                                      inequalities imply that
+                                        X \XV                                                           T +δt               T +δt
+                               Z T +                                                               e     τ     V (x) > e     τ     · (G − p · ρ)(x, uF ).   (47)
+                                            T ++δt−t
+                           +            e       τ       r(φuxF (t), uˆF x (t))dt,
+                                T −                                                 As this holds for all x ∈ XV and uF ∈ U \ Usafe (x), this
+                                                                              (38)   shows that (ii) in Lemma 3 is satisfied.
+where we define:
+             Z T −                                                                  B. Finite Time-to-Failure and Lipschitz are conflicting yet
+                      T +δt+−t
+        I =        e     τ     r(φuxF (t), uˆF x (t))dt.                     (39)   useful models
+                      0
+                                                                                        Assumption 1 (the maximum time-to-failure is uniformly
+Next, we lower bound V by using a safe controller that also
+                                                                                     upper-bounded) directly conflicts with the Lipschitz-continuity
+collects the return I until time T − . We thus construct a
+                                                                                     assumption, which is commonly used to model many systems
+safe feedback controller u that follows uF until t = T − ,
+                                                                                     of general interest. We reconcile this conflict with the
+and acts safely afterwards. Let b ∈ Usafe be any safe backup
+                                                                                     observation that these assumptions are useful for separate
+controller. We define u as follows:
+                (                                                                    purposes: Assumption 1 more closely matches empirical
+                  uF (z), if ∃t < T − , z = φuxF (t),                               observations when dealing with safety, even when a Lipschitz
+  u : z ∈ X 7→                                           (40)
+                  b(z), otherwise.                                                   dynamics model is useful for the purpose of control or
+                                                                                     prediction.
+This controller is indeed a feedback controller, since it is                            We provide two examples, from the field of legged robotics
+defined with two feedback controllers on disjoint domains. It                        and from experimental observations of animal motion.
+is also safe, since it can be easily checked that φuz never leaves                      1) Linear inverted pendulum model of walking: A linear
+XV for any initial state z ∈ XV . The dynamic programming                            inverted pendulum model is commonly used to control foot-
+equation for V at time T +  gives:                                                  step locations of bipedal robots [58, 59, 55]. For this model,
+                       "Z
+                            T +
+                                    t
+                                                                                     the relevant dynamics become linear, and it is possible to solve
+    V (x) = sup                  e− τ · r(φuxS (t), uˆS x (t))dt                     in closed form for the so-called N-step capture region [59]: the
+             uS ∈Usafe    0
+                                                                (41)                set of foot-step locations from which it is possible to return
+                          +e−
+                                 T ++δt
+                                    τ       V (φuxS (T +  + δt)) ,                  to a stand-still in N steps. The formula for the maximum
+                                                                                     footstep location (which is the border of the capture region)
+We lower bound the supremum by the value in u ∈ Usafe . By                           dN reads [59, Eq. 16, rewritten for clarity]:
+rearranging, we obtain:                                                                                                          N
+                                                                                                                                 X      0
+     T ++δt                                                                                                     dN = `max         (e−∆ts )i ,               (48)
+ e      τ      · V (x) ≥ inf V + I                                                                                                 i=1
+                         XV
+                            Z T +                                    (42)
+                                     T ++δt−t                                       where `max is the maximum step-length, and ∆t0s is the
+                         +         e     τ     r(φux (t), ûx (t))dt,                minimum step-time (time required to swing the foot to the new
+                               T −
+14                                                                                              MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+location). If we take N to infinity, the border of the inifinite-         Toward safe learning in control,” Annual Review of
+step capture region is                                                    Control, Robotics, and Autonomous Systems, vol. 3,
+                                        0                                 2020.
+                                    e−∆ts
+                     d∞ = `max             0 ,                (49)    [2] J. Garcıa and F. Fernández, “A comprehensive survey
+                                  1 − e−∆ts                               on safe reinforcement learning,” Journal of Machine
+and is closed. Note that, as can be seen in [59, Fig. 1], the             Learning Research, vol. 16, 2015.
+viability kernel is a strict superset of the infinite-step capture    [3] L. Brunke, M. Greeff, A. W. Hall, Z. Yuan, S. Zhou,
+region, implying there are states in which it is possible to avoid        J. Panerati, and A. P. Schoellig, “Safe learning
+ever falling down, but also impossible to stop walking. This              in robotics: From learning-based control to safe
+model also implies that there are states from which it takes              reinforcement learning,” Annual Review of Control,
+infinitely many steps to slow down, and conversely infinitely             Robotics, and Autonomous Systems, 2022.
+many steps to fall, even though falling may be unavoidable.           [4] J.-P. Aubin, A. M. Bayen, and P. Saint-Pierre, Viability
+Personal experience tells us this is not true. In fact, numerical         theory: new directions, 2nd ed. Springer Science &
+computations for the same and similar models show that if                 Business Media, 2011.
+failure can be avoided, it is always possible to come to a stop       [5] J. Schulman, Y. Duan, J. Ho, A. Lee, I. Awwal,
+in just two steps [55, 60, 46]. Practice tells us this is true for        H. Bradlow, J. Pan, S. Patil, K. Goldberg, and P. Abbeel,
+real robots as well, and experimental observation suggests it is          “Motion planning with sequential convex optimization
+also true for human walking [61]. In other words, this model              and convex collision checking,” The International
+and its capture regions are very useful for the purposes of               Journal of Robotics Research, 2014.
+control, even though they do not match with real observations         [6] P. Holmes, S. Kousik, B. Zhang, D. Raz, C. Barbalata,
+on the border ∂XV . This is not a problem because the model’s             J. Matthew Roberson, and R. Vasudevan, “Reachable Sets
+accuracy at the border is not important for control; it does              for Safe, Real-Time Manipulator Trajectory Design,” in
+become important to estimate time to failure, as in our setting.          Robotics: Science and Systems, 2020.
+   2) Landing Trajectory of Honeybees: Our second example             [7] J. Shih, F. Meier, and A. Rai, “A framework for
+is the one developed in [62], which studies the time-to-                  online updates to safe sets for uncertain dynamics,”
+touchdown of honeybees during landing. The authors find that              in International Conference on Intelligent Robots and
+bees essentially follow an exponential trajectory at landing,             Systems, 2020.
+which implies a theoretically infinite time-to-touchdown. This        [8] J. Nubert, J. Köhler, V. Berenz, F. Allgöwer, and
+is explicitly written by the authors [62, after Eq. 11]:                  S. Trimpe, “Safe and fast tracking on a robot
+      “Thus, the projected time to touchdown does not                     manipulator: Robust mpc and neural network control,”
+      decrease linearly with time, as it would if the bee                 IEEE Robotics and Automation Letters, 2020.
+      approached the surface at constant speed. Neither               [9] A. Boccia, L. Grüne, and K. Worthmann, “Stability and
+      does the bee decelerate abruptly when the projected                 feasibility of state constrained MPC without stabilizing
+      time to touchdown falls below a critical value, as                  terminal constraints,” Systems & control letters, 2014.
+      flies seem to do before landing on a small target.             [10] L. Grüne and J. Pannek, Nonlinear Model Predictive
+      Rather, the landing bee decelerates continuously, and               Control, 2nd ed. Springer, 2017.
+      in such a way as to maintain a constant projected              [11] R. Postoyan, L. Buşoniu, D. Nešić, and J. Daafouz,
+      time to touchdown. This, in effect, is the reason why               “Stability analysis of discrete-time infinite-horizon
+      touchdown theoretically requires infinite time.”                    optimal control with discounted cost,” IEEE Transactions
+Nevertheless, bees can land. The authors give the following               on Automatic Control, 2016.
+explanation [62, after Eq. 4]:                                       [12] S. Bansal, M. Chen, S. Herbert, and C. J. Tomlin,
+      “This, however, is not a problem in reality because                 “Hamilton-jacobi reachability: A brief overview and
+      extension of the legs prior to landing ensures that                 recent advances,” in IEEE Conference on Decision and
+      touchdown usually occurs at a nonzero height above                  Control, 2017.
+      the ground.”                                                   [13] J. F. Fisac, A. K. Akametalu, M. N. Zeilinger,
+Again, a reasonable model to describe the trajectory of bees              S. Kaynama, J. Gillula, and C. J. Tomlin, “A general
+yields unrealistic predictions of the “time-to-reach”.                    safety framework for learning-based control in uncertain
+                                                                          robotic systems,” IEEE Transactions on Automatic
+                                                                          Control, vol. 64, 2018.
+                     ACKNOWLEDGMENT
+                                                                     [14] A. K. Akametalu, J. F. Fisac, J. H. Gillula, S. Kaynama,
+   The authors would like to thank G. Chou, C. Fiedler, J.                M. N. Zeilinger, and C. J. Tomlin, “Reachability-
+F. Fisac, K.-C. Hsu, V. Rubies-Royo, and A. von Rohr for                  based safe learning with Gaussian processes,” in IEEE
+insightful discussions, and the anonymous reviewers for their             Conference on Decision and Control, 2014, pp. 1424–
+thorough, in-depth comments.                                              1431.
+                                                                     [15] A. D. Ames, S. Coogan, M. Egerstedt, G. Notomista,
+                         R EFERENCES                                      K. Sreenath, and P. Tabuada, “Control barrier functions:
+ [1] L. Hewing, K. P. Wabersich, M. Menner, and M. N.                     Theory and applications,” in IEEE European Control
+     Zeilinger, “Learning-based model predictive control:                 Conference, 2019.
+MASSIANI et al.: SAFE VALUE FUNCTIONS                                                                                          15
+
+
+
+[16] J. J. Choi, D. Lee, K. Sreenath, C. J. Tomlin, and                Zhu, A. Del Prete, and L. Righetti, “Robust humanoid
+     S. L. Herbert, “Robust control barrier-value functions for        locomotion using trajectory optimization and sample-
+     safety-critical control,” in IEEE Conference on Decision          efficient learning,” in IEEE International Conference on
+     and Control, 2021.                                                Humanoid Robots, 2019, pp. 170–177.
+[17] M. Chen and C. J. Tomlin, “Hamilton–Jacobi                   [32] M. El-Shamouty, X. Wu, S. Yang, M. Albus, and M. F.
+     Reachability: Some Recent Theoretical Advances                    Huber, “Towards safe human-robot collaboration using
+     and Applications in Unmanned Airspace Management,”                deep reinforcement learning,” in IEEE International
+     Annual Review of Control, Robotics, and Autonomous                Conference on Robotics and Automation, 2020.
+     Systems, vol. 1, pp. 333–358, 2018.                          [33] N. Funk, D. Baumann, V. Berenz, and S. Trimpe,
+[18] S. Herbert, J. J. Choi, S. Sanjeev, M. Gibson,                    “Learning event-triggered control from data through joint
+     K. Sreenath, and C. J. Tomlin, “Scalable learning                 optimization,” IFAC Journal of Systems and Control,
+     of safety guarantees for autonomous systems using                 vol. 16, 2021.
+     hamilton-jacobi reachability,” in IEEE International         [34] A. Rai, R. Antonova, S. Song, W. Martin, H. Geyer,
+     Conference on Robotics and Automation, 2021.                      and C. Atkeson, “Bayesian optimization using domain
+[19] N. M. Boffi, S. Tu, N. Matni, J.-J. E. Slotine, and               knowledge on the atrias biped,” in IEEE International
+     V. Sindhwani, “Learning stability certificates from data,”        Conference on Robotics and Automation, 2018.
+     in Conference on Robot Learning, 2020, pp. 5914–5920.        [35] T. Haarnoja, S. Ha, A. Zhou, J. Tan, G. Tucker, and
+[20] A. Robey, H. Hu, L. Lindemann, H. Zhang, D. V.                    S. Levine, “Learning to walk via deep reinforcement
+     Dimarogonas, S. Tu, and N. Matni, “Learning control               learning,” in Robotics: Science and Systems, 2019.
+     barrier functions from expert demonstrations,” in IEEE       [36] J. Hwangbo, J. Lee, A. Dosovitskiy, D. Bellicoso,
+     Conference on Decision and Control, 2020.                         V. Tsounis, V. Koltun, and M. Hutter, “Learning agile and
+[21] S. Heim, A. Rohr, S. Trimpe, and A. Badri-Spröwitz,              dynamic motor skills for legged robots,” Science robotics,
+     “A learnable safety measure,” in Conference on Robot              2019.
+     Learning, 2019.                                              [37] A. Ray, J. Achiam, and D. Amodei, “Benchmarking
+[22] G. Chou, D. Berenson, and N. Ozay, “Learning                      safe exploration in deep reinforcement learning,” 2019,
+     constraints from demonstrations with grid and parametric          preprint, OpenAI. https://cdn.openai.com/safexp-short.
+     representations,” The International Journal of Robotics           pdf.
+     Research, pp. 627–639, 2021.                                 [38] J. Achiam, D. Held, A. Tamar, and P. Abbeel,
+[23] J. F. Fisac, N. F. Lugovoy, V. Rubies-Royo, S. Ghosh, and         “Constrained policy optimization,” in International
+     C. J. Tomlin, “Bridging hamilton-jacobi safety analysis           Conference on Machine Learning. PMLR, 2017, pp.
+     and reinforcement learning,” in 2019 International                22–31.
+     Conference on Robotics and Automation, 2019.                 [39] J. Li, D. Fridovich-Keil, S. Sojoudi, and C. J. Tomlin,
+[24] P.-F. Massiani, S. Heim, and S. Trimpe, “On exploration           “Augmented lagrangian method for instantaneously
+     requirements for learning safety constraints,” in Learning        constrained reinforcement learning problems,” in IEEE
+     for Dynamics and Control, 2021, pp. 8550–8556.                    Conference on Decision and Control, 2021.
+[25] M. Turchetta, F. Berkenkamp, and A. Krause, “Safe            [40] J. R. Martins and A. Ning, Engineering design
+     exploration for interactive machine learning,” in                 optimization. Cambridge University Press, 2021.
+     Advances in Neural Information Processing Systems,           [41] E. Altman, Constrained Markov Decision Processes.
+     2019, pp. 905–916.                                                Routledge, 1999.
+[26] P. Geibel, “Reinforcement Learning with Bounded Risk,”       [42] L. Zheng and L. J. Ratliff, “Constrained Upper
+     in International Conference on Machine Learning, 2001.            Confidence Reinforcement Learning with Known
+[27] P. Geibel and F. Wysotzki, “Risk-Sensitive                        Dynamics,” IEEE International Conference on Robotics
+     Reinforcement Learning Applied to Control under                   and Automation, pp. 620–629, 2020.
+     Constraints,” in Journal of Artificial Intelligence          [43] T. M. Moldovan and P. Abbeel, “Safe exploration in
+     Research, 2005, pp. 81–108.                                       markov decision processes,” in Proceedings of the 29th
+[28] S. Paternain, M. Calvo-Fullana, L. F. Chamon, and                 International Conference on Machine Learning, 2012,
+     A. Ribeiro, “Safe policies for reinforcement learning via         pp. 1451–1458.
+     primal-dual methods,” IEEE Transactions on Automatic         [44] R. S. Sutton and A. G. Barto, Reinforcement learning:
+     Control, 2022.                                                    An introduction, 2nd ed. MIT press, 2018.
+[29] A. Marco, D. Baumann, M. Khadiv, P. Hennig,                  [45] W. H. Fleming and H. M. Soner, Controlled Markov
+     L. Righetti, and S. Trimpe, “Robot learning with crash            processes and viscosity solutions. Springer, 2006.
+     constraints,” IEEE Robotics and Automation Letters,          [46] S. Heim and A. Spröwitz, “Beyond basins of attraction:
+     vol. 6, pp. 1439–1446, 2021.                                      Quantifying robustness of natural dynamics,” IEEE
+[30] A. Meduri, M. Khadiv, and L. Righetti, “Deepq stepper:            Transactions on Robotics, vol. 35, 2019.
+     A framework for reactive dynamic walking on uneven           [47] M. Bardi and I. C. Dolcetta, Optimal control
+     terrain,” in IEEE International Conference on Robotics            and viscosity solutions of Hamilton-Jacobi-Bellman
+     and Automation, 2021.                                             equations. Springer, 1997.
+[31] M. H. Yeganegi, M. Khadiv, S. A. A. Moosavian, J.-J.         [48] G. E. Box, “Science and statistics,” Journal of the
+16                                                                                                  MASSIANI et al.: SAFE VALUE FUNCTIONS
+
+
+
+     American Statistical Association, 1976.                                               Pierre-François Massiani received the M.Sc.
+[49] K.-C. Hsu, V. Rubies-Royo, C. Tomlin, and J. Fisac,                                   degrees in Science and Executive Engineering from
+                                                                                           Mines ParisTech, Paris, France, and in Computer
+     “Safety and Liveness Guarantees through Reach-Avoid                                   Science from PSL University, Paris, France both
+     Reinforcement Learning,” in Robotics: Science and                                     in 2020. He is currently working toward the Ph.D.
+     Systems, 2021.                                                                        degree with the Institute for Data Science in
+                                                                                           Mechanical Engineering, Aachen, Germany.
+[50] M. Korda, “Computing controlled invariant sets from                                      His current research interests involve dynamical
+     data using convex optimization,” SIAM Journal on                                      systems, control theory, and machine learning.
+     Control and Optimization, vol. 58, 2020.
+[51] S. Paternain, L. Chamon, M. Calvo-Fullana, and
+     A. Ribeiro, “Constrained reinforcement learning has zero
+     duality gap,” Advances in Neural Information Processing
+     Systems, 2019.
+[52] S. Boyd and L. Vandenberghe, Convex optimization.
+                                                                                          Steve Heim received the B.Sc. degree in mechanical
+     Cambridge university press, 2004.                                                    engineering and the M.Sc. in robotics, systems and
+[53] C. Tessler, D. J. Mankowitz, and S. Mannor, “Reward                                  control from ETH Zurich, Switzerland, in 2012
+     constrained policy optimization,” in International                                   and 2015, respectively. After a two-year stay at
+                                                                                          Ishiguro lab at Tohoku University, received the Ph.D.
+     Conference on Learning Representations, 2019.                                        degree from the University of Tübingen through
+[54] D. P. Bertsekas, Dynamic Programming and Optimal                                     the International Max Planck Research School for
+     Control, 3rd ed. Athena Scientific Belmont, 2005, vol. 1.                            Intelligent Systems (MPI-IS) in 2020.
+                                                                                             After a first postdoc with the Intelligent Control
+[55] P. Zaytsev, S. J. Hasaneini, and A. Ruina, “Two steps                                Systems Group at MPI-IS, he is now with the
+     is enough: No need to plan far ahead for walking                                     Biomimetic Robotics Lab at the MIT. He is
+     balance,” in IEEE International Conference on Robotics       interested in dynamics, control, and learning, particularly in relation to
+                                                                  movement of animals and machines.
+     and Automation, 2015.
+[56] M. A. Posa, T. Koolen, and R. Tedrake, “Balancing
+     and step recovery capturability via sums-of-squares
+     optimization,” Robotics: Science and Systems, 2017.
+[57] I. R. Manchester, M. M. Tobenkin, M. Levashov, and
+     R. Tedrake, “Regions of attraction for hybrid limit cycles                            Friedrich Solowjow received the B.Sc. degrees in
+     of walking robots,” IFAC World Congress, vol. 44, 2011.                               Mathematics and Economics from the University of
+                                                                                           Bonn in 2014 and 2015, respectively, and the M. Sc.
+[58] M. Khadiv, A. Herzog, S. A. A. Moosavian, and                                         degree in Mathematics also from the University of
+     L. Righetti, “Walking control based on step timing                                    Bonn in 2017. He is currently working toward the
+     adaptation,” IEEE Transactions on Robotics, vol. 36,                                  Ph.D. degree with the Intelligent Control Systems
+                                                                                           Group at the Max Planck Institute for Intelligent
+     2020.                                                                                 Systems, Stuttgart, Germany. He is a member of
+[59] T. Koolen, T. De Boer, J. Rebula, A. Goswami, and                                     the International Max Planck Research School for
+     J. Pratt, “Capturability-based analysis and control of                                Intelligent Systems.
+                                                                                              His main research interests are in control theory
+     legged locomotion, part 1: Theory and application to         and machine learning.
+     three simple gait models,” The international journal of
+     robotics research, 2012.
+[60] P. Zaytsev, W. Wolfslag, and A. Ruina, “The boundaries
+     of walking stability: Viability and controllability of
+     simple models,” IEEE Transactions on Robotics, 2018.
+[61] J. S. Matthis, J. L. Yates, and M. M. Hayhoe, “Gaze and                               Sebastian Trimpe (M’12) received the B.Sc. degree
+                                                                                           in general engineering science and the M.Sc. degree
+     the control of foot placement when walking in natural                                 (Dipl.-Ing.) in electrical engineering from Hamburg
+     terrain,” Current Biology, 2018.                                                      University of Technology, Hamburg, Germany, in
+[62] M. V. Srinivasan, S.-W. Zhang, J. S. Chahl, E. Barth, and                             2005 and 2007, respectively, and the Ph.D. degree
+                                                                                           (Dr. sc.) in mechanical engineering from ETH
+     S. Venkatesh, “How honeybees make grazing landings on                                 Zurich, Zurich, Switzerland, in 2013.
+     flat surfaces,” Biological cybernetics, 2000.                                            Since 2020, he is a Full Professor with RWTH
+                                                                                           Aachen University, Aachen, Germany, where he
+                                                                                           heads the Institute for Data Science in Mechanical
+                                                                                           Engineering. Before, he was an independent
+                                                                  Research Group Leader at the Max Planck Institute for Intelligent Systems,
+                                                                  Stuttgart and Tübingen, Germany. His main research interests are in systems
+                                                                  and control theory, machine learning, networked and autonomous systems.
+                                                                     Dr. Trimpe has received several awards, including the triennial IFAC
+                                                                  World Congress Interactive Paper Prize (2011), the Klaus Tschira Award
+                                                                  for achievements in public understanding of science (2014), the Best Paper
+                                                                  Award of the International Conference on Cyber-Physical Systems (2019), and
+                                                                  the Future Prize by the Ewald Marquardt Stiftung for innovations in control
+                                                                  engineering (2020).
+

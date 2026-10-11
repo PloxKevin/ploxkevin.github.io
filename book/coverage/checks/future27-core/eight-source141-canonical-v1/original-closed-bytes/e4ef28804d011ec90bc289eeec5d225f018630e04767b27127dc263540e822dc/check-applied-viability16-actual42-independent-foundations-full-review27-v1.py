@@ -1,0 +1,80 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,re
+R=Path('/home/oxrexkevin/SafetyBased')
+P=Path('/tmp/applied-viability16-future27-actual42-full-source-review-request-v2.json')
+H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+REF=lambda p:{'file':str(p),'sha256':H(p)}
+assert H(P)=='cd809c27baaeaa4dcf6d7eb27216ba96b997452016d4dc1fb4e983ec61f7da15'
+d=json.loads(P.read_text());source=Path(d['proof_source']['file']);assert H(source)==d['proof_source']['sha256']=='5fb7914b547f74b4bdb5c1e8c64fd21c4e1e088781f75a3981c1561667c1e51a'
+text=source.read_text();assert text==d['entire_proof_source'];names=re.findall(r'^theorem (\w+)',text,re.M);assert len(names)==42 and names==d['public_theorem_names']
+assert not re.search(r'\b(?:sorry|admit|axiom)\b',text)
+inv=json.loads((R/'book/coverage/inventory.json').read_text());assert H(R/d['current_inventory']['file'])==d['current_inventory']['sha256']
+ex=next(x for x in inv['exercises'] if x['key']=='viability.html::exercise-16');assert ex==d['entire_inventory_record']
+units={x['key']:x for x in inv['material_source_units']};assert len(d['material_units'])==3
+page=R/ex['source'];assert H(page)==ex['source_sha256'];lines=page.read_text().splitlines(keepends=True)
+for x in d['material_units']:
+ assert units[x['source_unit_key']]==x['entire_inventory_record']
+ for n in x['proposed_lean_declarations']:assert n.split('.')[-1] in names
+for x in d['entire_original_contexts_read']:assert ''.join(lines[x['first_line']-1:x['last_line']])==x['source_text']
+# Independently read and bind the additional complete setting/sink/controller paragraphs and literal JS constants.
+extra_contexts=[{'first_line':81,'last_line':142,'exact_excerpt':''.join(lines[80:142])},{'first_line':623,'last_line':640,'exact_excerpt':''.join(lines[622:640])},{'first_line':1113,'last_line':1117,'exact_excerpt':''.join(lines[1112:1117])}]
+selection=json.loads((R/'reports/full-coverage/checkpoint-26-selection.json').read_text());assert len(selection['proof_files'])==1167
+for x in d['full_selected_dependency_sources']:
+ p=Path(x['source']['file']);assert H(p)==x['source']['sha256'] and p.read_text()==x['entire_source'];n=p.relative_to(R).as_posix();assert selection['proof_files'][n]==x['entire_selected_proof_row'] and selection['proof_files'][n]['sha256']==H(p)
+ledger=json.loads((R/'book/coverage/applied.json').read_text());old=next(x for x in ledger['exercises'] if x['inventory_key']==ex['key']);assert old==d['current_installed26_original_exercise_row']
+rows=[x for x in ledger['material_claims'] if any(k in x.get('source_unit_keys',[]) for k in [u['source_unit_key'] for u in d['material_units']])];assert rows==d['current_installed26_original_overlapping_material_claims']
+for name,h in d['protected_source53_and_installed26_inputs_sha256'].items():assert H(R/name)==h,name
+for name,h in d['closed_original_evidence_sha256'].items():assert H(name)==h,name
+hist=[]
+for index,t in enumerate(d['genuine_trial_history'],1):
+ p=Path(t['record']['file']);assert H(p)==t['record']['sha256'];a=json.loads(p.read_text());assert a==t['entire_actual_record'];assert type(a['actual_exit_code']) is int and a['actual_exit_code']==(0 if index==5 else 1) and a['protection_errors']==[]
+ for field in ['raw_log','source_snapshot','original_source']:
+  q=Path(t[field]['file']);assert H(q)==t[field]['sha256']
+ assert a['source_sha256_before']==a['source_sha256_after']==t['source_snapshot']['sha256']==t['original_source']['sha256']
+ assert a['actual_workdir']==str(R/'verification/lean') and a['actual_command']==['lake','env','lean',t['original_source']['file']]
+ assert H(a['original_actual_runner']['file'])==a['original_actual_runner']['sha256'];raw=Path(t['raw_log']['file']).read_text();hist.append({'record':t['record'],'exit_code':a['actual_exit_code'],'raw_log':t['raw_log'],'source_snapshot':t['source_snapshot'],'started_at_utc':a['started_at_utc'],'finished_at_utc':a['finished_at_utc'],'actual_diagnostic_line_count':len(raw.splitlines()),'actual_warning_group_count':raw.count(': warning:')})
+assert hist[-1]['actual_warning_group_count']==7
+for field,body in [('original_uncompiled_request','entire_original_uncompiled_request_body_and_time'),('original_gap_audit','entire_original_gap_audit_body_and_time'),('original_preliminary_scope_advice','entire_original_preliminary_scope_advice_body_and_time')]:
+ x=d[field];assert H(x['file'])==x['sha256'] and json.loads(Path(x['file']).read_text())==d[body]
+cache=d['actual_existing_selected_import_cache_build'];assert H(cache['record']['file'])==cache['record']['sha256'];a=json.loads(Path(cache['record']['file']).read_text());assert a==cache['entire_actual_record'] and type(a['actual_exit_code']) is int and a['actual_exit_code']==0 and a['protection_errors']==[];assert H(cache['raw_log']['file'])==cache['raw_log']['sha256'] and H(cache['actual_runner']['file'])==cache['actual_runner']['sha256']
+primary=d['official_primary_archive'];assert H(primary['pdf']['file'])==primary['pdf']['sha256'] and H(primary['text']['file'])==primary['text']['sha256'];pt=Path(primary['text']['file']).read_text();pl=pt.splitlines(keepends=True);primary_excerpt=''.join(pl[338:372]);assert 'Assumption 1.' in primary_excerpt and 'Lemma 2' in primary_excerpt and '1 − γ' in primary_excerpt
+# Independent exact finite-grid calculation from the directly read source dynamics.
+actions={'up':(-1,0),'down':(1,0),'left':(0,-1),'right':(0,1),'stay':(0,0)};slopes={(3,2),(3,3),(3,4),(3,5),(2,3),(2,4)};cells={(i,j) for i in range(4) for j in range(8)}
+def step(s,a):
+ if s=='failure':return 'sink'
+ if s=='sink':return 'sink'
+ dr,dc=actions[a];rr=max(0,min(4,s[0]+dr));cc=max(0,min(7,s[1]+dc));rr=min(4,rr+1) if s in slopes else rr;return 'failure' if rr==4 else (rr,cc)
+def legal(s,a):return s not in slopes or a!='up'
+k=set(cells)
+while True:
+ kk={s for s in k if any(legal(s,a) and step(s,a) in k for a in actions)}
+ if kk==k:break
+ k=kk
+assert k==cells-slopes and len(k)==26
+assert {a:step((2,3),a) for a in actions if legal((2,3),a)}=={'down':'failure','left':(3,2),'right':(3,4),'stay':(3,3)}
+for s in slopes:
+ for a in actions:
+  if legal(s,a):
+   t=step(s,a)
+   if t!='failure':assert all(step(t,b)=='failure' for b in actions if legal(t,b))
+# The following semantic decisions record this agent's full body/literal/context reading;
+# hash checking binds those decisions to the actual immutable sources, not a new Lean run.
+ns='SafeLearning.CompleteAppliedExplorerSlope27.'
+def group(i,short,hyp,reason):return {'component_id':i,'lean_declarations':[ns+x for x in short],'hypotheses':hyp,'per_component_reason':reason,'missing_clauses':[]}
+groups=[
+ group('greatest_kernel_and_forward_unviability',['actual_unviability_is_forward_invariant_before_failure','actual_every_visited_prefailure_state_is_unviable'],['Deterministic dynamics, legal inputs, greatest safe controlled invariant kernel; source first failure makes every earlier state safe.'],'Adding an allegedly safe predecessor would enlarge the greatest invariant set. Induction therefore keeps every visited state through failure outside the kernel; no assumption of a viable successor is substituted for this argument.'),
+ group('physical_reward_supremum',['actual_reward_supremum_bounds_each_physical_unviable_state_action','source_physical_unviable_trajectory_counting_sum_bound'],['Physical domain excludes the bookkeeping sink; source bounded reward on physical X_U×U; physical prefix through failure; actual reward supremum ≤ nonnegative bound.'],'Each visited reward is bounded by the actual supremum on physical unviable states and inputs. The new wrapper requires no reward bound on the exterior sink, closing the precise old v7 premise gap.'),
+ group('actual_counting_integrals_and_one_time_risk',['stopped_discounted_reward_is_finite_prefix','actual_finite_support_counting_integral_is_its_sum','actual_stopped_counting_integral_is_the_printed_finite_reward_sum','single_failure_discounted_risk_is_arrival_weight','actual_single_failure_counting_integral_is_arrival_weight','actual_grid_arrival_derives_the_counting_reward_and_risk'],['Zero reward strictly after failure; failure event at exactly one discrete instant; counting measure.'],'Finite support derives Bochner integrability and the genuine counting integral equals the printed reward sum; the risk integral equals gamma^failure. Actual grid transitions prove the single event and sink tail rather than assuming the grid charge formula.'),
+ group('uniform_horizon_sign_and_penalty',['nonnegative_reward_bound_allows_horizon_extension','negative_reward_bound_reverses_horizon_extension','counting_sum_doomed_return_bound'],['0<gamma<1, penalty>=0, R>=0, failure<=uniform horizon, visited rewards<=R.'],'The reward prefix uses nonnegative gamma powers, extension uses precisely R>=0, geometric sum is selected Values finite_discounted_doomed_bound, and gamma^failure>=gamma^horizon combines with nonnegative penalty. A nonpositive R reverses the extension inequality.'),
+ group('both_state_controller_suprema',['both_controller_and_state_suprema_preserve_counting_sum_bound','source_extended_outer_supremum_preserves_the_uniform_doomed_bound','source_actual_state_and_controller_suprema_have_the_uniform_bound'],['Nonempty admissible controller class; source assumptions hold for every physical unviable state and controller; same R,T_f,gamma,p.'],'The actual per-trajectory bound passes through both suprema. The outer physical state domain may be empty and then the EReal supremum is minus infinity; the nonempty real supremum variant is also explicit. No sink is included in the initial domain.'),
+ group('actual_explorer_kernel_horizon_reward',['actual_grid_kernel_is_greatest_control_invariant','actual_grid_kernel_is_exact_all_time_viability','actual_every_unviable_grid_path_fails_by_two','actual_unviable_state_action_reward_supremum_is_zero'],['Exact five-action 5×8 zero-slip source grid; Up unavailable on source-cell slopes; living cost>=0; failure reward0 followed by sink.'],'The full finite dynamics have 26 viable live cells and six unviable slope cells; all physical unviable trajectories including initial failure reach failure by2. Failure is physically unviable and has reward0, so the true state-action reward supremum equals0 independently of goal reward.'),
+ group('actual_all_controllers_and_attained_max',['actual_every_upper_path_has_the_two_failure_patterns','actual_every_upper_path_return_is_fast_or_slow','actual_down_feedback_attains_fast','actual_stay_feedback_attains_slow','actual_controller_return_set_is_exactly_the_two_source_values','actual_controller_supremum_is_attained_source_max','actual_slow_fall_strictly_wins_exactly_when_printed','actual_slope_value_has_the_source_bound'],['Actual upper cell(2,3), zero slip, legal feedbacks; 0<gamma<1,c>=0,p>=0.'],'Every realized path has the fast or slow return; legal stationary down/stay attain both, so the genuine controller supremum equals the source maximum. Slow strictly wins iff c<p(1-gamma). The maximum obeys -p gamma².'),
+ group('negative_R_counterexample',['actual_stopped_reward_and_negative_bound_difference','actual_nonnegative_reward_constant','actual_negative_reward_bound_is_below_the_value'],['Source0<gamma<1; cost>0 for strict counterexample.'],'The exact slow return minus the tempting negative-R expression is gamma²c>0. This expression lies below an attained return and hence below V_p; max{0,-c}=0 for the source nonnegative living cost.')]
+unitdec=[]
+for u in d['material_units']:
+ key=u['source_unit_key'];relevant=(groups if key.endswith('1113') else groups[:5] if key.endswith('1117') else groups[5:])
+ unitdec.append({'source_unit_key':key,'entire_inventory_record':u['entire_inventory_record'],'status':'independent_full_literal_approved','whole_unit_approved':True,'mathematical_clauses_fully_covered':True,'lean_declarations':u['proposed_lean_declarations'],'hypotheses':d['source_hypotheses_to_retain'],'per_unit_reason':'Full question/general proof/actual slope calculation read directly. '+('General counting-measure, physical-domain, sign, risk and both-suprema clauses match.' if key.endswith('1117') else 'All actual grid, controller, sign and counterexample clauses match.' if key.endswith('1118') else 'Both the general Lemma2(ii) proof and concrete explorer calculation are fully covered.'),'precise_groups':[x['component_id'] for x in relevant],'missing_clauses':[]})
+output=Path('/tmp/applied-viability16-actual42-independent-foundations-full-source-review27-v1.json');assert not output.exists()
+body={'status':'independent_full_viability16_42_body_three_literal_source_review_passed','errors':[],'reviewer':'Independent Foundations agent; Applied authored these proofs','reviewed_at_utc':datetime.now(timezone.utc).isoformat(),'request':REF(P),'proof_source':d['proof_source'],'entire_lean_source':text,'public_theorem_count':42,'all_public_declarations':[ns+n for n in names],'all42_complete_bodies_and_all_source_clauses_read':True,'material_units':unitdec,'exercise':{'inventory_key':ex['key'],'entire_inventory_record':ex,'status':'independent_full_exercise_approved','whole_exercise_approved':True,'missing_clauses':[],'lean_declarations':[ns+n for n in names],'hypotheses':d['source_hypotheses_to_retain'],'per_exercise_reason':'The complete discrete-time Lemma2(ii) proof, exact place of R>=0, physical-domain and both-suprema conventions, full actual zero-slip upper-slope dynamics, all controller return/max/threshold clauses, true R_XU=0, and strict negative-R counterexample all match the genuine proof bodies. Generic uniform horizon remains Assumption1; no continuous-time, noisy-policy, SVF threshold or convergence theorem is promoted.'},'precise_component_groups':groups,'entire_original_contexts_read':d['entire_original_contexts_read'],'additional_full_setting_and_source_grid_contexts_read':extra_contexts,'selected_dependencies_full_read':d['full_selected_dependency_sources'],'official_primary_archive':primary,'exact_primary_assumption1_lemma2_passage':primary_excerpt,'genuine_failed_and_passed_trial_history':hist,'genuine_actual_standalone':d['actual_standalone']['record'],'actual_import_cache_build':cache,'original_gap_audit':d['original_gap_audit'],'entire_original_gap_audit_body_and_time':d['entire_original_gap_audit_body_and_time'],'original_uncompiled_request':d['original_uncompiled_request'],'entire_original_uncompiled_request_body_and_time':d['entire_original_uncompiled_request_body_and_time'],'original_preliminary_scope_advice':d['original_preliminary_scope_advice'],'entire_original_preliminary_scope_advice_body_and_time':d['entire_original_preliminary_scope_advice_body_and_time'],'entire_original_installed26_exercise_row':old,'entire_original_installed26_overlapping_material_rows':rows,'actual_independent_grid_recalculation':{'live_cells':32,'kernel_live_cells':26,'slope_cells':6,'all_unviable_legal_paths_fail_by_two':True,'actual_Lean_or_source_mutation_from_calculation':False},'all1203_current_protected_inputs_rehashed_exact':True,'closed_evidence_sha256':{**d['closed_original_evidence_sha256'],str(P):H(P),str(source):H(source),str(Path(__file__)):H(__file__)},'scope':'Fresh full semantic review of exact TMP actual0 source against current53 entire exercise and three physical units. Conditional hypotheses are retained. No named/canonical proof, owner mapping, selected coverage, aggregate or publication execution is inferred.'}
+output.write_text(json.dumps(body,indent=2,ensure_ascii=False)+'\n');print(json.dumps({'status':'passed','peer':REF(output),'whole_exercise':True,'whole_units':3,'public_bodies':42}))

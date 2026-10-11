@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+h=Path('/tmp/prepare-applied27-source55-identity-candidate-v1.py');p=Path('/tmp/applied27-source55-identity-candidate-actual-v1.json');log=p.with_suffix('.log');assert not p.exists()and not log.exists();sha=lambda f:hashlib.sha256(f.read_bytes()).hexdigest();hs=sha(h);start=datetime.now(timezone.utc).isoformat();tick=time.monotonic();cmd=['python3',str(h)]
+with log.open('xb')as f:r=subprocess.run(cmd,stdout=f,stderr=subprocess.STDOUT,cwd='/home/oxrexkevin/SafetyBased')
+d={'scope':'Actual isolated TMP-only Applied source55 identity candidate preparation; zero new proof or coverage decisions and no live/Root/PUB/Git write','actual_exit_code':r.returncode,'actual_command':cmd,'actual_workdir':'/home/oxrexkevin/SafetyBased','started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-tick,'helper_sha256_before':hs,'helper_sha256_after':sha(h),'raw_log':str(log),'raw_log_sha256':sha(log),'original_runner':{'file':str(Path(__file__)),'sha256':sha(Path(__file__))}};p.write_text(json.dumps(d,indent=2)+'\n');print(json.dumps(d));raise SystemExit(r.returncode)

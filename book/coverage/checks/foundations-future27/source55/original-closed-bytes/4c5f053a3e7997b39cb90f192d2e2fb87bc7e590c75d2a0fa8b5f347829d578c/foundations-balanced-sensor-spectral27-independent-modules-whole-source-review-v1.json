@@ -1,0 +1,695 @@
+{
+  "status": "passed_independent_full_whole_sensor_spectral_literal_source_review",
+  "errors": [],
+  "reviewer": "modules",
+  "reviewed_at_utc": "2026-10-11T08:09:51.463687+00:00",
+  "source": {
+    "file": "/tmp/foundations-balanced-sensor-spectral27-trial2.lean",
+    "sha256": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e"
+  },
+  "entire_source": "import SafeLearning.CompleteFoundationsSpectralModels\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set\nopen scoped Matrix\n\nnamespace SafeLearning.CompleteFoundationsBalancedSensorSpectral27\nopen CompleteFoundationsSpectralModels\n\ndef sensorH : Matrix (Fin 2) (Fin 2) ℝ := !![1,1;1,-1]\ndef sensorLin : E →ₗ[ℝ] E := sensorH.toEuclideanLin\ndef spectralConditionNumber : ℝ := sensorLin.singularValues 0 / sensorLin.singularValues 1\n\ntheorem actual_balanced_sensor_matrix_action (x : E) :\n    applyMatrix sensorH x = point (x 0+x 1) (x 0-x 1) := by\n  rw [matrix_coordinate_action]\n  simp [sensorH,sub_eq_add_neg]\n\ntheorem actual_balanced_sensor_source_measurements :\n    applyMatrix sensorH (point 4 2) = point 6 2 := by\n  rw [actual_balanced_sensor_matrix_action]\n  norm_num [point]\n\ntheorem actual_balanced_sensor_transpose_gram :\n    sensorH.transpose * sensorH = (2 : ℝ) • (1 : Matrix (Fin 2) (Fin 2) ℝ) := by\n  ext i j\n  fin_cases i <;> fin_cases j <;>\n    norm_num [sensorH,Matrix.transpose_apply,Matrix.mul_apply,Fin.sum_univ_succ]\n\ntheorem actual_balanced_sensor_quadratic_identity (x : E) :\n    inner ℝ x (applyMatrix (sensorH.transpose * sensorH) x) = 2*‖x‖^2 := by\n  rw [actual_balanced_sensor_transpose_gram,matrix_coordinate_action,inner_coordinate_formula,\n    norm_squared_coordinates]\n  simp [point]\n  ring\n\ntheorem actual_balanced_sensor_exact_squared_stretch (x : E) :\n    ‖applyMatrix sensorH x‖^2 = 2*‖x‖^2 := by\n  rw [actual_balanced_sensor_matrix_action]\n  simp only [norm_squared_coordinates,point,PiLp.toLp_apply,Matrix.cons_val_zero,\n    Matrix.cons_val_one]\n  ring\n\ntheorem actual_balanced_sensor_exact_norm_stretch (x : E) :\n    ‖applyMatrix sensorH x‖ = Real.sqrt 2*‖x‖ := by\n  have hs := actual_balanced_sensor_exact_squared_stretch x\n  have hr : (Real.sqrt 2)^2 = 2 := Real.sq_sqrt (by norm_num)\n  apply (sq_eq_sq₀ (norm_nonneg _) (mul_nonneg (Real.sqrt_nonneg _) (norm_nonneg _))).mp\n  rw [mul_pow,hr]\n  exact hs\n\ntheorem actual_balanced_sensor_adjoint_gram :\n    sensorLin.adjoint.comp sensorLin = (2 : ℝ) • LinearMap.id := by\n  have ht : sensorH.conjTranspose = sensorH := by\n    ext i j\n    fin_cases i <;> fin_cases j <;> norm_num [sensorH,Matrix.conjTranspose_apply]\n  unfold sensorLin\n  rw [← Matrix.toEuclideanLin_conjTranspose_eq_adjoint,ht]\n  ext x i\n  simp only [LinearMap.comp_apply,LinearMap.smul_apply,LinearMap.id_apply]\n  change (applyMatrix sensorH (applyMatrix sensorH x)) i = (2 • x) i\n  rw [actual_balanced_sensor_matrix_action,actual_balanced_sensor_matrix_action]\n  fin_cases i <;> simp [point] <;> ring\n\ntheorem actual_balanced_sensor_all_genuine_singular_values (i : ℕ) :\n    sensorLin.singularValues i = if i < 2 then Real.sqrt 2 else 0 := by\n  have hd : Module.finrank ℝ E = 2 := by\n    simp [E]\n  by_cases hi : i < 2\n  · rw [if_pos hi]\n    have hEig := sensorLin.hasEigenvalue_adjoint_comp_self_sq_singularValues (by simpa [hd] using hi)\n    obtain ⟨x,hx⟩ := hEig.exists_hasEigenvector\n    have hne : x ≠ 0 := (Module.End.hasEigenvector_iff.mp hx).2\n    have he := hx.apply_eq_smul\n    rw [actual_balanced_sensor_adjoint_gram] at he\n    simp only [LinearMap.smul_apply,LinearMap.id_apply] at he\n    have hz : (2 - sensorLin.singularValues i ^ 2) • x = 0 := by\n      change 2 • x = sensorLin.singularValues i ^ 2 • x at he\n      rw [sub_smul,he,sub_self]\n    have hsq : sensorLin.singularValues i ^ 2 = 2 := by\n      have hh := (smul_eq_zero.mp hz).resolve_right hne\n      linarith\n    exact (sq_eq_sq₀ (sensorLin.singularValues_nonneg i) (Real.sqrt_nonneg 2)).mp\n      (hsq.trans (Real.sq_sqrt (by norm_num)).symm)\n  · rw [if_neg hi]\n    exact sensorLin.singularValues_of_finrank_le (by simpa [hd] using Nat.le_of_not_gt hi)\n\ntheorem actual_balanced_sensor_both_singular_values_and_condition_number :\n    sensorLin.singularValues 0 = Real.sqrt 2 ∧\n    sensorLin.singularValues 1 = Real.sqrt 2 ∧ spectralConditionNumber = 1 := by\n  have h0 := actual_balanced_sensor_all_genuine_singular_values 0\n  have h1 := actual_balanced_sensor_all_genuine_singular_values 1\n  norm_num at h0 h1\n  refine ⟨h0,h1,?_⟩\n  rw [spectralConditionNumber,h0,h1]\n  exact div_self (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ) < 2)).ne'\n\ntheorem actual_balanced_sensor_every_unit_direction_has_the_same_stretch\n    (x y : E) (hx : ‖x‖=1) (hy : ‖y‖=1) :\n    ‖applyMatrix sensorH x‖ = Real.sqrt 2 ∧\n    ‖applyMatrix sensorH y‖ = Real.sqrt 2 ∧\n    ‖applyMatrix sensorH x‖ = ‖applyMatrix sensorH y‖ := by\n  simp [actual_balanced_sensor_exact_norm_stretch,hx,hy]\n\nend SafeLearning.CompleteFoundationsBalancedSensorSpectral27\n",
+  "all_ten_complete_proof_bodies_read": true,
+  "public_theorem_count": 10,
+  "all_public_declarations": [
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_matrix_action",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_source_measurements",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_transpose_gram",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_quadratic_identity",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_squared_stretch",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_norm_stretch",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_adjoint_gram",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_all_genuine_singular_values",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_both_singular_values_and_condition_number",
+    "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_every_unit_direction_has_the_same_stretch"
+  ],
+  "three_definition_bodies_read": true,
+  "material_units": [
+    {
+      "source_unit_key": "primer-linalg.html::node-1264",
+      "entire_inventory_record": {
+        "key": "primer-linalg.html::node-1264",
+        "source": "SafeLearning/primer-linalg.html",
+        "locator": "::node-1264",
+        "line": 1358,
+        "tag": "p",
+        "classes": [],
+        "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+        "text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+        "source_sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+        "inventory_kind": "source_unit_needs_claim_review"
+      },
+      "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+      "source_text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+      "status": "proved",
+      "decision": "approved_whole_literal",
+      "whole_literal_approved": true,
+      "lean_declarations": [
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_matrix_action",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_source_measurements",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_transpose_gram",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_quadratic_identity",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_squared_stretch",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_norm_stretch",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_adjoint_gram",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_all_genuine_singular_values",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_both_singular_values_and_condition_number",
+        "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_every_unit_direction_has_the_same_stretch"
+      ],
+      "hypotheses": [
+        "Exact known dimensionless matrix H=[[1,1],[1,-1]] on real EuclideanSpace(Fin2).",
+        "Estimated displacement is the printed(4,2); readings are(6,2).",
+        "Spectral condition number is the largest/smallest of the two genuine Mathlib singular values; the denominator is provedpositive.",
+        "The surrounding example is a conditional hypothetical measurement model, with calibration error distinguished from additive reading error."
+      ],
+      "reason": "All clauses of the entire check-the-map paragraph are covered by actual typed statements. The source H=[[1,1],[1,-1]] acts on the actual estimated state(4,2) to give(6,2); H transpose H is exactly2I. The inner-product quadratic identity and independent actual squared-norm identity share the value2||x||^2, establishing the entire printed equality chain. Nonnegative norms turn that squared identity into exact sqrt2 stretch for every Euclidean vector. The actual adjoint composition is2id. For indices0 and1 the genuine Mathlib singular-value-square eigenvectors are nonzero; hence their eigenvalues must be2, and nonnegativity gives sqrt2. Indices>=2 are zero by the genuine finrank cutoff. Both genuine finite-dimensional singular values are positive sqrt2, their first/last ratio is1, and any two unit directions have identical observed stretch. This supports the literal no-preferred-weak-direction conclusion within the stated known-matrix teaching model; it does not prove calibration truth.",
+      "components": [
+        {
+          "component_id": "actual_fixture_measurement",
+          "lean_declarations": [
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_matrix_action",
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_source_measurements"
+          ],
+          "hypotheses": [
+            "Known dimensionless H=[[1,1],[1,-1]] on EuclideanSpace Real (Fin2)."
+          ],
+          "per_component_reason": "The actual H action sends the source estimated state(4,2) to(6,2).",
+          "source_unit_keys": [
+            "primer-linalg.html::node-1264"
+          ],
+          "status": "approved_precise_component",
+          "missing_clauses": []
+        },
+        {
+          "component_id": "actual_transpose_gram_and_quadratic_identity",
+          "lean_declarations": [
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_transpose_gram",
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_quadratic_identity"
+          ],
+          "hypotheses": [
+            "The actual matrix transpose/product and real Euclidean inner product."
+          ],
+          "per_component_reason": "Proves literal H-transpose H=2I and x-transpose H-transpose H x=2 norm(x)^2, not only an untyped coordinate polynomial.",
+          "source_unit_keys": [
+            "primer-linalg.html::node-1264"
+          ],
+          "status": "approved_precise_component",
+          "missing_clauses": []
+        },
+        {
+          "component_id": "actual_all_direction_norm_stretch",
+          "lean_declarations": [
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_squared_stretch",
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_norm_stretch",
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_every_unit_direction_has_the_same_stretch"
+          ],
+          "hypotheses": [
+            "Every real Euclidean vector; both compared directions have unit norm in the last theorem."
+          ],
+          "per_component_reason": "Derives the exact squared and unsquared norm factor sqrt2; every unit direction has the same observed stretch, so none is weakly preferred in this model.",
+          "source_unit_keys": [
+            "primer-linalg.html::node-1264"
+          ],
+          "status": "approved_precise_component",
+          "missing_clauses": []
+        },
+        {
+          "component_id": "actual_mathlib_singular_values_and_spectral_condition_ratio",
+          "lean_declarations": [
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_adjoint_gram",
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_all_genuine_singular_values",
+            "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_both_singular_values_and_condition_number"
+          ],
+          "hypotheses": [
+            "Mathlib singularValues of the genuine Euclidean linear map, ordered zero-based; the spectral ratio is first/last genuine singular value."
+          ],
+          "per_component_reason": "Actual adjoint composition is2id. Genuine singularValues0 and1 both equal sqrt2; the remaining infinite-sequence entries are0. Their positive first/last ratio is exactly1.",
+          "source_unit_keys": [
+            "primer-linalg.html::node-1264"
+          ],
+          "status": "approved_precise_component",
+          "missing_clauses": []
+        }
+      ],
+      "missing_clauses": [],
+      "remaining_gaps": []
+    }
+  ],
+  "whole_material_unit_approved": true,
+  "whole_exercise_approved": false,
+  "missing_clauses": [],
+  "full_context": {
+    "file": "SafeLearning/primer-linalg.html",
+    "sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+    "first_line": 1348,
+    "last_line": 1363,
+    "exact_excerpt": "<section class=\"book-chapter\" id=\"book-lab\">\n<h2 class=\"section-heading\">From the mathematics to a real decision</h2>\n<p>Two sensor channels do not automatically give two independent pieces of information. If both channels measure almost the same combination of unknown quantities, a small reading error can become a large reconstruction error. This chapter uses a constructed displacement fixture to connect linear systems, singular values, least squares and uncertainty geometry. Every displacement and sensor error below is hypothetical; the example is a teaching model for deciding what a calculation can support.</p>\n<div class=\"insight-box\"><div class=\"box-label\">Learning objectives</div><ul><li>Read matrix rows as measurements and columns as responses to individual unknowns.</li><li>Propagate a bounded measurement error through a linear reconstruction.</li><li>Distinguish a unique solution, a well-conditioned solution and a minimum-length convention.</li><li>Use residual orthogonality to check a least-squares estimate and state what it cannot verify.</li></ul></div>\n<h3 class=\"subsection-heading\" id=\"book-a-measurement\">A matrix is a measurement design</h3>\n<p>Let $z=(z_1,z_2)^\\top$ contain two unknown fixture displacements, both in millimetres. A linear measurement model is $y=Hz+\\eta$, where $y$ is the vector of sensor readings and $\\eta$ is additive sensor error, also in millimetres. Each row of the dimensionless matrix $H$ describes one channel: it lists the coefficient multiplying each unknown displacement. Each column tells how all readings change when only one displacement increases by one millimetre.</p>\n<p>To use the model, one assumes these coefficients are known and remain valid over the displacement range being studied. Calibration error in $H$ is a different uncertainty from additive error in $y$; the examples initially include only the latter. Solving the linear equations cannot establish that the measurement model itself is correct. It gives a conditional reconstruction from a stated model.</p>\n<p>Suppose one channel measures the sum $z_1+z_2$ and another measures the difference $z_1-z_2$. Equal readings can then be explained by changes in different combinations. Adding and subtracting the channels separates these combinations. The matrix calculation is a compact record of that physical idea.</p>\n<div class=\"collapsible\" id=\"book-a-worked-balanced\"><div class=\"collapsible-header\">Worked example &mdash; Reconstruct displacements and carry the sensor bound</div><div class=\"collapsible-body\">\n<p><strong>Set up.</strong> Take <span class=\"math-scroll\">$H=\\begin{bmatrix}1&amp;1\\\\1&amp;-1\\end{bmatrix}$</span> and readings $y=(6,2)^\\top$ millimetres. First ignore additive error to compute an estimate $\\hat z$. The equations are $\\hat z_1+\\hat z_2=6$ and $\\hat z_1-\\hat z_2=2$. Adding gives $2\\hat z_1=8$; subtracting gives $2\\hat z_2=4$. Thus $\\hat z=(4,2)^\\top$ millimetres.</p>\n<p><strong>Check the map.</strong> Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.</p>\n<p><strong>Restore uncertainty.</strong> With $|\\eta_i|\\le0.1$, the error in the estimate is $\\hat z-z=H^{-1}\\eta$, since $\\hat z=H^{-1}y$ and $y=Hz+\\eta$. Here:</p>\n<div class=\"math-block\">$$\\hat z-z=\\frac12\\begin{bmatrix}\\eta_1+\\eta_2\\\\\\eta_1-\\eta_2\\end{bmatrix},\\qquad \\|\\hat z-z\\|_2=\\frac{\\|\\eta\\|_2}{\\sqrt2}\\le0.1\\ \\text{mm}.$$</div>\n<p><strong>Decide.</strong> If a hypothetical assembly requires $z_1\\le4.15$ millimetres, its worst permitted value is $4.1$, so this upper-limit test passes. A requirement $z_1\\le4.05$ would not be certified. The error set is a rotated square, not a square with independent reconstructed errors: attaining the largest error in the first displacement forces zero error in the second at the relevant sensor-error corners.</p>\n</div></div>\n<h3 class=\"subsection-heading\" id=\"book-a-directions\">Find the direction the measurements barely see</h3>\n",
+    "excerpt_sha256": "cd4788bbaba912de06318b3651b12f995f966fbbe3202163073f13a927e4cc9c"
+  },
+  "entire_selected_dependency_source": {
+    "file": "verification/lean/SafeLearning/CompleteFoundationsSpectralModels.lean",
+    "sha256": "3c3142bcf6f28bfce6980e5029caf7efe0fb6bcaf7434eb0b98e016a88eb32ea",
+    "entire_lean_source": "import Mathlib\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set\nopen scoped BigOperators NNReal Matrix Matrix.Norms.L2Operator\n\nnamespace SafeLearning.CompleteFoundationsSpectralModels\n\nabbrev E := EuclideanSpace ℝ (Fin 2)\ndef point (a b : ℝ) : E := WithLp.toLp 2 ![a,b]\ndef applyMatrix (A : Matrix (Fin 2) (Fin 2) ℝ) : E →L[ℝ] E :=\n  Matrix.toEuclideanCLM (n := Fin 2) (𝕜 := ℝ) A\ndef quadratic (A : Matrix (Fin 2) (Fin 2) ℝ) (x : E) : ℝ := inner ℝ x (applyMatrix A x)\ndef rayleigh (A : Matrix (Fin 2) (Fin 2) ℝ) (x : E) : ℝ := quadratic A x/‖x‖^2\ndef sourceA : Matrix (Fin 2) (Fin 2) ℝ := !![3,1;1,3]\ndef qPlus : E := point (1/Real.sqrt 2) (1/Real.sqrt 2)\ndef qMinus : E := point (1/Real.sqrt 2) (-1/Real.sqrt 2)\n\ntheorem matrix_coordinate_action (A : Matrix (Fin 2) (Fin 2) ℝ) (x : E) :\n    applyMatrix A x=point (A 0 0*x 0+A 0 1*x 1) (A 1 0*x 0+A 1 1*x 1) := by\n  ext i\n  change (A *ᵥ (x : Fin 2 → ℝ)) i=(![A 0 0*x 0+A 0 1*x 1,A 1 0*x 0+A 1 1*x 1] : Fin 2 → ℝ) i\n  fin_cases i <;> simp [Matrix.mulVec,dotProduct,Fin.sum_univ_succ]\n\ntheorem inner_coordinate_formula (x y : E) : inner ℝ x y=x 0*y 0+x 1*y 1 := by\n  simp [PiLp.inner_apply,Fin.sum_univ_succ]\n  ring\n\ntheorem norm_squared_coordinates (x : E) : ‖x‖^2=(x 0)^2+(x 1)^2 := by\n  rw [← real_inner_self_eq_norm_sq,inner_coordinate_formula]\n  ring\n\ntheorem source_A_action (x : E) : applyMatrix sourceA x=point (3*x 0+x 1) (x 0+3*x 1) := by\n  rw [matrix_coordinate_action]\n  simp [sourceA]\n\ntheorem source_eigenvectors : applyMatrix sourceA qPlus=(4 : ℝ) • qPlus ∧\n    applyMatrix sourceA qMinus=(2 : ℝ) • qMinus := by\n  rw [source_A_action,source_A_action]\n  constructor <;> ext i <;> fin_cases i <;> simp [qPlus,qMinus,point] <;> ring\n\ntheorem source_orthonormal : Orthonormal ℝ (![qPlus,qMinus] : Fin 2 → E) := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  have hs : (Real.sqrt 2)^2=2 := Real.sq_sqrt (by norm_num)\n  have hi : (1/Real.sqrt 2 : ℝ)^2=1/2 := by rw [div_pow,one_pow,hs]\n  have hpp : inner ℝ qPlus qPlus=1 := by\n    rw [inner_coordinate_formula]\n    change (1/Real.sqrt 2)*(1/Real.sqrt 2)+(1/Real.sqrt 2)*(1/Real.sqrt 2)=1\n    simp only [one_div] at hi ⊢\n    nlinarith [hi]\n  have hpm : inner ℝ qPlus qMinus=0 := by\n    rw [inner_coordinate_formula]\n    change (1/Real.sqrt 2)*(1/Real.sqrt 2)+(1/Real.sqrt 2)*(-1/Real.sqrt 2)=0\n    ring\n  have hmp : inner ℝ qMinus qPlus=0 := by\n    rw [real_inner_comm]\n    exact hpm\n  have hmm : inner ℝ qMinus qMinus=1 := by\n    rw [inner_coordinate_formula]\n    change (1/Real.sqrt 2)*(1/Real.sqrt 2)+(-1/Real.sqrt 2)*(-1/Real.sqrt 2)=1\n    simp only [neg_div,one_div] at hi ⊢\n    nlinarith [hi]\n  rw [orthonormal_iff_ite]\n  intro i j\n  fin_cases i <;> fin_cases j <;> simp only [Matrix.cons_val_zero,Matrix.cons_val_one]\n  · simpa using hpp\n  · simpa using hpm\n  · simpa using hmp\n  · simpa using hmm\n\ntheorem source_eigenbasis_spans (x : E) :\n    x=inner ℝ qPlus x • qPlus+inner ℝ qMinus x • qMinus := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  have hs : (Real.sqrt 2)^2=2 := Real.sq_sqrt (by norm_num)\n  ext i\n  fin_cases i <;> simp [inner_coordinate_formula,qPlus,qMinus,point] <;>\n    field_simp [hr] <;> rw [hs] <;> ring\n\ntheorem source_spectral_matrix_decomposition :\n    sourceA=4 • Matrix.vecMulVec (qPlus : Fin 2 → ℝ) (qPlus : Fin 2 → ℝ)+\n      2 • Matrix.vecMulVec (qMinus : Fin 2 → ℝ) (qMinus : Fin 2 → ℝ) := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  have hs : (Real.sqrt 2)^2=2 := Real.sq_sqrt (by norm_num)\n  ext i j\n  fin_cases i <;> fin_cases j <;>\n    simp [sourceA,qPlus,qMinus,point,Matrix.vecMulVec] <;> field_simp <;> nlinarith\n\ntheorem source_all_eigenvalues (lambda : ℝ) :\n    (∃ x : E,x≠0 ∧ applyMatrix sourceA x=lambda • x) ↔ lambda=2 ∨ lambda=4 := by\n  constructor\n  · rintro ⟨x,hx,h⟩\n    have h0 := congrArg (fun u : E => u 0) h\n    have h1 := congrArg (fun u : E => u 1) h\n    rw [source_A_action] at h0 h1\n    simp [point] at h0 h1\n    by_contra hn\n    push Not at hn\n    have hp : (lambda-4)*(x 0+x 1)=0 := by nlinarith\n    have hm : (lambda-2)*(x 0-x 1)=0 := by nlinarith\n    have hsum : x 0+x 1=0 := (mul_eq_zero.mp hp).resolve_left (sub_ne_zero.mpr hn.2)\n    have hdiff : x 0-x 1=0 := (mul_eq_zero.mp hm).resolve_left (sub_ne_zero.mpr hn.1)\n    apply hx\n    ext i\n    fin_cases i <;> simp <;> linarith\n  · rintro (rfl|rfl)\n    · refine ⟨qMinus,?_,source_eigenvectors.2⟩\n      intro h\n      have hh := congrArg (fun u : E => u 0) h\n      simp [qMinus,point] at hh\n    · refine ⟨qPlus,?_,source_eigenvectors.1⟩\n      intro h\n      have hh := congrArg (fun u : E => u 0) h\n      simp [qPlus,point] at hh\n\ntheorem source_quadratic_expansion (x : E) :\n    quadratic sourceA x=3*(x 0)^2+2*x 0*x 1+3*(x 1)^2 := by\n  rw [quadratic,source_A_action,inner_coordinate_formula]\n  simp [point]\n  ring\n\ntheorem rayleigh_bounds_and_equality (x : E) :\n    2*‖x‖^2≤quadratic sourceA x ∧ quadratic sourceA x≤4*‖x‖^2 ∧\n    (quadratic sourceA x=2*‖x‖^2 ↔ x 0= -x 1) ∧\n    (quadratic sourceA x=4*‖x‖^2 ↔ x 0=x 1) := by\n  rw [norm_squared_coordinates,source_quadratic_expansion]\n  refine ⟨?_,?_,?_,?_⟩\n  · nlinarith [sq_nonneg (x 0+x 1)]\n  · nlinarith [sq_nonneg (x 0-x 1)]\n  · constructor <;> intro h <;> nlinarith [sq_nonneg (x 0+x 1)]\n  · constructor <;> intro h <;> nlinarith [sq_nonneg (x 0-x 1)]\n\ntheorem source_rayleigh_numerics :\n    applyMatrix sourceA (point 1 2)=point 5 7 ∧ quadratic sourceA (point 1 2)=19 ∧\n    ‖point 1 2‖^2=5 ∧ rayleigh sourceA (point 1 2)=19/5 ∧\n    2*‖point 1 2‖^2<quadratic sourceA (point 1 2) ∧\n    quadratic sourceA (point 1 2)<4*‖point 1 2‖^2 := by\n  refine ⟨?_,?_,?_,?_,?_,?_⟩\n  · rw [source_A_action]\n    norm_num [point]\n  · norm_num [source_quadratic_expansion,point]\n  · norm_num [norm_squared_coordinates,point]\n  · norm_num [rayleigh,source_quadratic_expansion,norm_squared_coordinates,point]\n  · norm_num [source_quadratic_expansion,norm_squared_coordinates,point]\n  · norm_num [source_quadratic_expansion,norm_squared_coordinates,point]\n\ntheorem source_rayleigh_attainers (t : ℝ) (ht : t≠0) :\n    rayleigh sourceA (t • point 1 (-1))=2 ∧ rayleigh sourceA (t • point 1 1)=4 := by\n  simp [rayleigh,source_quadratic_expansion,norm_squared_coordinates,point]\n  constructor <;> field_simp <;> ring\n\ntheorem source_both_eigencomponents_nonzero :\n    inner ℝ qPlus (point 1 2)≠0 ∧ inner ℝ qMinus (point 1 2)≠0 := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  constructor <;> simp [inner_coordinate_formula,qPlus,qMinus,point] <;>\n    field_simp <;> norm_num\n\ndef sourceN : Matrix (Fin 2) (Fin 2) ℝ := !![1,4;0,1]\ndef symmetricPart : Matrix (Fin 2) (Fin 2) ℝ := (1/2 : ℝ) • (sourceN+sourceN.transpose)\ndef skewPart : Matrix (Fin 2) (Fin 2) ℝ := sourceN-symmetricPart\n\ntheorem source_N_action (x : E) : applyMatrix sourceN x=point (x 0+4*x 1) (x 1) := by\n  rw [matrix_coordinate_action]\n  simp [sourceN]\n\ntheorem source_N_characteristic_polynomial : sourceN.charpoly=(Polynomial.X-1)^2 := by\n  rw [Matrix.charpoly_fin_two]\n  norm_num [sourceN,Matrix.det_fin_two,Matrix.trace,Fin.sum_univ_succ]\n  rw [show Polynomial.C (2 : ℝ)=(2 : Polynomial ℝ) by exact Polynomial.C_ofNat 2]\n  ring\n\ntheorem source_N_eigenvector_characterization (lambda : ℝ) (x : E) (hx : x≠0) :\n    applyMatrix sourceN x=lambda • x ↔ lambda=1 ∧ x 1=0 := by\n  constructor\n  · intro h\n    have h0 := congrArg (fun u : E => u 0) h\n    have h1 := congrArg (fun u : E => u 1) h\n    rw [source_N_action] at h0 h1\n    simp [point] at h0 h1\n    have hl : lambda=1 := by\n      by_contra hn\n      have hz1 : x 1=0 := (mul_eq_zero.mp (show (lambda-1)*x 1=0 by nlinarith)).resolve_left\n        (sub_ne_zero.mpr hn)\n      have hz0 : x 0=0 := (mul_eq_zero.mp (show (lambda-1)*x 0=0 by rw [hz1] at h0;nlinarith)).resolve_left\n        (sub_ne_zero.mpr hn)\n      apply hx\n      ext i\n      fin_cases i <;> simp [hz0,hz1]\n    exact ⟨hl,by rw [hl] at h0;nlinarith⟩\n  · rintro ⟨rfl,h1⟩\n    rw [source_N_action]\n    ext i\n    fin_cases i <;> simp [point,h1]\n\ntheorem source_N_negative_form : applyMatrix sourceN (point 1 (-1))=point (-3) (-1) ∧\n    quadratic sourceN (point 1 (-1))= -2 := by\n  rw [source_N_action]\n  constructor\n  · norm_num [point]\n  · rw [quadratic,source_N_action,inner_coordinate_formula]\n    norm_num [point]\n\ntheorem source_symmetric_and_skew_parts :\n    symmetricPart=!![1,2;2,1] ∧ skewPart.transpose= -skewPart ∧ sourceN=symmetricPart+skewPart := by\n  refine ⟨?_,?_,?_⟩\n  · ext i j\n    fin_cases i <;> fin_cases j <;> norm_num [symmetricPart,sourceN,Matrix.transpose_apply]\n  · ext i j\n    fin_cases i <;> fin_cases j <;>\n      norm_num [skewPart,symmetricPart,sourceN,Matrix.transpose_apply]\n  · simp [skewPart]\n\ntheorem general_real_skew_quadratic_zero {n : Type*} [Fintype n]\n    (K : Matrix n n ℝ) (hK : K.transpose= -K) (x : n → ℝ) : x ⬝ᵥ (K *ᵥ x)=0 := by\n  have ht : x ⬝ᵥ (K.transpose *ᵥ x)=x ⬝ᵥ (K *ᵥ x) := by\n    rw [Matrix.dotProduct_mulVec,← Matrix.mulVec_transpose,Matrix.transpose_transpose,dotProduct_comm]\n  rw [hK,Matrix.neg_mulVec,dotProduct_neg] at ht\n  linarith\n\ntheorem source_forms_equal (x : E) : quadratic sourceN x=quadratic symmetricPart x ∧\n    quadratic skewPart x=0 := by\n  constructor\n  · rw [quadratic,quadratic,matrix_coordinate_action,matrix_coordinate_action,\n      inner_coordinate_formula,inner_coordinate_formula]\n    simp [symmetricPart,sourceN,point,Matrix.transpose_apply]\n    ring\n  · have hh := general_real_skew_quadratic_zero _ source_symmetric_and_skew_parts.2.1 (x : Fin 2 → ℝ)\n    rw [quadratic,matrix_coordinate_action,inner_coordinate_formula]\n    simpa [point,Matrix.mulVec,dotProduct,Fin.sum_univ_succ] using hh\n\ntheorem symmetric_part_eigenvalues (lambda : ℝ) :\n    (∃ x : E,x≠0 ∧ applyMatrix symmetricPart x=lambda • x) ↔ lambda= -1 ∨ lambda=3 := by\n  have haction : ∀x : E,applyMatrix symmetricPart x=point (x 0+2*x 1) (2*x 0+x 1) := by\n    intro x\n    rw [matrix_coordinate_action,source_symmetric_and_skew_parts.1]\n    simp\n  constructor\n  · rintro ⟨x,hx,h⟩\n    have h0 := congrArg (fun u : E => u 0) h\n    have h1 := congrArg (fun u : E => u 1) h\n    rw [haction] at h0 h1\n    simp [point] at h0 h1\n    by_contra hn\n    push Not at hn\n    have hp : (lambda-3)*(x 0+x 1)=0 := by nlinarith\n    have hm : (lambda+1)*(x 0-x 1)=0 := by nlinarith\n    have hsum : x 0+x 1=0 := (mul_eq_zero.mp hp).resolve_left (sub_ne_zero.mpr hn.2)\n    have hdiff : x 0-x 1=0 := (mul_eq_zero.mp hm).resolve_left (by simpa using sub_ne_zero.mpr hn.1)\n    apply hx\n    ext i\n    fin_cases i <;> simp <;> linarith\n  · rintro (rfl|rfl)\n    · refine ⟨point 1 (-1),?_,?_⟩\n      · intro h\n        have hh := congrArg (fun u : E => u 0) h\n        norm_num [point] at hh\n      · rw [haction]\n        ext i\n        fin_cases i <;> norm_num [point]\n    · refine ⟨point 1 1,?_,?_⟩\n      · intro h\n        have hh := congrArg (fun u : E => u 0) h\n        norm_num [point] at hh\n      · rw [haction]\n        ext i\n        fin_cases i <;> norm_num [point]\n\ntheorem source_N_not_symmetric : sourceN.transpose≠sourceN := by\n  intro h\n  have hh := congrArg (fun A : Matrix (Fin 2) (Fin 2) ℝ => A 0 1) h\n  norm_num [sourceN,Matrix.transpose_apply] at hh\n\ntheorem source_N_eigenvectors_never_orthogonal (u v : E) (hu : u≠0) (hv : v≠0)\n    (lambda mu : ℝ) (hEu : applyMatrix sourceN u=lambda • u)\n    (hEv : applyMatrix sourceN v=mu • v) : inner ℝ u v≠0 := by\n  have hu1 := (source_N_eigenvector_characterization lambda u hu).mp hEu |>.2\n  have hv1 := (source_N_eigenvector_characterization mu v hv).mp hEv |>.2\n  have hu0 : u 0≠0 := by\n    intro h\n    apply hu\n    ext i\n    fin_cases i <;> simp [h,hu1]\n  have hv0 : v 0≠0 := by\n    intro h\n    apply hv\n    ext i\n    fin_cases i <;> simp [h,hv1]\n  rw [inner_coordinate_formula,hu1,hv1]\n  simpa using mul_ne_zero hu0 hv0\n\ntheorem source_N_has_no_orthonormal_eigenbasis :\n    ¬ ∃ b : OrthonormalBasis (Fin 2) ℝ E,∀ i,∃ lambda : ℝ,applyMatrix sourceN (b i)=lambda • b i := by\n  rintro ⟨b,hb⟩\n  obtain ⟨lambda,hl⟩ := hb 0\n  obtain ⟨mu,hm⟩ := hb 1\n  have hn0 : b 0≠0 := by\n    intro h\n    have hh := b.norm_eq_one (0 : Fin 2)\n    rw [h,norm_zero] at hh\n    norm_num at hh\n  have hn1 : b 1≠0 := by\n    intro h\n    have hh := b.norm_eq_one (1 : Fin 2)\n    rw [h,norm_zero] at hh\n    norm_num at hh\n  have hne := source_N_eigenvectors_never_orthogonal _ _ hn0 hn1 lambda mu hl hm\n  apply hne\n  have hh := orthonormal_iff_ite.mp b.orthonormal (0 : Fin 2) (1 : Fin 2)\n  simpa using hh\n\nend SafeLearning.CompleteFoundationsSpectralModels\n",
+    "entire_original_selected_proof_row": {
+      "sha256": "3c3142bcf6f28bfce6980e5029caf7efe0fb6bcaf7434eb0b98e016a88eb32ea",
+      "evidence_sha256": {
+        "reports/full-coverage/lean-checkpoint-17/verification-original.json": "c6bf6eb1bf806d6ee77279903954aa0e1508495fc3a571a049564820ea13133b",
+        "reports/full-coverage/lean-checkpoint-18/verification-original.json": "400a26bd13d84b65e075fe9d369e1ec96f3940180c0940af0b12d41a8c5d4199",
+        "reports/full-coverage/lean-checkpoint-19/verification-original.json": "d2686b31be70326e95d63161487add696786b5e6c02a8cc74ea766f498df45bc",
+        "reports/full-coverage/lean-checkpoint-20/verification-original.json": "29cd0e2daf8cceb0afcfd52fc2288e7cb7303e887bb7b13725e1aa7997e533ca"
+      },
+      "evidence_scope": "Actual passing checkpoint17 aggregate/kernel/axiom audit for identical source; a fresh aggregate audit is required."
+    }
+  },
+  "local_primary_api_passages": [
+    {
+      "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/InnerProductSpace/SingularValues.lean",
+      "sha256": "9d4ad23ced4319e8343d103fe4e726d64ba2908fe6932612039fe80fa9040055",
+      "first_line": 70,
+      "last_line": 148,
+      "exact_excerpt": "-/\n\npublic section\n\nopen Module InnerProductSpace\n\nnamespace LinearMap\n\nvariable {𝕜 : Type*} [RCLike 𝕜]\n  {E : Type*} [NormedAddCommGroup E] [InnerProductSpace 𝕜 E] [FiniteDimensional 𝕜 E]\n  {F : Type*} [NormedAddCommGroup F] [InnerProductSpace 𝕜 F] [FiniteDimensional 𝕜 F]\n  (T : E →ₗ[𝕜] F)\n\n/--\nIf `T : E →ₗ[𝕜] F` is a linear map between finite dimensional inner product spaces, then\n`T.singularValues` is the infinite sequence where the first dim(E) elements are the square roots of\neigenvalues of `T.adjoint ∘ₗ T` (which are guaranteed to be nonnegative real numbers), arranged\nin descending order and repeated according to their multiplicity, and the rest of the elements in\nthe infinite sequence are zero. Please see the module docstring of\n`Mathlib/Analysis/InnerProductSpace/SingularValues.lean` for an explanation of this design decision.\n\nThe singular values are zero-indexed, so `T.singularValues 0` refers to the first singular value.\nThis means the positive singular values occur at `0 ≤ i < rank(T)` and not `1 ≤ i ≤ rank(T)`.\n-/\nnoncomputable def singularValues : ℕ →₀ ℝ :=\n  Finsupp.embDomain Fin.valEmbedding <|\n    Finsupp.ofSupportFinite\n      (fun i ↦ √(T.isSymmetric_adjoint_comp_self.eigenvalues rfl i))\n      (Set.toFinite _)\n\ntheorem singularValues_nonneg (i : ℕ) : 0 ≤ T.singularValues i := by\n  rw [singularValues, Finsupp.embDomain_apply, Finsupp.ofSupportFinite_coe]\n  split_ifs <;> positivity\n\ntheorem singularValues_pos_iff_ne_zero (i : ℕ) :\n    0 < T.singularValues i ↔ T.singularValues i ≠ 0 := by\n  grind [T.singularValues_nonneg i]\n\n/--\nConnection between `LinearMap.singularValues` and `LinearMap.IsSymmetric.eigenvalues`.\nTogether with `LinearMap.singularValues_of_finrank_le`, this characterizes the singular values.\n\nBecause of the square root, you probably need to use\n`T.isPositive_adjoint_comp_self.nonneg_eigenvalues` to make effective use of this theorem.\n-/\ntheorem singularValues_fin {n : ℕ} (hn : finrank 𝕜 E = n) (i : Fin n) :\n    T.singularValues i = √(T.isSymmetric_adjoint_comp_self.eigenvalues hn i) := by\n  subst hn\n  exact Finsupp.embDomain_apply_self _ _ i\n\ntheorem singularValues_of_lt {n : ℕ} (hn : finrank 𝕜 E = n) {i : ℕ} (hi : i < n) :\n    T.singularValues i = √(T.isSymmetric_adjoint_comp_self.eigenvalues hn ⟨i, hi⟩) :=\n  T.singularValues_fin hn ⟨i, hi⟩\n\ntheorem singularValues_of_finrank_le {i : ℕ} (hi : finrank 𝕜 E ≤ i) : T.singularValues i = 0 := by\n  apply Finsupp.embDomain_of_notMem_range\n  simp [hi]\n\ntheorem sq_singularValues_fin {n : ℕ} (hn : finrank 𝕜 E = n) (i : Fin n) :\n    T.singularValues i ^ 2 = T.isSymmetric_adjoint_comp_self.eigenvalues hn i := by\n  simp [T.singularValues_fin hn, T.isPositive_adjoint_comp_self.nonneg_eigenvalues hn i]\n\ntheorem sq_singularValues_of_lt {n : ℕ} (hn : finrank 𝕜 E = n) {i : ℕ} (hi : i < n) :\n    T.singularValues i ^ 2 = T.isSymmetric_adjoint_comp_self.eigenvalues hn ⟨i, hi⟩ :=\n  T.sq_singularValues_fin hn ⟨i, hi⟩\n\ntheorem hasEigenvalue_adjoint_comp_self_sq_singularValues {n : ℕ} (hn : n < finrank 𝕜 E) :\n    End.HasEigenvalue (adjoint T ∘ₗ T) (T.singularValues n ^ 2) := by\n  convert! T.isSymmetric_adjoint_comp_self.hasEigenvalue_eigenvalues rfl ⟨n, hn⟩ using 1\n  simp [← T.sq_singularValues_fin]\n\ntheorem singularValues_antitone : Antitone T.singularValues := by\n  intro i j hij\n  by_cases! hj : finrank 𝕜 E ≤ j\n  · simpa [T.singularValues_of_finrank_le hj] using T.singularValues_nonneg i\n  have : (T.singularValues j : ℝ) ^ 2 ≤ (T.singularValues i : ℝ) ^ 2 := by\n    rw [T.sq_singularValues_fin rfl ⟨j, hj⟩, T.sq_singularValues_fin rfl ⟨i, hij.trans_lt hj⟩]\n    exact T.isSymmetric_adjoint_comp_self.eigenvalues_antitone rfl hij\n  exact le_of_sq_le_sq this (T.singularValues_nonneg i)\n",
+      "excerpt_sha256": "b8e5698f2afcf9702783c015f01b9b3c6be8d9bb99cc747974af58d9a7632a5a"
+    },
+    {
+      "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/InnerProductSpace/Adjoint.lean",
+      "sha256": "3bc8a1ebb741e2a363159953caecf067d44e621ee959dca8b9559223297d43fe",
+      "first_line": 1056,
+      "last_line": 1064,
+      "exact_excerpt": "\nopen scoped ComplexConjugate\n\n/-- The adjoint of the linear map associated to a matrix is the linear map associated to the\nconjugate transpose of that matrix. -/\ntheorem Matrix.toEuclideanLin_conjTranspose_eq_adjoint (A : Matrix m n 𝕜) :\n    A.conjTranspose.toEuclideanLin = A.toEuclideanLin.adjoint :=\n  A.toLin_conjTranspose (EuclideanSpace.basisFun n 𝕜) (EuclideanSpace.basisFun m 𝕜)\n\n",
+      "excerpt_sha256": "c9de6657576e30be2a5c1435ef602118ad4d6809f510986437e48a3b1b85926b"
+    },
+    {
+      "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/CStarAlgebra/Matrix.lean",
+      "sha256": "1bc46e33c9ae1d5dca0d256c9c015695f144a7fb22c02db009b6da8262a4c7c2",
+      "first_line": 95,
+      "last_line": 129,
+      "exact_excerpt": "variable [RCLike 𝕜]\nvariable [Fintype m] [Fintype n] [DecidableEq n] [Fintype l] [DecidableEq l]\n\n/-- The natural star algebra equivalence between matrices and continuous linear endomorphisms\nof Euclidean space induced by the orthonormal basis `EuclideanSpace.basisFun`.\n\nThis is a more-bundled version of `Matrix.toEuclideanLin`, for the special case of square matrices,\nfollowed by a more-bundled version of `LinearMap.toContinuousLinearMap`. -/\ndef toEuclideanCLM :\n    Matrix n n 𝕜 ≃⋆ₐ[𝕜] (EuclideanSpace 𝕜 n →L[𝕜] EuclideanSpace 𝕜 n) :=\n  toMatrixOrthonormal (EuclideanSpace.basisFun n 𝕜) |>.symm.trans <|\n    { toContinuousLinearMap with\n      map_mul' := fun _ _ ↦ rfl\n      map_star' := adjoint_toContinuousLinearMap }\n\n@[fun_prop]\nlemma continuous_uncurry_toEuclideanCLM :\n    Continuous (fun (S, x) ↦ toEuclideanCLM (n := n) (𝕜 := 𝕜) S x) := by\n  refine Continuous.comp (by fun_prop) <| continuous_pi fun i ↦ ?_\n  simp only [LinearEquiv.toEquiv_symm, Equiv.symm_symm, Equiv.invFun_as_coe,\n    LinearEquiv.coe_symm_toEquiv, toMatrix'_symm, OrthonormalBasis.coe_toBasis_repr,\n    LinearEquiv.coe_coe, LinearEquiv.trans_apply, LinearIsometryEquiv.coe_toLinearEquiv,\n    linearEquiv_apply, AddEquiv.toEquiv_eq_coe, Equiv.toFun_as_coe, EquivLike.coe_coe,\n    addEquiv_apply, toLin'_apply, LinearEquiv.symm_mk, coe_mk, AddHom.coe_mk, LinearEquiv.coe_mk,\n    LinearEquiv.coe_toEquiv, Finsupp.linearEquivFunOnFinite_apply,\n    Finsupp.equivFunOnFinite_symm_apply_apply]\n  fun_prop\n\nlemma coe_toEuclideanCLM_eq_toEuclideanLin (A : Matrix n n 𝕜) :\n    (toEuclideanCLM (n := n) (𝕜 := 𝕜) A : _ →ₗ[𝕜] _) = toEuclideanLin A :=\n  rfl\n\n@[simp]\nlemma toEuclideanCLM_toLp (A : Matrix n n 𝕜) (x : n → 𝕜) :\n    toEuclideanCLM (n := n) (𝕜 := 𝕜) A (toLp _ x) = toLp _ (A *ᵥ x) := rfl\n",
+      "excerpt_sha256": "5ad9ee806d9f44c6e3bb0bc36f99933fe3060a77e3aadd2c96257141d3dd608f"
+    },
+    {
+      "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/LinearAlgebra/Eigenspace/Basic.lean",
+      "sha256": "a62b802bd9b081a20e30716e1c25cbdacbfcc0cad0cad7db304e61d21c7211b5",
+      "first_line": 433,
+      "last_line": 484,
+      "exact_excerpt": "  simp only [eigenspace, ← Nat.cast_one (R := ℕ∞), genEigenspace_zero_nat, pow_one]\n\n/-- A nonzero element of an eigenspace is an eigenvector. (Def 5.8 of [axler2024]) -/\nabbrev HasEigenvector (f : End R M) (μ : R) (x : M) : Prop :=\n  HasUnifEigenvector f μ 1 x\n\nlemma hasEigenvector_iff {f : End R M} {μ : R} {x : M} :\n    f.HasEigenvector μ x ↔ x ∈ f.eigenspace μ ∧ x ≠ 0 := Iff.rfl\n\n/-- A scalar `μ` is an eigenvalue for a linear map `f` if there are nonzero vectors `x`\nsuch that `f x = μ • x`. (Def 5.5 of [axler2024]). -/\nabbrev HasEigenvalue (f : End R M) (a : R) : Prop :=\n  HasUnifEigenvalue f a 1\n\nlemma hasEigenvalue_iff {f : End R M} {μ : R} :\n    f.HasEigenvalue μ ↔ f.eigenspace μ ≠ ⊥ := Iff.rfl\n\n/-- The eigenvalues of the endomorphism `f`, as a subtype of `R`. -/\nabbrev Eigenvalues (f : End R M) : Type _ :=\n  UnifEigenvalues f 1\n\n@[coe]\nabbrev Eigenvalues.val (f : Module.End R M) : Eigenvalues f → R := UnifEigenvalues.val f 1\n\n@[simp]\nlemma Eigenvalues.val_mk {f : End R M} {μ : R} (h : f.HasEigenvalue μ) :\n    Eigenvalues.val f ⟨μ, h⟩ = μ := rfl\n\n@[simp]\nlemma Eigenvalues.mk_val {f : End R M} (μ : Eigenvalues f) : ⟨μ.val, μ.property⟩ = μ := rfl\n\ntheorem hasEigenvalue_of_hasEigenvector {f : End R M} {μ : R} {x : M} (h : HasEigenvector f μ x) :\n    HasEigenvalue f μ :=\n  h.hasUnifEigenvalue\n\ntheorem mem_eigenspace_iff {f : End R M} {μ : R} {x : M} : x ∈ eigenspace f μ ↔ f x = μ • x :=\n  mem_genEigenspace_one\n\nnonrec\ntheorem HasEigenvector.apply_eq_smul {f : End R M} {μ : R} {x : M} (hx : f.HasEigenvector μ x) :\n    f x = μ • x :=\n  hx.apply_eq_smul\n\nnonrec\ntheorem HasEigenvector.pow_apply {f : End R M} {μ : R} {v : M} (hv : f.HasEigenvector μ v) (n : ℕ) :\n    (f ^ n) v = μ ^ n • v :=\n  hv.pow_apply n\n\ntheorem HasEigenvalue.exists_hasEigenvector {f : End R M} {μ : R} (hμ : f.HasEigenvalue μ) :\n    ∃ v, f.HasEigenvector μ v :=\n  Submodule.exists_mem_ne_zero_of_ne_bot hμ\n\n",
+      "excerpt_sha256": "12d0f937ebb102f0b5b32548407de502a1661f8e478568988cc14ba29e85e3eb"
+    }
+  ],
+  "actual_standalone_original": {
+    "record": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial2.json",
+      "sha256": "c15a58eaad2e1d6be5e5526ac07d06c56cfc044c3986459c1b0220f504d99d45"
+    },
+    "entire_original_body_and_time": {
+      "status": "passed_actual_tmp_lean_only",
+      "actual_exit_code": 0,
+      "actual_runner_exit_code": 0,
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "/tmp/foundations-balanced-sensor-spectral27-trial2.lean"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+      "started_at_utc": "2026-10-11T08:03:08.241028+00:00",
+      "finished_at_utc": "2026-10-11T08:03:14.667876+00:00",
+      "elapsed_seconds": 6.857999191997806,
+      "source": "/tmp/foundations-balanced-sensor-spectral27-trial2.lean",
+      "source_sha256_before": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+      "source_sha256_after": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+      "source_unchanged": true,
+      "source_snapshot": "/tmp/foundations-balanced-sensor-spectral27-trial2-source.lean",
+      "source_snapshot_sha256": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+      "raw_log": "/tmp/foundations-balanced-sensor-spectral27-trial2.log",
+      "raw_log_sha256": "c3456e6161826773a1f4d40477c9a561dfd1e59ac85cab37e330cfd7714e0ca4",
+      "original_actual_runner": {
+        "file": "/tmp/root_tmp_lean27_runner_v2.py",
+        "sha256": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4"
+      },
+      "actual_installed26_selection": {
+        "file": "reports/full-coverage/checkpoint-26-selection.json",
+        "sha256": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f"
+      },
+      "actual_installed26_global_integrity": {
+        "file": "reports/full-coverage/root-source53-final-owner-integration26-v1.json",
+        "sha256": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d"
+      },
+      "protected_proof_sources": 1167,
+      "unchanged_baseline25_selected_proof_sources": 1156,
+      "unchanged_canonical_new26_proof_sources": 11,
+      "unchanged_current53_book_assets": 31,
+      "unchanged_installed26_live_owners": 5,
+      "installed26_owner_sha256": {
+        "book/coverage/applied.json": "a0e087260288c8e8abc45eb0806eb3b09d17da463f5e918966c3a0686f3976a6",
+        "book/coverage/applied-promotions.json": "fa58595aacac0b82f9cd9d3bfe41718365113a2ebf76879001edcf3ab4b68fcb",
+        "book/coverage/core.json": "1aeba23aee0fab8a64df0070928ef18bbfc708d32655ce16862b446862d62c38",
+        "book/coverage/foundations.json": "60b1ebaa5d44b3e371466d89cc9af68572ccdc069127504940a5c6c7ecd48b3a",
+        "book/coverage/modules.json": "c1e25f304082945e44212cdc5f1943108caf9b5052d0b3afae586e8700492231"
+      },
+      "original_installed26_provenance_sha256": {
+        "reports/full-coverage/checkpoint-26-selection.json": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f",
+        "reports/full-coverage/checkpoint-25-selection.json": "3559445215b6b5b9bd176363ded8d307a93724b2b68c1ba9845dc709a3b4ddff",
+        "reports/full-coverage/checkpoint-25-manifest.json": "0329596719e09459730f34c9c84e9bacf4f3698a7c1699c4f848cef975ee5363",
+        "book/coverage/checks/root-owner26-reviewed-candidate-bindings-v1.json": "00a94eefea80aff4bd57ee2d511d3102f1a8652dfda1977272aefd9b7fe41cfb",
+        "reports/full-coverage/owner26-reviewed-candidate-integration-v1.json": "7fa88d829c47797ab8258eb84ff5c7ce3399da66c9b03b591ea9820ca1eca06e",
+        "reports/full-coverage/root-source53-final-owner-integration26-v1.json": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d",
+        "book/coverage/inventory.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/inventory-after-correction53.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/material-corrections.json": "e63524a0d9fd13775e08b055d548fffc24036c1ae52825c196afe8583c95741d",
+        "book/coverage/checks/root_integrate_owner26_candidates_v2.py": "0ad44698e172d8d3b9c52794d2d5a6531c0d19c7828cdad22cd380c26a44fe5c",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.json": "b5ebb6a3714585bb6854120e8d7fa5aec586e5dffaf33ade8c4fad9381b31e08",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.log": "e5f248540370cc7b9111e73a0fc06c9c33c3f1407f44b937dc28a903fa7438cc",
+        "book/coverage/validate.py": "2c19bed432a7d6fdd1755b42a8f57442985e18fc2e20f9ed1cf904f09874d015",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.json": "0752c050f5a2062349e312e982443ff355b35e896d827dd6498e2b095c9764ef",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.log": "cab14f45377175ac5ffe13cc5ab728c677b9555144a92abf36efa33a73ceebcd",
+        "book/coverage/prepare_checkpoint26_selection_v2.py": "9e130aa89131e3fb9cd860ee898d95a9fd92e6fbe33723913c5ff5c86dcde3d9",
+        "book/coverage/retain_baseline_inputs26_v2.py": "86ecc3a33de29841aaa6e117d56390305502e6f238151674890ce2e67c60302e",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.json": "0fe336702f1184c3362c9fa9bc771182f310e55efa2e527a8ea0f16a4254eb2a",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.log": "91d44001f457db7a8e8b7dfe3cb0c7dfad301734088c867b1a734d32039850fd",
+        "verification/lean/lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
+        "verification/lean/lakefile.toml": "22cc482cc757e5d0a6478af0fbfc2dd535158b2b4257858eae9f14959577e5c8",
+        "verification/lean/lake-manifest.json": "b07e21b7d390a09e599b81c8319f2e6a003f30117316395531373c376029fb8e"
+      },
+      "protection_errors": [],
+      "canonical_installation_or_aggregate_verification_claimed": false
+    },
+    "raw_log": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial2.log",
+      "sha256": "c3456e6161826773a1f4d40477c9a561dfd1e59ac85cab37e330cfd7714e0ca4"
+    },
+    "actual_warning_diagnostic_count": 3,
+    "actual_diagnostic_lines": [
+      "/tmp/foundations-balanced-sensor-spectral27-trial2.lean:42:44: warning: This simp argument is unused:",
+      "/tmp/foundations-balanced-sensor-spectral27-trial2.lean:72:8: warning: `if_pos` has been deprecated: Use `ite_eq_left` instead",
+      "/tmp/foundations-balanced-sensor-spectral27-trial2.lean:87:8: warning: `if_neg` has been deprecated: Use `ite_eq_right` instead"
+    ]
+  },
+  "preserved_original_failed_trial": {
+    "record": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial1.json",
+      "sha256": "9e54050d8748d7af5a1f0a04cd908b4de6a13104c050cb621205901793372916"
+    },
+    "entire_original_body_and_time": {
+      "status": "failed_actual_tmp_lean_or_protection",
+      "actual_exit_code": 1,
+      "actual_runner_exit_code": 1,
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "/tmp/foundations-balanced-sensor-spectral27-trial1.lean"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+      "started_at_utc": "2026-10-11T07:53:07.714921+00:00",
+      "finished_at_utc": "2026-10-11T07:53:14.158677+00:00",
+      "elapsed_seconds": 6.877165420999518,
+      "source": "/tmp/foundations-balanced-sensor-spectral27-trial1.lean",
+      "source_sha256_before": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+      "source_sha256_after": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+      "source_unchanged": true,
+      "source_snapshot": "/tmp/foundations-balanced-sensor-spectral27-trial1-source.lean",
+      "source_snapshot_sha256": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+      "raw_log": "/tmp/foundations-balanced-sensor-spectral27-trial1.log",
+      "raw_log_sha256": "fde0542f2f23181079d66ffb1339e068cfd4f947ef910c743c7d9763af1f896a",
+      "original_actual_runner": {
+        "file": "/tmp/root_tmp_lean27_runner_v2.py",
+        "sha256": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4"
+      },
+      "actual_installed26_selection": {
+        "file": "reports/full-coverage/checkpoint-26-selection.json",
+        "sha256": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f"
+      },
+      "actual_installed26_global_integrity": {
+        "file": "reports/full-coverage/root-source53-final-owner-integration26-v1.json",
+        "sha256": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d"
+      },
+      "protected_proof_sources": 1167,
+      "unchanged_baseline25_selected_proof_sources": 1156,
+      "unchanged_canonical_new26_proof_sources": 11,
+      "unchanged_current53_book_assets": 31,
+      "unchanged_installed26_live_owners": 5,
+      "installed26_owner_sha256": {
+        "book/coverage/applied.json": "a0e087260288c8e8abc45eb0806eb3b09d17da463f5e918966c3a0686f3976a6",
+        "book/coverage/applied-promotions.json": "fa58595aacac0b82f9cd9d3bfe41718365113a2ebf76879001edcf3ab4b68fcb",
+        "book/coverage/core.json": "1aeba23aee0fab8a64df0070928ef18bbfc708d32655ce16862b446862d62c38",
+        "book/coverage/foundations.json": "60b1ebaa5d44b3e371466d89cc9af68572ccdc069127504940a5c6c7ecd48b3a",
+        "book/coverage/modules.json": "c1e25f304082945e44212cdc5f1943108caf9b5052d0b3afae586e8700492231"
+      },
+      "original_installed26_provenance_sha256": {
+        "reports/full-coverage/checkpoint-26-selection.json": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f",
+        "reports/full-coverage/checkpoint-25-selection.json": "3559445215b6b5b9bd176363ded8d307a93724b2b68c1ba9845dc709a3b4ddff",
+        "reports/full-coverage/checkpoint-25-manifest.json": "0329596719e09459730f34c9c84e9bacf4f3698a7c1699c4f848cef975ee5363",
+        "book/coverage/checks/root-owner26-reviewed-candidate-bindings-v1.json": "00a94eefea80aff4bd57ee2d511d3102f1a8652dfda1977272aefd9b7fe41cfb",
+        "reports/full-coverage/owner26-reviewed-candidate-integration-v1.json": "7fa88d829c47797ab8258eb84ff5c7ce3399da66c9b03b591ea9820ca1eca06e",
+        "reports/full-coverage/root-source53-final-owner-integration26-v1.json": "4029138dca32a74e8fd718fbe563d0b867d8ed408ad49a869e7308ea9867259d",
+        "book/coverage/inventory.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/inventory-after-correction53.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+        "book/coverage/material-corrections.json": "e63524a0d9fd13775e08b055d548fffc24036c1ae52825c196afe8583c95741d",
+        "book/coverage/checks/root_integrate_owner26_candidates_v2.py": "0ad44698e172d8d3b9c52794d2d5a6531c0d19c7828cdad22cd380c26a44fe5c",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.json": "b5ebb6a3714585bb6854120e8d7fa5aec586e5dffaf33ade8c4fad9381b31e08",
+        "reports/full-coverage/owner26-integration-apply-execution-v1.log": "e5f248540370cc7b9111e73a0fc06c9c33c3f1407f44b937dc28a903fa7438cc",
+        "book/coverage/validate.py": "2c19bed432a7d6fdd1755b42a8f57442985e18fc2e20f9ed1cf904f09874d015",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.json": "0752c050f5a2062349e312e982443ff355b35e896d827dd6498e2b095c9764ef",
+        "reports/full-coverage/root-source53-final-owner-integration26-execution-v1.log": "cab14f45377175ac5ffe13cc5ab728c677b9555144a92abf36efa33a73ceebcd",
+        "book/coverage/prepare_checkpoint26_selection_v2.py": "9e130aa89131e3fb9cd860ee898d95a9fd92e6fbe33723913c5ff5c86dcde3d9",
+        "book/coverage/retain_baseline_inputs26_v2.py": "86ecc3a33de29841aaa6e117d56390305502e6f238151674890ce2e67c60302e",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.json": "0fe336702f1184c3362c9fa9bc771182f310e55efa2e527a8ea0f16a4254eb2a",
+        "reports/full-coverage/prepare-checkpoint26-selection-execution-v1.log": "91d44001f457db7a8e8b7dfe3cb0c7dfad301734088c867b1a734d32039850fd",
+        "verification/lean/lean-toolchain": "d5edba4e4b8faad9c1baeadb265716d20d03be4d1a2647dc5e35b0c0325bea7b",
+        "verification/lean/lakefile.toml": "22cc482cc757e5d0a6478af0fbfc2dd535158b2b4257858eae9f14959577e5c8",
+        "verification/lean/lake-manifest.json": "b07e21b7d390a09e599b81c8319f2e6a003f30117316395531373c376029fb8e"
+      },
+      "protection_errors": [],
+      "canonical_installation_or_aggregate_verification_claimed": false
+    },
+    "raw_log": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial1.log",
+      "sha256": "fde0542f2f23181079d66ffb1339e068cfd4f947ef910c743c7d9763af1f896a"
+    }
+  },
+  "old_proved_and_pending_records_retained": [
+    {
+      "source_unit_keys": [
+        "primer-linalg.html::node-1264"
+      ],
+      "source": "SafeLearning/primer-linalg.html",
+      "locator": "::node-1264",
+      "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+      "source_text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+      "source_sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+      "statement_in_prose": "Actual balanced-map coordinate squared-energy identity and deterministic error squared bound.",
+      "lean_declarations": [
+        "SafeLearning.CompleteFoundationsBook.balanced_stretch",
+        "SafeLearning.CompleteFoundationsBook.balanced_error_geometry"
+      ],
+      "hypotheses": [
+        "Real coordinates; sensor-error coordinate bounds are absolute-value bounds by epsilon, which imply epsilon nonnegative."
+      ],
+      "correspondence": "The coordinate polynomial identity and arbitrary-error estimate are actual checked theorems. The typed Euclidean norm ratio, both singular values and condition number are left as missing literal bridges. Original complete literal review: book/coverage/checks/foundations-future21/original-reviews/foundations-linalg-remaining81-full-literal-source-components-review21-v1.json. Exact unchanged current48 interface: book/coverage/checks/foundations-future21/foundations-material21-source48-interface-binding-v1.json.",
+      "id": "primer-linalg.html::node-1264::surrounding-reviewed-1",
+      "kind": "reviewed_mathematical_subclaim",
+      "status": "proved",
+      "remaining_gaps": []
+    },
+    {
+      "source_unit_keys": [
+        "primer-linalg.html::node-1264"
+      ],
+      "source": "SafeLearning/primer-linalg.html",
+      "locator": "::node-1264",
+      "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+      "source_text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+      "source_sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+      "id": "primer-linalg.html::node-1264::surrounding-pending-1",
+      "statement_in_prose": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction. The typed H-transpose H matrix identity, full Euclidean norm factor, both singular values and exact condition number need literal matrix/operator bridges beyond the coordinate polynomial equality.",
+      "kind": "reviewed_mathematical_clause",
+      "lean_declarations": [],
+      "status": "pending",
+      "hypotheses": "Exact source context and all assumptions still require a complete correspondence.",
+      "correspondence": "This exact reviewed source claim remains mathematical work; the other explicitly mapped conclusions do not establish it.",
+      "remaining_gaps": [
+        "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction. The typed H-transpose H matrix identity, full Euclidean norm factor, both singular values and exact condition number need literal matrix/operator bridges beyond the coordinate polynomial equality."
+      ]
+    }
+  ],
+  "entire_original_request_body_and_time": {
+    "status": "actual_tmp_standalone10_body_whole1264_review_requested_no_whole_approval_yet",
+    "prepared_at_utc": "2026-10-11T08:03:43.190401+00:00",
+    "source": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial2.lean",
+      "sha256": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e"
+    },
+    "entire_lean_source": "import SafeLearning.CompleteFoundationsSpectralModels\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set\nopen scoped Matrix\n\nnamespace SafeLearning.CompleteFoundationsBalancedSensorSpectral27\nopen CompleteFoundationsSpectralModels\n\ndef sensorH : Matrix (Fin 2) (Fin 2) ℝ := !![1,1;1,-1]\ndef sensorLin : E →ₗ[ℝ] E := sensorH.toEuclideanLin\ndef spectralConditionNumber : ℝ := sensorLin.singularValues 0 / sensorLin.singularValues 1\n\ntheorem actual_balanced_sensor_matrix_action (x : E) :\n    applyMatrix sensorH x = point (x 0+x 1) (x 0-x 1) := by\n  rw [matrix_coordinate_action]\n  simp [sensorH,sub_eq_add_neg]\n\ntheorem actual_balanced_sensor_source_measurements :\n    applyMatrix sensorH (point 4 2) = point 6 2 := by\n  rw [actual_balanced_sensor_matrix_action]\n  norm_num [point]\n\ntheorem actual_balanced_sensor_transpose_gram :\n    sensorH.transpose * sensorH = (2 : ℝ) • (1 : Matrix (Fin 2) (Fin 2) ℝ) := by\n  ext i j\n  fin_cases i <;> fin_cases j <;>\n    norm_num [sensorH,Matrix.transpose_apply,Matrix.mul_apply,Fin.sum_univ_succ]\n\ntheorem actual_balanced_sensor_quadratic_identity (x : E) :\n    inner ℝ x (applyMatrix (sensorH.transpose * sensorH) x) = 2*‖x‖^2 := by\n  rw [actual_balanced_sensor_transpose_gram,matrix_coordinate_action,inner_coordinate_formula,\n    norm_squared_coordinates]\n  simp [point]\n  ring\n\ntheorem actual_balanced_sensor_exact_squared_stretch (x : E) :\n    ‖applyMatrix sensorH x‖^2 = 2*‖x‖^2 := by\n  rw [actual_balanced_sensor_matrix_action]\n  simp only [norm_squared_coordinates,point,PiLp.toLp_apply,Matrix.cons_val_zero,\n    Matrix.cons_val_one]\n  ring\n\ntheorem actual_balanced_sensor_exact_norm_stretch (x : E) :\n    ‖applyMatrix sensorH x‖ = Real.sqrt 2*‖x‖ := by\n  have hs := actual_balanced_sensor_exact_squared_stretch x\n  have hr : (Real.sqrt 2)^2 = 2 := Real.sq_sqrt (by norm_num)\n  apply (sq_eq_sq₀ (norm_nonneg _) (mul_nonneg (Real.sqrt_nonneg _) (norm_nonneg _))).mp\n  rw [mul_pow,hr]\n  exact hs\n\ntheorem actual_balanced_sensor_adjoint_gram :\n    sensorLin.adjoint.comp sensorLin = (2 : ℝ) • LinearMap.id := by\n  have ht : sensorH.conjTranspose = sensorH := by\n    ext i j\n    fin_cases i <;> fin_cases j <;> norm_num [sensorH,Matrix.conjTranspose_apply]\n  unfold sensorLin\n  rw [← Matrix.toEuclideanLin_conjTranspose_eq_adjoint,ht]\n  ext x i\n  simp only [LinearMap.comp_apply,LinearMap.smul_apply,LinearMap.id_apply]\n  change (applyMatrix sensorH (applyMatrix sensorH x)) i = (2 • x) i\n  rw [actual_balanced_sensor_matrix_action,actual_balanced_sensor_matrix_action]\n  fin_cases i <;> simp [point] <;> ring\n\ntheorem actual_balanced_sensor_all_genuine_singular_values (i : ℕ) :\n    sensorLin.singularValues i = if i < 2 then Real.sqrt 2 else 0 := by\n  have hd : Module.finrank ℝ E = 2 := by\n    simp [E]\n  by_cases hi : i < 2\n  · rw [if_pos hi]\n    have hEig := sensorLin.hasEigenvalue_adjoint_comp_self_sq_singularValues (by simpa [hd] using hi)\n    obtain ⟨x,hx⟩ := hEig.exists_hasEigenvector\n    have hne : x ≠ 0 := (Module.End.hasEigenvector_iff.mp hx).2\n    have he := hx.apply_eq_smul\n    rw [actual_balanced_sensor_adjoint_gram] at he\n    simp only [LinearMap.smul_apply,LinearMap.id_apply] at he\n    have hz : (2 - sensorLin.singularValues i ^ 2) • x = 0 := by\n      change 2 • x = sensorLin.singularValues i ^ 2 • x at he\n      rw [sub_smul,he,sub_self]\n    have hsq : sensorLin.singularValues i ^ 2 = 2 := by\n      have hh := (smul_eq_zero.mp hz).resolve_right hne\n      linarith\n    exact (sq_eq_sq₀ (sensorLin.singularValues_nonneg i) (Real.sqrt_nonneg 2)).mp\n      (hsq.trans (Real.sq_sqrt (by norm_num)).symm)\n  · rw [if_neg hi]\n    exact sensorLin.singularValues_of_finrank_le (by simpa [hd] using Nat.le_of_not_gt hi)\n\ntheorem actual_balanced_sensor_both_singular_values_and_condition_number :\n    sensorLin.singularValues 0 = Real.sqrt 2 ∧\n    sensorLin.singularValues 1 = Real.sqrt 2 ∧ spectralConditionNumber = 1 := by\n  have h0 := actual_balanced_sensor_all_genuine_singular_values 0\n  have h1 := actual_balanced_sensor_all_genuine_singular_values 1\n  norm_num at h0 h1\n  refine ⟨h0,h1,?_⟩\n  rw [spectralConditionNumber,h0,h1]\n  exact div_self (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ) < 2)).ne'\n\ntheorem actual_balanced_sensor_every_unit_direction_has_the_same_stretch\n    (x y : E) (hx : ‖x‖=1) (hy : ‖y‖=1) :\n    ‖applyMatrix sensorH x‖ = Real.sqrt 2 ∧\n    ‖applyMatrix sensorH y‖ = Real.sqrt 2 ∧\n    ‖applyMatrix sensorH x‖ = ‖applyMatrix sensorH y‖ := by\n  simp [actual_balanced_sensor_exact_norm_stretch,hx,hy]\n\nend SafeLearning.CompleteFoundationsBalancedSensorSpectral27\n",
+    "public_theorem_count": 10,
+    "all_public_declarations": [
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_matrix_action",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_source_measurements",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_transpose_gram",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_quadratic_identity",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_squared_stretch",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_norm_stretch",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_adjoint_gram",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_all_genuine_singular_values",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_both_singular_values_and_condition_number",
+      "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_every_unit_direction_has_the_same_stretch"
+    ],
+    "actual_standalone": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial2.json",
+      "sha256": "c15a58eaad2e1d6be5e5526ac07d06c56cfc044c3986459c1b0220f504d99d45"
+    },
+    "actual_raw_log": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial2.log",
+      "sha256": "c3456e6161826773a1f4d40477c9a561dfd1e59ac85cab37e330cfd7714e0ca4"
+    },
+    "actual_source_snapshot": {
+      "file": "/tmp/foundations-balanced-sensor-spectral27-trial2-source.lean",
+      "sha256": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e"
+    },
+    "literal_units": [
+      {
+        "source_unit_key": "primer-linalg.html::node-1264",
+        "entire_inventory_record": {
+          "key": "primer-linalg.html::node-1264",
+          "source": "SafeLearning/primer-linalg.html",
+          "locator": "::node-1264",
+          "line": 1358,
+          "tag": "p",
+          "classes": [],
+          "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+          "text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+          "source_sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+          "inventory_kind": "source_unit_needs_claim_review"
+        },
+        "original_current_ledger_records": [
+          {
+            "source_unit_keys": [
+              "primer-linalg.html::node-1264"
+            ],
+            "source": "SafeLearning/primer-linalg.html",
+            "locator": "::node-1264",
+            "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+            "source_text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+            "source_sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+            "statement_in_prose": "Actual balanced-map coordinate squared-energy identity and deterministic error squared bound.",
+            "lean_declarations": [
+              "SafeLearning.CompleteFoundationsBook.balanced_stretch",
+              "SafeLearning.CompleteFoundationsBook.balanced_error_geometry"
+            ],
+            "hypotheses": [
+              "Real coordinates; sensor-error coordinate bounds are absolute-value bounds by epsilon, which imply epsilon nonnegative."
+            ],
+            "correspondence": "The coordinate polynomial identity and arbitrary-error estimate are actual checked theorems. The typed Euclidean norm ratio, both singular values and condition number are left as missing literal bridges. Original complete literal review: book/coverage/checks/foundations-future21/original-reviews/foundations-linalg-remaining81-full-literal-source-components-review21-v1.json. Exact unchanged current48 interface: book/coverage/checks/foundations-future21/foundations-material21-source48-interface-binding-v1.json.",
+            "id": "primer-linalg.html::node-1264::surrounding-reviewed-1",
+            "kind": "reviewed_mathematical_subclaim",
+            "status": "proved",
+            "remaining_gaps": []
+          },
+          {
+            "source_unit_keys": [
+              "primer-linalg.html::node-1264"
+            ],
+            "source": "SafeLearning/primer-linalg.html",
+            "locator": "::node-1264",
+            "source_text": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.",
+            "source_text_sha256": "18a0b27c9b7b3180ca9e9fcb4108b2e0b4b16781d304ab6f85e2050a606b80bb",
+            "source_sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+            "id": "primer-linalg.html::node-1264::surrounding-pending-1",
+            "statement_in_prose": "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction. The typed H-transpose H matrix identity, full Euclidean norm factor, both singular values and exact condition number need literal matrix/operator bridges beyond the coordinate polynomial equality.",
+            "kind": "reviewed_mathematical_clause",
+            "lean_declarations": [],
+            "status": "pending",
+            "hypotheses": "Exact source context and all assumptions still require a complete correspondence.",
+            "correspondence": "This exact reviewed source claim remains mathematical work; the other explicitly mapped conclusions do not establish it.",
+            "remaining_gaps": [
+              "Check the map. Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction. The typed H-transpose H matrix identity, full Euclidean norm factor, both singular values and exact condition number need literal matrix/operator bridges beyond the coordinate polynomial equality."
+            ]
+          }
+        ],
+        "requested_whole_decision_only_if_all_clauses_match": true
+      }
+    ],
+    "full_context": {
+      "file": "SafeLearning/primer-linalg.html",
+      "sha256": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+      "first_line": 1348,
+      "last_line": 1363,
+      "exact_excerpt": "<section class=\"book-chapter\" id=\"book-lab\">\n<h2 class=\"section-heading\">From the mathematics to a real decision</h2>\n<p>Two sensor channels do not automatically give two independent pieces of information. If both channels measure almost the same combination of unknown quantities, a small reading error can become a large reconstruction error. This chapter uses a constructed displacement fixture to connect linear systems, singular values, least squares and uncertainty geometry. Every displacement and sensor error below is hypothetical; the example is a teaching model for deciding what a calculation can support.</p>\n<div class=\"insight-box\"><div class=\"box-label\">Learning objectives</div><ul><li>Read matrix rows as measurements and columns as responses to individual unknowns.</li><li>Propagate a bounded measurement error through a linear reconstruction.</li><li>Distinguish a unique solution, a well-conditioned solution and a minimum-length convention.</li><li>Use residual orthogonality to check a least-squares estimate and state what it cannot verify.</li></ul></div>\n<h3 class=\"subsection-heading\" id=\"book-a-measurement\">A matrix is a measurement design</h3>\n<p>Let $z=(z_1,z_2)^\\top$ contain two unknown fixture displacements, both in millimetres. A linear measurement model is $y=Hz+\\eta$, where $y$ is the vector of sensor readings and $\\eta$ is additive sensor error, also in millimetres. Each row of the dimensionless matrix $H$ describes one channel: it lists the coefficient multiplying each unknown displacement. Each column tells how all readings change when only one displacement increases by one millimetre.</p>\n<p>To use the model, one assumes these coefficients are known and remain valid over the displacement range being studied. Calibration error in $H$ is a different uncertainty from additive error in $y$; the examples initially include only the latter. Solving the linear equations cannot establish that the measurement model itself is correct. It gives a conditional reconstruction from a stated model.</p>\n<p>Suppose one channel measures the sum $z_1+z_2$ and another measures the difference $z_1-z_2$. Equal readings can then be explained by changes in different combinations. Adding and subtracting the channels separates these combinations. The matrix calculation is a compact record of that physical idea.</p>\n<div class=\"collapsible\" id=\"book-a-worked-balanced\"><div class=\"collapsible-header\">Worked example &mdash; Reconstruct displacements and carry the sensor bound</div><div class=\"collapsible-body\">\n<p><strong>Set up.</strong> Take <span class=\"math-scroll\">$H=\\begin{bmatrix}1&amp;1\\\\1&amp;-1\\end{bmatrix}$</span> and readings $y=(6,2)^\\top$ millimetres. First ignore additive error to compute an estimate $\\hat z$. The equations are $\\hat z_1+\\hat z_2=6$ and $\\hat z_1-\\hat z_2=2$. Adding gives $2\\hat z_1=8$; subtracting gives $2\\hat z_2=4$. Thus $\\hat z=(4,2)^\\top$ millimetres.</p>\n<p><strong>Check the map.</strong> Multiplication gives $H\\hat z=(6,2)^\\top$. Also $H^\\top H=2I$, where $I$ is the two-dimensional identity. Therefore $\\|Hz\\|_2^2=z^\\top H^\\top Hz=2\\|z\\|_2^2$: every direction stretches by $\\sqrt2$. Both singular values are $\\sqrt2$, so the spectral condition number is one. There is no preferred weak direction.</p>\n<p><strong>Restore uncertainty.</strong> With $|\\eta_i|\\le0.1$, the error in the estimate is $\\hat z-z=H^{-1}\\eta$, since $\\hat z=H^{-1}y$ and $y=Hz+\\eta$. Here:</p>\n<div class=\"math-block\">$$\\hat z-z=\\frac12\\begin{bmatrix}\\eta_1+\\eta_2\\\\\\eta_1-\\eta_2\\end{bmatrix},\\qquad \\|\\hat z-z\\|_2=\\frac{\\|\\eta\\|_2}{\\sqrt2}\\le0.1\\ \\text{mm}.$$</div>\n<p><strong>Decide.</strong> If a hypothetical assembly requires $z_1\\le4.15$ millimetres, its worst permitted value is $4.1$, so this upper-limit test passes. A requirement $z_1\\le4.05$ would not be certified. The error set is a rotated square, not a square with independent reconstructed errors: attaining the largest error in the first displacement forces zero error in the second at the relevant sensor-error corners.</p>\n</div></div>\n<h3 class=\"subsection-heading\" id=\"book-a-directions\">Find the direction the measurements barely see</h3>\n",
+      "excerpt_sha256": "cd4788bbaba912de06318b3651b12f995f966fbbe3202163073f13a927e4cc9c"
+    },
+    "precise_component_groups": [
+      {
+        "component_id": "actual_fixture_measurement",
+        "lean_declarations": [
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_matrix_action",
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_source_measurements"
+        ],
+        "hypotheses": [
+          "Known dimensionless H=[[1,1],[1,-1]] on EuclideanSpace Real (Fin2)."
+        ],
+        "per_component_reason": "The actual H action sends the source estimated state(4,2) to(6,2).",
+        "source_unit_keys": [
+          "primer-linalg.html::node-1264"
+        ],
+        "status": "approved_precise_component",
+        "missing_clauses": []
+      },
+      {
+        "component_id": "actual_transpose_gram_and_quadratic_identity",
+        "lean_declarations": [
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_transpose_gram",
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_quadratic_identity"
+        ],
+        "hypotheses": [
+          "The actual matrix transpose/product and real Euclidean inner product."
+        ],
+        "per_component_reason": "Proves literal H-transpose H=2I and x-transpose H-transpose H x=2 norm(x)^2, not only an untyped coordinate polynomial.",
+        "source_unit_keys": [
+          "primer-linalg.html::node-1264"
+        ],
+        "status": "approved_precise_component",
+        "missing_clauses": []
+      },
+      {
+        "component_id": "actual_all_direction_norm_stretch",
+        "lean_declarations": [
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_squared_stretch",
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_exact_norm_stretch",
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_every_unit_direction_has_the_same_stretch"
+        ],
+        "hypotheses": [
+          "Every real Euclidean vector; both compared directions have unit norm in the last theorem."
+        ],
+        "per_component_reason": "Derives the exact squared and unsquared norm factor sqrt2; every unit direction has the same observed stretch, so none is weakly preferred in this model.",
+        "source_unit_keys": [
+          "primer-linalg.html::node-1264"
+        ],
+        "status": "approved_precise_component",
+        "missing_clauses": []
+      },
+      {
+        "component_id": "actual_mathlib_singular_values_and_spectral_condition_ratio",
+        "lean_declarations": [
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_adjoint_gram",
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_all_genuine_singular_values",
+          "SafeLearning.CompleteFoundationsBalancedSensorSpectral27.actual_balanced_sensor_both_singular_values_and_condition_number"
+        ],
+        "hypotheses": [
+          "Mathlib singularValues of the genuine Euclidean linear map, ordered zero-based; the spectral ratio is first/last genuine singular value."
+        ],
+        "per_component_reason": "Actual adjoint composition is2id. Genuine singularValues0 and1 both equal sqrt2; the remaining infinite-sequence entries are0. Their positive first/last ratio is exactly1.",
+        "source_unit_keys": [
+          "primer-linalg.html::node-1264"
+        ],
+        "status": "approved_precise_component",
+        "missing_clauses": []
+      }
+    ],
+    "all_original_history_sha256": {
+      "/tmp/foundations-balanced-sensor-spectral27-trial1-source.lean": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+      "/tmp/foundations-balanced-sensor-spectral27-trial1.json": "9e54050d8748d7af5a1f0a04cd908b4de6a13104c050cb621205901793372916",
+      "/tmp/foundations-balanced-sensor-spectral27-trial1.lean": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+      "/tmp/foundations-balanced-sensor-spectral27-trial1.log": "fde0542f2f23181079d66ffb1339e068cfd4f947ef910c743c7d9763af1f896a",
+      "/tmp/foundations-balanced-sensor-spectral27-trial2-source.lean": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+      "/tmp/foundations-balanced-sensor-spectral27-trial2.json": "c15a58eaad2e1d6be5e5526ac07d06c56cfc044c3986459c1b0220f504d99d45",
+      "/tmp/foundations-balanced-sensor-spectral27-trial2.lean": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+      "/tmp/foundations-balanced-sensor-spectral27-trial2.log": "c3456e6161826773a1f4d40477c9a561dfd1e59ac85cab37e330cfd7714e0ca4",
+      "/tmp/root_tmp_lean27_runner_v2.py": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4",
+      "/tmp/root-tmp-lean27-runner-independent-foundations-full-code-review-v1.json": "d66d5659786d085c13fa7681b61ba5a55ca4cd202fdd97162b49b7e0d921631b",
+      "/tmp/root-tmp-lean27-runner-independent-foundations-full-code-review-v2.json": "d1737274340831f636da24f4998952706d3be28bb4af005732fb3610fa720202"
+    },
+    "selected_full_dependency": {
+      "file": "verification/lean/SafeLearning/CompleteFoundationsSpectralModels.lean",
+      "sha256": "3c3142bcf6f28bfce6980e5029caf7efe0fb6bcaf7434eb0b98e016a88eb32ea",
+      "entire_lean_source": "import Mathlib\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set\nopen scoped BigOperators NNReal Matrix Matrix.Norms.L2Operator\n\nnamespace SafeLearning.CompleteFoundationsSpectralModels\n\nabbrev E := EuclideanSpace ℝ (Fin 2)\ndef point (a b : ℝ) : E := WithLp.toLp 2 ![a,b]\ndef applyMatrix (A : Matrix (Fin 2) (Fin 2) ℝ) : E →L[ℝ] E :=\n  Matrix.toEuclideanCLM (n := Fin 2) (𝕜 := ℝ) A\ndef quadratic (A : Matrix (Fin 2) (Fin 2) ℝ) (x : E) : ℝ := inner ℝ x (applyMatrix A x)\ndef rayleigh (A : Matrix (Fin 2) (Fin 2) ℝ) (x : E) : ℝ := quadratic A x/‖x‖^2\ndef sourceA : Matrix (Fin 2) (Fin 2) ℝ := !![3,1;1,3]\ndef qPlus : E := point (1/Real.sqrt 2) (1/Real.sqrt 2)\ndef qMinus : E := point (1/Real.sqrt 2) (-1/Real.sqrt 2)\n\ntheorem matrix_coordinate_action (A : Matrix (Fin 2) (Fin 2) ℝ) (x : E) :\n    applyMatrix A x=point (A 0 0*x 0+A 0 1*x 1) (A 1 0*x 0+A 1 1*x 1) := by\n  ext i\n  change (A *ᵥ (x : Fin 2 → ℝ)) i=(![A 0 0*x 0+A 0 1*x 1,A 1 0*x 0+A 1 1*x 1] : Fin 2 → ℝ) i\n  fin_cases i <;> simp [Matrix.mulVec,dotProduct,Fin.sum_univ_succ]\n\ntheorem inner_coordinate_formula (x y : E) : inner ℝ x y=x 0*y 0+x 1*y 1 := by\n  simp [PiLp.inner_apply,Fin.sum_univ_succ]\n  ring\n\ntheorem norm_squared_coordinates (x : E) : ‖x‖^2=(x 0)^2+(x 1)^2 := by\n  rw [← real_inner_self_eq_norm_sq,inner_coordinate_formula]\n  ring\n\ntheorem source_A_action (x : E) : applyMatrix sourceA x=point (3*x 0+x 1) (x 0+3*x 1) := by\n  rw [matrix_coordinate_action]\n  simp [sourceA]\n\ntheorem source_eigenvectors : applyMatrix sourceA qPlus=(4 : ℝ) • qPlus ∧\n    applyMatrix sourceA qMinus=(2 : ℝ) • qMinus := by\n  rw [source_A_action,source_A_action]\n  constructor <;> ext i <;> fin_cases i <;> simp [qPlus,qMinus,point] <;> ring\n\ntheorem source_orthonormal : Orthonormal ℝ (![qPlus,qMinus] : Fin 2 → E) := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  have hs : (Real.sqrt 2)^2=2 := Real.sq_sqrt (by norm_num)\n  have hi : (1/Real.sqrt 2 : ℝ)^2=1/2 := by rw [div_pow,one_pow,hs]\n  have hpp : inner ℝ qPlus qPlus=1 := by\n    rw [inner_coordinate_formula]\n    change (1/Real.sqrt 2)*(1/Real.sqrt 2)+(1/Real.sqrt 2)*(1/Real.sqrt 2)=1\n    simp only [one_div] at hi ⊢\n    nlinarith [hi]\n  have hpm : inner ℝ qPlus qMinus=0 := by\n    rw [inner_coordinate_formula]\n    change (1/Real.sqrt 2)*(1/Real.sqrt 2)+(1/Real.sqrt 2)*(-1/Real.sqrt 2)=0\n    ring\n  have hmp : inner ℝ qMinus qPlus=0 := by\n    rw [real_inner_comm]\n    exact hpm\n  have hmm : inner ℝ qMinus qMinus=1 := by\n    rw [inner_coordinate_formula]\n    change (1/Real.sqrt 2)*(1/Real.sqrt 2)+(-1/Real.sqrt 2)*(-1/Real.sqrt 2)=1\n    simp only [neg_div,one_div] at hi ⊢\n    nlinarith [hi]\n  rw [orthonormal_iff_ite]\n  intro i j\n  fin_cases i <;> fin_cases j <;> simp only [Matrix.cons_val_zero,Matrix.cons_val_one]\n  · simpa using hpp\n  · simpa using hpm\n  · simpa using hmp\n  · simpa using hmm\n\ntheorem source_eigenbasis_spans (x : E) :\n    x=inner ℝ qPlus x • qPlus+inner ℝ qMinus x • qMinus := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  have hs : (Real.sqrt 2)^2=2 := Real.sq_sqrt (by norm_num)\n  ext i\n  fin_cases i <;> simp [inner_coordinate_formula,qPlus,qMinus,point] <;>\n    field_simp [hr] <;> rw [hs] <;> ring\n\ntheorem source_spectral_matrix_decomposition :\n    sourceA=4 • Matrix.vecMulVec (qPlus : Fin 2 → ℝ) (qPlus : Fin 2 → ℝ)+\n      2 • Matrix.vecMulVec (qMinus : Fin 2 → ℝ) (qMinus : Fin 2 → ℝ) := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  have hs : (Real.sqrt 2)^2=2 := Real.sq_sqrt (by norm_num)\n  ext i j\n  fin_cases i <;> fin_cases j <;>\n    simp [sourceA,qPlus,qMinus,point,Matrix.vecMulVec] <;> field_simp <;> nlinarith\n\ntheorem source_all_eigenvalues (lambda : ℝ) :\n    (∃ x : E,x≠0 ∧ applyMatrix sourceA x=lambda • x) ↔ lambda=2 ∨ lambda=4 := by\n  constructor\n  · rintro ⟨x,hx,h⟩\n    have h0 := congrArg (fun u : E => u 0) h\n    have h1 := congrArg (fun u : E => u 1) h\n    rw [source_A_action] at h0 h1\n    simp [point] at h0 h1\n    by_contra hn\n    push Not at hn\n    have hp : (lambda-4)*(x 0+x 1)=0 := by nlinarith\n    have hm : (lambda-2)*(x 0-x 1)=0 := by nlinarith\n    have hsum : x 0+x 1=0 := (mul_eq_zero.mp hp).resolve_left (sub_ne_zero.mpr hn.2)\n    have hdiff : x 0-x 1=0 := (mul_eq_zero.mp hm).resolve_left (sub_ne_zero.mpr hn.1)\n    apply hx\n    ext i\n    fin_cases i <;> simp <;> linarith\n  · rintro (rfl|rfl)\n    · refine ⟨qMinus,?_,source_eigenvectors.2⟩\n      intro h\n      have hh := congrArg (fun u : E => u 0) h\n      simp [qMinus,point] at hh\n    · refine ⟨qPlus,?_,source_eigenvectors.1⟩\n      intro h\n      have hh := congrArg (fun u : E => u 0) h\n      simp [qPlus,point] at hh\n\ntheorem source_quadratic_expansion (x : E) :\n    quadratic sourceA x=3*(x 0)^2+2*x 0*x 1+3*(x 1)^2 := by\n  rw [quadratic,source_A_action,inner_coordinate_formula]\n  simp [point]\n  ring\n\ntheorem rayleigh_bounds_and_equality (x : E) :\n    2*‖x‖^2≤quadratic sourceA x ∧ quadratic sourceA x≤4*‖x‖^2 ∧\n    (quadratic sourceA x=2*‖x‖^2 ↔ x 0= -x 1) ∧\n    (quadratic sourceA x=4*‖x‖^2 ↔ x 0=x 1) := by\n  rw [norm_squared_coordinates,source_quadratic_expansion]\n  refine ⟨?_,?_,?_,?_⟩\n  · nlinarith [sq_nonneg (x 0+x 1)]\n  · nlinarith [sq_nonneg (x 0-x 1)]\n  · constructor <;> intro h <;> nlinarith [sq_nonneg (x 0+x 1)]\n  · constructor <;> intro h <;> nlinarith [sq_nonneg (x 0-x 1)]\n\ntheorem source_rayleigh_numerics :\n    applyMatrix sourceA (point 1 2)=point 5 7 ∧ quadratic sourceA (point 1 2)=19 ∧\n    ‖point 1 2‖^2=5 ∧ rayleigh sourceA (point 1 2)=19/5 ∧\n    2*‖point 1 2‖^2<quadratic sourceA (point 1 2) ∧\n    quadratic sourceA (point 1 2)<4*‖point 1 2‖^2 := by\n  refine ⟨?_,?_,?_,?_,?_,?_⟩\n  · rw [source_A_action]\n    norm_num [point]\n  · norm_num [source_quadratic_expansion,point]\n  · norm_num [norm_squared_coordinates,point]\n  · norm_num [rayleigh,source_quadratic_expansion,norm_squared_coordinates,point]\n  · norm_num [source_quadratic_expansion,norm_squared_coordinates,point]\n  · norm_num [source_quadratic_expansion,norm_squared_coordinates,point]\n\ntheorem source_rayleigh_attainers (t : ℝ) (ht : t≠0) :\n    rayleigh sourceA (t • point 1 (-1))=2 ∧ rayleigh sourceA (t • point 1 1)=4 := by\n  simp [rayleigh,source_quadratic_expansion,norm_squared_coordinates,point]\n  constructor <;> field_simp <;> ring\n\ntheorem source_both_eigencomponents_nonzero :\n    inner ℝ qPlus (point 1 2)≠0 ∧ inner ℝ qMinus (point 1 2)≠0 := by\n  have hr : Real.sqrt 2≠0 := (Real.sqrt_pos.mpr (by norm_num : (0 : ℝ)<2)).ne'\n  constructor <;> simp [inner_coordinate_formula,qPlus,qMinus,point] <;>\n    field_simp <;> norm_num\n\ndef sourceN : Matrix (Fin 2) (Fin 2) ℝ := !![1,4;0,1]\ndef symmetricPart : Matrix (Fin 2) (Fin 2) ℝ := (1/2 : ℝ) • (sourceN+sourceN.transpose)\ndef skewPart : Matrix (Fin 2) (Fin 2) ℝ := sourceN-symmetricPart\n\ntheorem source_N_action (x : E) : applyMatrix sourceN x=point (x 0+4*x 1) (x 1) := by\n  rw [matrix_coordinate_action]\n  simp [sourceN]\n\ntheorem source_N_characteristic_polynomial : sourceN.charpoly=(Polynomial.X-1)^2 := by\n  rw [Matrix.charpoly_fin_two]\n  norm_num [sourceN,Matrix.det_fin_two,Matrix.trace,Fin.sum_univ_succ]\n  rw [show Polynomial.C (2 : ℝ)=(2 : Polynomial ℝ) by exact Polynomial.C_ofNat 2]\n  ring\n\ntheorem source_N_eigenvector_characterization (lambda : ℝ) (x : E) (hx : x≠0) :\n    applyMatrix sourceN x=lambda • x ↔ lambda=1 ∧ x 1=0 := by\n  constructor\n  · intro h\n    have h0 := congrArg (fun u : E => u 0) h\n    have h1 := congrArg (fun u : E => u 1) h\n    rw [source_N_action] at h0 h1\n    simp [point] at h0 h1\n    have hl : lambda=1 := by\n      by_contra hn\n      have hz1 : x 1=0 := (mul_eq_zero.mp (show (lambda-1)*x 1=0 by nlinarith)).resolve_left\n        (sub_ne_zero.mpr hn)\n      have hz0 : x 0=0 := (mul_eq_zero.mp (show (lambda-1)*x 0=0 by rw [hz1] at h0;nlinarith)).resolve_left\n        (sub_ne_zero.mpr hn)\n      apply hx\n      ext i\n      fin_cases i <;> simp [hz0,hz1]\n    exact ⟨hl,by rw [hl] at h0;nlinarith⟩\n  · rintro ⟨rfl,h1⟩\n    rw [source_N_action]\n    ext i\n    fin_cases i <;> simp [point,h1]\n\ntheorem source_N_negative_form : applyMatrix sourceN (point 1 (-1))=point (-3) (-1) ∧\n    quadratic sourceN (point 1 (-1))= -2 := by\n  rw [source_N_action]\n  constructor\n  · norm_num [point]\n  · rw [quadratic,source_N_action,inner_coordinate_formula]\n    norm_num [point]\n\ntheorem source_symmetric_and_skew_parts :\n    symmetricPart=!![1,2;2,1] ∧ skewPart.transpose= -skewPart ∧ sourceN=symmetricPart+skewPart := by\n  refine ⟨?_,?_,?_⟩\n  · ext i j\n    fin_cases i <;> fin_cases j <;> norm_num [symmetricPart,sourceN,Matrix.transpose_apply]\n  · ext i j\n    fin_cases i <;> fin_cases j <;>\n      norm_num [skewPart,symmetricPart,sourceN,Matrix.transpose_apply]\n  · simp [skewPart]\n\ntheorem general_real_skew_quadratic_zero {n : Type*} [Fintype n]\n    (K : Matrix n n ℝ) (hK : K.transpose= -K) (x : n → ℝ) : x ⬝ᵥ (K *ᵥ x)=0 := by\n  have ht : x ⬝ᵥ (K.transpose *ᵥ x)=x ⬝ᵥ (K *ᵥ x) := by\n    rw [Matrix.dotProduct_mulVec,← Matrix.mulVec_transpose,Matrix.transpose_transpose,dotProduct_comm]\n  rw [hK,Matrix.neg_mulVec,dotProduct_neg] at ht\n  linarith\n\ntheorem source_forms_equal (x : E) : quadratic sourceN x=quadratic symmetricPart x ∧\n    quadratic skewPart x=0 := by\n  constructor\n  · rw [quadratic,quadratic,matrix_coordinate_action,matrix_coordinate_action,\n      inner_coordinate_formula,inner_coordinate_formula]\n    simp [symmetricPart,sourceN,point,Matrix.transpose_apply]\n    ring\n  · have hh := general_real_skew_quadratic_zero _ source_symmetric_and_skew_parts.2.1 (x : Fin 2 → ℝ)\n    rw [quadratic,matrix_coordinate_action,inner_coordinate_formula]\n    simpa [point,Matrix.mulVec,dotProduct,Fin.sum_univ_succ] using hh\n\ntheorem symmetric_part_eigenvalues (lambda : ℝ) :\n    (∃ x : E,x≠0 ∧ applyMatrix symmetricPart x=lambda • x) ↔ lambda= -1 ∨ lambda=3 := by\n  have haction : ∀x : E,applyMatrix symmetricPart x=point (x 0+2*x 1) (2*x 0+x 1) := by\n    intro x\n    rw [matrix_coordinate_action,source_symmetric_and_skew_parts.1]\n    simp\n  constructor\n  · rintro ⟨x,hx,h⟩\n    have h0 := congrArg (fun u : E => u 0) h\n    have h1 := congrArg (fun u : E => u 1) h\n    rw [haction] at h0 h1\n    simp [point] at h0 h1\n    by_contra hn\n    push Not at hn\n    have hp : (lambda-3)*(x 0+x 1)=0 := by nlinarith\n    have hm : (lambda+1)*(x 0-x 1)=0 := by nlinarith\n    have hsum : x 0+x 1=0 := (mul_eq_zero.mp hp).resolve_left (sub_ne_zero.mpr hn.2)\n    have hdiff : x 0-x 1=0 := (mul_eq_zero.mp hm).resolve_left (by simpa using sub_ne_zero.mpr hn.1)\n    apply hx\n    ext i\n    fin_cases i <;> simp <;> linarith\n  · rintro (rfl|rfl)\n    · refine ⟨point 1 (-1),?_,?_⟩\n      · intro h\n        have hh := congrArg (fun u : E => u 0) h\n        norm_num [point] at hh\n      · rw [haction]\n        ext i\n        fin_cases i <;> norm_num [point]\n    · refine ⟨point 1 1,?_,?_⟩\n      · intro h\n        have hh := congrArg (fun u : E => u 0) h\n        norm_num [point] at hh\n      · rw [haction]\n        ext i\n        fin_cases i <;> norm_num [point]\n\ntheorem source_N_not_symmetric : sourceN.transpose≠sourceN := by\n  intro h\n  have hh := congrArg (fun A : Matrix (Fin 2) (Fin 2) ℝ => A 0 1) h\n  norm_num [sourceN,Matrix.transpose_apply] at hh\n\ntheorem source_N_eigenvectors_never_orthogonal (u v : E) (hu : u≠0) (hv : v≠0)\n    (lambda mu : ℝ) (hEu : applyMatrix sourceN u=lambda • u)\n    (hEv : applyMatrix sourceN v=mu • v) : inner ℝ u v≠0 := by\n  have hu1 := (source_N_eigenvector_characterization lambda u hu).mp hEu |>.2\n  have hv1 := (source_N_eigenvector_characterization mu v hv).mp hEv |>.2\n  have hu0 : u 0≠0 := by\n    intro h\n    apply hu\n    ext i\n    fin_cases i <;> simp [h,hu1]\n  have hv0 : v 0≠0 := by\n    intro h\n    apply hv\n    ext i\n    fin_cases i <;> simp [h,hv1]\n  rw [inner_coordinate_formula,hu1,hv1]\n  simpa using mul_ne_zero hu0 hv0\n\ntheorem source_N_has_no_orthonormal_eigenbasis :\n    ¬ ∃ b : OrthonormalBasis (Fin 2) ℝ E,∀ i,∃ lambda : ℝ,applyMatrix sourceN (b i)=lambda • b i := by\n  rintro ⟨b,hb⟩\n  obtain ⟨lambda,hl⟩ := hb 0\n  obtain ⟨mu,hm⟩ := hb 1\n  have hn0 : b 0≠0 := by\n    intro h\n    have hh := b.norm_eq_one (0 : Fin 2)\n    rw [h,norm_zero] at hh\n    norm_num at hh\n  have hn1 : b 1≠0 := by\n    intro h\n    have hh := b.norm_eq_one (1 : Fin 2)\n    rw [h,norm_zero] at hh\n    norm_num at hh\n  have hne := source_N_eigenvectors_never_orthogonal _ _ hn0 hn1 lambda mu hl hm\n  apply hne\n  have hh := orthonormal_iff_ite.mp b.orthonormal (0 : Fin 2) (1 : Fin 2)\n  simpa using hh\n\nend SafeLearning.CompleteFoundationsSpectralModels\n",
+      "entire_original_selected_proof_row": {
+        "sha256": "3c3142bcf6f28bfce6980e5029caf7efe0fb6bcaf7434eb0b98e016a88eb32ea",
+        "evidence_sha256": {
+          "reports/full-coverage/lean-checkpoint-17/verification-original.json": "c6bf6eb1bf806d6ee77279903954aa0e1508495fc3a571a049564820ea13133b",
+          "reports/full-coverage/lean-checkpoint-18/verification-original.json": "400a26bd13d84b65e075fe9d369e1ec96f3940180c0940af0b12d41a8c5d4199",
+          "reports/full-coverage/lean-checkpoint-19/verification-original.json": "d2686b31be70326e95d63161487add696786b5e6c02a8cc74ea766f498df45bc",
+          "reports/full-coverage/lean-checkpoint-20/verification-original.json": "29cd0e2daf8cceb0afcfd52fc2288e7cb7303e887bb7b13725e1aa7997e533ca"
+        },
+        "evidence_scope": "Actual passing checkpoint17 aggregate/kernel/axiom audit for identical source; a fresh aggregate audit is required."
+      }
+    },
+    "actual_installed26_selection": {
+      "file": "reports/full-coverage/checkpoint-26-selection.json",
+      "sha256": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f"
+    },
+    "current_inventory": {
+      "file": "book/coverage/inventory.json",
+      "sha256": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be"
+    },
+    "local_primary_api_passages": [
+      {
+        "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/InnerProductSpace/SingularValues.lean",
+        "sha256": "9d4ad23ced4319e8343d103fe4e726d64ba2908fe6932612039fe80fa9040055",
+        "first_line": 70,
+        "last_line": 148,
+        "exact_excerpt": "-/\n\npublic section\n\nopen Module InnerProductSpace\n\nnamespace LinearMap\n\nvariable {𝕜 : Type*} [RCLike 𝕜]\n  {E : Type*} [NormedAddCommGroup E] [InnerProductSpace 𝕜 E] [FiniteDimensional 𝕜 E]\n  {F : Type*} [NormedAddCommGroup F] [InnerProductSpace 𝕜 F] [FiniteDimensional 𝕜 F]\n  (T : E →ₗ[𝕜] F)\n\n/--\nIf `T : E →ₗ[𝕜] F` is a linear map between finite dimensional inner product spaces, then\n`T.singularValues` is the infinite sequence where the first dim(E) elements are the square roots of\neigenvalues of `T.adjoint ∘ₗ T` (which are guaranteed to be nonnegative real numbers), arranged\nin descending order and repeated according to their multiplicity, and the rest of the elements in\nthe infinite sequence are zero. Please see the module docstring of\n`Mathlib/Analysis/InnerProductSpace/SingularValues.lean` for an explanation of this design decision.\n\nThe singular values are zero-indexed, so `T.singularValues 0` refers to the first singular value.\nThis means the positive singular values occur at `0 ≤ i < rank(T)` and not `1 ≤ i ≤ rank(T)`.\n-/\nnoncomputable def singularValues : ℕ →₀ ℝ :=\n  Finsupp.embDomain Fin.valEmbedding <|\n    Finsupp.ofSupportFinite\n      (fun i ↦ √(T.isSymmetric_adjoint_comp_self.eigenvalues rfl i))\n      (Set.toFinite _)\n\ntheorem singularValues_nonneg (i : ℕ) : 0 ≤ T.singularValues i := by\n  rw [singularValues, Finsupp.embDomain_apply, Finsupp.ofSupportFinite_coe]\n  split_ifs <;> positivity\n\ntheorem singularValues_pos_iff_ne_zero (i : ℕ) :\n    0 < T.singularValues i ↔ T.singularValues i ≠ 0 := by\n  grind [T.singularValues_nonneg i]\n\n/--\nConnection between `LinearMap.singularValues` and `LinearMap.IsSymmetric.eigenvalues`.\nTogether with `LinearMap.singularValues_of_finrank_le`, this characterizes the singular values.\n\nBecause of the square root, you probably need to use\n`T.isPositive_adjoint_comp_self.nonneg_eigenvalues` to make effective use of this theorem.\n-/\ntheorem singularValues_fin {n : ℕ} (hn : finrank 𝕜 E = n) (i : Fin n) :\n    T.singularValues i = √(T.isSymmetric_adjoint_comp_self.eigenvalues hn i) := by\n  subst hn\n  exact Finsupp.embDomain_apply_self _ _ i\n\ntheorem singularValues_of_lt {n : ℕ} (hn : finrank 𝕜 E = n) {i : ℕ} (hi : i < n) :\n    T.singularValues i = √(T.isSymmetric_adjoint_comp_self.eigenvalues hn ⟨i, hi⟩) :=\n  T.singularValues_fin hn ⟨i, hi⟩\n\ntheorem singularValues_of_finrank_le {i : ℕ} (hi : finrank 𝕜 E ≤ i) : T.singularValues i = 0 := by\n  apply Finsupp.embDomain_of_notMem_range\n  simp [hi]\n\ntheorem sq_singularValues_fin {n : ℕ} (hn : finrank 𝕜 E = n) (i : Fin n) :\n    T.singularValues i ^ 2 = T.isSymmetric_adjoint_comp_self.eigenvalues hn i := by\n  simp [T.singularValues_fin hn, T.isPositive_adjoint_comp_self.nonneg_eigenvalues hn i]\n\ntheorem sq_singularValues_of_lt {n : ℕ} (hn : finrank 𝕜 E = n) {i : ℕ} (hi : i < n) :\n    T.singularValues i ^ 2 = T.isSymmetric_adjoint_comp_self.eigenvalues hn ⟨i, hi⟩ :=\n  T.sq_singularValues_fin hn ⟨i, hi⟩\n\ntheorem hasEigenvalue_adjoint_comp_self_sq_singularValues {n : ℕ} (hn : n < finrank 𝕜 E) :\n    End.HasEigenvalue (adjoint T ∘ₗ T) (T.singularValues n ^ 2) := by\n  convert! T.isSymmetric_adjoint_comp_self.hasEigenvalue_eigenvalues rfl ⟨n, hn⟩ using 1\n  simp [← T.sq_singularValues_fin]\n\ntheorem singularValues_antitone : Antitone T.singularValues := by\n  intro i j hij\n  by_cases! hj : finrank 𝕜 E ≤ j\n  · simpa [T.singularValues_of_finrank_le hj] using T.singularValues_nonneg i\n  have : (T.singularValues j : ℝ) ^ 2 ≤ (T.singularValues i : ℝ) ^ 2 := by\n    rw [T.sq_singularValues_fin rfl ⟨j, hj⟩, T.sq_singularValues_fin rfl ⟨i, hij.trans_lt hj⟩]\n    exact T.isSymmetric_adjoint_comp_self.eigenvalues_antitone rfl hij\n  exact le_of_sq_le_sq this (T.singularValues_nonneg i)\n",
+        "excerpt_sha256": "b8e5698f2afcf9702783c015f01b9b3c6be8d9bb99cc747974af58d9a7632a5a"
+      },
+      {
+        "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/InnerProductSpace/Adjoint.lean",
+        "sha256": "3bc8a1ebb741e2a363159953caecf067d44e621ee959dca8b9559223297d43fe",
+        "first_line": 1056,
+        "last_line": 1064,
+        "exact_excerpt": "\nopen scoped ComplexConjugate\n\n/-- The adjoint of the linear map associated to a matrix is the linear map associated to the\nconjugate transpose of that matrix. -/\ntheorem Matrix.toEuclideanLin_conjTranspose_eq_adjoint (A : Matrix m n 𝕜) :\n    A.conjTranspose.toEuclideanLin = A.toEuclideanLin.adjoint :=\n  A.toLin_conjTranspose (EuclideanSpace.basisFun n 𝕜) (EuclideanSpace.basisFun m 𝕜)\n\n",
+        "excerpt_sha256": "c9de6657576e30be2a5c1435ef602118ad4d6809f510986437e48a3b1b85926b"
+      },
+      {
+        "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/CStarAlgebra/Matrix.lean",
+        "sha256": "1bc46e33c9ae1d5dca0d256c9c015695f144a7fb22c02db009b6da8262a4c7c2",
+        "first_line": 95,
+        "last_line": 129,
+        "exact_excerpt": "variable [RCLike 𝕜]\nvariable [Fintype m] [Fintype n] [DecidableEq n] [Fintype l] [DecidableEq l]\n\n/-- The natural star algebra equivalence between matrices and continuous linear endomorphisms\nof Euclidean space induced by the orthonormal basis `EuclideanSpace.basisFun`.\n\nThis is a more-bundled version of `Matrix.toEuclideanLin`, for the special case of square matrices,\nfollowed by a more-bundled version of `LinearMap.toContinuousLinearMap`. -/\ndef toEuclideanCLM :\n    Matrix n n 𝕜 ≃⋆ₐ[𝕜] (EuclideanSpace 𝕜 n →L[𝕜] EuclideanSpace 𝕜 n) :=\n  toMatrixOrthonormal (EuclideanSpace.basisFun n 𝕜) |>.symm.trans <|\n    { toContinuousLinearMap with\n      map_mul' := fun _ _ ↦ rfl\n      map_star' := adjoint_toContinuousLinearMap }\n\n@[fun_prop]\nlemma continuous_uncurry_toEuclideanCLM :\n    Continuous (fun (S, x) ↦ toEuclideanCLM (n := n) (𝕜 := 𝕜) S x) := by\n  refine Continuous.comp (by fun_prop) <| continuous_pi fun i ↦ ?_\n  simp only [LinearEquiv.toEquiv_symm, Equiv.symm_symm, Equiv.invFun_as_coe,\n    LinearEquiv.coe_symm_toEquiv, toMatrix'_symm, OrthonormalBasis.coe_toBasis_repr,\n    LinearEquiv.coe_coe, LinearEquiv.trans_apply, LinearIsometryEquiv.coe_toLinearEquiv,\n    linearEquiv_apply, AddEquiv.toEquiv_eq_coe, Equiv.toFun_as_coe, EquivLike.coe_coe,\n    addEquiv_apply, toLin'_apply, LinearEquiv.symm_mk, coe_mk, AddHom.coe_mk, LinearEquiv.coe_mk,\n    LinearEquiv.coe_toEquiv, Finsupp.linearEquivFunOnFinite_apply,\n    Finsupp.equivFunOnFinite_symm_apply_apply]\n  fun_prop\n\nlemma coe_toEuclideanCLM_eq_toEuclideanLin (A : Matrix n n 𝕜) :\n    (toEuclideanCLM (n := n) (𝕜 := 𝕜) A : _ →ₗ[𝕜] _) = toEuclideanLin A :=\n  rfl\n\n@[simp]\nlemma toEuclideanCLM_toLp (A : Matrix n n 𝕜) (x : n → 𝕜) :\n    toEuclideanCLM (n := n) (𝕜 := 𝕜) A (toLp _ x) = toLp _ (A *ᵥ x) := rfl\n",
+        "excerpt_sha256": "5ad9ee806d9f44c6e3bb0bc36f99933fe3060a77e3aadd2c96257141d3dd608f"
+      },
+      {
+        "file": "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/LinearAlgebra/Eigenspace/Basic.lean",
+        "sha256": "a62b802bd9b081a20e30716e1c25cbdacbfcc0cad0cad7db304e61d21c7211b5",
+        "first_line": 433,
+        "last_line": 484,
+        "exact_excerpt": "  simp only [eigenspace, ← Nat.cast_one (R := ℕ∞), genEigenspace_zero_nat, pow_one]\n\n/-- A nonzero element of an eigenspace is an eigenvector. (Def 5.8 of [axler2024]) -/\nabbrev HasEigenvector (f : End R M) (μ : R) (x : M) : Prop :=\n  HasUnifEigenvector f μ 1 x\n\nlemma hasEigenvector_iff {f : End R M} {μ : R} {x : M} :\n    f.HasEigenvector μ x ↔ x ∈ f.eigenspace μ ∧ x ≠ 0 := Iff.rfl\n\n/-- A scalar `μ` is an eigenvalue for a linear map `f` if there are nonzero vectors `x`\nsuch that `f x = μ • x`. (Def 5.5 of [axler2024]). -/\nabbrev HasEigenvalue (f : End R M) (a : R) : Prop :=\n  HasUnifEigenvalue f a 1\n\nlemma hasEigenvalue_iff {f : End R M} {μ : R} :\n    f.HasEigenvalue μ ↔ f.eigenspace μ ≠ ⊥ := Iff.rfl\n\n/-- The eigenvalues of the endomorphism `f`, as a subtype of `R`. -/\nabbrev Eigenvalues (f : End R M) : Type _ :=\n  UnifEigenvalues f 1\n\n@[coe]\nabbrev Eigenvalues.val (f : Module.End R M) : Eigenvalues f → R := UnifEigenvalues.val f 1\n\n@[simp]\nlemma Eigenvalues.val_mk {f : End R M} {μ : R} (h : f.HasEigenvalue μ) :\n    Eigenvalues.val f ⟨μ, h⟩ = μ := rfl\n\n@[simp]\nlemma Eigenvalues.mk_val {f : End R M} (μ : Eigenvalues f) : ⟨μ.val, μ.property⟩ = μ := rfl\n\ntheorem hasEigenvalue_of_hasEigenvector {f : End R M} {μ : R} {x : M} (h : HasEigenvector f μ x) :\n    HasEigenvalue f μ :=\n  h.hasUnifEigenvalue\n\ntheorem mem_eigenspace_iff {f : End R M} {μ : R} {x : M} : x ∈ eigenspace f μ ↔ f x = μ • x :=\n  mem_genEigenspace_one\n\nnonrec\ntheorem HasEigenvector.apply_eq_smul {f : End R M} {μ : R} {x : M} (hx : f.HasEigenvector μ x) :\n    f x = μ • x :=\n  hx.apply_eq_smul\n\nnonrec\ntheorem HasEigenvector.pow_apply {f : End R M} {μ : R} {v : M} (hv : f.HasEigenvector μ v) (n : ℕ) :\n    (f ^ n) v = μ ^ n • v :=\n  hv.pow_apply n\n\ntheorem HasEigenvalue.exists_hasEigenvector {f : End R M} {μ : R} (hμ : f.HasEigenvalue μ) :\n    ∃ v, f.HasEigenvector μ v :=\n  Submodule.exists_mem_ne_zero_of_ne_bot hμ\n\n",
+        "excerpt_sha256": "12d0f937ebb102f0b5b32548407de502a1661f8e478568988cc14ba29e85e3eb"
+      }
+    ],
+    "packet_preparer": {
+      "file": "/tmp/prepare-foundations-balanced-sensor-spectral27-review-request-v1.py",
+      "sha256": "90756ec16c5f6d04672125d41a95f9e32e73abb499c3e4663fab75f51cef2708"
+    },
+    "scope": "Actual TMP standalone only. Fresh complete1264 decision requires independent full literal/context/body reading. No named/canonical/current ledger/selection/aggregate/physical calibration or parent-exercise claim."
+  },
+  "evidence_sha256": {
+    "/tmp/foundations-balanced-sensor-spectral27-trial1-source.lean": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+    "/tmp/foundations-balanced-sensor-spectral27-trial1.json": "9e54050d8748d7af5a1f0a04cd908b4de6a13104c050cb621205901793372916",
+    "/tmp/foundations-balanced-sensor-spectral27-trial1.lean": "ee59c8495a79a9557c45e9ae568893173ae5e3e2b972116f2e83eb656dc1c73f",
+    "/tmp/foundations-balanced-sensor-spectral27-trial1.log": "fde0542f2f23181079d66ffb1339e068cfd4f947ef910c743c7d9763af1f896a",
+    "/tmp/foundations-balanced-sensor-spectral27-trial2-source.lean": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+    "/tmp/foundations-balanced-sensor-spectral27-trial2.json": "c15a58eaad2e1d6be5e5526ac07d06c56cfc044c3986459c1b0220f504d99d45",
+    "/tmp/foundations-balanced-sensor-spectral27-trial2.lean": "bd77b6238333e9dc07f75972af751bbdc1462c2e1401fe6b90465ed03296d13e",
+    "/tmp/foundations-balanced-sensor-spectral27-trial2.log": "c3456e6161826773a1f4d40477c9a561dfd1e59ac85cab37e330cfd7714e0ca4",
+    "/tmp/root_tmp_lean27_runner_v2.py": "a4215c69ad35c4df0ed77bc9fc35a348e9e29b865724aac2bb45dde958a82db4",
+    "/tmp/root-tmp-lean27-runner-independent-foundations-full-code-review-v1.json": "d66d5659786d085c13fa7681b61ba5a55ca4cd202fdd97162b49b7e0d921631b",
+    "/tmp/root-tmp-lean27-runner-independent-foundations-full-code-review-v2.json": "d1737274340831f636da24f4998952706d3be28bb4af005732fb3610fa720202",
+    "/tmp/foundations-balanced-sensor-spectral27-one-whole-literal-review-request-v1.json": "bb97808a354459251741d1e701266a453079f544348a7537d7cf28ad6a9730fe",
+    "book/coverage/inventory.json": "4b1e657eb61234a6d2e2a3a3ea6a0b11986c01d7d1c7cb5ba2dd5452d1fe29be",
+    "SafeLearning/primer-linalg.html": "cc95b1ba95fbe1577e8449843ff998817525c41368b4bae621c2791e4c55e620",
+    "verification/lean/SafeLearning/CompleteFoundationsSpectralModels.lean": "3c3142bcf6f28bfce6980e5029caf7efe0fb6bcaf7434eb0b98e016a88eb32ea",
+    "/tmp/prepare-foundations-balanced-sensor-spectral27-review-request-v1.py": "90756ec16c5f6d04672125d41a95f9e32e73abb499c3e4663fab75f51cef2708",
+    "reports/full-coverage/checkpoint-26-selection.json": "12527ed93a283e1b37a491f7f799ac04e6217b1d7e20aee74116b312e580e23f",
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/InnerProductSpace/SingularValues.lean": "9d4ad23ced4319e8343d103fe4e726d64ba2908fe6932612039fe80fa9040055",
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/InnerProductSpace/Adjoint.lean": "3bc8a1ebb741e2a363159953caecf067d44e621ee959dca8b9559223297d43fe",
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/CStarAlgebra/Matrix.lean": "1bc46e33c9ae1d5dca0d256c9c015695f144a7fb22c02db009b6da8262a4c7c2",
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/LinearAlgebra/Eigenspace/Basic.lean": "a62b802bd9b081a20e30716e1c25cbdacbfcc0cad0cad7db304e61d21c7211b5"
+  },
+  "protected_counts": {
+    "selected_proof_sources": 1167,
+    "current_assets": 31,
+    "installed_owner_files": 5
+  },
+  "scope": [
+    "Fresh full read of the one complete literal and all ten existing proof bodies, genuine standalone evidence and selected dependencies.",
+    "Whole node1264 only; adjacent sensor1266/1268/1269 decisions retain their separate earlierreview.",
+    "TMP-only independent review, no compiler rerun, canonical/named source, owner promotion or aggregate claim."
+  ]
+}

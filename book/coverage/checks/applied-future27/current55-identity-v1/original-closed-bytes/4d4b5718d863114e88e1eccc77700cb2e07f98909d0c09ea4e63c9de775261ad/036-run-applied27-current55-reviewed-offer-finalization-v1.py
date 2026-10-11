@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import subprocess,time,json,hashlib
+R=Path('/home/oxrexkevin/SafetyBased');C=Path('/tmp/finalize-applied27-current55-identity-reviewed-offer-v1.py');O=Path('/tmp/applied27-current55-reviewed-offer-finalization-actual-v1.json');L=O.with_suffix('.log');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();assert not O.exists()and not L.exists();start=datetime.now(timezone.utc).isoformat();t=time.monotonic();h=H(C)
+with L.open('xb')as f:r=subprocess.run(['python3',str(C)],cwd=R,stdout=f,stderr=subprocess.STDOUT)
+O.write_text(json.dumps({'status':'actual_tmp_identity_reviewed_offer_finalizer','actual_exit_code':r.returncode,'actual_command':['python3',str(C)],'actual_workdir':str(R),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'helper_sha256_before':h,'helper_sha256_after':H(C),'raw_log':str(L),'raw_log_sha256':H(L),'scope':'TMP-only original evidence copies/final reviewed offer; no live owner/source/proof/canonical/PUB/Git change.'},indent=2)+'\n');print(json.dumps({'actual':str(O),'sha256':H(O),'actual_exit_code':r.returncode,'raw_log_sha256':H(L)}));raise SystemExit(r.returncode)
