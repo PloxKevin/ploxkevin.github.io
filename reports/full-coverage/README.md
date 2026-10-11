@@ -43,8 +43,11 @@ The original baseline row bodies, semantic reviews, hypotheses, times and real
 failed/passing executions remain preserved. Full external references retain
 their separate attributed reference scope.
 
-Checkpoint 24 has passed its local audit and awaits an actual GitHub Pages build
-and live asset checks. Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
+Checkpoint 24 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/13d6823f7378a9d2b9737242763cf19b9b321b28).
+The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38110722509)
+completed successfully, and [live delivery](live-checkpoint-24-attempt1.json)
+matched all 31 book asset hashes and the built commit exactly.
+Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Literal archival exclusions retain the current book, partial ledgers
 and both current24 and baseline23 audit reports in the website build.
 
