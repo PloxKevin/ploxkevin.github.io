@@ -1,0 +1,527 @@
+{
+  "status": "read_only_eight_full_body_arbitrary_law_CVaR_selector_component_review_request",
+  "prepared_at_utc": "2026-10-11T04:40:23.953788+00:00",
+  "author": "/root/applied_next",
+  "current_inventory": {
+    "file": "book/coverage/inventory-after-correction52.json",
+    "sha256": "38518673e13ed16537e301b071fb04ec0ed6720269cd14f48b986f4e82c578f3"
+  },
+  "proof_source": {
+    "file": "/tmp/CompleteAppliedCVaRFractionalSelector26.lean",
+    "sha256": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677"
+  },
+  "complete_source_body": "import SafeLearning.CompleteAppliedFractionalTailDual\nimport Mathlib.Probability.CDF\n\nset_option autoImplicit false\nnoncomputable section\nopen MeasureTheory ProbabilityTheory Set Filter\nopen scoped Topology\nnamespace SafeLearning.CompleteAppliedCVaRQuantileExistence26\n\n/-- Every real probability law, including laws with atoms and gaps, has an\nattained quantile whose lower and upper CDF values bracket each interior level. -/\ntheorem actual_arbitrary_real_probability_has_an_attained_fractional_tail_threshold\n    (P : Measure ℝ) [IsProbabilityMeasure P] (alpha : ℝ)\n    (ha0 : 0 < alpha) (ha1 : alpha < 1) :\n    ∃ threshold : ℝ,\n      Function.leftLim (cdf P) threshold ≤ alpha ∧ alpha ≤ cdf P threshold := by\n  let upper : Set ℝ := {x | alpha ≤ cdf P x}\n  obtain ⟨above, habove⟩ := ((tendsto_cdf_atTop P).eventually (eventually_gt_nhds ha1)).exists\n  obtain ⟨below, hbelow⟩ := ((tendsto_cdf_atBot P).eventually (eventually_lt_nhds ha0)).exists\n  have hnonempty : upper.Nonempty := ⟨above, habove.le⟩\n  have hbounded : BddBelow upper := by\n    refine ⟨below, ?_⟩\n    intro x hx\n    by_contra h\n    have horder : x ≤ below := le_of_lt (lt_of_not_ge h)\n    have hcdf := (monotone_cdf P) horder\n    exact (not_le_of_gt hbelow) ((show alpha ≤ cdf P x from hx).trans hcdf)\n  let threshold : ℝ := sInf upper\n  have haboveroot : ∀ x : Ioi threshold, alpha ≤ cdf P x := by\n    intro x\n    obtain ⟨y, hy, hyx⟩ := exists_lt_of_csInf_lt hnonempty x.property\n    exact (show alpha ≤ cdf P y from hy).trans ((monotone_cdf P) hyx.le)\n  have hroot : alpha ≤ cdf P threshold := by\n    letI : Nonempty (Ioi threshold) := ⟨⟨threshold + 1, by simp⟩⟩\n    rw [← (cdf P).iInf_Ioi_eq threshold]\n    exact le_ciInf haboveroot\n  have hbelowroot : ∀ x : ℝ, x < threshold → cdf P x < alpha := by\n    intro x hx\n    by_contra h\n    have hmember : x ∈ upper := le_of_not_gt h\n    exact (not_le_of_gt hx) (csInf_le hbounded hmember)\n  have hleft : Function.leftLim (cdf P) threshold ≤ alpha := by\n    rw [(monotone_cdf P).leftLim_eq_sSup]\n    apply csSup_le\n    · exact ⟨cdf P (threshold - 1), ⟨threshold - 1, by simp, rfl⟩⟩\n    · rintro y ⟨x, hx, rfl⟩\n      exact (hbelowroot x hx).le\n  exact ⟨threshold, hleft, hroot⟩\n\nend SafeLearning.CompleteAppliedCVaRQuantileExistence26\n\nnamespace SafeLearning.CompleteAppliedCVaRFractionalSelector26\nopen CompleteAppliedFractionalTailDual CompleteFoundationsCVaRQuotients\nopen CompleteFoundationsHingeExpectations CompleteAppliedCVaRQuantileExistence26\n\n/-- The fractional selector includes every strict-tail loss, exactly the necessary\nfraction of an atom at its threshold, and none of the lower losses. -/\ndef fractionalSelector {Ω : Type*} (loss : Ω→ℝ) (q r : ℝ) : Ω→ℝ :=\n  fun w=>if q<loss w then 1 else if loss w=q then r else 0\n\n/-- A quantile of the genuine loss law brackets the desired tail mass. -/\ntheorem actual_arbitrary_loss_has_a_tail_mass_bracketing_threshold\n    {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hm : Measurable loss) (alpha : ℝ) (ha0 : 0<alpha) (ha1 : alpha<1) :\n    ∃q : ℝ,P.real {w | q<loss w}≤1-alpha ∧\n      1-alpha≤P.real {w | q<loss w}+P.real {w | loss w=q} := by\n  let law:=P.map loss\n  letI : IsProbabilityMeasure law :=\n    (Measure.isProbabilityMeasure_map_iff hm.aemeasurable).mpr inferInstance\n  obtain ⟨q,hleft,hupper⟩ :=\n    actual_arbitrary_real_probability_has_an_attained_fractional_tail_threshold law alpha ha0 ha1\n  have htail : law.real (Ioi q)=1-cdf law q := by\n    rw [show Ioi q=(Iic q)ᶜ by ext x;simp,\n      probReal_compl_eq_one_sub measurableSet_Iic,←cdf_eq_real law q]\n  have hpoint : law.real {q}=cdf law q-Function.leftLim (cdf law) q := by\n    have hraw : law {q}=ENNReal.ofReal (cdf law q-Function.leftLim (cdf law) q) := by\n      calc\n        law {q}=(cdf law).measure {q} := by rw [measure_cdf law]\n        _ = ENNReal.ofReal (cdf law q-Function.leftLim (cdf law) q) :=\n          StieltjesFunction.measure_singleton (cdf law) q\n    rw [measureReal_def,hraw]\n    exact ENNReal.toReal_ofReal (sub_nonneg.mpr ((monotone_cdf law).leftLim_le le_rfl))\n  have ht : law.real (Ioi q)=P.real {w | q<loss w} := by\n    simpa only [measureReal_def,Set.preimage,Set.mem_Ioi] using\n      congrArg ENNReal.toReal (Measure.map_apply (μ:=P) hm (measurableSet_Ioi (a:=q)))\n  have hb : law.real {q}=P.real {w | loss w=q} := by\n    simpa only [measureReal_def,Set.preimage,Set.mem_singleton_iff] using\n      congrArg ENNReal.toReal (Measure.map_apply (μ:=P) hm (measurableSet_singleton q))\n  refine ⟨q,?_,?_⟩\n  · rw [←ht,htail];linarith\n  · rw [←ht,←hb,htail,hpoint];linarith\n\n/-- The boundary fraction is valid even with no atom: then its numerator is zero. -/\ntheorem actual_boundary_fraction_is_in_unit_interval_and_mass_matched\n    (mass above boundary : ℝ) (hb : 0≤boundary)\n    (hu : above≤ mass) (hut : mass≤above+boundary) :\n    (mass-above)/boundary∈Icc (0:ℝ) 1 ∧\n      above+((mass-above)/boundary)*boundary=mass := by\n  have hnum : 0≤ mass-above := sub_nonneg.mpr hu\n  by_cases hzero : boundary=0\n  · have hnumzero : mass-above=0 := by linarith\n    simp [hzero,hnumzero]\n    linarith\n  · have hpos : 0<boundary := lt_of_le_of_ne hb (Ne.symm hzero)\n    refine ⟨⟨div_nonneg hnum hb,(div_le_one hpos).mpr (by linarith)⟩,?_⟩\n    rw [div_mul_cancel₀ _ hzero]\n    ring\n\n/-- Measurability and actual pointwise range hold for the constructed selector. -/\ntheorem actual_fractional_threshold_selector_measurable_and_bounded\n    {Ω : Type*} [MeasurableSpace Ω] (loss : Ω→ℝ) (hm : Measurable loss)\n    (q r : ℝ) (hr : r∈Icc (0:ℝ) 1) :\n    Measurable (fractionalSelector loss q r) ∧\n      (∀w,fractionalSelector loss q r w∈Icc (0:ℝ) 1) ∧\n      (∀w,q<loss w→fractionalSelector loss q r w=1) ∧\n      (∀w,loss w<q→fractionalSelector loss q r w=0) := by\n  have ha : MeasurableSet {w | q<loss w} := measurableSet_lt measurable_const hm\n  have he : MeasurableSet {w | loss w=q} := measurableSet_eq_fun hm measurable_const\n  refine ⟨measurable_const.ite ha (measurable_const.ite he measurable_const),?_,?_,?_⟩\n  · intro w\n    by_cases hqa : q<loss w\n    · simp [fractionalSelector,hqa]\n    · by_cases hqe : loss w=q\n      · simpa [fractionalSelector,hqa,hqe] using hr\n      · simp [fractionalSelector,hqa,hqe]\n  · intro w hw;simp [fractionalSelector,hw]\n  · intro w hw\n    have hqa : ¬q<loss w := not_lt_of_ge hw.le\n    have hqe : loss w≠q := ne_of_lt hw\n    simp [fractionalSelector,hqa,hqe]\n\n/-- The selector's integral is computed from the actual strict-tail and atom masses. -/\ntheorem actual_fractional_selector_integral_is_above_mass_plus_fractional_atom\n    {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hm : Measurable loss) (q r : ℝ) :\n    (∫w,fractionalSelector loss q r w ∂P)=\n      P.real {w | q<loss w}+r*P.real {w | loss w=q} := by\n  have ha : MeasurableSet {w | q<loss w} := measurableSet_lt measurable_const hm\n  have he : MeasurableSet {w | loss w=q} := measurableSet_eq_fun hm measurable_const\n  have hfun : fractionalSelector loss q r=\n      fun w=>({w | q<loss w}.indicator (fun _=>(1:ℝ)) w)+\n        ({w | loss w=q}.indicator (fun _=>r) w) := by\n    funext w\n    by_cases hqa : q<loss w\n    · have hqe : loss w≠q := ne_of_gt hqa\n      simp [fractionalSelector,hqa,hqe]\n    · by_cases hqe : loss w=q\n      · simp [fractionalSelector,hqa,hqe]\n      · simp [fractionalSelector,hqa,hqe]\n  rw [hfun,integral_add ((integrable_const (1:ℝ)).indicator ha)\n    ((integrable_const r).indicator he),integral_indicator_const (1:ℝ) ha,integral_indicator_const r he]\n  simp only [smul_eq_mul,one_mul]\n  ring\n\n/-- No mass-matched selector is assumed: it is constructed from an attained quantile,\nincluding atomic distributions and the no-atom zero-boundary case. -/\ntheorem actual_arbitrary_measurable_loss_has_a_constructed_fractional_tail_selector\n    {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hm : Measurable loss) (alpha : ℝ) (ha0 : 0<alpha) (ha1 : alpha<1) :\n    ∃q : ℝ,let r:=(1-alpha-P.real {w | q<loss w})/P.real {w | loss w=q}\n      fractionalSelector loss q r∈admissibleSelectors P (1-alpha) ∧\n      (∀w,q<loss w→fractionalSelector loss q r w=1) ∧\n      (∀w,loss w<q→fractionalSelector loss q r w=0) := by\n  obtain ⟨q,hq0,hq1⟩:=actual_arbitrary_loss_has_a_tail_mass_bracketing_threshold\n    P loss hm alpha ha0 ha1\n  let r:=(1-alpha-P.real {w | q<loss w})/P.real {w | loss w=q}\n  have hr:=actual_boundary_fraction_is_in_unit_interval_and_mass_matched\n    (1-alpha) (P.real {w | q<loss w}) (P.real {w | loss w=q})\n    measureReal_nonneg hq0 hq1\n  have hs:=actual_fractional_threshold_selector_measurable_and_bounded loss hm q r hr.1\n  refine ⟨q,⟨hs.1,hs.2.1,?_⟩,hs.2.2.1,hs.2.2.2⟩\n  rw [actual_fractional_selector_integral_is_above_mass_plus_fractional_atom P loss hm q r]\n  simpa only [mul_comm,r] using hr.2\n\n/-- Every integrable real loss has both a genuine greatest fractional tail and an\nattained global minimum of the RU objective, with equal values. -/\ntheorem actual_arbitrary_integrable_loss_has_greatest_tail_and_attained_least_RU\n    {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hm : Measurable loss) (hi : Integrable loss P)\n    (alpha : ℝ) (ha0 : 0<alpha) (ha1 : alpha<1) :\n    ∃q : ℝ,∃selector : Ω→ℝ,\n      selector∈admissibleSelectors P (1-alpha) ∧\n      IsGreatest ((fun other=>actualTailMean P loss other (1-alpha)) '' admissibleSelectors P (1-alpha))\n        (actualTailMean P loss selector (1-alpha)) ∧\n      IsLeast (Set.range (actualRUObjective P loss alpha)) (actualRUObjective P loss alpha q) ∧\n      actualWorstTailMean P loss (1-alpha)=actualRUObjective P loss alpha q := by\n  obtain ⟨q,hs,habove,hbelow⟩:=actual_arbitrary_measurable_loss_has_a_constructed_fractional_tail_selector\n    P loss hm alpha ha0 ha1\n  let selector:=fractionalSelector loss q\n    ((1-alpha-P.real {w | q<loss w})/P.real {w | loss w=q})\n  have ho:=actual_mass_matched_threshold_selector_is_greatest_tail_and_least_RU_objective\n    loss hi alpha q ha1 selector hs habove hbelow\n  exact ⟨q,selector,hs,ho⟩\n\n/-- The source's strict worst-five-percent criterion is equivalent to the attained\nRU certificate for arbitrary integrable laws, not only finite distributions. -/\ntheorem actual_arbitrary_loss_worst_five_percent_below_ten_iff_RU_certificate\n    {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hm : Measurable loss) (hi : Integrable loss P) :\n    actualWorstTailMean P loss (1/20)<10 ↔\n      ∃q : ℝ,q+20*(∫w,hinge (loss w) q ∂P)<10 := by\n  obtain ⟨q,selector,hs,hgreatest,hleast,heq⟩:=\n    actual_arbitrary_integrable_loss_has_greatest_tail_and_attained_least_RU\n      P loss hm hi (19/20) (by norm_num) (by norm_num)\n  have hmass : (1-(19/20):ℝ)=1/20 := by norm_num\n  have hru : ∀t,actualRUObjective P loss (19/20) t=\n      t+20*(∫w,hinge (loss w) t ∂P) := by\n    intro t;unfold actualRUObjective;norm_num\n  rw [hmass] at heq\n  constructor\n  · intro h\n    exact ⟨q,by rw [←hru,←heq];exact h⟩\n  · rintro ⟨t,ht⟩\n    rw [heq]\n    exact lt_of_le_of_lt (hleast.2 ⟨t,rfl⟩) (by rw [hru];exact ht)\n\nend SafeLearning.CompleteAppliedCVaRFractionalSelector26\n",
+  "public_theorems": [
+    "SafeLearning.CompleteAppliedCVaRQuantileExistence26.actual_arbitrary_real_probability_has_an_attained_fractional_tail_threshold",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_loss_has_a_tail_mass_bracketing_threshold",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_boundary_fraction_is_in_unit_interval_and_mass_matched",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_fractional_threshold_selector_measurable_and_bounded",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_fractional_selector_integral_is_above_mass_plus_fractional_atom",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_measurable_loss_has_a_constructed_fractional_tail_selector",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_integrable_loss_has_greatest_tail_and_attained_least_RU",
+    "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_loss_worst_five_percent_below_ten_iff_RU_certificate"
+  ],
+  "component_groups": [
+    {
+      "id": "actual-arbitrary-probability-quantile-attainment",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRQuantileExistence26.actual_arbitrary_real_probability_has_an_attained_fractional_tail_threshold"
+      ],
+      "claimed_exact_scope": "The infimum of the actual CDF upper set is attained and brackets each interior alpha with its left limit, including atoms and gaps."
+    },
+    {
+      "id": "actual-loss-law-tail-mass-bracketing",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_loss_has_a_tail_mass_bracketing_threshold"
+      ],
+      "claimed_exact_scope": "The genuine pushed-forward loss law supplies a threshold whose strict tail and atom bracket 1-alpha; no mass-matched selector is assumed."
+    },
+    {
+      "id": "actual-boundary-fraction-including-zero-atom",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_boundary_fraction_is_in_unit_interval_and_mass_matched"
+      ],
+      "claimed_exact_scope": "The explicit boundary fraction is in [0,1] and matches mass, including boundary=0, when its numerator is necessarily zero."
+    },
+    {
+      "id": "actual-selector-measurability-and-range",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_fractional_threshold_selector_measurable_and_bounded"
+      ],
+      "claimed_exact_scope": "The constructed threshold selector is measurable, pointwise bounded, includes every strict-tail outcome, and excludes every lower outcome."
+    },
+    {
+      "id": "actual-selector-bochner-mass-integral",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_fractional_selector_integral_is_above_mass_plus_fractional_atom"
+      ],
+      "claimed_exact_scope": "The true selector integral is the strict-tail probability plus the fractional atom, derived using measurable integrable indicators."
+    },
+    {
+      "id": "actual-constructed-admissible-tail-selector",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_measurable_loss_has_a_constructed_fractional_tail_selector"
+      ],
+      "claimed_exact_scope": "An arbitrary measurable loss under an arbitrary probability law has the explicit admissible mass-matched selector at an attained quantile."
+    },
+    {
+      "id": "actual-greatest-tail-and-attained-global-RU-minimum",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_integrable_loss_has_greatest_tail_and_attained_least_RU"
+      ],
+      "claimed_exact_scope": "For every measurable integrable loss, the constructed selector attains the greatest fractional tail mean and the actual RU objective has an attained global least value equal to the real tail supremum."
+    },
+    {
+      "id": "actual-strict-worst-five-percent-below-ten-equivalence",
+      "requested_decision": "independent_full_body_component_review",
+      "lean_declarations": [
+        "SafeLearning.CompleteAppliedCVaRFractionalSelector26.actual_arbitrary_loss_worst_five_percent_below_ten_iff_RU_certificate"
+      ],
+      "claimed_exact_scope": "For every measurable integrable loss, worst fractional five-percent tail mean <10 iff an actual threshold q satisfies q+20 E[(loss-q)+]<10."
+    }
+  ],
+  "preserved_original_quantile_source": {
+    "file": "/tmp/CompleteAppliedCVaRQuantileExistence26.lean",
+    "sha256": "5b64961b9a8aa7ec48e1e40d4abccc5142ae30b15da390686489f04aa3e6089e"
+  },
+  "preserved_entire_original_quantile_body": "import SafeLearning.CompleteAppliedFractionalTailDual\nimport Mathlib.Probability.CDF\n\nset_option autoImplicit false\nnoncomputable section\nopen MeasureTheory ProbabilityTheory Set Filter\nopen scoped Topology\nnamespace SafeLearning.CompleteAppliedCVaRQuantileExistence26\n\n/-- Every real probability law, including laws with atoms and gaps, has an\nattained quantile whose lower and upper CDF values bracket each interior level. -/\ntheorem actual_arbitrary_real_probability_has_an_attained_fractional_tail_threshold\n    (P : Measure ℝ) [IsProbabilityMeasure P] (alpha : ℝ)\n    (ha0 : 0 < alpha) (ha1 : alpha < 1) :\n    ∃ threshold : ℝ,\n      Function.leftLim (cdf P) threshold ≤ alpha ∧ alpha ≤ cdf P threshold := by\n  let upper : Set ℝ := {x | alpha ≤ cdf P x}\n  obtain ⟨above, habove⟩ := ((tendsto_cdf_atTop P).eventually (eventually_gt_nhds ha1)).exists\n  obtain ⟨below, hbelow⟩ := ((tendsto_cdf_atBot P).eventually (eventually_lt_nhds ha0)).exists\n  have hnonempty : upper.Nonempty := ⟨above, habove.le⟩\n  have hbounded : BddBelow upper := by\n    refine ⟨below, ?_⟩\n    intro x hx\n    by_contra h\n    have horder : x ≤ below := le_of_lt (lt_of_not_ge h)\n    have hcdf := (monotone_cdf P) horder\n    exact (not_le_of_gt hbelow) ((show alpha ≤ cdf P x from hx).trans hcdf)\n  let threshold : ℝ := sInf upper\n  have haboveroot : ∀ x : Ioi threshold, alpha ≤ cdf P x := by\n    intro x\n    obtain ⟨y, hy, hyx⟩ := exists_lt_of_csInf_lt hnonempty x.property\n    exact (show alpha ≤ cdf P y from hy).trans ((monotone_cdf P) hyx.le)\n  have hroot : alpha ≤ cdf P threshold := by\n    letI : Nonempty (Ioi threshold) := ⟨⟨threshold + 1, by simp⟩⟩\n    rw [← (cdf P).iInf_Ioi_eq threshold]\n    exact le_ciInf haboveroot\n  have hbelowroot : ∀ x : ℝ, x < threshold → cdf P x < alpha := by\n    intro x hx\n    by_contra h\n    have hmember : x ∈ upper := le_of_not_gt h\n    exact (not_le_of_gt hx) (csInf_le hbounded hmember)\n  have hleft : Function.leftLim (cdf P) threshold ≤ alpha := by\n    rw [(monotone_cdf P).leftLim_eq_sSup]\n    apply csSup_le\n    · exact ⟨cdf P (threshold - 1), ⟨threshold - 1, by simp, rfl⟩⟩\n    · rintro y ⟨x, hx, rfl⟩\n      exact (hbelowroot x hx).le\n  exact ⟨threshold, hleft, hroot⟩\n\nend SafeLearning.CompleteAppliedCVaRQuantileExistence26\n",
+  "original_quantile_source_is_exact_byte_prefix": true,
+  "selected_dependency_full_bodies_and_actual_evidence": [
+    {
+      "proof_source": {
+        "file": "verification/lean/SafeLearning/CompleteAppliedFractionalTailDual.lean",
+        "sha256": "74b1b528f7d9ae01da2cb445d97041266ea979b252972e0e1889d5e16a27e00f"
+      },
+      "complete_source_body": "import SafeLearning.CompleteFoundationsCVaRQuotients\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen MeasureTheory Set\nnamespace SafeLearning.CompleteAppliedFractionalTailDual\nopen CompleteFoundationsHingeExpectations CompleteFoundationsCVaRQuotients\n\ndef admissibleSelectors {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω) (mass : ℝ) : Set (Ω→ℝ) :=\n  {selector | Measurable selector ∧ (∀omega,selector omega∈Icc (0:ℝ) 1) ∧\n    (∫omega,selector omega ∂P)=mass}\n\ndef actualTailMean {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω)\n    (loss selector : Ω→ℝ) (mass : ℝ) : ℝ := (∫omega,loss omega*selector omega ∂P)/mass\n\ndef actualWorstTailMean {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω)\n    (loss : Ω→ℝ) (mass : ℝ) : ℝ :=\n  sSup ((fun selector=>actualTailMean P loss selector mass) '' admissibleSelectors P mass)\n\ntheorem actual_bounded_selectors_and_selected_losses_are_integrable\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss selector : Ω→ℝ) (hi : Integrable loss P) (hm : Measurable selector)\n    (hb : ∀omega,selector omega∈Icc (0:ℝ) 1) :\n    Integrable selector P ∧ Integrable (fun omega=>loss omega*selector omega) P := by\n  constructor\n  · apply (integrable_const (1:ℝ)).mono' hm.aestronglyMeasurable\n    filter_upwards [] with omega\n    rw [Real.norm_eq_abs,abs_of_nonneg (hb omega).1]\n    exact (hb omega).2\n  · apply hi.mono (hi.aestronglyMeasurable.mul hm.aestronglyMeasurable)\n    filter_upwards [] with omega\n    change |loss omega*selector omega|≤|loss omega|\n    simp only [abs_mul,abs_of_nonneg (hb omega).1]\n    exact mul_le_of_le_one_right (abs_nonneg _) (hb omega).2\n\ntheorem actual_pointwise_hinge_bounds_every_fractional_selected_loss\n    (value threshold selector : ℝ) (hs : selector∈Icc (0:ℝ) 1) :\n    value*selector≤hinge value threshold+threshold*selector := by\n  unfold hinge\n  by_cases hv : threshold≤value\n  · rw [max_eq_left (sub_nonneg.mpr hv)]\n    nlinarith [mul_nonneg (sub_nonneg.mpr hv) (sub_nonneg.mpr hs.2)]\n  · rw [max_eq_right (sub_nonpos.mpr (le_of_not_ge hv))]\n    nlinarith [mul_nonneg (sub_nonneg.mpr (le_of_not_ge hv)) hs.1]\n\ntheorem actual_every_admissible_fractional_tail_is_bounded_by_every_RU_threshold\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hi : Integrable loss P) (alpha threshold : ℝ) (ha : alpha<1)\n    (selector : Ω→ℝ) (hs : selector∈admissibleSelectors P (1-alpha)) :\n    actualTailMean P loss selector (1-alpha)≤actualRUObjective P loss alpha threshold := by\n  obtain ⟨hsm,hsb,hsmass⟩ := hs\n  have hsi := actual_bounded_selectors_and_selected_losses_are_integrable loss selector hi hsm hsb\n  have hh := actual_integrable_random_loss_has_integrable_hinge_at_every_threshold loss hi threshold\n  have hb := integral_mono hsi.2 (hh.add (hsi.1.const_mul threshold))\n    (fun omega=>actual_pointwise_hinge_bounds_every_fractional_selected_loss (loss omega) threshold (selector omega) (hsb omega))\n  change (∫omega,loss omega*selector omega ∂P)≤\n    (∫omega,hinge (loss omega) threshold+threshold*selector omega ∂P) at hb\n  rw [integral_add hh (hsi.1.const_mul threshold),integral_const_mul,hsmass] at hb\n  unfold actualTailMean actualRUObjective\n  apply (div_le_iff₀ (sub_pos.mpr ha)).mpr\n  have he : (threshold+1/(1-alpha)*(∫omega,hinge (loss omega) threshold ∂P))*(1-alpha)=\n      (∫omega,hinge (loss omega) threshold ∂P)+threshold*(1-alpha) := by\n    field_simp [(sub_pos.mpr ha).ne']\n    ring\n  rw [he]\n  exact hb\n\ntheorem actual_threshold_tail_selector_has_exact_hinge_identity\n    (value threshold selector : ℝ) (_hs : selector∈Icc (0:ℝ) 1)\n    (habove : threshold<value→selector=1) (hbelow : value<threshold→selector=0) :\n    value*selector=hinge value threshold+threshold*selector := by\n  rcases lt_trichotomy value threshold with h | h | h\n  · rw [hbelow h]\n    simp [hinge,max_eq_right (sub_nonpos.mpr h.le)]\n  · rw [h]\n    simp [hinge]\n  · rw [habove h]\n    simp [hinge,max_eq_left (sub_nonneg.mpr h.le)]\n\ntheorem actual_mass_matched_threshold_selector_attains_the_RU_value\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hi : Integrable loss P) (alpha threshold : ℝ) (ha : alpha<1)\n    (selector : Ω→ℝ) (hs : selector∈admissibleSelectors P (1-alpha))\n    (habove : ∀omega,threshold<loss omega→selector omega=1)\n    (hbelow : ∀omega,loss omega<threshold→selector omega=0) :\n    actualTailMean P loss selector (1-alpha)=actualRUObjective P loss alpha threshold := by\n  obtain ⟨hsm,hsb,hsmass⟩ := hs\n  have hsi := actual_bounded_selectors_and_selected_losses_are_integrable loss selector hi hsm hsb\n  have hh := actual_integrable_random_loss_has_integrable_hinge_at_every_threshold loss hi threshold\n  have he : (fun omega=>loss omega*selector omega)=\n      (fun omega=>hinge (loss omega) threshold+threshold*selector omega) := by\n    funext omega\n    exact actual_threshold_tail_selector_has_exact_hinge_identity (loss omega) threshold (selector omega)\n      (hsb omega) (habove omega) (hbelow omega)\n  unfold actualTailMean\n  rw [he,integral_add hh (hsi.1.const_mul threshold),integral_const_mul,hsmass]\n  unfold actualRUObjective\n  field_simp [(sub_pos.mpr ha).ne']\n  ring\n\ntheorem actual_mass_matched_threshold_selector_is_greatest_tail_and_least_RU_objective\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss : Ω→ℝ) (hi : Integrable loss P) (alpha threshold : ℝ) (ha : alpha<1)\n    (selector : Ω→ℝ) (hs : selector∈admissibleSelectors P (1-alpha))\n    (habove : ∀omega,threshold<loss omega→selector omega=1)\n    (hbelow : ∀omega,loss omega<threshold→selector omega=0) :\n    IsGreatest ((fun other=>actualTailMean P loss other (1-alpha)) '' admissibleSelectors P (1-alpha))\n      (actualTailMean P loss selector (1-alpha)) ∧\n    IsLeast (Set.range (actualRUObjective P loss alpha)) (actualRUObjective P loss alpha threshold) ∧\n    actualWorstTailMean P loss (1-alpha)=actualRUObjective P loss alpha threshold := by\n  have he := actual_mass_matched_threshold_selector_attains_the_RU_value loss hi alpha threshold ha selector hs habove hbelow\n  have hg : IsGreatest ((fun other=>actualTailMean P loss other (1-alpha)) '' admissibleSelectors P (1-alpha))\n      (actualTailMean P loss selector (1-alpha)) := by\n    refine ⟨⟨selector,hs,rfl⟩,?_⟩\n    rintro value ⟨other,ho,rfl⟩\n    rw [he]\n    exact actual_every_admissible_fractional_tail_is_bounded_by_every_RU_threshold loss hi alpha threshold ha other ho\n  refine ⟨hg,?_,?_⟩\n  · refine ⟨⟨threshold,rfl⟩,?_⟩\n    rintro value ⟨other,rfl⟩\n    rw [←he]\n    exact actual_every_admissible_fractional_tail_is_bounded_by_every_RU_threshold loss hi alpha other ha selector hs\n  · exact hg.csSup_eq.trans he\n\nend SafeLearning.CompleteAppliedFractionalTailDual\n",
+      "entire_selected24_proof_and_actual_evidence_row": {
+        "sha256": "74b1b528f7d9ae01da2cb445d97041266ea979b252972e0e1889d5e16a27e00f",
+        "evidence_sha256": {
+          "book/coverage/checks/applied-held19/tmp/applied-future17-actual/FractionalTailDual.json": "749707309ae1dd119de9e790e91f532b635af61aeba1af7f83f8089544c2e086",
+          "book/coverage/checks/applied-held19/tmp/applied-future17-actual/FractionalTailDual.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "reports/full-coverage/lean-checkpoint-19/verification-original.json": "d2686b31be70326e95d63161487add696786b5e6c02a8cc74ea766f498df45bc",
+          "reports/full-coverage/lean-checkpoint-20/verification-original.json": "29cd0e2daf8cceb0afcfd52fc2288e7cb7303e887bb7b13725e1aa7997e533ca"
+        },
+        "evidence_scope": "Original actual source-matched compiler and exact raw log bytes.",
+        "original_actual_zero_record": "book/coverage/checks/applied-held19/tmp/applied-future17-actual/FractionalTailDual.json"
+      }
+    },
+    {
+      "proof_source": {
+        "file": "verification/lean/SafeLearning/CompleteFoundationsCVaRQuotients.lean",
+        "sha256": "9a09cb3ec11dfa11a8ad91599498eb7a9166f7b10643268da1f1139f3566a1d1"
+      },
+      "complete_source_body": "import SafeLearning.CompleteFoundationsHingeExpectations\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set MeasureTheory ProbabilityTheory Filter\nopen scoped Topology\nnamespace SafeLearning.CompleteFoundationsCVaRQuotients\nopen CompleteFoundationsHingeExpectations\n\ndef actualRUObjective {Ω : Type*} [MeasurableSpace Ω] (P : Measure Ω)\n    (loss : Ω → ℝ) (alpha threshold : ℝ) : ℝ :=\n  threshold + (1 / (1 - alpha)) * ∫ omega, hinge (loss omega) threshold ∂P\n\ntheorem actual_RU_one_sided_difference_quotients_follow_from_true_bounded_convergence\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss : Ω → ℝ) (hm : Measurable loss) (hi : Integrable loss P)\n    (alpha center : ℝ) (_halpha0 : 0 ≤ alpha) (halpha1 : alpha < 1) :\n    Tendsto (fun threshold =>\n      (actualRUObjective P loss alpha threshold - actualRUObjective P loss alpha center) /\n        (threshold - center)) (𝓝[>] center)\n      (𝓝 (1 - P.real {omega | center < loss omega} / (1 - alpha))) ∧\n    Tendsto (fun threshold =>\n      (actualRUObjective P loss alpha threshold - actualRUObjective P loss alpha center) /\n        (threshold - center)) (𝓝[<] center)\n      (𝓝 (1 - P.real {omega | center ≤ loss omega} / (1 - alpha))) := by\n  have hr := actual_bounded_convergence_moves_both_one_sided_hinge_quotients_through_expectation\n    loss hm hi center\n  have hg (threshold : ℝ) (hne : threshold ≠ center) :\n      (actualRUObjective P loss alpha threshold - actualRUObjective P loss alpha center) /\n        (threshold - center) = 1 + (1 / (1 - alpha)) *\n          (((∫ omega, hinge (loss omega) threshold ∂P) -\n            (∫ omega, hinge (loss omega) center ∂P)) / (threshold - center)) := by\n    unfold actualRUObjective\n    field_simp [sub_ne_zero.mpr hne, (sub_pos.mpr halpha1).ne']\n    ring\n  constructor\n  · have ht := (hr.1.const_mul (1 / (1 - alpha))).const_add 1\n    have heq : (1 : ℝ) + 1 / (1 - alpha) * (-P.real {omega | center < loss omega}) =\n        1 - P.real {omega | center < loss omega} / (1 - alpha) := by ring\n    rw [heq] at ht\n    apply ht.congr'\n    filter_upwards [self_mem_nhdsWithin] with threshold hn\n    change center < threshold at hn\n    exact (hg threshold hn.ne').symm\n  · have ht := (hr.2.const_mul (1 / (1 - alpha))).const_add 1\n    have heq : (1 : ℝ) + 1 / (1 - alpha) * (-P.real {omega | center ≤ loss omega}) =\n        1 - P.real {omega | center ≤ loss omega} / (1 - alpha) := by ring\n    rw [heq] at ht\n    apply ht.congr'\n    filter_upwards [self_mem_nhdsWithin] with threshold hn\n    change threshold < center at hn\n    exact (hg threshold hn.ne).symm\n\nend SafeLearning.CompleteFoundationsCVaRQuotients\n",
+      "entire_selected24_proof_and_actual_evidence_row": {
+        "sha256": "9a09cb3ec11dfa11a8ad91599498eb7a9166f7b10643268da1f1139f3566a1d1",
+        "exit_code": 0,
+        "source_unchanged": true,
+        "evidence_sha256": {
+          "book/coverage/checks/foundations-held19/source33-originals/foundations-cvar-quotients-trial1.json": "bc3adc6911f7c8e709ca699b67e3b0dd3afab60b8b2bf8dcee1d706197aac5d3",
+          "book/coverage/checks/foundations-held19/source33-originals/foundations-cvar-quotients-trial1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "reports/full-coverage/lean-checkpoint-19/verification-original.json": "d2686b31be70326e95d63161487add696786b5e6c02a8cc74ea766f498df45bc",
+          "reports/full-coverage/lean-checkpoint-20/verification-original.json": "29cd0e2daf8cceb0afcfd52fc2288e7cb7303e887bb7b13725e1aa7997e533ca"
+        },
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "SafeLearning/CompleteFoundationsCVaRQuotients.lean"
+        ],
+        "actual_workdir": "verification/lean",
+        "original_execution_times": {
+          "started_at_utc": "2026-10-10T04:45:27.800076+00:00",
+          "finished_at_utc": "2026-10-10T04:45:32.830565+00:00"
+        },
+        "imports": [
+          "SafeLearning.CompleteFoundationsHingeExpectations"
+        ],
+        "local_import_dependency_sha256": {
+          "verification/lean/SafeLearning/CompleteFoundationsHingeExpectations.lean": "b2fd8858980d8a14d1d432f5efb243ec577e14257c045643fe18ba0c13e24347"
+        },
+        "selection_role": "new_mapped_foundation_proof_with_actual_source_matched_standalone_zero",
+        "public_theorem_or_lemma_count": 1,
+        "evidence_scope": "Original actual standalone EXIT0 bytes copied unchanged; aggregate/kernel/axiom audit remains separate.",
+        "original_actual_zero_record": "book/coverage/checks/foundations-held19/source33-originals/foundations-cvar-quotients-trial1.json"
+      }
+    },
+    {
+      "proof_source": {
+        "file": "verification/lean/SafeLearning/CompleteFoundationsHingeExpectations.lean",
+        "sha256": "b2fd8858980d8a14d1d432f5efb243ec577e14257c045643fe18ba0c13e24347"
+      },
+      "complete_source_body": "import Mathlib\n\nset_option autoImplicit false\nset_option relaxedAutoImplicit false\nnoncomputable section\nopen Set MeasureTheory ProbabilityTheory Filter\nopen scoped Topology\nnamespace SafeLearning.CompleteFoundationsHingeExpectations\n\ndef hinge (value threshold : ℝ) : ℝ := max (value - threshold) 0\ndef hingeQuotient (value center threshold : ℝ) : ℝ :=\n  (hinge value threshold - hinge value center) / (threshold - center)\n\ntheorem actual_hinge_difference_quotients_are_uniformly_bounded_by_one\n    (value center threshold : ℝ) : |hingeQuotient value center threshold| ≤ 1 := by\n  have hb := abs_max_sub_max_le_max (value - threshold) 0 (value - center) 0\n  have heq : (value - threshold) - (value - center) = -(threshold - center) := by ring\n  simp only [sub_zero, abs_zero] at hb\n  rw [heq, abs_neg, max_eq_left (abs_nonneg (threshold - center))] at hb\n  change |hinge value threshold - hinge value center| ≤ |threshold - center| at hb\n  unfold hingeQuotient\n  rw [abs_div]\n  by_cases he : threshold = center\n  · simp [he]\n  · exact (div_le_one (abs_pos.mpr (sub_ne_zero.mpr he))).mpr hb\n\ntheorem actual_every_point_right_hinge_quotient_limit_retains_the_strict_tail\n    (value center : ℝ) :\n    Tendsto (fun threshold => hingeQuotient value center threshold) (𝓝[>] center)\n      (𝓝 (if center < value then (-1 : ℝ) else 0)) := by\n  by_cases h : center < value\n  · simp only [ite_eq_left h]\n    apply tendsto_const_nhds.congr'\n    have hi0 : ∀ᶠ threshold in 𝓝 center, threshold < value := Iio_mem_nhds h\n    have hi : ∀ᶠ threshold in 𝓝[>] center, threshold < value :=\n      hi0.filter_mono nhdsWithin_le_nhds\n    filter_upwards [hi, self_mem_nhdsWithin] with threshold ht hn\n    change center < threshold at hn\n    unfold hingeQuotient hinge\n    rw [max_eq_left (by linarith), max_eq_left (by linarith)]\n    field_simp [(sub_pos.mpr hn).ne']\n    ring\n  · simp only [ite_eq_right h]\n    apply tendsto_const_nhds.congr'\n    filter_upwards [self_mem_nhdsWithin] with threshold hn\n    change center < threshold at hn\n    have hc : value ≤ center := le_of_not_gt h\n    simp [hingeQuotient, hinge, max_eq_right (by linarith : value - threshold ≤ 0),\n      max_eq_right (by linarith : value - center ≤ 0)]\n\ntheorem actual_every_point_left_hinge_quotient_limit_retains_the_nonstrict_tail\n    (value center : ℝ) :\n    Tendsto (fun threshold => hingeQuotient value center threshold) (𝓝[<] center)\n      (𝓝 (if center ≤ value then (-1 : ℝ) else 0)) := by\n  by_cases h : center ≤ value\n  · simp only [ite_eq_left h]\n    apply tendsto_const_nhds.congr'\n    filter_upwards [self_mem_nhdsWithin] with threshold hn\n    change threshold < center at hn\n    unfold hingeQuotient hinge\n    rw [max_eq_left (by linarith), max_eq_left (by linarith)]\n    field_simp [sub_ne_zero.mpr (ne_of_lt hn)]\n    ring\n  · simp only [ite_eq_right h]\n    apply tendsto_const_nhds.congr'\n    have hv : value < center := lt_of_not_ge h\n    have hi0 : ∀ᶠ threshold in 𝓝 center, value < threshold := Ioi_mem_nhds hv\n    have hi : ∀ᶠ threshold in 𝓝[<] center, value < threshold :=\n      hi0.filter_mono nhdsWithin_le_nhds\n    filter_upwards [hi] with threshold ht\n    simp [hingeQuotient, hinge, max_eq_right (by linarith : value - threshold ≤ 0),\n      max_eq_right (by linarith : value - center ≤ 0)]\n\ntheorem actual_integrable_random_loss_has_integrable_hinge_at_every_threshold\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss : Ω → ℝ) (h : Integrable loss P) (threshold : ℝ) :\n    Integrable (fun omega => hinge (loss omega) threshold) P := by\n  exact (h.sub (integrable_const threshold)).sup (integrable_const 0)\n\ntheorem actual_bounded_convergence_moves_both_one_sided_hinge_quotients_through_expectation\n    {Ω : Type*} [MeasurableSpace Ω] {P : Measure Ω} [IsProbabilityMeasure P]\n    (loss : Ω → ℝ) (hm : Measurable loss) (hi : Integrable loss P) (center : ℝ) :\n    Tendsto (fun threshold =>\n      ((∫ omega, hinge (loss omega) threshold ∂P) -\n        (∫ omega, hinge (loss omega) center ∂P)) / (threshold - center))\n      (𝓝[>] center) (𝓝 (-P.real {omega | center < loss omega})) ∧\n    Tendsto (fun threshold =>\n      ((∫ omega, hinge (loss omega) threshold ∂P) -\n        (∫ omega, hinge (loss omega) center ∂P)) / (threshold - center))\n      (𝓝[<] center) (𝓝 (-P.real {omega | center ≤ loss omega})) := by\n  have hmeas (threshold : ℝ) :\n      AEStronglyMeasurable (fun omega => hingeQuotient (loss omega) center threshold) P := by\n    unfold hingeQuotient hinge\n    exact ((((hm.sub measurable_const).max measurable_const).sub\n      ((hm.sub measurable_const).max measurable_const)).div_const _).aestronglyMeasurable\n  have hbound (threshold : ℝ) : ∀ᵐ omega ∂P,\n      ‖hingeQuotient (loss omega) center threshold‖ ≤ (1 : ℝ) :=\n    Eventually.of_forall (fun omega => by\n      simpa only [Real.norm_eq_abs] using\n        actual_hinge_difference_quotients_are_uniformly_bounded_by_one (loss omega) center threshold)\n  have hright := tendsto_integral_filter_of_dominated_convergence (fun _ : Ω => (1 : ℝ))\n    (Eventually.of_forall hmeas) (Eventually.of_forall hbound) (integrable_const 1)\n    (Eventually.of_forall (fun omega =>\n      actual_every_point_right_hinge_quotient_limit_retains_the_strict_tail (loss omega) center))\n  have hleft := tendsto_integral_filter_of_dominated_convergence (fun _ : Ω => (1 : ℝ))\n    (Eventually.of_forall hmeas) (Eventually.of_forall hbound) (integrable_const 1)\n    (Eventually.of_forall (fun omega =>\n      actual_every_point_left_hinge_quotient_limit_retains_the_nonstrict_tail (loss omega) center))\n  have hformula (threshold : ℝ) :\n      (∫ omega, hingeQuotient (loss omega) center threshold ∂P) =\n      ((∫ omega, hinge (loss omega) threshold ∂P) -\n        (∫ omega, hinge (loss omega) center ∂P)) / (threshold - center) := by\n    unfold hingeQuotient\n    rw [integral_div, integral_sub\n      (actual_integrable_random_loss_has_integrable_hinge_at_every_threshold loss hi threshold)\n      (actual_integrable_random_loss_has_integrable_hinge_at_every_threshold loss hi center)]\n  have hrightIntegral :\n      (∫ omega, (if center < loss omega then (-1 : ℝ) else 0) ∂P) =\n        -P.real {omega | center < loss omega} := by\n    have hs : MeasurableSet {omega | center < loss omega} := measurableSet_lt measurable_const hm\n    calc\n      _ = (∫ omega, ({omega | center < loss omega}).indicator\n          (fun _ : Ω => (-1 : ℝ)) omega ∂P) := by rfl\n      _ = _ := by simpa only [smul_eq_mul, mul_neg_one] using integral_indicator_const (-1 : ℝ) hs\n  have hleftIntegral :\n      (∫ omega, (if center ≤ loss omega then (-1 : ℝ) else 0) ∂P) =\n        -P.real {omega | center ≤ loss omega} := by\n    have hs : MeasurableSet {omega | center ≤ loss omega} := measurableSet_le measurable_const hm\n    calc\n      _ = (∫ omega, ({omega | center ≤ loss omega}).indicator\n          (fun _ : Ω => (-1 : ℝ)) omega ∂P) := by rfl\n      _ = _ := by simpa only [smul_eq_mul, mul_neg_one] using integral_indicator_const (-1 : ℝ) hs\n  simpa only [hformula, hrightIntegral, hleftIntegral] using And.intro hright hleft\n\nend SafeLearning.CompleteFoundationsHingeExpectations\n",
+      "entire_selected24_proof_and_actual_evidence_row": {
+        "sha256": "b2fd8858980d8a14d1d432f5efb243ec577e14257c045643fe18ba0c13e24347",
+        "exit_code": 0,
+        "source_unchanged": true,
+        "evidence_sha256": {
+          "book/coverage/checks/foundations-held19/source33-originals/foundations-hinge-expectations-trial3.json": "f519957bc45cadcded34b7371229ac975003036716d32435347dbb497e77ed94",
+          "book/coverage/checks/foundations-held19/source33-originals/foundations-hinge-expectations-trial3.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "reports/full-coverage/lean-checkpoint-19/verification-original.json": "d2686b31be70326e95d63161487add696786b5e6c02a8cc74ea766f498df45bc",
+          "reports/full-coverage/lean-checkpoint-20/verification-original.json": "29cd0e2daf8cceb0afcfd52fc2288e7cb7303e887bb7b13725e1aa7997e533ca"
+        },
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "SafeLearning/CompleteFoundationsHingeExpectations.lean"
+        ],
+        "actual_workdir": "verification/lean",
+        "original_execution_times": {
+          "started_at_utc": "2026-10-10T04:43:38.086168+00:00",
+          "finished_at_utc": "2026-10-10T04:43:43.673706+00:00"
+        },
+        "imports": [
+          "Mathlib"
+        ],
+        "local_import_dependency_sha256": {},
+        "selection_role": "new_mapped_foundation_proof_with_actual_source_matched_standalone_zero",
+        "public_theorem_or_lemma_count": 5,
+        "evidence_scope": "Original actual standalone EXIT0 bytes copied unchanged; aggregate/kernel/axiom audit remains separate.",
+        "original_actual_zero_record": "book/coverage/checks/foundations-held19/source33-originals/foundations-hinge-expectations-trial3.json"
+      }
+    }
+  ],
+  "actual_standalone_evidence": {
+    "record": {
+      "file": "/tmp/applied-cvar-fractional-selector26-trial3.json",
+      "sha256": "fb86cdaaf3059e4850e27898772b5a39da21c8823030dd2eb3c283254f6cac76"
+    },
+    "entire_original_actual_record": {
+      "status": "passed_actual_tmp_lean_only",
+      "actual_exit_code": 0,
+      "actual_command": [
+        "lake",
+        "env",
+        "lean",
+        "/tmp/CompleteAppliedCVaRFractionalSelector26.lean"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+      "started_at_utc": "2026-10-11T04:35:21.234747+00:00",
+      "finished_at_utc": "2026-10-11T04:35:26.113273+00:00",
+      "elapsed_seconds": 4.9926142990007065,
+      "source": "/tmp/CompleteAppliedCVaRFractionalSelector26.lean",
+      "source_sha256_before": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677",
+      "source_sha256_after": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677",
+      "source_unchanged": true,
+      "source_snapshot": "/tmp/applied-cvar-fractional-selector26-trial3-source.lean",
+      "source_snapshot_sha256": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677",
+      "raw_log": "/tmp/applied-cvar-fractional-selector26-trial3.log",
+      "raw_log_sha256": "bb188499b3a78fda322acfee593ed6fbbcdedc969a2e9f1060163d6b457d4764",
+      "original_actual_runner": {
+        "file": "/tmp/root_tmp_lean26_runner_v1.py",
+        "sha256": "b62827846548272964312d160320ed8a195c0c5b809cb3f03d59b854560e4732"
+      },
+      "unchanged_baseline24_selected_proof_sources": 1144,
+      "unchanged_current52_book_assets": 31,
+      "unchanged_current52_held_live_owners": 5,
+      "canonical_installation_or_aggregate_verification_claimed": false
+    },
+    "raw_log": {
+      "file": "/tmp/applied-cvar-fractional-selector26-trial3.log",
+      "sha256": "bb188499b3a78fda322acfee593ed6fbbcdedc969a2e9f1060163d6b457d4764"
+    },
+    "source_snapshot": {
+      "file": "/tmp/applied-cvar-fractional-selector26-trial3-source.lean",
+      "sha256": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677"
+    },
+    "actual_diagnostic_warning_count": 4,
+    "actual_exit_code": 0
+  },
+  "all_original_actual_trials_and_raw_history": [
+    {
+      "record": {
+        "file": "/tmp/root-cvar-quantile-existence26-trial1.json",
+        "sha256": "b4a3b9adb739df36cd679df78f2835d80edaf2ed571a7906ffcd1edf2d66fb0b"
+      },
+      "entire_original_actual_record": {
+        "status": "passed_actual_tmp_lean_only",
+        "actual_exit_code": 0,
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "/tmp/CompleteAppliedCVaRQuantileExistence26.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "started_at_utc": "2026-10-11T04:17:08.842805+00:00",
+        "finished_at_utc": "2026-10-11T04:17:14.119247+00:00",
+        "elapsed_seconds": 5.389228884014301,
+        "source": "/tmp/CompleteAppliedCVaRQuantileExistence26.lean",
+        "source_sha256_before": "5b64961b9a8aa7ec48e1e40d4abccc5142ae30b15da390686489f04aa3e6089e",
+        "source_sha256_after": "5b64961b9a8aa7ec48e1e40d4abccc5142ae30b15da390686489f04aa3e6089e",
+        "source_unchanged": true,
+        "source_snapshot": "/tmp/root-cvar-quantile-existence26-trial1-source.lean",
+        "source_snapshot_sha256": "5b64961b9a8aa7ec48e1e40d4abccc5142ae30b15da390686489f04aa3e6089e",
+        "raw_log": "/tmp/root-cvar-quantile-existence26-trial1.log",
+        "raw_log_sha256": "0163633a0deb8a67175addfe33e8a21ac254e824b9dbbc77af141ebbb024fe12",
+        "original_actual_runner": {
+          "file": "/tmp/root_tmp_lean26_runner_v1.py",
+          "sha256": "b62827846548272964312d160320ed8a195c0c5b809cb3f03d59b854560e4732"
+        },
+        "unchanged_baseline24_selected_proof_sources": 1144,
+        "unchanged_current52_book_assets": 31,
+        "unchanged_current52_held_live_owners": 5,
+        "canonical_installation_or_aggregate_verification_claimed": false
+      },
+      "raw_log": {
+        "file": "/tmp/root-cvar-quantile-existence26-trial1.log",
+        "sha256": "0163633a0deb8a67175addfe33e8a21ac254e824b9dbbc77af141ebbb024fe12"
+      },
+      "source_snapshot": {
+        "file": "/tmp/root-cvar-quantile-existence26-trial1-source.lean",
+        "sha256": "5b64961b9a8aa7ec48e1e40d4abccc5142ae30b15da390686489f04aa3e6089e"
+      },
+      "actual_diagnostic_warning_count": 1,
+      "actual_exit_code": 0
+    },
+    {
+      "record": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial1.json",
+        "sha256": "af64650b12a4e125ec2c068f0a2656180dbc2305c955a881d1180e7623699919"
+      },
+      "entire_original_actual_record": {
+        "status": "failed_actual_tmp_lean",
+        "actual_exit_code": 1,
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "/tmp/CompleteAppliedCVaRFractionalSelector26.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "started_at_utc": "2026-10-11T04:33:01.638528+00:00",
+        "finished_at_utc": "2026-10-11T04:33:06.967386+00:00",
+        "elapsed_seconds": 5.435328232997563,
+        "source": "/tmp/CompleteAppliedCVaRFractionalSelector26.lean",
+        "source_sha256_before": "35bd81af27585bd680fd02e8a1abd5b742f127996b78af2fd8dc3bd737f73231",
+        "source_sha256_after": "35bd81af27585bd680fd02e8a1abd5b742f127996b78af2fd8dc3bd737f73231",
+        "source_unchanged": true,
+        "source_snapshot": "/tmp/applied-cvar-fractional-selector26-trial1-source.lean",
+        "source_snapshot_sha256": "35bd81af27585bd680fd02e8a1abd5b742f127996b78af2fd8dc3bd737f73231",
+        "raw_log": "/tmp/applied-cvar-fractional-selector26-trial1.log",
+        "raw_log_sha256": "64a1f2fdad3f00786a1e0ccff5fe4fb112a39370fdb3d9239a989210e2805d4b",
+        "original_actual_runner": {
+          "file": "/tmp/root_tmp_lean26_runner_v1.py",
+          "sha256": "b62827846548272964312d160320ed8a195c0c5b809cb3f03d59b854560e4732"
+        },
+        "unchanged_baseline24_selected_proof_sources": 1144,
+        "unchanged_current52_book_assets": 31,
+        "unchanged_current52_held_live_owners": 5,
+        "canonical_installation_or_aggregate_verification_claimed": false
+      },
+      "raw_log": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial1.log",
+        "sha256": "64a1f2fdad3f00786a1e0ccff5fe4fb112a39370fdb3d9239a989210e2805d4b"
+      },
+      "source_snapshot": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial1-source.lean",
+        "sha256": "35bd81af27585bd680fd02e8a1abd5b742f127996b78af2fd8dc3bd737f73231"
+      },
+      "actual_diagnostic_warning_count": 2,
+      "actual_exit_code": 1
+    },
+    {
+      "record": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial2.json",
+        "sha256": "2e25bf4536e52d5bf62672ef8cfa3a1c2c18afab193f77c3f23a200a6f499d50"
+      },
+      "entire_original_actual_record": {
+        "status": "failed_actual_tmp_lean",
+        "actual_exit_code": 1,
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "/tmp/CompleteAppliedCVaRFractionalSelector26.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "started_at_utc": "2026-10-11T04:34:41.905229+00:00",
+        "finished_at_utc": "2026-10-11T04:34:47.354653+00:00",
+        "elapsed_seconds": 5.561399364989484,
+        "source": "/tmp/CompleteAppliedCVaRFractionalSelector26.lean",
+        "source_sha256_before": "992895251cc81122097db814104c891c1183541af1a5049bfb6af79d1ff8c28a",
+        "source_sha256_after": "992895251cc81122097db814104c891c1183541af1a5049bfb6af79d1ff8c28a",
+        "source_unchanged": true,
+        "source_snapshot": "/tmp/applied-cvar-fractional-selector26-trial2-source.lean",
+        "source_snapshot_sha256": "992895251cc81122097db814104c891c1183541af1a5049bfb6af79d1ff8c28a",
+        "raw_log": "/tmp/applied-cvar-fractional-selector26-trial2.log",
+        "raw_log_sha256": "18bbdb502fb9f44739836932d3fc0451d5ada085f96b3a2e51973408aa99bd8e",
+        "original_actual_runner": {
+          "file": "/tmp/root_tmp_lean26_runner_v1.py",
+          "sha256": "b62827846548272964312d160320ed8a195c0c5b809cb3f03d59b854560e4732"
+        },
+        "unchanged_baseline24_selected_proof_sources": 1144,
+        "unchanged_current52_book_assets": 31,
+        "unchanged_current52_held_live_owners": 5,
+        "canonical_installation_or_aggregate_verification_claimed": false
+      },
+      "raw_log": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial2.log",
+        "sha256": "18bbdb502fb9f44739836932d3fc0451d5ada085f96b3a2e51973408aa99bd8e"
+      },
+      "source_snapshot": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial2-source.lean",
+        "sha256": "992895251cc81122097db814104c891c1183541af1a5049bfb6af79d1ff8c28a"
+      },
+      "actual_diagnostic_warning_count": 4,
+      "actual_exit_code": 1
+    },
+    {
+      "record": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial3.json",
+        "sha256": "fb86cdaaf3059e4850e27898772b5a39da21c8823030dd2eb3c283254f6cac76"
+      },
+      "entire_original_actual_record": {
+        "status": "passed_actual_tmp_lean_only",
+        "actual_exit_code": 0,
+        "actual_command": [
+          "lake",
+          "env",
+          "lean",
+          "/tmp/CompleteAppliedCVaRFractionalSelector26.lean"
+        ],
+        "actual_workdir": "/home/oxrexkevin/SafetyBased/verification/lean",
+        "started_at_utc": "2026-10-11T04:35:21.234747+00:00",
+        "finished_at_utc": "2026-10-11T04:35:26.113273+00:00",
+        "elapsed_seconds": 4.9926142990007065,
+        "source": "/tmp/CompleteAppliedCVaRFractionalSelector26.lean",
+        "source_sha256_before": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677",
+        "source_sha256_after": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677",
+        "source_unchanged": true,
+        "source_snapshot": "/tmp/applied-cvar-fractional-selector26-trial3-source.lean",
+        "source_snapshot_sha256": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677",
+        "raw_log": "/tmp/applied-cvar-fractional-selector26-trial3.log",
+        "raw_log_sha256": "bb188499b3a78fda322acfee593ed6fbbcdedc969a2e9f1060163d6b457d4764",
+        "original_actual_runner": {
+          "file": "/tmp/root_tmp_lean26_runner_v1.py",
+          "sha256": "b62827846548272964312d160320ed8a195c0c5b809cb3f03d59b854560e4732"
+        },
+        "unchanged_baseline24_selected_proof_sources": 1144,
+        "unchanged_current52_book_assets": 31,
+        "unchanged_current52_held_live_owners": 5,
+        "canonical_installation_or_aggregate_verification_claimed": false
+      },
+      "raw_log": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial3.log",
+        "sha256": "bb188499b3a78fda322acfee593ed6fbbcdedc969a2e9f1060163d6b457d4764"
+      },
+      "source_snapshot": {
+        "file": "/tmp/applied-cvar-fractional-selector26-trial3-source.lean",
+        "sha256": "afd0f7b7a8cad0197cfd9096f6612b73ceb463e7da47aa7d1d00a77eb80a7677"
+      },
+      "actual_diagnostic_warning_count": 4,
+      "actual_exit_code": 0
+    }
+  ],
+  "original_actual_runner": {
+    "file": "/tmp/root_tmp_lean26_runner_v1.py",
+    "sha256": "b62827846548272964312d160320ed8a195c0c5b809cb3f03d59b854560e4732"
+  },
+  "material_units": [
+    {
+      "source_unit_key": "landscape.html::node-156",
+      "entire_inventory_record": {
+        "key": "landscape.html::node-156",
+        "source": "SafeLearning/landscape.html",
+        "locator": "::node-156",
+        "line": 106,
+        "tag": "div",
+        "classes": [
+          "definition-box"
+        ],
+        "source_text": "\n      Definition — (d) Risk-sensitive constraints: CVaR\n      For an integrable cost $Z$ ($\\mathbb E|Z|<\\infty$; large is bad) and $\\alpha\\in(0,1)$, the conditional value-at-risk in the Rockafellar–Uryasev form used by Chow, Ghavamzadeh, Janson & Pavone, JMLR 2018 is\n      $$\\operatorname{CVaR}_\\alpha(Z)=\\min_{\\nu\\in\\mathbb R}\\Big\\{\\nu+\\frac{1}{1-\\alpha}\\,\\mathbb E\\big[(Z-\\nu)^+\\big]\\Big\\},$$\n      the average of the worst $(1-\\alpha)$-fraction of outcomes: $\\alpha\\to1$ is the tail, $\\alpha\\to0$ recovers $\\mathbb E[Z]$. A risk constraint reads $\\operatorname{CVaR}_\\alpha(\\sum_t c_t)\\le d$. Example: the 5% worst episodes must average fewer than $d$ contacts. It controls frequency and magnitude of bad episodes, which neither (b) nor (c) does alone (first walkthrough below, Step 5).\n    ",
+        "text_sha256": "b2083426d4a9e98acb241004132c025eb85c500e80b6f6383111aa47fbc7cfff",
+        "source_sha256": "77296096880979df414b44478503c89865505d295cd677dd6f33e1f93bdf14f9",
+        "inventory_kind": "source_unit_needs_claim_review"
+      },
+      "full_source_context": {
+        "file": "/home/oxrexkevin/SafetyBased/SafeLearning/landscape.html",
+        "sha256": "77296096880979df414b44478503c89865505d295cd677dd6f33e1f93bdf14f9",
+        "first_line": 98,
+        "last_line": 121,
+        "complete_lines": "    <div class=\"definition-box\">\n      <div class=\"box-label\">Definition &mdash; (c) Expected-cost constraints: the CMDP</div>\n      <div>A constrained MDP (<a href=\"primer-rl-nn.html#rl-mdp\">Primer E</a>) adds cost functions $c_i$ and budgets $d_i$ to an MDP and restricts the policy class (<a class=\"cite\" href=\"https://doi.org/10.1201/9781315140223\" target=\"_blank\" rel=\"noopener\">Altman, 1999</a>; notation of <a class=\"cite\" href=\"https://arxiv.org/abs/1705.10528\" target=\"_blank\" rel=\"noopener\">Achiam et al., ICML 2017</a>; $\\operatorname{arg\\,max}$: <a href=\"primer-optimization.html#opt-minmax\">Primer B</a>):\n      <div class=\"math-block\">$$\\pi^\\star=\\operatorname*{arg\\,max}_{\\pi}\\ J(\\pi)\\quad\\text{s.t.}\\quad J_{c_i}(\\pi)=\\mathbb E_{\\tau\\sim\\pi}\\Big[\\sum_{t=0}^{\\infty}\\gamma^t c_i(s_t,a_t,s_{t+1})\\Big]\\le d_i .$$</div>\n      The constraint is an <em>expectation over episodes of a discounted sum</em>; single episodes may violate arbitrarily. Altman minimises a cost with discount $\\alpha$ and initial law $\\beta$; <a class=\"cite\" href=\"https://arxiv.org/abs/1910.13393\" target=\"_blank\" rel=\"noopener\">Paternain et al., NeurIPS 2019</a> maximise with reward-type constraints $V_i(\\pi)\\ge c_i$. We use the reward-max, cost-$\\le d$ form everywhere. <em>Example:</em> Safety Gym's budget $d=25$: expected (undiscounted) cost per 1000-step episode, one unit for every step spent in a hazard or other unsafe contact (<a class=\"cite\" href=\"https://cdn.openai.com/safexp-short.pdf\" target=\"_blank\" rel=\"noopener\">Ray, Achiam &amp; Amodei, 2019</a>).</div>\n    </div>\n    <p>Here $J(\\pi)=\\mathbb E_{\\tau\\sim\\pi}[\\sum_{t\\ge0}\\gamma^t r_t]$ with $0\\le\\gamma\\lt1$, and $\\tau\\sim\\pi$ means that the trajectory $\\tau=(s_0,a_0,s_1,\\dots)$ is generated by a fixed initial-state distribution, the policy and the transition law. $J_{c_i}$ is an expected discounted <em>sum</em>; papers that use the normalized $(1-\\gamma)J_{c_i}$ (a weighted average, since the weights $(1-\\gamma)\\gamma^t$ sum to 1) scale their budgets by the same factor. Rewards and costs are assumed bounded, so all these expectations are finite.</p>\n\n    <div class=\"definition-box\">\n      <div class=\"box-label\">Definition &mdash; (d) Risk-sensitive constraints: CVaR</div>\n      <div>For an integrable cost $Z$ ($\\mathbb E|Z|<\\infty$; large is bad) and $\\alpha\\in(0,1)$, the conditional value-at-risk in the Rockafellar&ndash;Uryasev form used by <a class=\"cite\" href=\"https://www.jmlr.org/papers/v18/15-636.html\" target=\"_blank\" rel=\"noopener\">Chow, Ghavamzadeh, Janson &amp; Pavone, JMLR 2018</a> is\n      <div class=\"math-block\">$$\\operatorname{CVaR}_\\alpha(Z)=\\min_{\\nu\\in\\mathbb R}\\Big\\{\\nu+\\frac{1}{1-\\alpha}\\,\\mathbb E\\big[(Z-\\nu)^+\\big]\\Big\\},$$</div>\n      the average of the worst $(1-\\alpha)$-fraction of outcomes: $\\alpha\\to1$ is the tail, $\\alpha\\to0$ recovers $\\mathbb E[Z]$. A risk constraint reads $\\operatorname{CVaR}_\\alpha(\\sum_t c_t)\\le d$. <em>Example:</em> the 5% worst episodes must average fewer than $d$ contacts. It controls frequency <em>and</em> magnitude of bad episodes, which neither (b) nor (c) does alone (first walkthrough below, Step 5).</div>\n    </div>\n\n    <div class=\"warning-box\">\n      <div class=\"box-label\">Caveat &mdash; two conventions for $\\alpha$</div>\n      <div>Chow et al. (and this section) use $\\alpha$ as the confidence level: the worst $1-\\alpha$ fraction is averaged and $\\alpha\\to1$ is risk-averse. Their prose says \"worst-case $\\alpha$-fraction\" while their formula, with $1/(1-\\alpha)$, averages the worst $(1-\\alpha)$-fraction; the formula is authoritative. WCSAC-type deep RL papers use $\\alpha$ for the tail <em>fraction</em>, so there $\\alpha\\to0$ is risk-averse. Check the formula, not the words.</div>\n    </div>\n\n    <div class=\"definition-box\">\n      <div class=\"box-label\">Definition &mdash; (e) Stability and regions of attraction</div>\n      <div>An equilibrium $x^\\ast$ is <strong>asymptotically stable</strong> if it is Lyapunov stable (trajectories that start close to $x^\\ast$ stay close) and attractive (<a href=\"primer-systems.html#sys-lyapunov\">Primer D</a>); its <strong>region of attraction</strong> $\\mathcal R$ is the set of initial states whose trajectories converge to $x^\\ast$. A Lyapunov function (continuous, positive definite about $x^\\ast$) certifies a subset: if the closed-loop map $F(x)=f(x,\\pi(x))$ is continuous with $F(x^\\ast)=x^\\ast$ and $V(F(x))-V(x)\\lt0$ for all $x\\ne x^\\ast$ in a compact sublevel set $\\mathcal V(c)=\\{x:V(x)\\le c\\}$ (compact means closed and bounded in $\\mathbb R^n$, <a href=\"primer-basics.html#mb-topology\">Primer 0</a>), then $\\mathcal V(c)$ is forward invariant and $\\mathcal V(c)\\subseteq\\mathcal R$ (continuity of $F$ is what makes the limit set, the points that $x_t$ approaches along some sequence of times $t_k\\to\\infty$, invariant; without it $V$ can decrease forever without reaching $x^\\ast$). <a class=\"cite\" href=\"https://arxiv.org/abs/1705.08551\" target=\"_blank\" rel=\"noopener\">Berkenkamp et al., NeurIPS 2017</a> define the safety constraint as never leaving the region of attraction and certify it through a Lyapunov sublevel set: the pendulum may move but never falls. Deterministic given a model; with a GP model the decrease condition is checked on an upper confidence bound and holds with probability $1-\\delta$ (<a href=\"lyapunov-mpc.html#berkenkamp-2017\">Module 11</a>).</div>\n    </div>"
+      },
+      "whole_unit_approved": false,
+      "material_status": "pending",
+      "requested_scope": "Precise new RU/fractional-tail and quantile existence components only; independent reviewer must reread the full literal before any whole decision.",
+      "remaining_source_scope": [
+        "The alpha-to-zero expectation limit and alpha-to-one worst-case limit are not exported by this new file.",
+        "Coherence, stochastic-order comparisons, and the qualitative comparison with other risk criteria need their own existing or new full correspondence."
+      ]
+    },
+    {
+      "source_unit_key": "primer-probability.html::node-1351",
+      "entire_inventory_record": {
+        "key": "primer-probability.html::node-1351",
+        "source": "SafeLearning/primer-probability.html",
+        "locator": "::node-1351",
+        "line": 1109,
+        "tag": "div",
+        "classes": [
+          "definition-box"
+        ],
+        "source_text": "\n      Definition — Quantile function, VaR and CVaR (cost convention)\n      For a cost $Z$ (large is bad) with CDF $F$, the quantile function (generalised inverse) $F^{-1}(u)=\\inf\\{z:\\ F(z)\\ge u\\}$, $u\\in(0,1)$, handles flat pieces and jumps of $F$. For a confidence level $\\alpha\\in(0,1)$,\n      $$\\operatorname{VaR}_\\alpha(Z)=F^{-1}(\\alpha),\\qquad \\operatorname{CVaR}_\\alpha(Z)=\\frac1{1-\\alpha}\\int_\\alpha^1\\operatorname{VaR}_u(Z)\\,du ,$$\n      the average of the worst $(1-\\alpha)$-fraction of outcomes. If $U\\sim\\mathcal U(0,1)$, then $F^{-1}(U)$ has the law of $Z$ (inverse-transform sampling), so $\\mathbb E[Z]=\\int_0^1F^{-1}(u)\\,du$: $\\operatorname{CVaR}_\\alpha(Z)\\to\\mathbb E[Z]$ as $\\alpha\\to0$, and $\\operatorname{CVaR}_\\alpha(Z)\\to\\operatorname{ess\\,sup}Z$ as $\\alpha\\to1$.\n    ",
+        "text_sha256": "65e12b55f1f1e5d887470afa39751ca53f46967a9b8bb7011a440aef64637d37",
+        "source_sha256": "02779ca8a2499c347f73c0365000522e36ee93961bc68cf9d9fcff26a55e0a99",
+        "inventory_kind": "source_unit_needs_claim_review"
+      },
+      "full_source_context": {
+        "file": "/home/oxrexkevin/SafetyBased/SafeLearning/primer-probability.html",
+        "sha256": "02779ca8a2499c347f73c0365000522e36ee93961bc68cf9d9fcff26a55e0a99",
+        "first_line": 1101,
+        "last_line": 1124,
+        "complete_lines": "    <h2 class=\"section-heading\" id=\"pr-quantiles-risk\">9. Quantiles, Value-at-Risk &amp; CVaR</h2>\n\n    <div class=\"insight-box\">\n      <div class=\"box-label\">Start here &mdash; Read a tail with discrete atoms</div>\n      <p>A quantile is a threshold; CVaR is a tail average. With probability mass at a threshold, selecting the worst $10\\%$ can require taking only part of that mass. Draw or list the CDF before using a conditional-tail shortcut.</p>\n      <p>When ready, try <a href=\"#pr-quantiles-risk-practice\">the Easy, Medium and Hard practice for this section</a>. For a prerequisite gap, review <a href=\"primer-probability.html#pr-basics\">CDFs and atoms</a>.</p>\n    </div>\n\n    <div class=\"definition-box\">\n      <div class=\"box-label\">Definition &mdash; Quantile function, VaR and CVaR (cost convention)</div>\n      <div>For a cost $Z$ (large is bad) with CDF $F$, the <strong>quantile function</strong> (generalised inverse) $F^{-1}(u)=\\inf\\{z:\\ F(z)\\ge u\\}$, $u\\in(0,1)$, handles flat pieces and jumps of $F$. For a confidence level $\\alpha\\in(0,1)$,\n      <div class=\"math-block\">$$\\operatorname{VaR}_\\alpha(Z)=F^{-1}(\\alpha),\\qquad \\operatorname{CVaR}_\\alpha(Z)=\\frac1{1-\\alpha}\\int_\\alpha^1\\operatorname{VaR}_u(Z)\\,du ,$$</div>\n      the average of the worst $(1-\\alpha)$-fraction of outcomes. If $U\\sim\\mathcal U(0,1)$, then $F^{-1}(U)$ has the law of $Z$ (inverse-transform sampling), so $\\mathbb E[Z]=\\int_0^1F^{-1}(u)\\,du$: $\\operatorname{CVaR}_\\alpha(Z)\\to\\mathbb E[Z]$ as $\\alpha\\to0$, and $\\operatorname{CVaR}_\\alpha(Z)\\to\\operatorname{ess\\,sup}Z$ as $\\alpha\\to1$.</div>\n    </div>\n\n    <svg viewBox=\"0 0 360 165\" style=\"display:block;max-width:100%;border:1px solid #e0e0e0;border-radius:6px;background:#fff;margin:12px auto;\">\n      <polygon points=\"295,135 295,113 310,113 310,25 340,25 340,135\" fill=\"#e67e22\" fill-opacity=\"0.25\"/>\n      <line x1=\"34\" y1=\"135\" x2=\"350\" y2=\"135\" stroke=\"#999\"/>\n      <line x1=\"40\" y1=\"140\" x2=\"40\" y2=\"18\" stroke=\"#999\"/>\n      <polyline points=\"40,135 250,135\" fill=\"none\" stroke=\"#1565c0\" stroke-width=\"2.5\"/>\n      <polyline points=\"250,113 310,113\" fill=\"none\" stroke=\"#1565c0\" stroke-width=\"2.5\"/>\n      <polyline points=\"310,25 340,25\" fill=\"none\" stroke=\"#1565c0\" stroke-width=\"2.5\"/>\n      <line x1=\"295\" y1=\"140\" x2=\"295\" y2=\"40\" stroke=\"#c62828\" stroke-dasharray=\"4,3\"/>\n      <text x=\"40\" y=\"152\" font-size=\"11\" text-anchor=\"middle\" fill=\"#555\">0</text>"
+      },
+      "whole_unit_approved": false,
+      "material_status": "pending",
+      "requested_scope": "Precise new RU/fractional-tail and quantile existence components only; independent reviewer must reread the full literal before any whole decision.",
+      "remaining_source_scope": [
+        "The quantile-integral formula, uniform inverse-transform law and both endpoint limits are not exported by this new file.",
+        "The new quantile theorem constructs an actual attained threshold but does not by itself establish the complete printed inverse-transform and quantile-integral paragraph."
+      ]
+    }
+  ],
+  "primary_local_mathlib_sources": [
+    {
+      "file": "verification/lean/.lake/packages/mathlib/Mathlib/Probability/CDF.lean",
+      "sha256": "78586bddc289a171cbcb7fa155892333c4702c4f7f1185f9d6602ffac8b914e9"
+    },
+    {
+      "file": "verification/lean/.lake/packages/mathlib/Mathlib/MeasureTheory/Measure/Stieltjes.lean",
+      "sha256": "a539002bedb8054fe0c346bbc104edfb49ef0a9786729e85312844f04c4e6cb5"
+    }
+  ],
+  "explicit_hypotheses": [
+    "arbitrary measurable space and genuine probability measure",
+    "measurable real loss; integrability for finite RU/tail equality and strict <10 equivalence",
+    "0<alpha<1; alpha=19/20 for the five-percent criterion",
+    "fractional selection of the threshold atom is allowed; atomic and zero-atom cases are derived"
+  ],
+  "baseline_protection": {
+    "selected24_proof_sources_rehashed": 1144,
+    "current52_assets_rehashed": 31,
+    "installed24_live_owners_rehashed": 5,
+    "inventory": {
+      "file": "book/coverage/inventory-after-correction52.json",
+      "sha256": "38518673e13ed16537e301b071fb04ec0ed6720269cd14f48b986f4e82c578f3"
+    },
+    "selection": {
+      "file": "reports/full-coverage/checkpoint-24-selection.json",
+      "sha256": "9dd0a0cb80c54b728c09fc12e4327efdae621f94b5710e7a97c0d13fe92d6314"
+    },
+    "manifest": {
+      "file": "reports/full-coverage/checkpoint-24-manifest.json",
+      "sha256": "5e0a58f71b685edbd3bbf7c965a2fda3ffd18f8edfde75c5bf810c7bb63d18e0"
+    }
+  },
+  "execution_scope": "Only the four stated genuine TMP Lean executions are bound. This preparation rehashes evidence and current protected inputs; it makes no new compiler, canonical installation, named build, aggregate, whole source or current coverage claim.",
+  "namespace_selection_scope": "The cumulative file preserves the original quantile namespace and body. Do not independently import/select a second module exporting the same original declaration alongside it without a deliberate module selection plan."
+}

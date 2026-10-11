@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import json,hashlib,subprocess,time
+R=Path('/home/oxrexkevin/SafetyBased');C=Path('/tmp/check-qualified-virtual53-scalar13-independent-foundations26-v1.py');A=Path('/tmp/qualified-virtual53-scalar13-independent-foundations-actual26-v1.json');L=A.with_suffix('.log');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();assert not A.exists()and not L.exists();cmd=['python3',str(C)];b=H(C);t=time.monotonic();s=datetime.now(timezone.utc).isoformat()
+with L.open('xb')as f:p=subprocess.run(cmd,cwd=R,stdout=f,stderr=subprocess.STDOUT)
+a={'status':'passed'if p.returncode==0 else'failed','actual_exit_code':p.returncode,'actual_command':cmd,'actual_workdir':str(R),'started_at_utc':s,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':b,'checker_sha256_after':H(C),'log':str(L),'log_sha256':H(L),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual independent read-only canonical/body/history/scope-gap checker only; no producer/compiler/current source or owner mapping.'};A.write_text(json.dumps(a,indent=2)+'\n');print(L.read_text());raise SystemExit(p.returncode)

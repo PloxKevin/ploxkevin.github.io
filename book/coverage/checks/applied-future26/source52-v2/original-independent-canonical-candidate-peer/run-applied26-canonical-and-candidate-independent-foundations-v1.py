@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+ROOT=Path('/home/oxrexkevin/SafetyBased');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();C=Path('/tmp/check-applied26-canonical-and-whole371-candidate-independent-foundations-v1.py');A=Path('/tmp/applied26-canonical-and-whole371-candidate-independent-foundations-actual-v1.json');L=A.with_suffix('.log');assert not A.exists()and not L.exists();start=datetime.now(timezone.utc).isoformat();t=time.monotonic();b=H(C);cmd=['python3',str(C)]
+with L.open('xb')as f:p=subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT)
+r={'status':'passed'if p.returncode==0 else'failed','actual_exit_code':p.returncode,'actual_command':cmd,'actual_workdir':str(ROOT),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':b,'checker_sha256_after':H(C),'log':str(L),'log_sha256':H(L),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual read-only original canonical-source, history, paired evidence and isolated candidate mechanics checker only; no Lean/compiler/builder/live installation or PUB/Git execution.'};A.write_text(json.dumps(r,indent=2)+'\n');print(L.read_text());print(H(A));raise SystemExit(p.returncode)

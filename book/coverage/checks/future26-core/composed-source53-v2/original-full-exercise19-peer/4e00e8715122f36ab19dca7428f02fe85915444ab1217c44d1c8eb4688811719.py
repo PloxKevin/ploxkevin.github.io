@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import subprocess,time,json,hashlib
+R=Path('/home/oxrexkevin/SafetyBased');C=Path('/tmp/check-current53-exercise19-four-parts-independent-foundations26-v1.py');A=Path('/tmp/current53-exercise19-four-parts-independent-foundations-actual26-v1.json');L=A.with_suffix('.log');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();assert not A.exists() and not L.exists();cmd=['python3',str(C)];before=H(C);s=datetime.now(timezone.utc).isoformat();t=time.monotonic()
+with L.open('xb') as f:p=subprocess.run(cmd,cwd=R,stdout=f,stderr=subprocess.STDOUT)
+d={'status':'passed' if p.returncode==0 else 'failed','actual_exit_code':p.returncode,'actual_command':cmd,'actual_workdir':str(R),'started_at_utc':s,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':before,'checker_sha256_after':H(C),'raw_log':str(L),'raw_log_sha256':H(L),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual independent read-only full semantic/source/literal composition checker; no compiler, producer, selection or current owner/source mutation.'};A.write_text(json.dumps(d,indent=2)+'\n');print(L.read_text());raise SystemExit(p.returncode)

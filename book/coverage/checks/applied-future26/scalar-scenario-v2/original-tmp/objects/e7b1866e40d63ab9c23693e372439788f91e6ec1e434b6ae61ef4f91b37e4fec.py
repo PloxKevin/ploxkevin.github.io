@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+ROOT=Path('/home/oxrexkevin/SafetyBased');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();C=Path('/tmp/check-lyapunov-scalar-linear-risk26-seven-components-independent-foundations-v1.py');A=Path('/tmp/lyapunov-scalar-linear-risk26-independent-foundations-seven-component-actual-v1.json');L=A.with_suffix('.log');assert not A.exists()and not L.exists();st=datetime.now(timezone.utc).isoformat();t=time.monotonic();h=H(C);cmd=['python3',str(C)]
+with L.open('xb')as f:p=subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT)
+a={'status':'passed'if p.returncode==0 else'failed','actual_exit_code':p.returncode,'actual_command':cmd,'actual_workdir':str(ROOT),'started_at_utc':st,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':h,'checker_sha256_after':H(C),'log':str(L),'log_sha256':H(L),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual TMP-only independent mathematical component/evidence checker; no Lean producer or live operation.'};A.write_text(json.dumps(a,indent=2)+'\n');print(L.read_text());print(H(A));raise SystemExit(p.returncode)

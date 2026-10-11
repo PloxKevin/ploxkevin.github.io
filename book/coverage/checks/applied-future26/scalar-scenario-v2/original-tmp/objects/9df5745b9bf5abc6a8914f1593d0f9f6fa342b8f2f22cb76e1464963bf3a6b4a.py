@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+ROOT=Path('/home/oxrexkevin/SafetyBased');H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();CHECK=Path('/tmp/check-hertneck-source53-proposal-independent-foundations-v1.py');ACT=Path('/tmp/hertneck-source53-independent-foundations-actual26-v1.json');LOG=ACT.with_suffix('.log');assert not ACT.exists()and not LOG.exists();start=datetime.now(timezone.utc).isoformat();t=time.monotonic();before=H(CHECK);cmd=['python3',str(CHECK)]
+with LOG.open('xb')as f:p=subprocess.run(cmd,cwd=ROOT,stdout=f,stderr=subprocess.STDOUT)
+a={'status':'passed'if p.returncode==0 else'failed','actual_exit_code':p.returncode,'actual_command':cmd,'actual_workdir':str(ROOT),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'checker_sha256_before':before,'checker_sha256_after':H(CHECK),'log':str(LOG),'log_sha256':H(LOG),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual TMP-only independent source/parser review; no production writer or Lean execution.'};ACT.write_text(json.dumps(a,indent=2)+'\n');print(LOG.read_text());print(H(ACT));raise SystemExit(p.returncode)

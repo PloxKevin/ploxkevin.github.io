@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import json,hashlib,subprocess,time
+root=Path('/home/oxrexkevin/SafetyBased');source=Path('/tmp/CompleteLyapunovConvexIntervalRisk26.lean');stem=Path('/tmp/lyapunov-convex-interval-risk26-trial3');rec=stem.with_suffix('.json');log=stem.with_suffix('.log');snap=Path(str(stem)+'-source.lean');assert not rec.exists() and not log.exists() and not snap.exists();H=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();snap.write_bytes(source.read_bytes());before=H(source);cmd=['lake','env','lean',str(source)];t=time.monotonic();start=datetime.now(timezone.utc).isoformat()
+with log.open('wb') as f:p=subprocess.run(cmd,cwd=root/'verification/lean',stdout=f,stderr=subprocess.STDOUT)
+r={'actual_command':cmd,'actual_workdir':str(root/'verification/lean'),'source':str(source),'source_sha256_before':before,'source_sha256_after':H(source),'source_snapshot':str(snap),'source_snapshot_sha256':H(snap),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'duration_seconds':time.monotonic()-t,'actual_exit_code':p.returncode,'log':str(log),'raw_log_sha256':H(log),'scope':'Genuine TMP standalone trial; no canonical/named/selection/current-owner change.'};rec.write_text(json.dumps(r,indent=2)+'\n');print(json.dumps(r));print(log.read_text());raise SystemExit(p.returncode)

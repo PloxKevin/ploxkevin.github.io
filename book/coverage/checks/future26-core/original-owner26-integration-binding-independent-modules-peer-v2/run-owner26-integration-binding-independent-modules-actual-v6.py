@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+r=Path('/home/oxrexkevin/SafetyBased');h=Path('/tmp/check-owner26-integration-binding-independent-modules-v6.py');record=Path('/tmp/owner26-integration-binding-independent-modules-actual-v6.json');log=record.with_suffix('.log');H=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();assert not record.exists()and not log.exists();start=datetime.now(timezone.utc);tick=time.monotonic();before=H(h);cmd=['python3',str(h)]
+with log.open('xb')as f:q=subprocess.run(cmd,cwd=r,stdout=f,stderr=subprocess.STDOUT)
+body={'status':'passed_actual_independent_checker'if q.returncode==0 else'failed_actual_independent_checker','actual_command':cmd,'actual_workdir':str(r),'actual_exit_code':q.returncode,'started_at_utc':start.isoformat(),'finished_at_utc':datetime.now(timezone.utc).isoformat(),'duration_seconds':time.monotonic()-tick,'helper_sha256_before':before,'helper_sha256_after':H(h),'raw_log':str(log),'raw_log_sha256':H(log),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual read-only independent owner26 integration/binding code and native-schema fixtures checker; no mathematical or production compiler/build/owner execution.'};record.write_text(json.dumps(body,indent=2)+'\n');print(json.dumps(body));raise SystemExit(q.returncode)
