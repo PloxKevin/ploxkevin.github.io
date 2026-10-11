@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+R=Path('/home/oxrexkevin/SafetyBased');h=Path('/tmp/finalize-applied24-reviewed-four-material-candidate-offer-v1.py');p=R/'book/coverage/checks/applied-future24/source51/applied24-final-reviewed-offer-actual-v1';o=p.with_suffix('.json');l=p.with_suffix('.log');assert not o.exists() and not l.exists();H=lambda x:hashlib.sha256(x.read_bytes()).hexdigest();start=datetime.now(timezone.utc).isoformat();t=time.monotonic();cmd=['python3',str(h)];before=H(h)
+with l.open('wb') as f:a=subprocess.run(cmd,cwd=R,stdout=f,stderr=subprocess.STDOUT)
+o.write_text(json.dumps({'status':'passed' if a.returncode==0 else 'failed','actual_exit_code':a.returncode,'actual_command':cmd,'actual_workdir':str(R),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'helper_sha256_before':before,'helper_sha256_after':H(h),'log':str(l.relative_to(R)),'log_sha256':H(l),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual isolated reviewed-offer evidence finalization only; no live owner, compiler, aggregate, selection or publication execution.'},indent=2)+'\n');print(l.read_text());print(o.relative_to(R),H(o));raise SystemExit(a.returncode)

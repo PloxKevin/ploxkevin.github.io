@@ -1,76 +1,63 @@
 # Continuing full mathematical coverage
 
-Checkpoint 23 passed the actual system Lean 4.34.1 audit: 9,193 public theorems in
-1,131 files, a fresh 10,056-job build, kernel verification and a fresh axiom audit
-of every indexed theorem. See [the original formal audit](lean-checkpoint-23/verification-original.json)
-and [its measured execution](verify-checkpoint23-execution-v1.json).
-All 18 additions received fresh kernel replays. The other 1,113 retain their
-original actual passing replays only after exact module, transitive local import,
-Lean version and dependency fingerprints matched. Original reports and raw logs
-retain their commands, directories and times; private proof dependencies are
-covered by module compilation and kernel replay.
+Checkpoint 24 passed the actual system Lean 4.34.1 build, kernel and axiom audit:
+9,279 public theorems in 1,144 selected files. See [the original formal audit](lean-checkpoint-24/verification-original.json)
+and [its measured execution](verify-checkpoint24-execution-v1.json).
+The 13 additions received fresh kernel replays. The other 1,131 retain their
+original passing replays after exact module, transitive local import, Lean version
+and dependency fingerprints matched. Every indexed theorem received a fresh
+axiom audit. Original commands, directories, outputs and times remain preserved.
 
-Coverage remains partial. The frozen ledgers classify 514 of 556 exercises as
-complete, 18 partial and 24 pending. Of the 12,774 overlapping material review
-units, 4,456 are reviewed and 8,318 remain pending.
-[The actual frozen-ledger check](lean-checkpoint-23/ledger-audit.json) validates
-literal fingerprints and selected declarations; independent reviews establish
-specific mathematical correspondence. A successful Lean audit establishes the
-encoded statements, not completion of the remaining material.
+Coverage remains partial: 514 of 556 exercises are complete,
+19 partial and 23 pending.
+Of 12,774 overlapping material review units, 4,478 are reviewed
+and 8,296 remain pending. [The actual frozen-ledger check](lean-checkpoint-24/ledger-audit.json)
+checks literal fingerprints and selected declarations. Independent reviews establish
+specific mathematical correspondence; successful Lean checks certify the encoded statements.
 
-The source51 book contains 51 documented teaching corrections. This checkpoint
-adds exact monitoring occupation geometry, tied optimal faces, shifted Cesaro
-means and an explicitly qualified six-period price orbit; the general stochastic
-price theorem remains partial. Lyapunov scenario proofs establish the corrected
-numerical thresholds, the fixed-controller one-batch validation implication,
-and scalar support/risk results with their stated assumptions.
-Foundation additions cover finite-prefix limits, semicontinuity and linear algebra.
-Whole reviews cover seven neural-network practices and the two-layer LFT exercise.
-Broader scenario theorems, GP model construction and remaining control results
-stay explicitly unfinished. Future24 trials and candidates add no coverage here.
+The source52 book records 52 teaching corrections. The new neural-network text
+uses approximate decimal values and distinguishes an invalid universal QC premise
+from the final stability conclusion. Temporal multiplier assumptions and the
+additional oddness requirement are explicit. New proofs cover shifted tanh,
+the concrete counterexample, sector bounds and zero equilibria. The general
+temporal claims and the full neural-network exercise remain unfinished.
+Other additions cover the scalar barrier introductory example, orthonormal bases,
+coercivity, extreme-value counterexamples, convergence rates and finite/countable
+mixture formulas. The Gaussian-mixture worked example remains only partly reviewed.
+Isolated future25 work adds no coverage to this checkpoint.
 
-[Static validation](integration-23.json) passed on all 29 pages and 556 exercises.
-[Browser evidence](browser-checkpoint-23.json) records ten fresh viewport checks
-for the corrected monitoring and Lyapunov pages and retains 135 earlier actual
-checks after all unchanged source and QA helper fingerprints matched exactly.
-The total is 145 checks; 48 standard screenshots and ten explicit skipped captures
-are retained. A separate limited manual review inspected four captured application
-sections on phone and desktop. It does not establish a manual visual pass for
-the entire book or for uncaptured exercise paragraphs.
+[Static validation](integration-24.json) passed on all 29 pages and 556 exercises.
+[Browser evidence](browser-checkpoint-24.json) records five fresh viewport checks
+on the corrected neural-network page and 140 earlier checks retained after exact
+source and QA helper fingerprints matched. There are 145 checks, 48 standard
+screenshots and ten explicit skipped captures. Four additional captures show
+the corrected answer paragraphs at phone and desktop widths; a limited manual
+inspection found readable prose and mathematics. It does not certify all pages.
 
-[The manifest](checkpoint-23-manifest.json) identifies 36,910 frozen inputs.
-[The selection](checkpoint-23-selection.json) preserves every earlier proof
-fingerprint and ordinary compiler evidence. An exact content-binding map retains
-all 34,051 checkpoint22 input paths and hashes, using 390 new unique aliases.
-Four changed owner-evidence paths bind to their exact archived prior bytes, while
-the new installed owners remain separately bound to their current bytes. The
-entire original first proof record and the other 1,112 baseline records remain
-preserved. Independent output reviews confirmed these bindings. Original failed
-binding and selector executions remain failures in the preserved evidence.
-Located source excerpts remain audit evidence; full external papers retain their
-separate attributed reference scope.
+[The manifest](checkpoint-24-manifest.json) binds 40,485 frozen inputs.
+[The selection](checkpoint-24-selection.json) preserves all 1,131 earlier proof
+sources and their ordinary evidence. Exact content bindings retain all 36,910
+checkpoint23 input paths and hashes with 72 new unique aliases.
+Four historical owner-evidence paths use their genuine archived prior bytes.
+The original baseline row bodies, semantic reviews, hypotheses, times and real
+failed/passing executions remain preserved. Full external references retain
+their separate attributed reference scope.
 
-Checkpoint 23 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/e384ffa82cea432f274dd83abbe498f988c756e4).
-The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38105180456)
-completed successfully, and [live delivery](live-checkpoint-23-attempt1.json)
-matched all 31 book asset hashes and the built commit exactly.
-Complete audit archives and
-[Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
-remain in Git. Literal archive exclusions keep the current book, partial
-ledgers and actual audit reports in the website build.
+Checkpoint 24 has passed its local audit and awaits an actual GitHub Pages build
+and live asset checks. Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
+remain in Git. Literal archival exclusions retain the current book, partial ledgers
+and both current24 and baseline23 audit reports in the website build.
 
 From the published repository root, reproduce checks into NEW output paths:
 
 ```sh
-python3 book/validate.py --allow-reviewed-corrections --output reports/full-coverage/integration-reproduction23.json
-python3 book/coverage/validate.py --output reports/full-coverage/ledger-reproduction23.json
-python3 verification/lean/verify.py --output reports/full-coverage/lean-reproduction23
+python3 book/validate.py --allow-reviewed-corrections --output reports/full-coverage/integration-reproduction24.json
+python3 book/coverage/validate.py --output reports/full-coverage/ledger-reproduction24.json
+python3 verification/lean/verify.py --output reports/full-coverage/lean-reproduction24
 ```
 
-The local complete frozen source51 checkout is `reports/full-coverage/checkpoint-23`;
-the Git publication places its selected inputs at their original repository paths.
-Use kernel reuse only with matching saved fingerprints.
-`python3 book/coverage/validate.py --require-complete` remains a failing gate.
-The continuing objective includes every remaining mathematical material and
-exercise claim, exact assumptions, system Lean verification and GitHub delivery.
-This checkpoint does not complete it.
+The local frozen checkout is `reports/full-coverage/checkpoint-24`; the Git
+publication places selected inputs at their original paths. Use kernel reuse
+only with matching saved fingerprints. The remaining material and exercise
+claims, exact assumptions, system Lean verification and GitHub delivery remain
+part of the continuing objective. This checkpoint does not complete it.

@@ -1,0 +1,6 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,subprocess,time
+R=Path('/home/oxrexkevin/SafetyBased');h=Path('/tmp/check-module24-tanh-candidate-independent-applied-v1.py');p=Path('/tmp/module24-tanh-candidate-independent-applied-actual-v1');o=p.with_suffix('.json');l=p.with_suffix('.log');assert not o.exists() and not l.exists();H=lambda x:hashlib.sha256(x.read_bytes()).hexdigest();start=datetime.now(timezone.utc).isoformat();t=time.monotonic();cmd=['python3',str(h)];before=H(h)
+with l.open('wb') as f:a=subprocess.run(cmd,cwd=R,stdout=f,stderr=subprocess.STDOUT)
+o.write_text(json.dumps({'status':'passed' if a.returncode==0 else 'failed','actual_exit_code':a.returncode,'actual_command':cmd,'actual_workdir':str(R),'started_at_utc':start,'finished_at_utc':datetime.now(timezone.utc).isoformat(),'elapsed_seconds':time.monotonic()-t,'helper_sha256_before':before,'helper_sha256_after':H(h),'log':str(l),'log_sha256':H(l),'actual_runner':str(Path(__file__)),'actual_runner_sha256':H(Path(__file__)),'scope':'Actual independent read-only Module24 isolated candidate mechanics checker; no author builder/compiler/live owner/global/aggregate/publication execution.'},indent=2)+'\n');print(l.read_text());print(o,H(o));raise SystemExit(a.returncode)
