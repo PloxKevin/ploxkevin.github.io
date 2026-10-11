@@ -39,8 +39,10 @@ inputs. Exact content bindings retain all 48,662 prior frozen paths and bytes.
 Original mathematical bodies, hypotheses, reviews, failed and passing commands,
 raw outputs and times remain unchanged. Checkpoint 27's completed content and
 metadata GitHub Pages delivery is preserved in the progress history.
-Checkpoint 28 is prepared; its push, actual Pages workflow and live hashes
-remain pending. Full mathematical coverage work continues.
+Checkpoint 28 is [pushed to GitHub](https://github.com/PloxKevin/ploxkevin.github.io/commit/c3245229f722a678927d2f95fd756286a100598d).
+The [actual Pages workflow](https://github.com/PloxKevin/ploxkevin.github.io/actions/runs/38153332176)
+completed successfully, and [live delivery](live-checkpoint-28-attempt1.json)
+matched all 31 book asset hashes and the built commit exactly. Full mathematical coverage work continues.
 
 Complete audit archives and [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
 remain in Git. Reproduce into new output paths:
