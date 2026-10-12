@@ -53,10 +53,14 @@ reviews, failures, outputs and times remain at their original hashed paths
 and in Git history. Only three unused Applied proof metadata entries are
 omitted from the frozen ledger; every claim and original raw ledger is retained.
 
-Checkpoint 30 is verified locally and prepared for GitHub publication;
-delivery is still pending. Checkpoint 29's successful content and metadata
-delivery, including the [fresh all-31-asset check](live-checkpoint-29-attempt1.json),
-remains preserved. Full mathematical coverage work continues.
+Checkpoint 30 is published at content commit `ae9e7865`. Its GitHub Pages
+workflow completed successfully, and the [fresh live check](live-checkpoint-30-attempt2.json)
+verified all 31 asset hashes. The [actual push](publication30-content-push-v1.json)
+and [actual check](live30-content-confirmation-execution-v2.json) preserve their
+commands, outputs and times. The first live attempt ran while Pages was still
+building and remains recorded as unsuccessful. Checkpoint 29's successful
+content and metadata delivery is retained. Full mathematical coverage work
+continues; delivery does not establish completion of the remaining material.
 
 To reproduce the selected Lean audit and ledger from the local source-only
 snapshot, use fresh report paths:
