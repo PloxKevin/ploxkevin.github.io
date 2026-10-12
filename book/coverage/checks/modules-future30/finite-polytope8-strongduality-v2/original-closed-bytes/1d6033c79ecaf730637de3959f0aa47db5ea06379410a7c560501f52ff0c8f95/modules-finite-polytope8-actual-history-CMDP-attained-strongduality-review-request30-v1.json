@@ -1,0 +1,1098 @@
+{
+  "status": "prepared_actual_kernel0_finite_polytope8_actual_history_CMDP_attained_strong_duality_full_independent_review_pending",
+  "source": {
+    "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/CompleteModulesFinitePolytopeDuality30-draft-v7.lean",
+    "sha256": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+    "bytes": 23373
+  },
+  "full_source_body": "import SafeLearning.CompleteFiniteHistoryPathLinearProgram\nimport SafeLearning.CompleteFiniteCMDPLinearProgram\nimport SafeLearning.CompleteFiniteCMDPVertexClassification\nimport Mathlib\n\nset_option autoImplicit false\nset_option maxHeartbeats 1200000\nnoncomputable section\nopen Set\nopen scoped BigOperators\nnamespace SafeLearning.CompleteModulesFinitePolytopeDuality30\n\nvariable {E : Type*} [NormedAddCommGroup E] [NormedSpace ℝ E]\nvariable {I : Type*} [Fintype I]\n\n/-- A finite polytope with one feasible linear inequality has an attained primal point and\nan actual nonnegative Lagrange multiplier, even when strict feasibility fails. -/\ntheorem actual_feasible_finite_polytope_has_a_single_constraint_saddle\n    (vertex : I → E) (reward cost : E →ₗ[ℝ] ℝ) (budget : ℝ)\n    (hr : Continuous reward) (hc : Continuous cost)\n    (hne : ∃ x ∈ convexHull ℝ (range vertex), cost x ≤ budget) :\n    ∃ (x : E) (lambda : ℝ),\n      x ∈ convexHull ℝ (range vertex) ∧ cost x ≤ budget ∧ 0 ≤ lambda ∧\n      lambda * (cost x - budget) = 0 ∧\n      ∀ y ∈ convexHull ℝ (range vertex),\n        reward y - lambda * (cost y - budget) ≤ reward x := by\n  classical\n  let K := convexHull ℝ (range vertex)\n  have hK : IsCompact K := (Set.finite_range vertex).isCompact_convexHull ℝ\n  have hconv : Convex ℝ K := convex_convexHull ℝ _\n  have hf : IsCompact {x | x ∈ K ∧ cost x ≤ budget} :=\n    hK.inter_right (isClosed_le hc continuous_const)\n  obtain ⟨x, hx, hmax⟩ := hf.exists_isMaxOn hne hr.continuousOn\n  let slope : Option I → ℝ := fun z => match z with\n    | none => 0\n    | some i => if budget < cost (vertex i) then\n        (reward (vertex i) - reward x) / (cost (vertex i) - budget) else 0\n  let lambda : ℝ := Finset.univ.sup' Finset.univ_nonempty slope\n  have hlower (z : Option I) : slope z ≤ lambda :=\n    Finset.le_sup' slope (Finset.mem_univ z)\n  have hl0 : 0 ≤ lambda := by simpa only [slope] using hlower none\n  have hvertex (i : I) : vertex i ∈ K := subset_convexHull ℝ _ (mem_range_self i)\n  have hnegative (j : I) (hj : cost (vertex j) < budget) :\n      lambda ≤ (reward x - reward (vertex j)) / (budget - cost (vertex j)) := by\n    have hjd : 0 < budget - cost (vertex j) := sub_pos.mpr hj\n    have hjr : reward (vertex j) ≤ reward x := hmax ⟨hvertex j, hj.le⟩\n    have hz : 0 ≤ (reward x - reward (vertex j)) / (budget - cost (vertex j)) :=\n      div_nonneg (sub_nonneg.mpr hjr) hjd.le\n    apply Finset.sup'_le Finset.univ_nonempty\n    intro z _\n    cases z with\n    | none => exact hz\n    | some i =>\n      dsimp only [slope]\n      by_cases hi : budget < cost (vertex i)\n      · rw [if_pos hi]\n        have hid : 0 < cost (vertex i) - budget := sub_pos.mpr hi\n        have hdiff : 0 < cost (vertex i) - cost (vertex j) := by linarith\n        let u := (budget - cost (vertex j)) / (cost (vertex i) - cost (vertex j))\n        let v := (cost (vertex i) - budget) / (cost (vertex i) - cost (vertex j))\n        have hu : 0 ≤ u := div_nonneg hjd.le hdiff.le\n        have hv : 0 ≤ v := div_nonneg hid.le hdiff.le\n        have huv : u + v = 1 := by\n          dsimp only [u,v]\n          field_simp [ne_of_gt hdiff]\n          <;> ring\n        have hm : u • vertex i + v • vertex j ∈ K :=\n          hconv (hvertex i) (hvertex j) hu hv huv\n        have hcost : cost (u • vertex i + v • vertex j) = budget := by\n          simp only [map_add, map_smul, smul_eq_mul]\n          dsimp only [u,v]\n          field_simp [ne_of_gt hdiff]\n          <;> ring\n        have hrmix : reward (u • vertex i + v • vertex j) ≤ reward x := hmax ⟨hm, hcost.le⟩\n        have hre : reward (u • vertex i + v • vertex j) =\n            ((budget - cost (vertex j)) * reward (vertex i) +\n              (cost (vertex i) - budget) * reward (vertex j)) /\n                (cost (vertex i) - cost (vertex j)) := by\n          simp only [map_add, map_smul, smul_eq_mul]\n          dsimp only [u,v]\n          ring\n        rw [hre] at hrmix\n        have hnum := (div_le_iff₀ hdiff).mp hrmix\n        apply (div_le_div_iff₀ hid hjd).mpr\n        nlinarith\n      · rw [if_neg hi]\n        exact hz\n  have hvertices (i : I) :\n      reward (vertex i) - lambda * (cost (vertex i) - budget) ≤ reward x := by\n    rcases lt_trichotomy (cost (vertex i)) budget with hi | hi | hi\n    · have h := (le_div_iff₀ (sub_pos.mpr hi)).mp (hnegative i hi)\n      nlinarith\n    · rw [hi, sub_self, mul_zero, sub_zero]\n      exact hmax ⟨hvertex i, hi.le⟩\n    · have h := hlower (some i)\n      dsimp only [slope] at h\n      rw [if_pos hi] at h\n      have h := (div_le_iff₀ (sub_pos.mpr hi)).mp h\n      linarith\n  have hhalf : Convex ℝ {y : E | reward y - lambda * cost y ≤ reward x - lambda * budget} := by\n    intro y hy z hz u v hu hv huv\n    simp only [mem_setOf_eq, map_add, map_smul, smul_eq_mul] at *\n    calc\n      u * reward y + v * reward z - lambda * (u * cost y + v * cost z) =\n          u * (reward y - lambda * cost y) + v * (reward z - lambda * cost z) := by ring\n      _ ≤ u * (reward x - lambda * budget) + v * (reward x - lambda * budget) :=\n          add_le_add (mul_le_mul_of_nonneg_left hy hu) (mul_le_mul_of_nonneg_left hz hv)\n      _ = reward x - lambda * budget := by rw [←add_mul,huv,one_mul]\n  have hhull : K ⊆ {y : E | reward y - lambda * cost y ≤ reward x - lambda * budget} :=\n    convexHull_min (by rintro _ ⟨i,rfl⟩; change reward (vertex i) - lambda * cost (vertex i) ≤ reward x - lambda * budget; nlinarith [hvertices i]) hhalf\n  have hall (y : E) (hy : y ∈ K) :\n      reward y - lambda * (cost y - budget) ≤ reward x := by\n    have h := hhull hy\n    change reward y - lambda * cost y ≤ reward x - lambda * budget at h\n    nlinarith\n  refine ⟨x, lambda, hx.1, hx.2, hl0, ?_, hall⟩\n  have h := hall x hx.1\n  have hn := mul_nonpos_of_nonneg_of_nonpos hl0 (sub_nonpos.mpr hx.2)\n  linarith\n\nopen SafeLearning.CompleteFiniteCMDPOccupancy\n  SafeLearning.CompleteFiniteCMDPFlow\n  SafeLearning.CompleteFiniteCMDPLinearProgram\n  SafeLearning.CompleteFiniteCMDPDeterministicVertices\n  SafeLearning.CompleteFiniteCMDPVertexClassification\n\n/-- The actual finite-CMDP feasible-flow set is the convex hull of finitely many actual\nstationary deterministic occupancies, not an assumed polytope representation. -/\ntheorem actual_finite_CMDP_flow_set_is_generated_by_its_finite_deterministic_policies\n    {S A : Type*} [Fintype S] [Fintype A]\n    (M : Model S A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1) :\n    {rho | FlowFeasible M gamma rho} =\n      convexHull ℝ (range (fun d : S → A => occupancy M (purePolicy d) gamma)) := by\n  classical\n  have he : extremePoints ℝ {rho | FlowFeasible M gamma rho} =\n      range (fun d : S → A => occupancy M (purePolicy d) gamma) := by\n    ext rho\n    constructor\n    · intro h\n      obtain ⟨d, rfl⟩ := (actual_flow_extreme_point_iff_deterministic_stationary_occupancy M gamma hg0 hg1 rho).mp h\n      exact mem_range_self d\n    · rintro ⟨d, rfl⟩\n      exact actual_pure_policy_occupancy_is_extreme_point M d gamma hg0 hg1\n  have h := closure_convexHull_extremePoints\n    (actual_flow_polyhedron_compact M gamma hg1)\n    (actual_nonnegative_flow_polyhedron_is_convex M gamma)\n  have hclosed := (Set.finite_range (fun d : S → A => occupancy M (purePolicy d) gamma)).isClosed_convexHull ℝ\n  rw [he, hclosed.closure_eq] at h\n  exact h.symm\n\nend SafeLearning.CompleteModulesFinitePolytopeDuality30\n\n\nnamespace SafeLearning.CompleteModulesFinitePolytopeDuality30\nopen SafeLearning.CompleteFiniteCMDPOccupancy SafeLearning.CompleteFiniteCMDPFlow\n  SafeLearning.CompleteFiniteCMDPLinearProgram SafeLearning.CompleteFiniteCMDPRecovery\n  SafeLearning.CompleteFiniteCMDPDeterministicVertices\n\n/-- Actual feasible finite discounted CMDPs have a stationary randomized saddle policy\nand a nonnegative scalar multiplier even without a strictly feasible policy. -/\ntheorem actual_feasible_finite_CMDP_has_a_stationary_policy_and_multiplier\n    {S A : Type*} [Fintype S] [Fintype A]\n    (M : Model S A) (a₀ : A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1)\n    (reward cost : S → A → ℝ) (budget : ℝ)\n    (hne : ∃ policy : Policy S A, expectedReturn M policy gamma cost ≤ budget) :\n    ∃ (policy : Policy S A) (lambda : ℝ),\n      (∀ n s a, policy.action n s a = policy.action 0 s a) ∧\n      0 ≤ lambda ∧ expectedReturn M policy gamma cost ≤ budget ∧\n      lambda * (expectedReturn M policy gamma cost - budget) = 0 ∧\n      ∀ other : Policy S A,\n        expectedReturn M other gamma reward -\n          lambda * (expectedReturn M other gamma cost - budget) ≤\n            expectedReturn M policy gamma reward := by\n  classical\n  let vertex := fun d : S → A => occupancy M (purePolicy d) gamma\n  have hpoly := actual_finite_CMDP_flow_set_is_generated_by_its_finite_deterministic_policies\n    M gamma hg0 hg1\n  have hp : 0 < 1 - gamma := sub_pos.mpr hg1\n  have hscale (policy : Policy S A) (r : S → A → ℝ) :\n      rewardFunctional r (occupancy M policy gamma) =\n        (1 - gamma) * expectedReturn M policy gamma r := by\n    rw [actual_reward_return_identity M policy gamma hg0 hg1]\n    change (∑ s, ∑ a, occupancy M policy gamma s a * r s a) =\n      (1 - gamma) * ((∑ s, ∑ a, occupancy M policy gamma s a * r s a) / (1 - gamma))\n    exact (mul_div_cancel₀ _ (ne_of_gt hp)).symm\n  have hne' : ∃ rho ∈ convexHull ℝ (range vertex),\n      rewardFunctional cost rho ≤ (1 - gamma) * budget := by\n    obtain ⟨policy,hpolicy⟩ := hne\n    refine ⟨occupancy M policy gamma, ?_, ?_⟩\n    · rw [←hpoly]\n      exact actual_occupancy_satisfies_flow M policy gamma hg0 hg1\n    · rw [hscale]\n      exact mul_le_mul_of_nonneg_left hpolicy hp.le\n  obtain ⟨rho,lambda,hrho,hcost,hl0,hcomplement,hall⟩ :=\n    actual_feasible_finite_polytope_has_a_single_constraint_saddle vertex\n      (rewardFunctional reward) (rewardFunctional cost) ((1 - gamma) * budget)\n      (actual_reward_functional_continuous reward) (actual_reward_functional_continuous cost) hne'\n  have hflow : FlowFeasible M gamma rho := by\n    rw [←hpoly] at hrho\n    exact hrho\n  let policy := recoveredPolicy a₀ rho hflow.1\n  have he : occupancy M policy gamma = rho :=\n    actual_every_feasible_flow_is_realized_by_recovered_stationary_policy\n      M a₀ gamma hg0 hg1 rho hflow\n  have hrepr (r : S → A → ℝ) : rewardFunctional r rho =\n      (1 - gamma) * expectedReturn M policy gamma r := by rw [←he,hscale]\n  have hfeasible : expectedReturn M policy gamma cost ≤ budget := by\n    rw [hrepr] at hcost\n    exact (mul_le_mul_iff_of_pos_left hp).mp hcost\n  refine ⟨policy,lambda,(fun _ _ _ => rfl),hl0,hfeasible,?_,?_⟩\n  · rw [hrepr] at hcomplement\n    have hf : (1 - gamma) * (lambda * (expectedReturn M policy gamma cost - budget)) = 0 := by\n      nlinarith [hcomplement]\n    exact (mul_eq_zero.mp hf).resolve_left (ne_of_gt hp)\n  · intro other\n    have hother : occupancy M other gamma ∈ convexHull ℝ (range vertex) := by\n      rw [←hpoly]\n      exact actual_occupancy_satisfies_flow M other gamma hg0 hg1\n    have h := hall (occupancy M other gamma) hother\n    rw [hscale,hscale,hrepr] at h\n    apply (mul_le_mul_iff_of_pos_left hp).mp\n    nlinarith [h]\n\nend SafeLearning.CompleteModulesFinitePolytopeDuality30\n\n\nnamespace SafeLearning.CompleteModulesFinitePolytopeDuality30\nopen SafeLearning.CompleteFiniteCMDPOccupancy SafeLearning.CompleteFiniteCMDPFlow\n  SafeLearning.CompleteFiniteCMDPLinearProgram SafeLearning.CompleteFiniteCMDPRecovery\n  SafeLearning.CompleteFiniteCMDPDeterministicVertices\n\ndef actualFinitePrimalValue {S A : Type*} [Fintype S] [Fintype A]\n    (M : Model S A) (gamma : ℝ) (reward cost : S → A → ℝ) (budget : ℝ) : ℝ :=\n  sSup {value | ∃ policy : Policy S A,\n    expectedReturn M policy gamma cost ≤ budget ∧ value = expectedReturn M policy gamma reward}\n\ndef actualFiniteDualValue {S A : Type*} [Fintype S] [Fintype A]\n    (M : Model S A) (gamma : ℝ) (reward cost : S → A → ℝ) (budget lambda : ℝ) : ℝ :=\n  sSup {value | ∃ policy : Policy S A, value = expectedReturn M policy gamma reward -\n    lambda * (expectedReturn M policy gamma cost - budget)}\n\n/-- Each actual finite-model dual supremum is bounded through its compact flow set. -/\ntheorem actual_finite_CMDP_Lagrangian_values_are_bounded_above\n    {S A : Type*} [Fintype S] [Fintype A]\n    (M : Model S A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1)\n    (reward cost : S → A → ℝ) (budget lambda : ℝ) :\n    BddAbove {value | ∃ policy : Policy S A, value = expectedReturn M policy gamma reward -\n      lambda * (expectedReturn M policy gamma cost - budget)} := by\n  let f : (S → A → ℝ) → ℝ := fun rho =>\n    rewardFunctional reward rho / (1 - gamma) -\n      lambda * (rewardFunctional cost rho / (1 - gamma) - budget)\n  have hf : Continuous f :=\n    ((actual_reward_functional_continuous reward).div_const _).sub\n      (continuous_const.mul (((actual_reward_functional_continuous cost).div_const _).sub continuous_const))\n  obtain ⟨bound,hbound⟩ := (actual_flow_polyhedron_compact M gamma hg1).bddAbove_image hf.continuousOn\n  refine ⟨bound, ?_⟩\n  rintro value ⟨policy,rfl⟩\n  apply hbound\n  refine ⟨occupancy M policy gamma, actual_occupancy_satisfies_flow M policy gamma hg0 hg1, ?_⟩\n  dsimp only [f]\n  simp only [actual_reward_return_identity M policy gamma hg0 hg1,\n    rewardFunctional, LinearMap.coe_mk, AddHom.coe_mk]\n\n/-- Genuine primal and dual optimum values coincide and the dual infimum is attained,\nwith feasibility alone in the actual single-cost finite discounted model. -/\ntheorem actual_feasible_finite_CMDP_has_attained_strong_duality_without_Slater\n    {S A : Type*} [Fintype S] [Fintype A]\n    (M : Model S A) (a₀ : A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1)\n    (reward cost : S → A → ℝ) (budget : ℝ)\n    (hne : ∃ policy : Policy S A, expectedReturn M policy gamma cost ≤ budget) :\n    ∃ (policy : Policy S A) (lambda : ℝ),\n      (∀ n s a, policy.action n s a = policy.action 0 s a) ∧\n      0 ≤ lambda ∧ expectedReturn M policy gamma cost ≤ budget ∧\n      actualFinitePrimalValue M gamma reward cost budget = expectedReturn M policy gamma reward ∧\n      actualFiniteDualValue M gamma reward cost budget lambda =\n        actualFinitePrimalValue M gamma reward cost budget ∧\n      sInf (actualFiniteDualValue M gamma reward cost budget '' Ici 0) =\n        actualFinitePrimalValue M gamma reward cost budget := by\n  obtain ⟨policy,lambda,hstat,hl0,hfeasible,hcomp,hall⟩ :=\n    actual_feasible_finite_CMDP_has_a_stationary_policy_and_multiplier M a₀ gamma hg0 hg1\n      reward cost budget hne\n  have hlag : expectedReturn M policy gamma reward -\n      lambda * (expectedReturn M policy gamma cost - budget) = expectedReturn M policy gamma reward := by rw [hcomp,sub_zero]\n  have hprimal : IsGreatest {value | ∃ other : Policy S A,\n      expectedReturn M other gamma cost ≤ budget ∧ value = expectedReturn M other gamma reward}\n      (expectedReturn M policy gamma reward) := by\n    refine ⟨⟨policy,hfeasible,rfl⟩, ?_⟩\n    rintro value ⟨other,hother,rfl⟩\n    have h := hall other\n    have hn := mul_nonpos_of_nonneg_of_nonpos hl0 (sub_nonpos.mpr hother)\n    linarith\n  have hp : actualFinitePrimalValue M gamma reward cost budget = expectedReturn M policy gamma reward := hprimal.csSup_eq\n  have hdual : IsGreatest {value | ∃ other : Policy S A, value = expectedReturn M other gamma reward -\n      lambda * (expectedReturn M other gamma cost - budget)} (expectedReturn M policy gamma reward) := by\n    refine ⟨⟨policy,hlag.symm⟩, ?_⟩\n    rintro value ⟨other,rfl⟩\n    exact hall other\n  have hd : actualFiniteDualValue M gamma reward cost budget lambda = expectedReturn M policy gamma reward := hdual.csSup_eq\n  have hweak (otherLambda : ℝ) (hm : 0 ≤ otherLambda) :\n      expectedReturn M policy gamma reward ≤ actualFiniteDualValue M gamma reward cost budget otherLambda := by\n    have hmem : expectedReturn M policy gamma reward - otherLambda *\n        (expectedReturn M policy gamma cost - budget) ∈\n        {value | ∃ other : Policy S A, value = expectedReturn M other gamma reward -\n          otherLambda * (expectedReturn M other gamma cost - budget)} := ⟨policy,rfl⟩\n    have hupper := le_csSup\n      (actual_finite_CMDP_Lagrangian_values_are_bounded_above M gamma hg0 hg1 reward cost budget otherLambda) hmem\n    have hn := mul_nonpos_of_nonneg_of_nonpos hm (sub_nonpos.mpr hfeasible)\n    exact (by linarith : expectedReturn M policy gamma reward ≤\n      expectedReturn M policy gamma reward - otherLambda * (expectedReturn M policy gamma cost - budget)).trans hupper\n  have hleast : IsLeast (actualFiniteDualValue M gamma reward cost budget '' Ici 0)\n      (expectedReturn M policy gamma reward) := by\n    refine ⟨⟨lambda,hl0,hd⟩, ?_⟩\n    rintro value ⟨otherLambda,hm,rfl⟩\n    exact hweak otherLambda hm\n  exact ⟨policy,lambda,hstat,hl0,hfeasible,hp,hd.trans hp.symm,hleast.csInf_eq.trans hp.symm⟩\n\nend SafeLearning.CompleteModulesFinitePolytopeDuality30\n\n\nnamespace SafeLearning.CompleteModulesFinitePolytopeDuality30\nopen SafeLearning.CompleteFiniteCMDPOccupancy SafeLearning.CompleteFiniteCMDPLinearProgram\n  SafeLearning.CompleteFiniteControlledPathMeasure SafeLearning.CompleteFiniteHistoryPathLinearProgram\n  SafeLearning.CompleteFiniteMarkovPathCorrespondence\n\nvariable {S A : Type*} [Fintype S] [Fintype A]\nvariable [MeasurableSpace S] [MeasurableSpace A]\nvariable [MeasurableSingletonClass S] [MeasurableSingletonClass A]\n\n/-- Every actual history-dependent path return pair has an actual time-dependent Markov\nrealization, by genuine path occupancies and stationary flow recovery. -/\ntheorem actual_every_history_path_return_pair_has_a_policy_realization\n    (M : Model S A) (a₀ : A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1)\n    (reward cost : S → A → ℝ) (history : HistoryPolicy S A) :\n    ∃ policy : Policy S A,\n      expectedReturn M policy gamma reward = pathReturn M gamma history reward ∧\n      expectedReturn M policy gamma cost = pathReturn M gamma history cost := by\n  have hmem : (pathReturn M gamma history reward,pathReturn M gamma history cost) ∈\n      historyPathAchievablePairs M gamma reward cost := ⟨history,rfl⟩\n  rw [actual_all_history_path_return_pairs_equal_the_flow_linear_image M a₀ gamma hg0 hg1,\n    ←actual_achievable_pairs_equal_flow_linear_image M a₀ gamma hg0 hg1] at hmem\n  obtain ⟨policy,hpolicy⟩ := hmem\n  exact ⟨policy,(congrArg Prod.fst hpolicy).symm,(congrArg Prod.snd hpolicy).symm⟩\n\ndef actualHistoryPrimalValue (M : Model S A) (gamma : ℝ)\n    (reward cost : S → A → ℝ) (budget : ℝ) : ℝ :=\n  sSup {value | ∃ history : HistoryPolicy S A,\n    pathReturn M gamma history cost ≤ budget ∧ value = pathReturn M gamma history reward}\n\ndef actualHistoryDualValue (M : Model S A) (gamma : ℝ)\n    (reward cost : S → A → ℝ) (budget lambda : ℝ) : ℝ :=\n  sSup {value | ∃ history : HistoryPolicy S A, value = pathReturn M gamma history reward -\n    lambda * (pathReturn M gamma history cost - budget)}\n\n/-- Primal and dual values computed with actual Bochner history path returns agree with\nactual occupancy return values, not assumed common outcome bounds. -/\ntheorem actual_history_primal_and_dual_values_equal_the_finite_occupancy_values\n    (M : Model S A) (a₀ : A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1)\n    (reward cost : S → A → ℝ) (budget : ℝ) :\n    actualHistoryPrimalValue M gamma reward cost budget = actualFinitePrimalValue M gamma reward cost budget ∧\n    ∀ lambda, actualHistoryDualValue M gamma reward cost budget lambda =\n      actualFiniteDualValue M gamma reward cost budget lambda := by\n  have hreturn (policy : Policy S A) (r : S → A → ℝ) :\n      pathReturn M gamma (markovHistoryPolicy policy) r = expectedReturn M policy gamma r :=\n    actual_constructed_markov_path_expected_return M policy gamma hg0 hg1 r\n  constructor\n  · unfold actualHistoryPrimalValue actualFinitePrimalValue\n    congr 1\n    ext value\n    constructor\n    · rintro ⟨history,hcost,hvalue⟩\n      obtain ⟨policy,hr,hc⟩ := actual_every_history_path_return_pair_has_a_policy_realization\n        M a₀ gamma hg0 hg1 reward cost history\n      exact ⟨policy,hc ▸ hcost,hvalue.trans hr.symm⟩\n    · rintro ⟨policy,hcost,hvalue⟩\n      exact ⟨markovHistoryPolicy policy,(hreturn policy cost).symm ▸ hcost,\n        hvalue.trans (hreturn policy reward).symm⟩\n  · intro lambda\n    unfold actualHistoryDualValue actualFiniteDualValue\n    congr 1\n    ext value\n    constructor\n    · rintro ⟨history,hvalue⟩\n      obtain ⟨policy,hr,hc⟩ := actual_every_history_path_return_pair_has_a_policy_realization\n        M a₀ gamma hg0 hg1 reward cost history\n      exact ⟨policy,by rwa [hr,hc]⟩\n    · rintro ⟨policy,hvalue⟩\n      exact ⟨markovHistoryPolicy policy,by rwa [hreturn,hreturn]⟩\n\n/-- The actual history-policy finite discounted CMDP has attained strong duality from\nfeasibility alone. Its primal optimizer is a genuine recovered stationary policy. -/\ntheorem actual_feasible_all_history_finite_CMDP_has_attained_strong_duality_without_Slater\n    (M : Model S A) (a₀ : A) (gamma : ℝ) (hg0 : 0 ≤ gamma) (hg1 : gamma < 1)\n    (reward cost : S → A → ℝ) (budget : ℝ)\n    (hne : ∃ history : HistoryPolicy S A, pathReturn M gamma history cost ≤ budget) :\n    ∃ (policy : Policy S A) (lambda : ℝ),\n      (∀ n s a, policy.action n s a = policy.action 0 s a) ∧\n      0 ≤ lambda ∧ pathReturn M gamma (markovHistoryPolicy policy) cost ≤ budget ∧\n      actualHistoryPrimalValue M gamma reward cost budget =\n        pathReturn M gamma (markovHistoryPolicy policy) reward ∧\n      actualHistoryDualValue M gamma reward cost budget lambda =\n        actualHistoryPrimalValue M gamma reward cost budget ∧\n      sInf (actualHistoryDualValue M gamma reward cost budget '' Ici 0) =\n        actualHistoryPrimalValue M gamma reward cost budget := by\n  have hreturn (policy : Policy S A) (r : S → A → ℝ) :\n      pathReturn M gamma (markovHistoryPolicy policy) r = expectedReturn M policy gamma r :=\n    actual_constructed_markov_path_expected_return M policy gamma hg0 hg1 r\n  have hne' : ∃ policy : Policy S A, expectedReturn M policy gamma cost ≤ budget := by\n    obtain ⟨history,hcost⟩ := hne\n    obtain ⟨policy,_,hc⟩ := actual_every_history_path_return_pair_has_a_policy_realization\n      M a₀ gamma hg0 hg1 reward cost history\n    exact ⟨policy,hc ▸ hcost⟩\n  obtain ⟨policy,lambda,hstat,hl0,hcost,hp,hd,hinf⟩ :=\n    actual_feasible_finite_CMDP_has_attained_strong_duality_without_Slater\n      M a₀ gamma hg0 hg1 reward cost budget hne'\n  have hvalues := actual_history_primal_and_dual_values_equal_the_finite_occupancy_values\n    M a₀ gamma hg0 hg1 reward cost budget\n  refine ⟨policy,lambda,hstat,hl0,?_,?_,?_,?_⟩\n  · rwa [hreturn]\n  · rw [hvalues.1,hreturn]\n    exact hp\n  · rw [hvalues.2,hvalues.1]\n    exact hd\n  · rw [show actualHistoryDualValue M gamma reward cost budget =\n        actualFiniteDualValue M gamma reward cost budget from funext hvalues.2,hvalues.1]\n    exact hinf\n\nend SafeLearning.CompleteModulesFinitePolytopeDuality30\n",
+  "public_theorem_count": 8,
+  "public_definition_count": 4,
+  "public_theorem_names": [
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_feasible_finite_polytope_has_a_single_constraint_saddle",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_finite_CMDP_flow_set_is_generated_by_its_finite_deterministic_policies",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_feasible_finite_CMDP_has_a_stationary_policy_and_multiplier",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_finite_CMDP_Lagrangian_values_are_bounded_above",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_feasible_finite_CMDP_has_attained_strong_duality_without_Slater",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_every_history_path_return_pair_has_a_policy_realization",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_history_primal_and_dual_values_equal_the_finite_occupancy_values",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actual_feasible_all_history_finite_CMDP_has_attained_strong_duality_without_Slater"
+  ],
+  "public_definition_names": [
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actualFinitePrimalValue",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actualFiniteDualValue",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actualHistoryPrimalValue",
+    "SafeLearning.CompleteModulesFinitePolytopeDuality30.actualHistoryDualValue"
+  ],
+  "genuine_native_history": [
+    {
+      "trial": 1,
+      "native": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/221f69e20c22b028452f33b0bda3d92f12adb466cd6d39b57f78a693cb6b91a2/modules-finite-polytope-duality2-owner29-trial1.json",
+        "sha256": "221f69e20c22b028452f33b0bda3d92f12adb466cd6d39b57f78a693cb6b91a2",
+        "bytes": 2682
+      },
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58/CompleteModulesFinitePolytopeDuality30-draft-v1.lean",
+        "sha256": "cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58",
+        "bytes": 6940
+      },
+      "source_snapshot": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58/modules-finite-polytope-duality2-owner29-trial1-source.lean",
+        "sha256": "cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58",
+        "bytes": 6940
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ca8f6d43b7e969067b2cddaf1754f333b8f90930bff699f444f9b974e586b142/modules-finite-polytope-duality2-owner29-trial1.log",
+        "sha256": "ca8f6d43b7e969067b2cddaf1754f333b8f90930bff699f444f9b974e586b142",
+        "bytes": 5639
+      },
+      "true_exit_code": 1,
+      "actual_warning_header_count": 4,
+      "original_times": {
+        "started_at_utc": "2026-10-11T22:27:39.883905+00:00",
+        "finished_at_utc": "2026-10-11T22:28:11.227986+00:00",
+        "elapsed_seconds": 32.344423915987136
+      }
+    },
+    {
+      "trial": 2,
+      "native": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5c1972304c386c02bd1801242844655903dee16768b513b45d64f9ebd354c972/modules-finite-polytope-duality2-owner29-trial2.json",
+        "sha256": "5c1972304c386c02bd1801242844655903dee16768b513b45d64f9ebd354c972",
+        "bytes": 2673
+      },
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575/CompleteModulesFinitePolytopeDuality30-draft-v2.lean",
+        "sha256": "d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575",
+        "bytes": 7402
+      },
+      "source_snapshot": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575/modules-finite-polytope-duality2-owner29-trial2-source.lean",
+        "sha256": "d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575",
+        "bytes": 7402
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9c6376a848b25e1fec88a3449022304c633b3e0d27c924d08ab35c83b294c327/modules-finite-polytope-duality2-owner29-trial2.log",
+        "sha256": "9c6376a848b25e1fec88a3449022304c633b3e0d27c924d08ab35c83b294c327",
+        "bytes": 970
+      },
+      "true_exit_code": 0,
+      "actual_warning_header_count": 6,
+      "original_times": {
+        "started_at_utc": "2026-10-11T22:31:59.641751+00:00",
+        "finished_at_utc": "2026-10-11T22:32:59.449438+00:00",
+        "elapsed_seconds": 61.829905260005035
+      }
+    },
+    {
+      "trial": 3,
+      "native": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/751ca03bfbe8e2f924d984d3dd663feb06001db34c70fe7d75bcea9ab2b49e79/modules-finite-polytope-duality3-owner29-trial3.json",
+        "sha256": "751ca03bfbe8e2f924d984d3dd663feb06001db34c70fe7d75bcea9ab2b49e79",
+        "bytes": 2682
+      },
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c/CompleteModulesFinitePolytopeDuality30-draft-v3.lean",
+        "sha256": "373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c",
+        "bytes": 11235
+      },
+      "source_snapshot": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c/modules-finite-polytope-duality3-owner29-trial3-source.lean",
+        "sha256": "373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c",
+        "bytes": 11235
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/051a8546a7e82e72e0b58f59a23fab08c2618b0a728b691d7ffa8d087bb820c4/modules-finite-polytope-duality3-owner29-trial3.log",
+        "sha256": "051a8546a7e82e72e0b58f59a23fab08c2618b0a728b691d7ffa8d087bb820c4",
+        "bytes": 2046
+      },
+      "true_exit_code": 1,
+      "actual_warning_header_count": 6,
+      "original_times": {
+        "started_at_utc": "2026-10-11T22:34:45.638923+00:00",
+        "finished_at_utc": "2026-10-11T22:35:20.905570+00:00",
+        "elapsed_seconds": 37.272724923997885
+      }
+    },
+    {
+      "trial": 4,
+      "native": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/78417efc6fd90b39ff3ef5f27d129745fb33664f7c8f2c179423b80ec2db93d3/modules-finite-polytope-duality8-owner29-trial4.json",
+        "sha256": "78417efc6fd90b39ff3ef5f27d129745fb33664f7c8f2c179423b80ec2db93d3",
+        "bytes": 2682
+      },
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38/CompleteModulesFinitePolytopeDuality30-draft-v6.lean",
+        "sha256": "8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38",
+        "bytes": 23379
+      },
+      "source_snapshot": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38/modules-finite-polytope-duality8-owner29-trial4-source.lean",
+        "sha256": "8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38",
+        "bytes": 23379
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/36d8a2aeaa8c69dc7d2cdf36d2ee62ed31dcaf85c5e8c3a2ec75b8ba89cd586a/modules-finite-polytope-duality8-owner29-trial4.log",
+        "sha256": "36d8a2aeaa8c69dc7d2cdf36d2ee62ed31dcaf85c5e8c3a2ec75b8ba89cd586a",
+        "bytes": 2175
+      },
+      "true_exit_code": 1,
+      "actual_warning_header_count": 6,
+      "original_times": {
+        "started_at_utc": "2026-10-11T22:39:11.708926+00:00",
+        "finished_at_utc": "2026-10-11T22:39:26.774841+00:00",
+        "elapsed_seconds": 16.073142581997672
+      }
+    },
+    {
+      "trial": 5,
+      "native": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/112e33090a67b151ac3a85e21ad37d7639e0c8d9d94644104a4b304e6a8a004c/modules-finite-polytope-duality8-owner29-trial5.json",
+        "sha256": "112e33090a67b151ac3a85e21ad37d7639e0c8d9d94644104a4b304e6a8a004c",
+        "bytes": 2673
+      },
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/CompleteModulesFinitePolytopeDuality30-draft-v7.lean",
+        "sha256": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+        "bytes": 23373
+      },
+      "source_snapshot": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/modules-finite-polytope-duality8-owner29-trial5-source.lean",
+        "sha256": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+        "bytes": 23373
+      },
+      "raw_log": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/b8baf696a9be012199d78a466e0bde8dc37bca0cabea998d17fae8c50593a617/modules-finite-polytope-duality8-owner29-trial5.log",
+        "sha256": "b8baf696a9be012199d78a466e0bde8dc37bca0cabea998d17fae8c50593a617",
+        "bytes": 970
+      },
+      "true_exit_code": 0,
+      "actual_warning_header_count": 6,
+      "original_times": {
+        "started_at_utc": "2026-10-11T22:40:19.114613+00:00",
+        "finished_at_utc": "2026-10-11T22:40:32.358745+00:00",
+        "elapsed_seconds": 14.111561497004004
+      }
+    }
+  ],
+  "all_original_failed_and_passed_bodies_sources_snapshots_raw_logs_and_times_preserved": true,
+  "uncompiled_intermediate_drafts": [
+    {
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/651723d6b613977263e6a4a65331026ae97fae5b86c3286d6f10f36bce06dbf3/CompleteModulesFinitePolytopeDuality30-draft-v4.lean",
+        "sha256": "651723d6b613977263e6a4a65331026ae97fae5b86c3286d6f10f36bce06dbf3",
+        "bytes": 11257
+      },
+      "compiled": false
+    },
+    {
+      "source": {
+        "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/3a6252a339a9becf5d8e8d5dd7fffbec1c37b143870ec0ba7a4e9328d097ddd0/CompleteModulesFinitePolytopeDuality30-draft-v5.lean",
+        "sha256": "3a6252a339a9becf5d8e8d5dd7fffbec1c37b143870ec0ba7a4e9328d097ddd0",
+        "bytes": 17096
+      },
+      "compiled": false
+    }
+  ],
+  "selected_complete_dependency_sources": [
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ef8bd12b2baf5759bde5913918abf8a6f994577aa770358dd5874a604f50f4c7/CompleteFiniteCMDPLinearProgram.lean",
+      "sha256": "ef8bd12b2baf5759bde5913918abf8a6f994577aa770358dd5874a604f50f4c7",
+      "bytes": 12185
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/7299b7b25104a96cce489abd83c72f4e52a82487af3385c56bc7d6379c24a46a/CompleteFiniteCMDPVertexClassification.lean",
+      "sha256": "7299b7b25104a96cce489abd83c72f4e52a82487af3385c56bc7d6379c24a46a",
+      "bytes": 7630
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/a7badabceb298352a1ba15d5be8da396abbd7d64f31c857be6391d2e67909eec/CompleteFiniteCMDPDeterministicVertices.lean",
+      "sha256": "a7badabceb298352a1ba15d5be8da396abbd7d64f31c857be6391d2e67909eec",
+      "bytes": 4587
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/22b9043122dd71553b19398fccd9cb86eaeaf91e40aa4cdfc8032b350cf0ed86/CompleteFiniteCMDPRecovery.lean",
+      "sha256": "22b9043122dd71553b19398fccd9cb86eaeaf91e40aa4cdfc8032b350cf0ed86",
+      "bytes": 7639
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9586d3cdac495de32b3f2a707313e767a09016c0dd3ef25e7b74bc02b75c2ad6/CompleteFiniteCMDPFlow.lean",
+      "sha256": "9586d3cdac495de32b3f2a707313e767a09016c0dd3ef25e7b74bc02b75c2ad6",
+      "bytes": 3201
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/dbd10672f943e532bf24cddab77c558b2fb8c1f8a285933ab62ab1a609c80fa4/CompleteFiniteCMDPOccupancy.lean",
+      "sha256": "dbd10672f943e532bf24cddab77c558b2fb8c1f8a285933ab62ab1a609c80fa4",
+      "bytes": 9437
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/935b9e4c1148c9fdda2dbc92c37e8571b7fc228aff3d96958a918132811c8d60/CompleteFiniteHistoryPathLinearProgram.lean",
+      "sha256": "935b9e4c1148c9fdda2dbc92c37e8571b7fc228aff3d96958a918132811c8d60",
+      "bytes": 6165
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/259283fdc08fba1a10e14be1a526c3e44608dd8dc3c1e89ec57ec9029420ff2b/CompleteFiniteMarkovPathCorrespondence.lean",
+      "sha256": "259283fdc08fba1a10e14be1a526c3e44608dd8dc3c1e89ec57ec9029420ff2b",
+      "bytes": 8088
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/83859301ee6df092f4fa115d70e7028519195b0246dfae029dc2accb6f6f8434/CompleteFiniteControlledPathFlow.lean",
+      "sha256": "83859301ee6df092f4fa115d70e7028519195b0246dfae029dc2accb6f6f8434",
+      "bytes": 8911
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8b636ea8b04f6004c02fa23bfa319fa35ad5431102288a8fb4c2ab75eb3b4796/CompleteFiniteControlledPathMeasure.lean",
+      "sha256": "8b636ea8b04f6004c02fa23bfa319fa35ad5431102288a8fb4c2ab75eb3b4796",
+      "bytes": 4810
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/f519e0921e74967fe9c7166d860468869fcac5aec5ca9cd36a8a16244d81af86/CompleteFiniteControlledPathMeasureLaws.lean",
+      "sha256": "f519e0921e74967fe9c7166d860468869fcac5aec5ca9cd36a8a16244d81af86",
+      "bytes": 10509
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/20b96363f1ff677b9b6697cf4348914478a55922af605f515f608a4f21dcb02f/CompleteFiniteTrajectoryReturns.lean",
+      "sha256": "20b96363f1ff677b9b6697cf4348914478a55922af605f515f608a4f21dcb02f",
+      "bytes": 6611
+    }
+  ],
+  "complete_primary_used_API_sources": [
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/32c432d120c4c4c4899818e94087c4ce2b58e563483e7fc6038931ba420b5abb/KreinMilman.lean",
+      "sha256": "32c432d120c4c4c4899818e94087c4ce2b58e563483e7fc6038931ba420b5abb",
+      "bytes": 6494
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/0799cd94b1675fb6b24a834ef1cae916fa68dcd87e03c9d6f0720057b85e9c84/Topology.lean",
+      "sha256": "0799cd94b1675fb6b24a834ef1cae916fa68dcd87e03c9d6f0720057b85e9c84",
+      "bytes": 26181
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf/Basic.lean",
+      "sha256": "9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf",
+      "bytes": 26793
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/7c02670f2e88f16acd11d69ddd6afb8d8118adca50279e1abb2a3c7761feb044/Compact.lean",
+      "sha256": "7c02670f2e88f16acd11d69ddd6afb8d8118adca50279e1abb2a3c7761feb044",
+      "bytes": 26397
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/abf3e1c8f011bbb182eb1a895ac75a5701714d321fe23ad37ee3bcdbc9f100d3/Basic.lean",
+      "sha256": "abf3e1c8f011bbb182eb1a895ac75a5701714d321fe23ad37ee3bcdbc9f100d3",
+      "bytes": 34215
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224/Basic.lean",
+      "sha256": "f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224",
+      "bytes": 35896
+    },
+    {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/01a908236dc99e5040cb487165c1a73fbd4e495d44183e6465f86b42f744dc02/Defs.lean",
+      "sha256": "01a908236dc99e5040cb487165c1a73fbd4e495d44183e6465f86b42f744dc02",
+      "bytes": 22609
+    }
+  ],
+  "original55_full_current_literal_and_component_request": {
+    "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/baab5e6bf29af3a4e306c3c6954bbd7b906926d755880bafb015d0bf058892c0/modules-duality55-full-source-current-literal-component-review-request30-v2.json",
+    "sha256": "baab5e6bf29af3a4e306c3c6954bbd7b906926d755880bafb015d0bf058892c0",
+    "bytes": 153564
+  },
+  "current_full_context": {
+    "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/fbeffcb9fefa1b3666669c140546c21224d3e0221afb27aaaace26a2fdc8f1ed/modules-duality55-full-current-context-v1.json",
+    "sha256": "fbeffcb9fefa1b3666669c140546c21224d3e0221afb27aaaace26a2fdc8f1ed",
+    "bytes": 106545
+  },
+  "requested_semantic_scope": "The exact scalar-cost finite-CMDP feasibility-alone strong-duality explanation in Exercise7.5(c). Read all8 complete public bodies,4 definitions, full actual flow/extreme-point/policy-recovery/path-measure chains and current entire7.5 context. Genuine finite polytope primal compact maximizer plus actual finite vertex-ratio supremum constructs a nonnegative multiplier and complementarity even without strict feasibility. The actual finite-CMDP flow set is proved equal to the convex hull of actual deterministic occupancies via the fully proved extreme-point classification and actual Krein-Milman. Recovery gives a real stationary randomized policy, and positive discount scaling derives penalized global optimality. Compact actual dual values give genuine bounded suprema; IsGreatest primal/dual and IsLeast dual range derive actual attained primal sup=dual inf. Actual history return-pair realization uses genuine Bochner path occupancies and policy recovery, yielding the all-history result from actual feasibility alone.",
+  "hypotheses_and_scope": "Arbitrary finite state/action types, a legitimate action a0, actual stochastic model with probability laws,0<=gamma<1, arbitrary finite reward/cost arrays, one actual scalar cost budget and an actually feasible history-dependent policy. No Slater/interior premise, optimizer/multiplier existence, desired value equality or assumed polytope representation. This is the single-risk scalar CMDP printed in Exercise7.5, not a general multi-budget LP theorem.",
+  "zero_budget_specialization": "The result applies at budget0 even for a nonnegative risk array, where strict feasibility may be impossible. It supplies some feasible stationary penalized maximizer and attained strong duality; it does not assert that every penalized maximizer is safe. The existing explicit tie counterexample in original55 remains separate unchanged evidence.",
+  "remaining_scope": "Only this finite-CMDP association is requested. The general bounded-risk Slater theorem is a separately cited primary result, not established by these finite proofs. Whole Exercise7.5, clock arbitrary-penalty common attainment, Chain physical delta2 association and the pending oscillation literal correction remain separate until every full association is independently reviewed.",
+  "whole_exercise_review_requested": false,
+  "whole_exercise_approved": false,
+  "source_applied": false,
+  "canonical_pairs_executed": false,
+  "coverage_complete": false,
+  "supplementary_after_frozen29_manifest": true,
+  "original_closed_byte_aliases": {
+    "/tmp/modules-viability-dual-clock30-owner29-trial1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7aad8975d0af35972c41469a80820c581b637dbfb8eec567cb6fcdd32fd19e78/modules-viability-dual-clock30-owner29-trial1.json",
+      "sha256": "7aad8975d0af35972c41469a80820c581b637dbfb8eec567cb6fcdd32fd19e78",
+      "bytes": 2671
+    },
+    "/tmp/CompleteModulesViabilityDualClock30-draft-v1.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5/CompleteModulesViabilityDualClock30-draft-v1.lean",
+      "sha256": "0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5",
+      "bytes": 12389
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial1-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5/modules-viability-dual-clock30-owner29-trial1-source.lean",
+      "sha256": "0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5",
+      "bytes": 12389
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial1.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b077378121f3c1b0016bbc8fb534954cbba9e34df709d3dc97f66dc526b70952/modules-viability-dual-clock30-owner29-trial1.log",
+      "sha256": "b077378121f3c1b0016bbc8fb534954cbba9e34df709d3dc97f66dc526b70952",
+      "bytes": 3414
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial2.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f2a7bf5e057a609cb9ab24f1037395638a98cd27a84327435ba014ea6bc7fa4e/modules-viability-dual-clock30-owner29-trial2.json",
+      "sha256": "f2a7bf5e057a609cb9ab24f1037395638a98cd27a84327435ba014ea6bc7fa4e",
+      "bytes": 2662
+    },
+    "/tmp/CompleteModulesViabilityDualClock30-draft-v2.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720/CompleteModulesViabilityDualClock30-draft-v2.lean",
+      "sha256": "55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720",
+      "bytes": 12444
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial2-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720/modules-viability-dual-clock30-owner29-trial2-source.lean",
+      "sha256": "55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720",
+      "bytes": 12444
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial2.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f6fe62af0eb4c513b7155e05108c5f20ea45ad0564fd23f3283f66ce90ec35ef/modules-viability-dual-clock30-owner29-trial2.log",
+      "sha256": "f6fe62af0eb4c513b7155e05108c5f20ea45ad0564fd23f3283f66ce90ec35ef",
+      "bytes": 359
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial3.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/4ade1187814a965ab31e906eefb518219ceee9ad5490b368280f73ab204baf8a/modules-viability-dual-clock30-owner29-trial3.json",
+      "sha256": "4ade1187814a965ab31e906eefb518219ceee9ad5490b368280f73ab204baf8a",
+      "bytes": 2671
+    },
+    "/tmp/CompleteModulesViabilityDualClock30-draft-v3.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a/CompleteModulesViabilityDualClock30-draft-v3.lean",
+      "sha256": "b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a",
+      "bytes": 22023
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial3-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a/modules-viability-dual-clock30-owner29-trial3-source.lean",
+      "sha256": "b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a",
+      "bytes": 22023
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial3.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a0cd4b5f45939984835e0fa6fadd07d4ff52e6d808d12de2a0485ca5d74e1f6b/modules-viability-dual-clock30-owner29-trial3.log",
+      "sha256": "a0cd4b5f45939984835e0fa6fadd07d4ff52e6d808d12de2a0485ca5d74e1f6b",
+      "bytes": 4428
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial4.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1ffb78cc9a76fcc7b986bdef24219c5b47da48afb31c666909ea4f4ae6a0d18e/modules-viability-dual-clock30-owner29-trial4.json",
+      "sha256": "1ffb78cc9a76fcc7b986bdef24219c5b47da48afb31c666909ea4f4ae6a0d18e",
+      "bytes": 2662
+    },
+    "/tmp/CompleteModulesViabilityDualClock30-draft-v4.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9/CompleteModulesViabilityDualClock30-draft-v4.lean",
+      "sha256": "e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9",
+      "bytes": 22040
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial4-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9/modules-viability-dual-clock30-owner29-trial4-source.lean",
+      "sha256": "e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9",
+      "bytes": 22040
+    },
+    "/tmp/modules-viability-dual-clock30-owner29-trial4.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7406670e1079bb0e8429f81db18446b08b68838232999532f1ae6fe9228d1217/modules-viability-dual-clock30-owner29-trial4.log",
+      "sha256": "7406670e1079bb0e8429f81db18446b08b68838232999532f1ae6fe9228d1217",
+      "bytes": 359
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/47e0f59cdbf7898778afb04cb0a46e2fbf804bb8b3f778b6a074d549b2ad19b0/modules-viability-dual-expectation30-owner29-trial1.json",
+      "sha256": "47e0f59cdbf7898778afb04cb0a46e2fbf804bb8b3f778b6a074d549b2ad19b0",
+      "bytes": 2695
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v1.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b/CompleteModulesViabilityDualExpectation30-draft-v1.lean",
+      "sha256": "aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b",
+      "bytes": 13017
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial1-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b/modules-viability-dual-expectation30-owner29-trial1-source.lean",
+      "sha256": "aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b",
+      "bytes": 13017
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial1.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e948ba5d63d471f878f51ba6ad861e215654266b3ec6a246b8223a503d6dc41a/modules-viability-dual-expectation30-owner29-trial1.log",
+      "sha256": "e948ba5d63d471f878f51ba6ad861e215654266b3ec6a246b8223a503d6dc41a",
+      "bytes": 2487
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial2.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/d08bce46d1a3eac58207008d3aeb578e4721729673c617f721e4af1451ea54c8/modules-viability-dual-expectation30-owner29-trial2.json",
+      "sha256": "d08bce46d1a3eac58207008d3aeb578e4721729673c617f721e4af1451ea54c8",
+      "bytes": 2695
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v2.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9/CompleteModulesViabilityDualExpectation30-draft-v2.lean",
+      "sha256": "e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9",
+      "bytes": 13055
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial2-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9/modules-viability-dual-expectation30-owner29-trial2-source.lean",
+      "sha256": "e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9",
+      "bytes": 13055
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial2.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/130c7dec276c95a4d6f81aab5a784bfa3ffb3891d1d8aa26930cc3ef7b3cf618/modules-viability-dual-expectation30-owner29-trial2.log",
+      "sha256": "130c7dec276c95a4d6f81aab5a784bfa3ffb3891d1d8aa26930cc3ef7b3cf618",
+      "bytes": 711
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial3.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/2bf0e870ec5a718d03fd24fa8c4c3f104c39e9b40f5706b1575bbd5dd142ea0c/modules-viability-dual-expectation30-owner29-trial3.json",
+      "sha256": "2bf0e870ec5a718d03fd24fa8c4c3f104c39e9b40f5706b1575bbd5dd142ea0c",
+      "bytes": 2686
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v3.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6/CompleteModulesViabilityDualExpectation30-draft-v3.lean",
+      "sha256": "ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6",
+      "bytes": 13066
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial3-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6/modules-viability-dual-expectation30-owner29-trial3-source.lean",
+      "sha256": "ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6",
+      "bytes": 13066
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial3.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modules-viability-dual-expectation30-owner29-trial3.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial4.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1c69260333f80c8c20374c55216ec2930f1a3224803bf076a8475e3821ec57d1/modules-viability-dual-expectation30-owner29-trial4.json",
+      "sha256": "1c69260333f80c8c20374c55216ec2930f1a3224803bf076a8475e3821ec57d1",
+      "bytes": 2695
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v4.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269/CompleteModulesViabilityDualExpectation30-draft-v4.lean",
+      "sha256": "6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269",
+      "bytes": 19831
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial4-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269/modules-viability-dual-expectation30-owner29-trial4-source.lean",
+      "sha256": "6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269",
+      "bytes": 19831
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial4.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ab23078f6ec50360b6af6f1c31457840b5e41b779c79108c1e74efa4980e3024/modules-viability-dual-expectation30-owner29-trial4.log",
+      "sha256": "ab23078f6ec50360b6af6f1c31457840b5e41b779c79108c1e74efa4980e3024",
+      "bytes": 2403
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial5.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a33dda0a506f68530874de8d4b03c66b10ea100e9169ea5b09774d44fad79da5/modules-viability-dual-expectation30-owner29-trial5.json",
+      "sha256": "a33dda0a506f68530874de8d4b03c66b10ea100e9169ea5b09774d44fad79da5",
+      "bytes": 2686
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v5.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f/CompleteModulesViabilityDualExpectation30-draft-v5.lean",
+      "sha256": "9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f",
+      "bytes": 19770
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial5-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f/modules-viability-dual-expectation30-owner29-trial5-source.lean",
+      "sha256": "9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f",
+      "bytes": 19770
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial5.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/3a6a5be99788cd7ced15170e86c0a9dd860c616f7a239caad2b7e770bce19626/modules-viability-dual-expectation30-owner29-trial5.log",
+      "sha256": "3a6a5be99788cd7ced15170e86c0a9dd860c616f7a239caad2b7e770bce19626",
+      "bytes": 520
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial6.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/df238b85332f5fd15774ba53c98258f0205af7f51d59d4805ee00ec2ae5f4604/modules-viability-dual-expectation30-owner29-trial6.json",
+      "sha256": "df238b85332f5fd15774ba53c98258f0205af7f51d59d4805ee00ec2ae5f4604",
+      "bytes": 2695
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v6.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9/CompleteModulesViabilityDualExpectation30-draft-v6.lean",
+      "sha256": "95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9",
+      "bytes": 26716
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial6-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9/modules-viability-dual-expectation30-owner29-trial6-source.lean",
+      "sha256": "95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9",
+      "bytes": 26716
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial6.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/22fc9b30c0f56a212e246969e835c4eb215973e59e19a4cf6c2523cf977e4f02/modules-viability-dual-expectation30-owner29-trial6.log",
+      "sha256": "22fc9b30c0f56a212e246969e835c4eb215973e59e19a4cf6c2523cf977e4f02",
+      "bytes": 590
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial7.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/42d43fb75fad197aac2120d7f38e08df0ebe16f54b5241d049a806051e61a1f9/modules-viability-dual-expectation30-owner29-trial7.json",
+      "sha256": "42d43fb75fad197aac2120d7f38e08df0ebe16f54b5241d049a806051e61a1f9",
+      "bytes": 2686
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v7.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830/CompleteModulesViabilityDualExpectation30-draft-v7.lean",
+      "sha256": "1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830",
+      "bytes": 26785
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial7-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830/modules-viability-dual-expectation30-owner29-trial7-source.lean",
+      "sha256": "1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830",
+      "bytes": 26785
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial7.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modules-viability-dual-expectation30-owner29-trial7.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial8.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ca0b2982636b4180e390ae41a6ece5d3fd431536e170f2596053d9cb15de9776/modules-viability-dual-expectation30-owner29-trial8.json",
+      "sha256": "ca0b2982636b4180e390ae41a6ece5d3fd431536e170f2596053d9cb15de9776",
+      "bytes": 2686
+    },
+    "/tmp/CompleteModulesViabilityDualExpectation30-draft-v8.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2/CompleteModulesViabilityDualExpectation30-draft-v8.lean",
+      "sha256": "5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2",
+      "bytes": 27600
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial8-source.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2/modules-viability-dual-expectation30-owner29-trial8-source.lean",
+      "sha256": "5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2",
+      "bytes": 27600
+    },
+    "/tmp/modules-viability-dual-expectation30-owner29-trial8.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modules-viability-dual-expectation30-owner29-trial8.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteDuality.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/8b7d717dd14bc1b178ec7daf0925d19f9d80c99199b71e5c074bd5832f68b33c/CompleteDuality.lean",
+      "sha256": "8b7d717dd14bc1b178ec7daf0925d19f9d80c99199b71e5c074bd5832f68b33c",
+      "bytes": 19622
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteAppliedViabilityPenaltyOrder20.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/3723394ac73316e1436b969ba87188559743d210db4fa30892b473b0ada887ff/CompleteAppliedViabilityPenaltyOrder20.lean",
+      "sha256": "3723394ac73316e1436b969ba87188559743d210db4fa30892b473b0ada887ff",
+      "bytes": 2205
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteAppliedViabilityExactPenalty20.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a2dde806c2e103b6c8f3f0a6c08cf454c7ccd62a0d2b8be192aa08e92c5f56f7/CompleteAppliedViabilityExactPenalty20.lean",
+      "sha256": "a2dde806c2e103b6c8f3f0a6c08cf454c7ccd62a0d2b8be192aa08e92c5f56f7",
+      "bytes": 9088
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteAppliedViabilityEpisodeRisk20.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6e8d65de5e03f48cae17ed27951e656be43fd3bcf6db50a79e2ad7172d8eb75c/CompleteAppliedViabilityEpisodeRisk20.lean",
+      "sha256": "6e8d65de5e03f48cae17ed27951e656be43fd3bcf6db50a79e2ad7172d8eb75c",
+      "bytes": 5565
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteCoreProjectedDualDrift29.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f346f24fda7736f36eb08a44c5ebb7815b801ff6c6e21073408cec5452dc3b8f/CompleteCoreProjectedDualDrift29.lean",
+      "sha256": "f346f24fda7736f36eb08a44c5ebb7815b801ff6c6e21073408cec5452dc3b8f",
+      "bytes": 6336
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteMonitoringDualValue22.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/8ec4cbc595efe4eac70735ff4e21a4af058c82ac3860725563083cb31ad33b76/CompleteMonitoringDualValue22.lean",
+      "sha256": "8ec4cbc595efe4eac70735ff4e21a4af058c82ac3860725563083cb31ad33b76",
+      "bytes": 2887
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Order/ConditionallyCompleteLattice/Indexed.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/da59a5ea88ea4e1c3c51d8356a324caf9a43aabd6dc059d83d498d00b70b4d6d/Indexed.lean",
+      "sha256": "da59a5ea88ea4e1c3c51d8356a324caf9a43aabd6dc059d83d498d00b70b4d6d",
+      "bytes": 24279
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Order/ConditionallyCompleteLattice/Basic.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224/Basic.lean",
+      "sha256": "f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224",
+      "bytes": 35896
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Topology/Order/Monotone.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e07d53c9ffb456270476ef3bc53950355f42e75d2f6ee63dac2dfb0f84360512/Monotone.lean",
+      "sha256": "e07d53c9ffb456270476ef3bc53950355f42e75d2f6ee63dac2dfb0f84360512",
+      "bytes": 29339
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/MeasureTheory/Integral/Bochner/Basic.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a6341a15d805c17e6922cd9c3f69508d604574058e37b06ec8cb51626ebbfa4d/Basic.lean",
+      "sha256": "a6341a15d805c17e6922cd9c3f69508d604574058e37b06ec8cb51626ebbfa4d",
+      "bytes": 72022
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Algebra/Order/GroupWithZero/Basic.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6526bf3a919d5306c90daf75cf96cfe3bbfacc702f3858fb00f893f7346e2cbd/Basic.lean",
+      "sha256": "6526bf3a919d5306c90daf75cf96cfe3bbfacc702f3858fb00f893f7346e2cbd",
+      "bytes": 64250
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Data/Fintype/Card.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a77eb573a459ee525cfb4ac753dd05968ef2cc831d7549dc4e9036c7a90a1f00/Card.lean",
+      "sha256": "a77eb573a459ee525cfb4ac753dd05968ef2cc831d7549dc4e9036c7a90a1f00",
+      "bytes": 21064
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Data/Finset/Max.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f9381a30f98377e15faa35c02d19d3fa0d6576c1709460ed699f4616e4d2539e/Max.lean",
+      "sha256": "f9381a30f98377e15faa35c02d19d3fa0d6576c1709460ed699f4616e4d2539e",
+      "bytes": 16548
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Topology/Algebra/InfiniteSum/Basic.lean": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/094ff4ec7f2d9bf9771423a60b18c521a2eae76cccb07dde114c14e4a2de3a73/Basic.lean",
+      "sha256": "094ff4ec7f2d9bf9771423a60b18c521a2eae76cccb07dde114c14e4a2de3a73",
+      "bytes": 36476
+    },
+    "/tmp/modules-duality-primary30-v1/paternain-1910.13393v1-actual-http-receipt-v1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7c5f7895b4f72949345d2a453d0f5596933a3835bd0ca02d442b0490269132da/paternain-1910.13393v1-actual-http-receipt-v1.json",
+      "sha256": "7c5f7895b4f72949345d2a453d0f5596933a3835bd0ca02d442b0490269132da",
+      "bytes": 1257
+    },
+    "/tmp/modules-duality-primary30-v1/svf-2105.12204v4-actual-http-receipt-v1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5833b5ab3dbb52e7d45b50d829e5e39c0c4247879608849d0401a77e3fc74cb3/svf-2105.12204v4-actual-http-receipt-v1.json",
+      "sha256": "5833b5ab3dbb52e7d45b50d829e5e39c0c4247879608849d0401a77e3fc74cb3",
+      "bytes": 1251
+    },
+    "/tmp/root_tmp_lean_current65_owner29_context_v1.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ed8ca5f56d1f101b1a5898e367162bda47bd6b0845312ce3ba2dda4d58938ae2/root_tmp_lean_current65_owner29_context_v1.json",
+      "sha256": "ed8ca5f56d1f101b1a5898e367162bda47bd6b0845312ce3ba2dda4d58938ae2",
+      "bytes": 642705
+    },
+    "/tmp/root_tmp_lean_current65_owner29_runner_v1.py": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5eca9a664c2c81d8c67c412a20be5782f6e84ec124a193233a5a2700e602575c/root_tmp_lean_current65_owner29_runner_v1.py",
+      "sha256": "5eca9a664c2c81d8c67c412a20be5782f6e84ec124a193233a5a2700e602575c",
+      "bytes": 4005
+    },
+    "/tmp/prepare-modules-duality55-component-request30-v1.py": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ae70bb9ae53fe942d9f34d5bb48ef5abcfcbcb7867398f28615c81dd1a3ebcec/prepare-modules-duality55-component-request30-v1.py",
+      "sha256": "ae70bb9ae53fe942d9f34d5bb48ef5abcfcbcb7867398f28615c81dd1a3ebcec",
+      "bytes": 12308
+    },
+    "/tmp/run-modules-duality55-component-request30-preparation-v1.py": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/c6c399d2c3a4629e170219164cf4f97d1446e7e6da2825bed072def44bb0eb3d/run-modules-duality55-component-request30-preparation-v1.py",
+      "sha256": "c6c399d2c3a4629e170219164cf4f97d1446e7e6da2825bed072def44bb0eb3d",
+      "bytes": 1944
+    },
+    "/tmp/modules-dual-clock-finite-risk-append30-v3.txt": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/47a0085749360d9c6df8ce6c905a75262b3a7c39ab44596532d53d3cee6e4a86/modules-dual-clock-finite-risk-append30-v3.txt",
+      "sha256": "47a0085749360d9c6df8ce6c905a75262b3a7c39ab44596532d53d3cee6e4a86",
+      "bytes": 9487
+    },
+    "/tmp/modules-dual-expectation-cumulative-append30-v4.txt": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6a73dd90e1badcb7f65e8abd323303ff7f1e3811f7258fd8521f8c704b376068/modules-dual-expectation-cumulative-append30-v4.txt",
+      "sha256": "6a73dd90e1badcb7f65e8abd323303ff7f1e3811f7258fd8521f8c704b376068",
+      "bytes": 6764
+    },
+    "/tmp/modules-dual-expectation-last-append30-v6.txt": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ff5ac86a15ff95b3963c65fe8823957d450604115ef363646b2be8c2dd60c5dd/modules-dual-expectation-last-append30-v6.txt",
+      "sha256": "ff5ac86a15ff95b3963c65fe8823957d450604115ef363646b2be8c2dd60c5dd",
+      "bytes": 6924
+    },
+    "/home/oxrexkevin/SafetyBased/book/coverage/checks/modules-future30/duality55-components-v1/modules-duality55-full-current-context-v1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/fbeffcb9fefa1b3666669c140546c21224d3e0221afb27aaaace26a2fdc8f1ed/modules-duality55-full-current-context-v1.json",
+      "sha256": "fbeffcb9fefa1b3666669c140546c21224d3e0221afb27aaaace26a2fdc8f1ed",
+      "bytes": 106545
+    },
+    "/home/oxrexkevin/SafetyBased/SafeLearning/viability.html": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/0b0a8a5710cd4ce278e30c1c7a5534ba5f4388c7956d60a1e701c02b572490c0/viability.html",
+      "sha256": "0b0a8a5710cd4ce278e30c1c7a5534ba5f4388c7956d60a1e701c02b572490c0",
+      "bytes": 265111
+    },
+    "/home/oxrexkevin/SafetyBased/book/coverage/inventory-after-correction65.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5f68ee3c68c1da1275a0a2667fe43b42263b8fc31800a834371de5bfbed01b68/inventory-after-correction65.json",
+      "sha256": "5f68ee3c68c1da1275a0a2667fe43b42263b8fc31800a834371de5bfbed01b68",
+      "bytes": 11639574
+    },
+    "/tmp/modules-duality55-component-request30-preparation-actual-v1.log": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f2f747142fe2158a2c78bed7aaab3d39a4e00ade2d054f530a3c002e63feb0d4/modules-duality55-component-request30-preparation-actual-v1.log",
+      "sha256": "f2f747142fe2158a2c78bed7aaab3d39a4e00ade2d054f530a3c002e63feb0d4",
+      "bytes": 310
+    },
+    "/tmp/close-modules-duality55-component-request30-v2.py": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b62cc500c2c5d1260d02ee530b2e8dd24bb4bb485759c55f294946a627130c51/close-modules-duality55-component-request30-v2.py",
+      "sha256": "b62cc500c2c5d1260d02ee530b2e8dd24bb4bb485759c55f294946a627130c51",
+      "bytes": 2080
+    },
+    "/tmp/modules-duality55-component-request30-preparation-actual-v1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7e0f83380560dca77d6deb75559b59ad519f8c7da142efeaf9a82bdeb2e58187/modules-duality55-component-request30-preparation-actual-v1.json",
+      "sha256": "7e0f83380560dca77d6deb75559b59ad519f8c7da142efeaf9a82bdeb2e58187",
+      "bytes": 1281287
+    },
+    "/home/oxrexkevin/SafetyBased/book/coverage/checks/modules-future30/duality55-components-v1/modules-duality55-full-source-current-literal-component-review-request30-v1.json": {
+      "file": "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/2a626e937741e227ee16951af264fe3ca93abfd4480fc7c4ff19e0cd175d6dc0/modules-duality55-full-source-current-literal-component-review-request30-v1.json",
+      "sha256": "2a626e937741e227ee16951af264fe3ca93abfd4480fc7c4ff19e0cd175d6dc0",
+      "bytes": 148613
+    },
+    "/home/oxrexkevin/SafetyBased/book/coverage/checks/modules-future30/duality55-components-v1/modules-duality55-full-source-current-literal-component-review-request30-v2.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/baab5e6bf29af3a4e306c3c6954bbd7b906926d755880bafb015d0bf058892c0/modules-duality55-full-source-current-literal-component-review-request30-v2.json",
+      "sha256": "baab5e6bf29af3a4e306c3c6954bbd7b906926d755880bafb015d0bf058892c0",
+      "bytes": 153564
+    },
+    "/tmp/modules-finite-polytope-duality2-owner29-trial1.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/221f69e20c22b028452f33b0bda3d92f12adb466cd6d39b57f78a693cb6b91a2/modules-finite-polytope-duality2-owner29-trial1.json",
+      "sha256": "221f69e20c22b028452f33b0bda3d92f12adb466cd6d39b57f78a693cb6b91a2",
+      "bytes": 2682
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v1.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58/CompleteModulesFinitePolytopeDuality30-draft-v1.lean",
+      "sha256": "cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58",
+      "bytes": 6940
+    },
+    "/tmp/modules-finite-polytope-duality2-owner29-trial1-source.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58/modules-finite-polytope-duality2-owner29-trial1-source.lean",
+      "sha256": "cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58",
+      "bytes": 6940
+    },
+    "/tmp/modules-finite-polytope-duality2-owner29-trial1.log": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ca8f6d43b7e969067b2cddaf1754f333b8f90930bff699f444f9b974e586b142/modules-finite-polytope-duality2-owner29-trial1.log",
+      "sha256": "ca8f6d43b7e969067b2cddaf1754f333b8f90930bff699f444f9b974e586b142",
+      "bytes": 5639
+    },
+    "/tmp/modules-finite-polytope-duality2-owner29-trial2.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5c1972304c386c02bd1801242844655903dee16768b513b45d64f9ebd354c972/modules-finite-polytope-duality2-owner29-trial2.json",
+      "sha256": "5c1972304c386c02bd1801242844655903dee16768b513b45d64f9ebd354c972",
+      "bytes": 2673
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v2.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575/CompleteModulesFinitePolytopeDuality30-draft-v2.lean",
+      "sha256": "d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575",
+      "bytes": 7402
+    },
+    "/tmp/modules-finite-polytope-duality2-owner29-trial2-source.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575/modules-finite-polytope-duality2-owner29-trial2-source.lean",
+      "sha256": "d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575",
+      "bytes": 7402
+    },
+    "/tmp/modules-finite-polytope-duality2-owner29-trial2.log": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9c6376a848b25e1fec88a3449022304c633b3e0d27c924d08ab35c83b294c327/modules-finite-polytope-duality2-owner29-trial2.log",
+      "sha256": "9c6376a848b25e1fec88a3449022304c633b3e0d27c924d08ab35c83b294c327",
+      "bytes": 970
+    },
+    "/tmp/modules-finite-polytope-duality3-owner29-trial3.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/751ca03bfbe8e2f924d984d3dd663feb06001db34c70fe7d75bcea9ab2b49e79/modules-finite-polytope-duality3-owner29-trial3.json",
+      "sha256": "751ca03bfbe8e2f924d984d3dd663feb06001db34c70fe7d75bcea9ab2b49e79",
+      "bytes": 2682
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v3.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c/CompleteModulesFinitePolytopeDuality30-draft-v3.lean",
+      "sha256": "373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c",
+      "bytes": 11235
+    },
+    "/tmp/modules-finite-polytope-duality3-owner29-trial3-source.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c/modules-finite-polytope-duality3-owner29-trial3-source.lean",
+      "sha256": "373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c",
+      "bytes": 11235
+    },
+    "/tmp/modules-finite-polytope-duality3-owner29-trial3.log": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/051a8546a7e82e72e0b58f59a23fab08c2618b0a728b691d7ffa8d087bb820c4/modules-finite-polytope-duality3-owner29-trial3.log",
+      "sha256": "051a8546a7e82e72e0b58f59a23fab08c2618b0a728b691d7ffa8d087bb820c4",
+      "bytes": 2046
+    },
+    "/tmp/modules-finite-polytope-duality8-owner29-trial4.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/78417efc6fd90b39ff3ef5f27d129745fb33664f7c8f2c179423b80ec2db93d3/modules-finite-polytope-duality8-owner29-trial4.json",
+      "sha256": "78417efc6fd90b39ff3ef5f27d129745fb33664f7c8f2c179423b80ec2db93d3",
+      "bytes": 2682
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v6.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38/CompleteModulesFinitePolytopeDuality30-draft-v6.lean",
+      "sha256": "8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38",
+      "bytes": 23379
+    },
+    "/tmp/modules-finite-polytope-duality8-owner29-trial4-source.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38/modules-finite-polytope-duality8-owner29-trial4-source.lean",
+      "sha256": "8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38",
+      "bytes": 23379
+    },
+    "/tmp/modules-finite-polytope-duality8-owner29-trial4.log": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/36d8a2aeaa8c69dc7d2cdf36d2ee62ed31dcaf85c5e8c3a2ec75b8ba89cd586a/modules-finite-polytope-duality8-owner29-trial4.log",
+      "sha256": "36d8a2aeaa8c69dc7d2cdf36d2ee62ed31dcaf85c5e8c3a2ec75b8ba89cd586a",
+      "bytes": 2175
+    },
+    "/tmp/modules-finite-polytope-duality8-owner29-trial5.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/112e33090a67b151ac3a85e21ad37d7639e0c8d9d94644104a4b304e6a8a004c/modules-finite-polytope-duality8-owner29-trial5.json",
+      "sha256": "112e33090a67b151ac3a85e21ad37d7639e0c8d9d94644104a4b304e6a8a004c",
+      "bytes": 2673
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v7.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/CompleteModulesFinitePolytopeDuality30-draft-v7.lean",
+      "sha256": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+      "bytes": 23373
+    },
+    "/tmp/modules-finite-polytope-duality8-owner29-trial5-source.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/modules-finite-polytope-duality8-owner29-trial5-source.lean",
+      "sha256": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+      "bytes": 23373
+    },
+    "/tmp/modules-finite-polytope-duality8-owner29-trial5.log": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/b8baf696a9be012199d78a466e0bde8dc37bca0cabea998d17fae8c50593a617/modules-finite-polytope-duality8-owner29-trial5.log",
+      "sha256": "b8baf696a9be012199d78a466e0bde8dc37bca0cabea998d17fae8c50593a617",
+      "bytes": 970
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteCMDPLinearProgram.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ef8bd12b2baf5759bde5913918abf8a6f994577aa770358dd5874a604f50f4c7/CompleteFiniteCMDPLinearProgram.lean",
+      "sha256": "ef8bd12b2baf5759bde5913918abf8a6f994577aa770358dd5874a604f50f4c7",
+      "bytes": 12185
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteCMDPVertexClassification.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/7299b7b25104a96cce489abd83c72f4e52a82487af3385c56bc7d6379c24a46a/CompleteFiniteCMDPVertexClassification.lean",
+      "sha256": "7299b7b25104a96cce489abd83c72f4e52a82487af3385c56bc7d6379c24a46a",
+      "bytes": 7630
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteCMDPDeterministicVertices.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/a7badabceb298352a1ba15d5be8da396abbd7d64f31c857be6391d2e67909eec/CompleteFiniteCMDPDeterministicVertices.lean",
+      "sha256": "a7badabceb298352a1ba15d5be8da396abbd7d64f31c857be6391d2e67909eec",
+      "bytes": 4587
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteCMDPRecovery.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/22b9043122dd71553b19398fccd9cb86eaeaf91e40aa4cdfc8032b350cf0ed86/CompleteFiniteCMDPRecovery.lean",
+      "sha256": "22b9043122dd71553b19398fccd9cb86eaeaf91e40aa4cdfc8032b350cf0ed86",
+      "bytes": 7639
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteCMDPFlow.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9586d3cdac495de32b3f2a707313e767a09016c0dd3ef25e7b74bc02b75c2ad6/CompleteFiniteCMDPFlow.lean",
+      "sha256": "9586d3cdac495de32b3f2a707313e767a09016c0dd3ef25e7b74bc02b75c2ad6",
+      "bytes": 3201
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteCMDPOccupancy.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/dbd10672f943e532bf24cddab77c558b2fb8c1f8a285933ab62ab1a609c80fa4/CompleteFiniteCMDPOccupancy.lean",
+      "sha256": "dbd10672f943e532bf24cddab77c558b2fb8c1f8a285933ab62ab1a609c80fa4",
+      "bytes": 9437
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteHistoryPathLinearProgram.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/935b9e4c1148c9fdda2dbc92c37e8571b7fc228aff3d96958a918132811c8d60/CompleteFiniteHistoryPathLinearProgram.lean",
+      "sha256": "935b9e4c1148c9fdda2dbc92c37e8571b7fc228aff3d96958a918132811c8d60",
+      "bytes": 6165
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteMarkovPathCorrespondence.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/259283fdc08fba1a10e14be1a526c3e44608dd8dc3c1e89ec57ec9029420ff2b/CompleteFiniteMarkovPathCorrespondence.lean",
+      "sha256": "259283fdc08fba1a10e14be1a526c3e44608dd8dc3c1e89ec57ec9029420ff2b",
+      "bytes": 8088
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteControlledPathFlow.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/83859301ee6df092f4fa115d70e7028519195b0246dfae029dc2accb6f6f8434/CompleteFiniteControlledPathFlow.lean",
+      "sha256": "83859301ee6df092f4fa115d70e7028519195b0246dfae029dc2accb6f6f8434",
+      "bytes": 8911
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteControlledPathMeasure.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8b636ea8b04f6004c02fa23bfa319fa35ad5431102288a8fb4c2ab75eb3b4796/CompleteFiniteControlledPathMeasure.lean",
+      "sha256": "8b636ea8b04f6004c02fa23bfa319fa35ad5431102288a8fb4c2ab75eb3b4796",
+      "bytes": 4810
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteControlledPathMeasureLaws.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/f519e0921e74967fe9c7166d860468869fcac5aec5ca9cd36a8a16244d81af86/CompleteFiniteControlledPathMeasureLaws.lean",
+      "sha256": "f519e0921e74967fe9c7166d860468869fcac5aec5ca9cd36a8a16244d81af86",
+      "bytes": 10509
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/SafeLearning/CompleteFiniteTrajectoryReturns.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/20b96363f1ff677b9b6697cf4348914478a55922af605f515f608a4f21dcb02f/CompleteFiniteTrajectoryReturns.lean",
+      "sha256": "20b96363f1ff677b9b6697cf4348914478a55922af605f515f608a4f21dcb02f",
+      "bytes": 6611
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/Convex/KreinMilman.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/32c432d120c4c4c4899818e94087c4ce2b58e563483e7fc6038931ba420b5abb/KreinMilman.lean",
+      "sha256": "32c432d120c4c4c4899818e94087c4ce2b58e563483e7fc6038931ba420b5abb",
+      "bytes": 6494
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/Convex/Topology.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/0799cd94b1675fb6b24a834ef1cae916fa68dcd87e03c9d6f0720057b85e9c84/Topology.lean",
+      "sha256": "0799cd94b1675fb6b24a834ef1cae916fa68dcd87e03c9d6f0720057b85e9c84",
+      "bytes": 26181
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Analysis/Convex/Basic.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf/Basic.lean",
+      "sha256": "9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf",
+      "bytes": 26793
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Topology/Order/Compact.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/7c02670f2e88f16acd11d69ddd6afb8d8118adca50279e1abb2a3c7761feb044/Compact.lean",
+      "sha256": "7c02670f2e88f16acd11d69ddd6afb8d8118adca50279e1abb2a3c7761feb044",
+      "bytes": 26397
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Order/Bounds/Basic.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/abf3e1c8f011bbb182eb1a895ac75a5701714d321fe23ad37ee3bcdbc9f100d3/Basic.lean",
+      "sha256": "abf3e1c8f011bbb182eb1a895ac75a5701714d321fe23ad37ee3bcdbc9f100d3",
+      "bytes": 34215
+    },
+    "/home/oxrexkevin/SafetyBased/verification/lean/.lake/packages/mathlib/Mathlib/Algebra/Order/GroupWithZero/Defs.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/01a908236dc99e5040cb487165c1a73fbd4e495d44183e6465f86b42f744dc02/Defs.lean",
+      "sha256": "01a908236dc99e5040cb487165c1a73fbd4e495d44183e6465f86b42f744dc02",
+      "bytes": 22609
+    },
+    "/tmp/prepare-modules-finite-polytope8-strongduality-request30-v2.py": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5dc4a13bcc52d9bf821b1ed6e452cfc1c4f206988f3896b4850001e518766ccd/prepare-modules-finite-polytope8-strongduality-request30-v2.py",
+      "sha256": "5dc4a13bcc52d9bf821b1ed6e452cfc1c4f206988f3896b4850001e518766ccd",
+      "bytes": 8210
+    },
+    "/tmp/run-modules-finite-polytope8-strongduality-request30-preparation-v2.py": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/2558b0fc286d3d1ca7fcdc8018e2a6653dcdd05b7caa7c70ad797b623478a8fa/run-modules-finite-polytope8-strongduality-request30-preparation-v2.py",
+      "sha256": "2558b0fc286d3d1ca7fcdc8018e2a6653dcdd05b7caa7c70ad797b623478a8fa",
+      "bytes": 1982
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v4.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/651723d6b613977263e6a4a65331026ae97fae5b86c3286d6f10f36bce06dbf3/CompleteModulesFinitePolytopeDuality30-draft-v4.lean",
+      "sha256": "651723d6b613977263e6a4a65331026ae97fae5b86c3286d6f10f36bce06dbf3",
+      "bytes": 11257
+    },
+    "/tmp/CompleteModulesFinitePolytopeDuality30-draft-v5.lean": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/3a6252a339a9becf5d8e8d5dd7fffbec1c37b143870ec0ba7a4e9328d097ddd0/CompleteModulesFinitePolytopeDuality30-draft-v5.lean",
+      "sha256": "3a6252a339a9becf5d8e8d5dd7fffbec1c37b143870ec0ba7a4e9328d097ddd0",
+      "bytes": 17096
+    },
+    "/tmp/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.json": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/b102599852ada301e4a9bd0d2873af2322ecfbdfdd3cc0b7bdf16f98bc16ffc5/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.json",
+      "sha256": "b102599852ada301e4a9bd0d2873af2322ecfbdfdd3cc0b7bdf16f98bc16ffc5",
+      "bytes": 1281334
+    },
+    "/tmp/prepare-modules-finite-polytope8-strongduality-request30-v1.py": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/63a58800890d04f9406acde906836647430fe755adde04b7d0ada4ae4cda304b/prepare-modules-finite-polytope8-strongduality-request30-v1.py",
+      "sha256": "63a58800890d04f9406acde906836647430fe755adde04b7d0ada4ae4cda304b",
+      "bytes": 7605
+    },
+    "/tmp/run-modules-finite-polytope8-strongduality-request30-preparation-v1.py": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5e079f3e393f9d6ae2a2976a9caf953f2af5188a0d38a6e6fd26b40845535627/run-modules-finite-polytope8-strongduality-request30-preparation-v1.py",
+      "sha256": "5e079f3e393f9d6ae2a2976a9caf953f2af5188a0d38a6e6fd26b40845535627",
+      "bytes": 1969
+    },
+    "/tmp/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.log": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/4e518e27a67b13cac620b97d466dfac16d63fe1026f51883ea636d2be1fd3619/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.log",
+      "sha256": "4e518e27a67b13cac620b97d466dfac16d63fe1026f51883ea636d2be1fd3619",
+      "bytes": 1355
+    }
+  },
+  "required_evidence_artifacts_sha256": {
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7aad8975d0af35972c41469a80820c581b637dbfb8eec567cb6fcdd32fd19e78/modules-viability-dual-clock30-owner29-trial1.json": "7aad8975d0af35972c41469a80820c581b637dbfb8eec567cb6fcdd32fd19e78",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5/CompleteModulesViabilityDualClock30-draft-v1.lean": "0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5/modules-viability-dual-clock30-owner29-trial1-source.lean": "0e4826f706d764eba956b174173dfdde2b651e5d7a68d777220142030f0a34b5",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b077378121f3c1b0016bbc8fb534954cbba9e34df709d3dc97f66dc526b70952/modules-viability-dual-clock30-owner29-trial1.log": "b077378121f3c1b0016bbc8fb534954cbba9e34df709d3dc97f66dc526b70952",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f2a7bf5e057a609cb9ab24f1037395638a98cd27a84327435ba014ea6bc7fa4e/modules-viability-dual-clock30-owner29-trial2.json": "f2a7bf5e057a609cb9ab24f1037395638a98cd27a84327435ba014ea6bc7fa4e",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720/CompleteModulesViabilityDualClock30-draft-v2.lean": "55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720/modules-viability-dual-clock30-owner29-trial2-source.lean": "55afd026773001933694627db334961d97c4e6d58e35835979f748f86258a720",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f6fe62af0eb4c513b7155e05108c5f20ea45ad0564fd23f3283f66ce90ec35ef/modules-viability-dual-clock30-owner29-trial2.log": "f6fe62af0eb4c513b7155e05108c5f20ea45ad0564fd23f3283f66ce90ec35ef",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/4ade1187814a965ab31e906eefb518219ceee9ad5490b368280f73ab204baf8a/modules-viability-dual-clock30-owner29-trial3.json": "4ade1187814a965ab31e906eefb518219ceee9ad5490b368280f73ab204baf8a",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a/CompleteModulesViabilityDualClock30-draft-v3.lean": "b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a/modules-viability-dual-clock30-owner29-trial3-source.lean": "b1e6397765e855d0d5417237a8815feae988b18ac0babe559e45d1232b693a4a",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a0cd4b5f45939984835e0fa6fadd07d4ff52e6d808d12de2a0485ca5d74e1f6b/modules-viability-dual-clock30-owner29-trial3.log": "a0cd4b5f45939984835e0fa6fadd07d4ff52e6d808d12de2a0485ca5d74e1f6b",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1ffb78cc9a76fcc7b986bdef24219c5b47da48afb31c666909ea4f4ae6a0d18e/modules-viability-dual-clock30-owner29-trial4.json": "1ffb78cc9a76fcc7b986bdef24219c5b47da48afb31c666909ea4f4ae6a0d18e",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9/CompleteModulesViabilityDualClock30-draft-v4.lean": "e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9/modules-viability-dual-clock30-owner29-trial4-source.lean": "e943072a484381a573dd6f3732c90ff09ab576fd388d7f5fa27a2b68b49716a9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7406670e1079bb0e8429f81db18446b08b68838232999532f1ae6fe9228d1217/modules-viability-dual-clock30-owner29-trial4.log": "7406670e1079bb0e8429f81db18446b08b68838232999532f1ae6fe9228d1217",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/47e0f59cdbf7898778afb04cb0a46e2fbf804bb8b3f778b6a074d549b2ad19b0/modules-viability-dual-expectation30-owner29-trial1.json": "47e0f59cdbf7898778afb04cb0a46e2fbf804bb8b3f778b6a074d549b2ad19b0",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b/CompleteModulesViabilityDualExpectation30-draft-v1.lean": "aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b/modules-viability-dual-expectation30-owner29-trial1-source.lean": "aace239df7b3cd9aaf15fda8271afa25f27b0e7eb18e1b737bf15e658d08e09b",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e948ba5d63d471f878f51ba6ad861e215654266b3ec6a246b8223a503d6dc41a/modules-viability-dual-expectation30-owner29-trial1.log": "e948ba5d63d471f878f51ba6ad861e215654266b3ec6a246b8223a503d6dc41a",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/d08bce46d1a3eac58207008d3aeb578e4721729673c617f721e4af1451ea54c8/modules-viability-dual-expectation30-owner29-trial2.json": "d08bce46d1a3eac58207008d3aeb578e4721729673c617f721e4af1451ea54c8",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9/CompleteModulesViabilityDualExpectation30-draft-v2.lean": "e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9/modules-viability-dual-expectation30-owner29-trial2-source.lean": "e1c0002206ac04d9eb2ecd69d6bdb6c0fe1ad868899614b5a09e2c425741b1d9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/130c7dec276c95a4d6f81aab5a784bfa3ffb3891d1d8aa26930cc3ef7b3cf618/modules-viability-dual-expectation30-owner29-trial2.log": "130c7dec276c95a4d6f81aab5a784bfa3ffb3891d1d8aa26930cc3ef7b3cf618",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/2bf0e870ec5a718d03fd24fa8c4c3f104c39e9b40f5706b1575bbd5dd142ea0c/modules-viability-dual-expectation30-owner29-trial3.json": "2bf0e870ec5a718d03fd24fa8c4c3f104c39e9b40f5706b1575bbd5dd142ea0c",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6/CompleteModulesViabilityDualExpectation30-draft-v3.lean": "ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6/modules-viability-dual-expectation30-owner29-trial3-source.lean": "ab7bc5dbe9e26746ae42906f0f4ce97fcd04dc79ad76f8d3cffbeef9fb937ed6",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modules-viability-dual-expectation30-owner29-trial3.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1c69260333f80c8c20374c55216ec2930f1a3224803bf076a8475e3821ec57d1/modules-viability-dual-expectation30-owner29-trial4.json": "1c69260333f80c8c20374c55216ec2930f1a3224803bf076a8475e3821ec57d1",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269/CompleteModulesViabilityDualExpectation30-draft-v4.lean": "6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269/modules-viability-dual-expectation30-owner29-trial4-source.lean": "6891e12c6c1e0262d69cb4a3003bc3617ea1c76f61dee1f1e00fab4e62b97269",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ab23078f6ec50360b6af6f1c31457840b5e41b779c79108c1e74efa4980e3024/modules-viability-dual-expectation30-owner29-trial4.log": "ab23078f6ec50360b6af6f1c31457840b5e41b779c79108c1e74efa4980e3024",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a33dda0a506f68530874de8d4b03c66b10ea100e9169ea5b09774d44fad79da5/modules-viability-dual-expectation30-owner29-trial5.json": "a33dda0a506f68530874de8d4b03c66b10ea100e9169ea5b09774d44fad79da5",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f/CompleteModulesViabilityDualExpectation30-draft-v5.lean": "9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f/modules-viability-dual-expectation30-owner29-trial5-source.lean": "9eef03d2cd06794da31f623ebc7a8f6e0f8076bc44f277748f5975e74f07d70f",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/3a6a5be99788cd7ced15170e86c0a9dd860c616f7a239caad2b7e770bce19626/modules-viability-dual-expectation30-owner29-trial5.log": "3a6a5be99788cd7ced15170e86c0a9dd860c616f7a239caad2b7e770bce19626",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/df238b85332f5fd15774ba53c98258f0205af7f51d59d4805ee00ec2ae5f4604/modules-viability-dual-expectation30-owner29-trial6.json": "df238b85332f5fd15774ba53c98258f0205af7f51d59d4805ee00ec2ae5f4604",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9/CompleteModulesViabilityDualExpectation30-draft-v6.lean": "95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9/modules-viability-dual-expectation30-owner29-trial6-source.lean": "95c3d41ab4e7336abf48b93c75933ada0ef639561c271b2811773d7a70fbd2c9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/22fc9b30c0f56a212e246969e835c4eb215973e59e19a4cf6c2523cf977e4f02/modules-viability-dual-expectation30-owner29-trial6.log": "22fc9b30c0f56a212e246969e835c4eb215973e59e19a4cf6c2523cf977e4f02",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/42d43fb75fad197aac2120d7f38e08df0ebe16f54b5241d049a806051e61a1f9/modules-viability-dual-expectation30-owner29-trial7.json": "42d43fb75fad197aac2120d7f38e08df0ebe16f54b5241d049a806051e61a1f9",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830/CompleteModulesViabilityDualExpectation30-draft-v7.lean": "1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830/modules-viability-dual-expectation30-owner29-trial7-source.lean": "1e869f80db8086f081db2546ab162097dc36f70204c4f6f4bd18c2a61ab9f830",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modules-viability-dual-expectation30-owner29-trial7.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ca0b2982636b4180e390ae41a6ece5d3fd431536e170f2596053d9cb15de9776/modules-viability-dual-expectation30-owner29-trial8.json": "ca0b2982636b4180e390ae41a6ece5d3fd431536e170f2596053d9cb15de9776",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2/CompleteModulesViabilityDualExpectation30-draft-v8.lean": "5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2/modules-viability-dual-expectation30-owner29-trial8-source.lean": "5b5a01382c7bc6f9fe1722668231695e2de364912de1bf8cc707172370a33ae2",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/modules-viability-dual-expectation30-owner29-trial8.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/8b7d717dd14bc1b178ec7daf0925d19f9d80c99199b71e5c074bd5832f68b33c/CompleteDuality.lean": "8b7d717dd14bc1b178ec7daf0925d19f9d80c99199b71e5c074bd5832f68b33c",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/3723394ac73316e1436b969ba87188559743d210db4fa30892b473b0ada887ff/CompleteAppliedViabilityPenaltyOrder20.lean": "3723394ac73316e1436b969ba87188559743d210db4fa30892b473b0ada887ff",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a2dde806c2e103b6c8f3f0a6c08cf454c7ccd62a0d2b8be192aa08e92c5f56f7/CompleteAppliedViabilityExactPenalty20.lean": "a2dde806c2e103b6c8f3f0a6c08cf454c7ccd62a0d2b8be192aa08e92c5f56f7",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6e8d65de5e03f48cae17ed27951e656be43fd3bcf6db50a79e2ad7172d8eb75c/CompleteAppliedViabilityEpisodeRisk20.lean": "6e8d65de5e03f48cae17ed27951e656be43fd3bcf6db50a79e2ad7172d8eb75c",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f346f24fda7736f36eb08a44c5ebb7815b801ff6c6e21073408cec5452dc3b8f/CompleteCoreProjectedDualDrift29.lean": "f346f24fda7736f36eb08a44c5ebb7815b801ff6c6e21073408cec5452dc3b8f",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/8ec4cbc595efe4eac70735ff4e21a4af058c82ac3860725563083cb31ad33b76/CompleteMonitoringDualValue22.lean": "8ec4cbc595efe4eac70735ff4e21a4af058c82ac3860725563083cb31ad33b76",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/da59a5ea88ea4e1c3c51d8356a324caf9a43aabd6dc059d83d498d00b70b4d6d/Indexed.lean": "da59a5ea88ea4e1c3c51d8356a324caf9a43aabd6dc059d83d498d00b70b4d6d",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224/Basic.lean": "f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/e07d53c9ffb456270476ef3bc53950355f42e75d2f6ee63dac2dfb0f84360512/Monotone.lean": "e07d53c9ffb456270476ef3bc53950355f42e75d2f6ee63dac2dfb0f84360512",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a6341a15d805c17e6922cd9c3f69508d604574058e37b06ec8cb51626ebbfa4d/Basic.lean": "a6341a15d805c17e6922cd9c3f69508d604574058e37b06ec8cb51626ebbfa4d",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6526bf3a919d5306c90daf75cf96cfe3bbfacc702f3858fb00f893f7346e2cbd/Basic.lean": "6526bf3a919d5306c90daf75cf96cfe3bbfacc702f3858fb00f893f7346e2cbd",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/a77eb573a459ee525cfb4ac753dd05968ef2cc831d7549dc4e9036c7a90a1f00/Card.lean": "a77eb573a459ee525cfb4ac753dd05968ef2cc831d7549dc4e9036c7a90a1f00",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f9381a30f98377e15faa35c02d19d3fa0d6576c1709460ed699f4616e4d2539e/Max.lean": "f9381a30f98377e15faa35c02d19d3fa0d6576c1709460ed699f4616e4d2539e",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/094ff4ec7f2d9bf9771423a60b18c521a2eae76cccb07dde114c14e4a2de3a73/Basic.lean": "094ff4ec7f2d9bf9771423a60b18c521a2eae76cccb07dde114c14e4a2de3a73",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7c5f7895b4f72949345d2a453d0f5596933a3835bd0ca02d442b0490269132da/paternain-1910.13393v1-actual-http-receipt-v1.json": "7c5f7895b4f72949345d2a453d0f5596933a3835bd0ca02d442b0490269132da",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5833b5ab3dbb52e7d45b50d829e5e39c0c4247879608849d0401a77e3fc74cb3/svf-2105.12204v4-actual-http-receipt-v1.json": "5833b5ab3dbb52e7d45b50d829e5e39c0c4247879608849d0401a77e3fc74cb3",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ed8ca5f56d1f101b1a5898e367162bda47bd6b0845312ce3ba2dda4d58938ae2/root_tmp_lean_current65_owner29_context_v1.json": "ed8ca5f56d1f101b1a5898e367162bda47bd6b0845312ce3ba2dda4d58938ae2",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5eca9a664c2c81d8c67c412a20be5782f6e84ec124a193233a5a2700e602575c/root_tmp_lean_current65_owner29_runner_v1.py": "5eca9a664c2c81d8c67c412a20be5782f6e84ec124a193233a5a2700e602575c",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ae70bb9ae53fe942d9f34d5bb48ef5abcfcbcb7867398f28615c81dd1a3ebcec/prepare-modules-duality55-component-request30-v1.py": "ae70bb9ae53fe942d9f34d5bb48ef5abcfcbcb7867398f28615c81dd1a3ebcec",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/c6c399d2c3a4629e170219164cf4f97d1446e7e6da2825bed072def44bb0eb3d/run-modules-duality55-component-request30-preparation-v1.py": "c6c399d2c3a4629e170219164cf4f97d1446e7e6da2825bed072def44bb0eb3d",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/47a0085749360d9c6df8ce6c905a75262b3a7c39ab44596532d53d3cee6e4a86/modules-dual-clock-finite-risk-append30-v3.txt": "47a0085749360d9c6df8ce6c905a75262b3a7c39ab44596532d53d3cee6e4a86",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/6a73dd90e1badcb7f65e8abd323303ff7f1e3811f7258fd8521f8c704b376068/modules-dual-expectation-cumulative-append30-v4.txt": "6a73dd90e1badcb7f65e8abd323303ff7f1e3811f7258fd8521f8c704b376068",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/ff5ac86a15ff95b3963c65fe8823957d450604115ef363646b2be8c2dd60c5dd/modules-dual-expectation-last-append30-v6.txt": "ff5ac86a15ff95b3963c65fe8823957d450604115ef363646b2be8c2dd60c5dd",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/fbeffcb9fefa1b3666669c140546c21224d3e0221afb27aaaace26a2fdc8f1ed/modules-duality55-full-current-context-v1.json": "fbeffcb9fefa1b3666669c140546c21224d3e0221afb27aaaace26a2fdc8f1ed",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/0b0a8a5710cd4ce278e30c1c7a5534ba5f4388c7956d60a1e701c02b572490c0/viability.html": "0b0a8a5710cd4ce278e30c1c7a5534ba5f4388c7956d60a1e701c02b572490c0",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/5f68ee3c68c1da1275a0a2667fe43b42263b8fc31800a834371de5bfbed01b68/inventory-after-correction65.json": "5f68ee3c68c1da1275a0a2667fe43b42263b8fc31800a834371de5bfbed01b68",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/f2f747142fe2158a2c78bed7aaab3d39a4e00ade2d054f530a3c002e63feb0d4/modules-duality55-component-request30-preparation-actual-v1.log": "f2f747142fe2158a2c78bed7aaab3d39a4e00ade2d054f530a3c002e63feb0d4",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/b62cc500c2c5d1260d02ee530b2e8dd24bb4bb485759c55f294946a627130c51/close-modules-duality55-component-request30-v2.py": "b62cc500c2c5d1260d02ee530b2e8dd24bb4bb485759c55f294946a627130c51",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/7e0f83380560dca77d6deb75559b59ad519f8c7da142efeaf9a82bdeb2e58187/modules-duality55-component-request30-preparation-actual-v1.json": "7e0f83380560dca77d6deb75559b59ad519f8c7da142efeaf9a82bdeb2e58187",
+    "book/coverage/checks/modules-future30/duality55-components-v1/original-closed-bytes/2a626e937741e227ee16951af264fe3ca93abfd4480fc7c4ff19e0cd175d6dc0/modules-duality55-full-source-current-literal-component-review-request30-v1.json": "2a626e937741e227ee16951af264fe3ca93abfd4480fc7c4ff19e0cd175d6dc0",
+    "book/coverage/checks/modules-future29/current65-pair-bound-v7/modules29-current65-two-source-pair-bound-candidate-v1.json": "13a1955d1920b9eafec20b5b38d7e10800354db71188c154f0967a93bccbc22d",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/baab5e6bf29af3a4e306c3c6954bbd7b906926d755880bafb015d0bf058892c0/modules-duality55-full-source-current-literal-component-review-request30-v2.json": "baab5e6bf29af3a4e306c3c6954bbd7b906926d755880bafb015d0bf058892c0",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/221f69e20c22b028452f33b0bda3d92f12adb466cd6d39b57f78a693cb6b91a2/modules-finite-polytope-duality2-owner29-trial1.json": "221f69e20c22b028452f33b0bda3d92f12adb466cd6d39b57f78a693cb6b91a2",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58/CompleteModulesFinitePolytopeDuality30-draft-v1.lean": "cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58/modules-finite-polytope-duality2-owner29-trial1-source.lean": "cab026e76a13cb4754bfbe51d956c60f10ba7ca5bd2c8be8c071870179eb8f58",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ca8f6d43b7e969067b2cddaf1754f333b8f90930bff699f444f9b974e586b142/modules-finite-polytope-duality2-owner29-trial1.log": "ca8f6d43b7e969067b2cddaf1754f333b8f90930bff699f444f9b974e586b142",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5c1972304c386c02bd1801242844655903dee16768b513b45d64f9ebd354c972/modules-finite-polytope-duality2-owner29-trial2.json": "5c1972304c386c02bd1801242844655903dee16768b513b45d64f9ebd354c972",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575/CompleteModulesFinitePolytopeDuality30-draft-v2.lean": "d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575/modules-finite-polytope-duality2-owner29-trial2-source.lean": "d63110502d1c72b0ae2bf470ad41182a279bd1f50fd64647aef069350ea18575",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9c6376a848b25e1fec88a3449022304c633b3e0d27c924d08ab35c83b294c327/modules-finite-polytope-duality2-owner29-trial2.log": "9c6376a848b25e1fec88a3449022304c633b3e0d27c924d08ab35c83b294c327",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/751ca03bfbe8e2f924d984d3dd663feb06001db34c70fe7d75bcea9ab2b49e79/modules-finite-polytope-duality3-owner29-trial3.json": "751ca03bfbe8e2f924d984d3dd663feb06001db34c70fe7d75bcea9ab2b49e79",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c/CompleteModulesFinitePolytopeDuality30-draft-v3.lean": "373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c/modules-finite-polytope-duality3-owner29-trial3-source.lean": "373e9f5c4e17d029c45b5b329de9424e0f687c0d9015e75ce39d45f8d740800c",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/051a8546a7e82e72e0b58f59a23fab08c2618b0a728b691d7ffa8d087bb820c4/modules-finite-polytope-duality3-owner29-trial3.log": "051a8546a7e82e72e0b58f59a23fab08c2618b0a728b691d7ffa8d087bb820c4",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/78417efc6fd90b39ff3ef5f27d129745fb33664f7c8f2c179423b80ec2db93d3/modules-finite-polytope-duality8-owner29-trial4.json": "78417efc6fd90b39ff3ef5f27d129745fb33664f7c8f2c179423b80ec2db93d3",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38/CompleteModulesFinitePolytopeDuality30-draft-v6.lean": "8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38/modules-finite-polytope-duality8-owner29-trial4-source.lean": "8ea38bd512048f5eb2420e02d6325075b2ddb83ec7f129c10e3484e48075df38",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/36d8a2aeaa8c69dc7d2cdf36d2ee62ed31dcaf85c5e8c3a2ec75b8ba89cd586a/modules-finite-polytope-duality8-owner29-trial4.log": "36d8a2aeaa8c69dc7d2cdf36d2ee62ed31dcaf85c5e8c3a2ec75b8ba89cd586a",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/112e33090a67b151ac3a85e21ad37d7639e0c8d9d94644104a4b304e6a8a004c/modules-finite-polytope-duality8-owner29-trial5.json": "112e33090a67b151ac3a85e21ad37d7639e0c8d9d94644104a4b304e6a8a004c",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/CompleteModulesFinitePolytopeDuality30-draft-v7.lean": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb/modules-finite-polytope-duality8-owner29-trial5-source.lean": "29533b39b92c872c463a714f951e846e78cb9d07cb46b4724d1ccf8931c95bcb",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/b8baf696a9be012199d78a466e0bde8dc37bca0cabea998d17fae8c50593a617/modules-finite-polytope-duality8-owner29-trial5.log": "b8baf696a9be012199d78a466e0bde8dc37bca0cabea998d17fae8c50593a617",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ef8bd12b2baf5759bde5913918abf8a6f994577aa770358dd5874a604f50f4c7/CompleteFiniteCMDPLinearProgram.lean": "ef8bd12b2baf5759bde5913918abf8a6f994577aa770358dd5874a604f50f4c7",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/7299b7b25104a96cce489abd83c72f4e52a82487af3385c56bc7d6379c24a46a/CompleteFiniteCMDPVertexClassification.lean": "7299b7b25104a96cce489abd83c72f4e52a82487af3385c56bc7d6379c24a46a",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/a7badabceb298352a1ba15d5be8da396abbd7d64f31c857be6391d2e67909eec/CompleteFiniteCMDPDeterministicVertices.lean": "a7badabceb298352a1ba15d5be8da396abbd7d64f31c857be6391d2e67909eec",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/22b9043122dd71553b19398fccd9cb86eaeaf91e40aa4cdfc8032b350cf0ed86/CompleteFiniteCMDPRecovery.lean": "22b9043122dd71553b19398fccd9cb86eaeaf91e40aa4cdfc8032b350cf0ed86",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9586d3cdac495de32b3f2a707313e767a09016c0dd3ef25e7b74bc02b75c2ad6/CompleteFiniteCMDPFlow.lean": "9586d3cdac495de32b3f2a707313e767a09016c0dd3ef25e7b74bc02b75c2ad6",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/dbd10672f943e532bf24cddab77c558b2fb8c1f8a285933ab62ab1a609c80fa4/CompleteFiniteCMDPOccupancy.lean": "dbd10672f943e532bf24cddab77c558b2fb8c1f8a285933ab62ab1a609c80fa4",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/935b9e4c1148c9fdda2dbc92c37e8571b7fc228aff3d96958a918132811c8d60/CompleteFiniteHistoryPathLinearProgram.lean": "935b9e4c1148c9fdda2dbc92c37e8571b7fc228aff3d96958a918132811c8d60",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/259283fdc08fba1a10e14be1a526c3e44608dd8dc3c1e89ec57ec9029420ff2b/CompleteFiniteMarkovPathCorrespondence.lean": "259283fdc08fba1a10e14be1a526c3e44608dd8dc3c1e89ec57ec9029420ff2b",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/83859301ee6df092f4fa115d70e7028519195b0246dfae029dc2accb6f6f8434/CompleteFiniteControlledPathFlow.lean": "83859301ee6df092f4fa115d70e7028519195b0246dfae029dc2accb6f6f8434",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/8b636ea8b04f6004c02fa23bfa319fa35ad5431102288a8fb4c2ab75eb3b4796/CompleteFiniteControlledPathMeasure.lean": "8b636ea8b04f6004c02fa23bfa319fa35ad5431102288a8fb4c2ab75eb3b4796",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/f519e0921e74967fe9c7166d860468869fcac5aec5ca9cd36a8a16244d81af86/CompleteFiniteControlledPathMeasureLaws.lean": "f519e0921e74967fe9c7166d860468869fcac5aec5ca9cd36a8a16244d81af86",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/20b96363f1ff677b9b6697cf4348914478a55922af605f515f608a4f21dcb02f/CompleteFiniteTrajectoryReturns.lean": "20b96363f1ff677b9b6697cf4348914478a55922af605f515f608a4f21dcb02f",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/32c432d120c4c4c4899818e94087c4ce2b58e563483e7fc6038931ba420b5abb/KreinMilman.lean": "32c432d120c4c4c4899818e94087c4ce2b58e563483e7fc6038931ba420b5abb",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/0799cd94b1675fb6b24a834ef1cae916fa68dcd87e03c9d6f0720057b85e9c84/Topology.lean": "0799cd94b1675fb6b24a834ef1cae916fa68dcd87e03c9d6f0720057b85e9c84",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf/Basic.lean": "9044a0be27a288e404cbd80670eb0e739271be1fdd7577dbf205dff40af24fcf",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/7c02670f2e88f16acd11d69ddd6afb8d8118adca50279e1abb2a3c7761feb044/Compact.lean": "7c02670f2e88f16acd11d69ddd6afb8d8118adca50279e1abb2a3c7761feb044",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/abf3e1c8f011bbb182eb1a895ac75a5701714d321fe23ad37ee3bcdbc9f100d3/Basic.lean": "abf3e1c8f011bbb182eb1a895ac75a5701714d321fe23ad37ee3bcdbc9f100d3",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224/Basic.lean": "f3ccc930eeef8bd3cdd245cd88e9941a3b226f0baf0e83029b7c86897fa2a224",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/01a908236dc99e5040cb487165c1a73fbd4e495d44183e6465f86b42f744dc02/Defs.lean": "01a908236dc99e5040cb487165c1a73fbd4e495d44183e6465f86b42f744dc02",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5dc4a13bcc52d9bf821b1ed6e452cfc1c4f206988f3896b4850001e518766ccd/prepare-modules-finite-polytope8-strongduality-request30-v2.py": "5dc4a13bcc52d9bf821b1ed6e452cfc1c4f206988f3896b4850001e518766ccd",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/2558b0fc286d3d1ca7fcdc8018e2a6653dcdd05b7caa7c70ad797b623478a8fa/run-modules-finite-polytope8-strongduality-request30-preparation-v2.py": "2558b0fc286d3d1ca7fcdc8018e2a6653dcdd05b7caa7c70ad797b623478a8fa",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/ed8ca5f56d1f101b1a5898e367162bda47bd6b0845312ce3ba2dda4d58938ae2/root_tmp_lean_current65_owner29_context_v1.json": "ed8ca5f56d1f101b1a5898e367162bda47bd6b0845312ce3ba2dda4d58938ae2",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5eca9a664c2c81d8c67c412a20be5782f6e84ec124a193233a5a2700e602575c/root_tmp_lean_current65_owner29_runner_v1.py": "5eca9a664c2c81d8c67c412a20be5782f6e84ec124a193233a5a2700e602575c",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/651723d6b613977263e6a4a65331026ae97fae5b86c3286d6f10f36bce06dbf3/CompleteModulesFinitePolytopeDuality30-draft-v4.lean": "651723d6b613977263e6a4a65331026ae97fae5b86c3286d6f10f36bce06dbf3",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/3a6252a339a9becf5d8e8d5dd7fffbec1c37b143870ec0ba7a4e9328d097ddd0/CompleteModulesFinitePolytopeDuality30-draft-v5.lean": "3a6252a339a9becf5d8e8d5dd7fffbec1c37b143870ec0ba7a4e9328d097ddd0",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/b102599852ada301e4a9bd0d2873af2322ecfbdfdd3cc0b7bdf16f98bc16ffc5/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.json": "b102599852ada301e4a9bd0d2873af2322ecfbdfdd3cc0b7bdf16f98bc16ffc5",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/63a58800890d04f9406acde906836647430fe755adde04b7d0ada4ae4cda304b/prepare-modules-finite-polytope8-strongduality-request30-v1.py": "63a58800890d04f9406acde906836647430fe755adde04b7d0ada4ae4cda304b",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5e079f3e393f9d6ae2a2976a9caf953f2af5188a0d38a6e6fd26b40845535627/run-modules-finite-polytope8-strongduality-request30-preparation-v1.py": "5e079f3e393f9d6ae2a2976a9caf953f2af5188a0d38a6e6fd26b40845535627",
+    "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/4e518e27a67b13cac620b97d466dfac16d63fe1026f51883ea636d2be1fd3619/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.log": "4e518e27a67b13cac620b97d466dfac16d63fe1026f51883ea636d2be1fd3619"
+  },
+  "true_author1_failed_before_request_output": {
+    "native": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/b102599852ada301e4a9bd0d2873af2322ecfbdfdd3cc0b7bdf16f98bc16ffc5/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.json",
+      "sha256": "b102599852ada301e4a9bd0d2873af2322ecfbdfdd3cc0b7bdf16f98bc16ffc5",
+      "bytes": 1281334
+    },
+    "helper": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/63a58800890d04f9406acde906836647430fe755adde04b7d0ada4ae4cda304b/prepare-modules-finite-polytope8-strongduality-request30-v1.py",
+      "sha256": "63a58800890d04f9406acde906836647430fe755adde04b7d0ada4ae4cda304b",
+      "bytes": 7605
+    },
+    "runner": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/5e079f3e393f9d6ae2a2976a9caf953f2af5188a0d38a6e6fd26b40845535627/run-modules-finite-polytope8-strongduality-request30-preparation-v1.py",
+      "sha256": "5e079f3e393f9d6ae2a2976a9caf953f2af5188a0d38a6e6fd26b40845535627",
+      "bytes": 1969
+    },
+    "raw": {
+      "file": "book/coverage/checks/modules-future30/finite-polytope8-strongduality-v2/exact-original-by-sha256/4e518e27a67b13cac620b97d466dfac16d63fe1026f51883ea636d2be1fd3619/modules-finite-polytope8-strongduality-request30-preparation-actual-v1.log",
+      "sha256": "4e518e27a67b13cac620b97d466dfac16d63fe1026f51883ea636d2be1fd3619",
+      "bytes": 1355
+    },
+    "reason": "One selected path-return dependency basename was wrong: CompleteFiniteControlledTrajectoryReturns versus actual CompleteFiniteTrajectoryReturns. No semantic or proof/source correction."
+  }
+}

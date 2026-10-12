@@ -1,0 +1,3658 @@
+Responsive Safety in Reinforcement Learning by PID Lagrangian Methods
+Adam Stooke 1 2 Joshua Achiam 1 2 Pieter Abbeel 1
+
+arXiv:2007.03964v1 [math.OC] 8 Jul 2020
+
+Abstract
+Lagrangian methods are widely used algorithms
+for constrained optimization problems, but their
+learning dynamics exhibit oscillations and overshoot which, when applied to safe reinforcement
+learning, leads to constraint-violating behavior
+during agent training. We address this shortcoming by proposing a novel Lagrange multiplier update method that utilizes derivatives of the constraint function. We take a controls perspective,
+wherein the traditional Lagrange multiplier update behaves as integral control; our terms introduce proportional and derivative control, achieving favorable learning dynamics through damping and predictive measures. We apply our PID
+Lagrangian methods in deep RL, setting a new
+state of the art in Safety Gym, a safe RL benchmark. Lastly, we introduce a new method to ease
+controller tuning by providing invariance to the
+relative numerical scales of reward and cost. Our
+extensive experiments demonstrate improved performance and hyperparameter robustness, while
+our algorithms remain nearly as simple to derive
+and implement as the traditional Lagrangian approach.
+
+1. Introduction
+Reinforcement learning has solved sequential decision tasks
+of impressive difficulty by maximizing reward functions
+through trial and error. Recent examples using deep learning range from robotic locomotion (Schulman et al., 2015;
+Gu et al., 2016; Schulman et al., 2017; Levine et al., 2016)
+to sophisticated video games (Mnih et al., 2013; Schulman
+et al., 2017; OpenAI, 2018; Jaderberg et al., 2019). While
+errors during training in these domains come without cost,
+in some learning scenarios it is important to limit the rates of
+hazardous outcomes. One example would be wear and tear
+1
+University of California, Berkeley 2 OpenAI. Correspondence
+to: Adam Stooke <adam.stooke@berkeley.edu>.
+
+Proceedings of the 37 th International Conference on Machine
+Learning, Vienna, Austria, PMLR 119, 2020. Copyright 2020 by
+the author(s).
+
+on a robot’s components or its surroundings. It may not be
+possible to impose such limits by prescribing constraints in
+the action or state space directly; instead, hazard-avoiding
+behavior must be learned. For this purpose, we use the
+well-known framework of the constrained Markov decision
+process (CMDP) (Altman, 1999), which limits the accumulation of a “cost” signal which is analogous to the reward.
+The optimal policy is one which maximizes the usual return while satisfying the cost constraint. In safe RL the
+agent must avoid hazards not only at convergence, but also
+throughout exploration and learning.
+Lagrangian methods are a classic approach to solving constrained optimization problems. For example, the equalityconstrained problem over the real vector x:
+min f (x)
+x
+
+s.t. g(x) = 0
+
+(1)
+
+is transformed into an unconstrained one by introduction
+of a dual variable–the Lagrange multiplier, λ–to form the
+Lagrangian: L(x, λ) = f (x) + λg(x), which is used to find
+the solution as:
+(x∗ , λ∗ ) = arg max min L(x, λ)
+λ
+
+x
+
+(2)
+
+Gradient-based algorithms iteratively update the primal and
+dual variables:
+−∇x L(x, λ) = − ∇x f (x) − λ∇x g(x)
+∇λ L(x, λ) = g(x)
+
+(3)
+(4)
+
+so that λ acts as a learned penalty coefficient in the objective,
+leading eventually to a constraint-satisfying solution (see
+e.g. Bertsekas (2014)). The Lagrangian multiplier method
+is readily adapted to the constrained RL setting (Altman,
+1998; Geibel & Wysotzki, 2011) and has become a popular
+baseline in deep RL (Achiam et al., 2017; Chow et al., 2019)
+for its simplicity and effectiveness.
+Although they have been shown to converge to optimal,
+constraint-satisfying policies (Tessler et al., 2018; Paternain
+et al., 2019), a shortcoming of gradient Lagrangian methods
+for safe RL is that intermediate iterates often violate constraints. Cost overshoot and oscillations are in fact inherent
+to the learning dynamics (Platt & Barr, 1988; Wah et al.,
+2000), and we witnessed numerous problematic cases in our
+own experiments. Figure 1 (left) shows an example from a
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+deep RL setting, where the cost and multiplier values oscillated throughout training. Our key insight in relation to this
+deficiency is that the traditional Lagrange multiplier update
+in (4) amounts to integral control on the constraint. The
+90-degree phase shift between the curves is characteristic
+of ill-tuned integral controllers.
+Our contribution is to expand the scope of possible Lagrange
+multiplier update rules beyond (4), by interpreting the overall learning algorithm as a dynamical system. Specifically,
+we employ the next simplest mechanisms, proportional and
+derivative control, to λ, by adding terms corresponding to
+derivatives of the constraint function into (4) (derivatives
+with respect to learning iteration). To our knowledge, this
+is the first time that an expanded update rule has been considered for a learned Lagrange multiplier. PID control is
+an appealing enhancement, evidenced by the fact that it is
+one of the most widely used and studied control techniques
+(Åström & Hägglund, 2006). The result is a more responsive safety mechanism, as demonstrated in Figure 1 (right),
+where the cost oscillations have been damped, dramatically
+reducing violations.
+Traditional Lagrangian
+
+240
+
+1.5
+220
+
+0.5
+
+180
+
+0
+
+2
+Agent Steps
+
+4
+1e7
+
+1.0
+200
+
+λ
+
+1.0
+200
+
+λ
+
+g(x)
+
+1.5
+
+g(x)
+
+Δ ≈ 90∘
+
+220
+
+PID Lagrangian
+
+240
+
+0.5
+
+180
+
+0
+
+2
+Agent Steps
+
+4
+1e7
+
+Figure 1. Left: The traditional Lagrangian method exhibits oscillations with 90◦ phase shift between the constraint function and the
+Lagrange multiplier, characteristic of integral control. Right: PID
+control on the Lagrange multiplier damps oscillations and obeys
+constraints. Environment: D OGGO B UTTON 1, cost limit 200.
+
+Our contributions in this paper are outlined as follows. First,
+we provide further context through related works and preliminary definitions. In Section 4, we propose modified
+Lagrangian multiplier methods and analyze their benefits
+in the learning dynamics. Next, in Section 5, we cast constrained RL as a dynamical system with the Lagrange multiplier as a control input, to which we apply PID control as
+a new algorithm. In Section 6, we adapt a leading deep RL
+algorithm, Proximal Policy Optimization (PPO) (Schulman
+et al., 2017) with our methods and achieve state of the art
+performance in the OpenAI Safety-Gym suite of environments (Ray et al., 2019). Finally, in Section 7 we introduce
+another novel technique that makes tuning easier by providing invariance to the relative numerical scales of rewards and
+costs, and we demonstrate it in a further set of experiments.
+Our extensive empirical results show that our algorithms,
+
+which are intuitive and simple to implement, improve cost
+performance and promote hyperparameter robustness in a
+deep RL setting.
+
+2. Related Work
+Constrained Deep RL. Adaptations of the Lagrange multiplier method to the actor-critic RL setting have been shown
+to converge to the optimal, constraint-satisfying solution
+under certain assumptions (Tessler et al., 2018). Convergence proofs have relied upon updating the multiplier more
+slowly than the policy parameters (Tessler et al., 2018; Paternain et al., 2019), implying many constraint-violating
+policy iterations may occur before the penalty comes into
+full effect.
+Several recent works have aimed at improving constraint
+satisfaction in RL over the Lagrangian method, but they
+tend to incur added complexity. Achiam et al. (2017) introduced Constrained Policy Optimization (CPO), a policy
+search algorithm with near-constraint satisfaction guarantees at every iteration, based on a new bound on the expected
+returns of two nearby policies. CPO includes a projection
+step on the policy parameters, which in practice requires
+a time-consuming backtracking line search. Yet, simple
+Lagrangian-based algorithms performed as well or better in
+a recent empirical comparison in Safety Gym (Ray et al.,
+2019). Approaches to safe RL based on Lyapunov functions have been developed in a series of studies (Chow et al.,
+2018; 2019), resulting in algorithms that combine a projection step, as in CPO, with action-layer interventions like the
+safety layer of Dalal et al. (2018). Experimentally, this line
+of work showed mixed performance gains over Lagrangian
+methods, at a nontrivial cost to implement and without clear
+guidance for tuning. Liu et al. (2019) developed interior
+point methods for RL, which augment the objective with
+logarithmic barrier functions. These methods are shown
+theoretically to provide suboptimal solutions. Furthermore,
+they require tuning of the barrier strength and typically
+assume already feasible iterates, the latter point possibly
+being problematic for random agent initializations or under
+noisy cost estimates. Most recently, Yang et al. (2020) extended CPO with a two-step projection-based optimization
+approach. In contrast to these techniques, our method remains nearly as simple to implement and compute as the
+baseline Lagrangian method.
+Dynamical Systems View of Optimization. Several recent
+works have proposed different dynamical systems viewpoints to analyze optimization algorithms, including those
+often applied to deep learning. Hu & Lessard (2017) reinterpreted first-order gradient optimization as a dynamical
+system; they likened the gradient of the objective, ∇x f ,
+to the plant, which the controller aims to drive to zero to
+arrive at the optimal parameters, x∗ . Basic gradient de-
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+scent then matches the form of integral control (on ∇x f ).
+They extend the analogy to momentum-based methods, for
+example linking Nesterov momentum to PID control with
+lag compensation. In another example, An et al. (2018)
+interpreted SGD as P-control and momentum methods as
+PI-control. They introduced a derivative term, based on
+the change in the gradient, and applied their resulting PID
+controller to improve optimization of deep convolutional
+networks. Other recent works bring yet other perspectives
+from dynamical systems to deep learning and optimization,
+see for example (Lessard et al., 2014; Nishihara et al., 2015;
+Liu & Theodorou, 2019)). None of these works address constrained RL, however, necessitating our distinct formulation
+for that problem.
+Constrained Optimization. Decades’ worth of literature
+have accumulated on Lagrangian methods. But even recent
+textbooks on the topic (Bertsekas, 2014; Nocedal & Wright,
+2006) only consider updating the Lagrange multiplier using the value of the constraint function, g(x), and miss
+ever using its derivatives, ġ(x) or g̈(x), which we introduce.
+The modification to the Lagrangian method most similar
+in effect to our proportional control term (here using ġ(x))
+is the quadratic penalty method (Hestenes (1969); Powell
+(1969) see also e.g. Bertsekas (1976)), which we compare
+in Section 4. Song & Leland (1998) proposed a controls
+viewpoint (continuous-time) of optimizing neural networks
+for constrained problems and arrived at proportional control
+rules only. Related to our final experiments on reward-scale
+invariance, Wah et al. (2000) developed an adaptive weighting scheme for continuous-time Lagrangian objectives, but
+it is an intricate procedure which is not straightforwardly
+applied to safe RL.
+
+3. Preliminaries
+Constrained Reinforcement Learning Constrained
+Markov Decision Processes (CMDP) (Altman, 1998)
+extend MDPs (see Sutton & Barto (1998)) to incorporate
+constraints into reinforcement learning. A CMDP is the
+expanded tuple (S, A, R, T, µ, C0 , C1 , ..., d0 , d1 , ...), with
+the cost functions Ci : S × A × S → R defined by the
+same form as the reward, and di : R denoting limits on the
+costs. For ease of notation, we will only consider a single,
+all-encompassing cost.
+The expected sum of discounted rewards over trajectories, τ = (s0 , a0 , s1 , a1 , ...), induced by the
+policy π(a|s) is Pa common performance objective:
+∞
+J(π) = Eτ ∼π [ t=0 γ t R(st , at , st+1 )]. The analogous value
+P∞ function for cost is defined as: JC (π) =
+Eτ ∼π [ t=0 γ t C(st , at , st+1 )]. The constrained RL problem is to solve for the best feasible policy:
+π ∗ = arg max J(π)
+π
+
+s.t. JC (π) ≤ d
+
+(5)
+
+Deep reinforcement learning uses a deep neural network
+for the policy, πθ = π(·|s; θ) with parameter vector θ, and
+policy gradient algorithms improve the policy iteratively
+by gathering experience in the task to estimate the reward
+objective gradient, ∇θ J(πθ ). Thus our problem of interest
+is better expressed as maximizing score at some iterate, πk ,
+while ideally obeying constraints at each iteration:
+max J(πk )
+π
+
+s.t. JC (πm ) ≤ d
+
+m ∈ {0, 1, ..., k}
+
+(6)
+
+Practical settings often allow trading reward performance
+against some constraint violations (e.g. the constraints themselves may include a safety margin). For this purpose we
+introduce a constraint figure of merit with our experiments.
+3.1. Dynamical Systems and Optimal Control
+Dynamical systems are processes which can be subject to
+an external influence, or control. A general formulation for
+discrete-time systems with feedback control is:
+xk+1 =F (xk , uk )
+yk =Z(xk )
+
+(7)
+
+uk =h(y0 , ..., yk )
+with state vector x, dynamics function F , measurement
+outputs y, applied control u, and the subscript denoting
+the time step. The feedback rule h has access to past and
+present measurements. A problem in optimal control is to
+.
+design a control rule, h, that results in a sequence y0:T =
+{y0 , ..., yT } (or x0:T directly) that scores well according to
+some cost function C. Examples include simply reaching
+a goal condition, C = |yT − y|, or following close to a
+desired trajectory, y0:T .
+Systems with simpler dependence on the input are generally
+easier to analyze and control (i.e. simpler h performs well),
+even if the dependence on the state is complicated (Skelton,
+1988). Control-affine systems are a broad class of dynamical
+systems which are especially amenable to analysis (Isidori
+et al., 1995). They take the form:
+F (xk , uk ) = f (xk ) + g(xk )uk
+
+(8)
+
+where f and g may be nonlinear in state, and are possibly
+uncertain, meaning unknown. We will seek control-affine
+form for ease of control and to support future analysis.
+
+4. Modified Lagrangian Methods for
+Constrained Optimization
+Lagrangian methods are a classic family of approaches to
+solving constrained optimization problems. We propose
+an intuitive, previously overlooked form for the multiplier
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+update and derive its beneficial effect on the learning dynamics. We begin by reviewing a prior formulation for the
+equality-constrained problem.1
+4.1. Review: “Basic Differential Multiplier Method”
+We follow the development of Platt & Barr (1988), who
+analyzed the dynamics of a continuous-time neural learning
+system applied to this problem (our result can similarly be
+derived for iterative gradient methods). They begin with the
+component-wise differential equations:
+∂f
+∂g
+∂L(x, λ)
+=−
+−λ
+∂xi
+∂xi
+∂xi
+∂L(x, λ)
+λ̇ = α
+= αg(x)
+∂λ
+
+(9)
+
+ẋi = −
+
+(10)
+
+where we have inserted the scalar constant α as a learning
+rate on λ. Differentiating (9) and substituting with (10) leads
+to the second-order dynamics, written in vector format:
+(11)
+
+ẍ + Aẋ + αg(x)∇g = 0
+
+which is a forced oscillator with damping matrix equal to
+the weighted sum of Hessians:
+Aij =
+
+∂2f
+∂2g
++λ
+, or, A = ∇2 f + λ∇2 g (12)
+∂xi ∂xj
+∂xi ∂xj
+
+Platt & Barr (1988) showed that if A is positive definite,
+then the system (11) converges to a solution that satisfies the
+constraint. Platt & Barr (1988) also noted that the system
+(9)-(10) is prone to oscillations as it converges into the
+feasible region, with frequency and settling time depending
+on α. We provide complete derivations of the dynamics in
+(11) and for our upcoming methods in an appendix.
+4.2. Proportional-Integral Multiplier Method
+In (10), λ simply integrates the constraint. To improve the
+dynamics towards more rapid and stable satisfaction of constraints, we introduce a new term in λ that is proportional to
+the current constraint value. In the differential equation for
+λ, this term appears as the time-derivative of the constraint:
+λ̇ = αg(x) + β ġ(x) = αg(x) + β
+
+X ∂g
+j
+
+∂xj
+
+ẋj
+
+(13)
+
+with strength coefficient, β. Replacing (10) by (13) and
+combining with (9) yields similar second-order dynamics as
+(11), except with an additional term in the damping matrix:
+
+ẍ + A + β∇g∇> g ẋ + αg(x)∇g = 0
+(14)
+1
+
+Standard techniques extend our results to inequality constraints, and multiple constraints, as in Platt & Barr (1988), and
+notation is simplest for an equality constraint.
+
+The new term is beneficial because it is positive semidefinite—being the outer product of a vector with itself—so
+it can increase the damping eignevalues, boosting convergence. The results of (Platt & Barr, 1988) hold under (13,
+14), because the conditions of the solution, namely ẋ = 0
+and g(x) = 0, remain unaffected and extend immediately to
+ġ(x) = 0 (and for the sequel, to g̈(x) = 0). To our knowledge, this is the first time that a proportional-integral update
+rule has been considered for a learned Lagrange multiplier.
+The well-known penalty method (Hestenes, 1969; Powell,
+1969) augments the Lagrangian with an additional term,
+c
+2
+2 g(x) , which produces a similar effect on the damping
+matrix, as shown in (Platt & Barr, 1988):
+Apenalty = A + c∇g∇> g + cg(x)∇2 g
+
+(15)
+
+Our approach appears to provide the same benefit, without the following two complications of the penalty method.
+First, the penalty term must be implemented in the derivative ẋ, whereas our methods do not modify the Lagrangian
+nor the derivative in (9). Second, the penalty introduces
+another instance of the hessian ∇2 g in the damping matrix,
+which might not be positive semi-definite but shares the
+proportionality factor, c, with the desired term.
+4.3. Integral-Derivative Multiplier Method
+A similar analysis extends to the addition of a term in λ
+based on the derivative of the constraint value. It appears in
+λ̇ as the second derivative of the constraint:
+λ̇ = αg(x) + γg̈(x)
+
+(16)
+
+with strength coefficient γ. The resulting dynamics are:
+
+ẍ + B −1 Aẋ + αg(x) + γ ẋ> ∇2 g ẋ B −1 ∇g = 0 (17)
+
+with B = I + γ∇g∇> g , and I the identity matrix.
+
+The effects of the derivative update method are two-fold.
+First, since the eigenvalues of the matrix B −1 will be less
+than 1, both the damping (A) and forcing (∇g) terms are
+weakened (and rotated, generally). Second, the new forcing
+term can be interpreted as a drag quadratic in the speed and
+modulated by the curvature of the constraint along the direction of motion. To illustrate cases, if the curvature of g is
+positive along the direction of travel, then this term becomes
+a force for decreasing g. If at the same time g(x) > 0, then
+the traditional force will also be directed to decrease g, so
+the two will add. On the other hand, if g curves negatively
+along the velocity, then the new force promotes increasing
+g; if g(x) > 0, then the two forces subtract, weakening the
+acceleration ẍ. By using curvature, the derivative method
+acts predictively, but may be prone to instability.
+The proportional-integral-derivative multiplier method
+is the combination of the previous two developments, which
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+induced independent changes in the dynamics (i.e. insert
+the damping matrix of (14) into (17)). We leave for future
+work a more rigorous analysis of the effects of the new
+terms, along with theoretical considerations of the values of
+coefficients α, β, and γ. In the next section, we carry the
+intuitions from our analysis to make practical enhancements
+to Lagrangian-based constrained RL algorithms.
+
+5. Feedback Control for Constrained RL
+We advance the broader consideration of possible multiplier
+update rules by reinterpreting constrained RL as a dynamical system; the adaptive penalty coefficient is a control
+input, and the cost threshold is a setpoint which the system
+should maintain. As the agent learns for rewards, the upward pressure on costs from reward-learning can change,
+requiring dynamic response. In practical Lagrangian RL,
+the iterates λk may deviate from the optimal value, even for
+lucky initialization λ0 = λ∗ , as the policy is only partially
+optimized at each iteration. Adaptive sequences λ0 , ..., λK
+other than those prescribed by the Lagrangian method may
+achieve superior cost control for Problem (6). In this section
+we relate the Lagrangian method to a dynamical system,
+formalizing how to incorporate generic update rules using
+feedback. We return to the case of an inequality constrained
+CMDP to present our main algorithmic contribution—the
+use of PID control to adapt the penalty coefficient.
+
+(21)
+
+λk+1 = (λk + KI (JC − d))+
+
+(22)
+
+with SGD learning rate η. The role of the controller is to
+drive inequality constraint violations (Jc − d)+ to zero in
+the presence of drift from reward-learning due to f . The
+Lagrange multiplier update rule for an inequality constraint
+uses subgradient descent:
+
+with learning rate KI and projection into λ ≥ 0. This
+update step is clearly an integral control rule, for h.
+5.2. Constraint-Controlled RL
+Our general procedure, constraint-controlled RL, is given in
+Algorithm 1. It follows the typical minibatch-RL scheme,
+and sampled estimates of the cost criterion, JˆC are fed back
+to control the Lagrange multiplier. In contrast to prior work
+(Tessler et al., 2018; Paternain et al., 2019) which uses a
+single value approximator and treats r + λc as the reward,
+we use separate value- and cost-value approximators, since
+λ may change rapidly.
+When λ is large, the update in (19) can cause excessively
+large change in parameters, θ, destabilizing learning. To
+maintain consistent step size, we use a re-scaled objective
+for the θ-learning loop:
+θ∗ (λ) = arg max J − λJC = arg max
+θ
+
+5.1. Constrained RL as a Dynamical System
+We write constrained RL as the first-order dynamical system:
+θk+1 =F (θk , λk )
+yk =JC (πθk )
+
+g(θk ) = −η∇θ JC (πθk )
+
+(18)
+
+λk =h(y0 , ..., yk , d)
+where F is an unknown nonlinear function2 corresponding
+to the RL algorithm policy update on the agent’s parameter
+vector, θ. The cost-objective serves as the system measure,
+y, which is supplied to the feedback control rule, h, along
+with cost limit, d. From this general starting point, both the
+RL algorithm, F , and penalty coefficient update rule, h, can
+be tailored for solving Problem (6).
+The reward and cost policy gradients of the first-order3
+Lagrangian method, ∇θ L(θ, λ) = ∇θ J(πθ ) − λ∇θ JC (πθ ),
+can be organized into the form of (18) as:
+F (θk , λk ) = f (θk ) + g(θk )λk
+
+(19)
+
+f (θk ) = θk + η∇θ J(πθk )
+
+(20)
+
+2
+Known as an “uncertain” nonlinear function in the control
+literature, meaning we lack an analytical expression for it.
+3
+We discuss only the first-order case, which provides sufficient
+clarity for our developments.
+
+θ
+
+1
+(J − λJC )
+1+λ
+
+This convex combination of objectives yields the policy
+gradient used in Algorithm 1. Our experiments use this
+re-scaling, including for traditional Lagrangian baselines.
+Algorithm 1
+Constraint-Controlled Reinforcement Learning
+1: procedure C ONSTRAINED RL(πθ0 (·|s), d)
+2:
+Initialize control rule (as needed)
+3:
+JC ← {}
+. cost measurement history
+4:
+repeat
+5:
+Sample environment:
+. a minibatch
+6:
+a ∼ π(·|s; θ), s0 ∼ T (s, a),
+7:
+r ∼ R(s, a, s0 ), c ∼ C(s, a, s0 )
+8:
+Apply feedback control:
+9:
+Store sample estimate JˆC into JC
+10:
+λ ← h(JC , d), λ ≥ 0
+11:
+Update π by RL:
+. by Lagrangian objective
+12:
+Update critics,
+V
+. if using
+ φ (s), VC,ψ (s)
+
+1
+ˆ
+ˆ
+13:
+∇θ L =
+∇θ J(πθ ) − λ∇θ JC (πθ )
+1+λ
+
+14:
+until converged
+15:
+return πθ
+16: end procedure
+
+As an aside, we note that it is possible to maintain the
+control-affine form of (19) with this re-scaling, by reparam-
+
+Responsive Safety in RL by PID Lagrangian Methods
+λ
+eterizing the control as 0 ≤ u = 1+λ
+≤ 1 and substituting
+for (21) with:
+
+g(θk ) = −η∇θ (J(πθk ) + JC (πθk ))
+
+(23)
+
+This parameterization simply weights the reward and cost
+gradients in the Lagrangian objective as:
+∇θ L(θ, λ) = (1 − u)∇θ J(πθ ) − u∇θ JC (πθ )
+
+(24)
+
+It may provide superior performance in some cases, as it
+will behave differently in relation to the nonlinearity in
+control which arises from the inequality constraint. We
+leave experimentation with direct control on u ∈ [0, 1] to
+future work.
+5.3. The PID Lagrangian Method
+We now specify a new control rule for use in Algorithm
+1. To overcome the shortcomings of integral-only control,
+we follow the developments of the previous section and
+introduce the next simplest components: proportional and
+derivative terms. Our PID update rule to replace (22) is
+shown in Algorithm 2. The proportional term will hasten
+the response to constraint violations and dampen oscillations, as derived in Section 4. Unlike the Lagrangian update,
+derivative control can act in anticipation of violations. It
+can both prevent cost overshoot and limit the rate of cost
+increases within the feasible region, useful when monitoring a system for further safety interventions. Our derivative
+term is projected as (·)+ so that it acts against increases in
+cost but does not impede decreases. Overall, PID control
+provides a much richer set of controllers while remaining
+nearly as simple to implement; setting KP = KD = 0 recovers the traditional Lagrangian method. The integral term
+remains necessary for eliminating steady-state violations
+at convergence. Our experiments mainly focus on the effects of proportional and derivative control of the Lagrange
+multiplier in constrained deep RL.
+Algorithm 2 PID-Controlled Lagrange Multiplier
+1: Choose tuning parameters: KP , KI , KD ≥ 0
+2: Integral: I ← 0
+3: Previous Cost: JC,prev ← 0
+4: repeat at each iteration k
+5:
+Receive cost JC
+6:
+∆ ← JC − d
+7:
+∂ ← (JC − JC,prev )+
+8:
+I ← (I + ∆)+
+9:
+λ ← (KP ∆ + KI I + KD ∂)+
+10:
+JC,prev ← JC
+11:
+return λ
+
+6. PID Control Experiments
+We investigated the performance of our algorithms on Problem (6) in a deep RL setting. In particular, we show the
+effectiveness of PID control at reducing constraint violations from oscillations and overshoot present in the baseline Lagrangian method. Both maximum performance and
+robustness to hyperparameter selection are considered. Although many methods exist for tuning PID parameters, we
+elected to do so manually, demonstrating ease of use.
+6.1. Environments: Safety-Gym
+We use the recent Safety-Gym suite (Ray et al., 2019), which
+consists of robot locomotion tasks built on the MuJoCo simulator (Todorov et al., 2012). The robots range in complexity
+from a simple Point robot to the 12-jointed Doggo, and they
+move in an open arena floor. Rewards have a small, dense
+component encouraging movement toward the goal, and a
+large, sparse component for achieving it. When a goal is
+achieved, a new goal location is randomly generated, and
+the episode continues until the time limit at 1,000 steps.
+Each task has multiple difficulty levels corresponding to
+density and type of hazards, which induce a cost when
+contacted by the robot (without necessarily hindering its
+movement). Hazards are placed randomly at each episode
+and often lay in the path to the goal. Hence the aims of
+achieving high rewards and low costs are in opposition. The
+robot senses the position of hazards and the goal through a
+coarse, LIDAR-like mode. The output of this sensor, along
+with internal readings like the joint positions and velocities,
+comprises the state fed to the agent. Figure 2 displays a
+scene from the D OGGO G OAL 1 environment.
+
+Figure 2. Rendering from the D OGGO G OAL 1 environment from
+Safety Gym. The red, four-legged robot must walk to the green
+cylinder while avoiding other objects, and receives coarse egocentric sensor readings of their locations.
+
+6.2. Algorithm: Constraint-Controlled PPO
+We implemented Algorithm 1 on top of Proximal Policy Optimization (PPO) (Schulman et al., 2017) to make
+constraint-controlled PPO (CPPO). CPPO uses an analogous clipped surrogate objective for the cost as for the re-
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+6.3. Main Results
+We compare PID controller performance against the Lagrangian baseline under a wide range of settings. Plots
+showing the performance of the unconstrained analogue
+confirm that constraints are not trivially satisfied, and they
+appear in supplementary material.
+
+in our design). With increasing KI , the period and amplitude of cost oscillations decrease and eventually disappear.
+The bottom left of Figure 4, however, shows that larger KI
+also brings diminishing returns. We study this effect in the
+next section. The center and right columns of Figure 4 show
+the cost and return when using PI-control, with KP = 0.25
+and KP = 1, respectively. Proportional control stabilized
+the cost, with most oscillations reduced to the noise floor
+for KI > 10−4 . Yet returns remained relatively high over
+a wide range, KI < 10−1 . Similar curves for other Safety
+Gym environments are included in an appendix.
+KP = 0
+
+Cost
+
+ward. Our policy is a 2-layer MLP followed by an LSTM
+with a skip connection. We applied smoothing to proportional and derivative controls to accommodate noisy estimates. The environments’ finite horizons allowed use
+of non-discounted episodic costs as the constraint and input to the controller. Additional training details can be
+found in supplementary materials, and our implementation is available at https://github.com/astooke/
+rlpyt/rlpyt/projects/safe.
+
+70
+
+70
+
+50
+
+50
+
+50
+
+30
+
+Return
+
+0.0
+
+We observed cost oscillations or overshoot with slow settling
+time in a majority of Safety Gym environments when using
+the Lagrangian method. Figure 3 shows an example where
+PI-control eliminated this behavior while maintaining good
+reward performance, in the challenging D OGGO B UTTON 1
+environment. Individual runs are plotted for different cost
+limits.
+
+0.5
+
+1.0
+1e8
+
+30
+0.0
+
+0.5
+
+1.0
+1e8
+
+0.0
+
+20
+
+20
+
+20
+
+15
+
+15
+
+15
+
+10
+
+10
+
+10
+
+5
+
+5
+
+5
+
+0
+
+0
+0.0
+
+0.5
+1.0
+Env Steps 1e8
+
+0.5
+
+1.0
+1e8
+
+KI = 1e-4
+KI = 1e-3
+KI = 1e-2
+KI = 1e-1
+KI = 1
+
+0
+0.0
+
+0.5
+
+1.0
+1e8
+
+0.0
+
+0.5
+
+1.0
+1e8
+
+Figure 4. Top row: Constraint-violating oscillations decrease in
+magnitude and period from increases in the Lagrange multiplier
+learning rate, KI . At all levels, oscillations are damped by PIcontrol, KP = 0.25, 1. Bottom row: Returns diminish for large
+KI ; proportional control maintains high returns while reducing
+constraint violations. Environment: D OGGO G OAL 2, cost limit 50.
+
+200
+Cost
+
+70
+
+30
+
+6.3.1. ROBUST S AFETY WITH PI C ONTROL
+
+KP = 1
+
+KP = 0.25
+
+150
+100
+50
+0
+
+2
+
+4
+
+6
+
+8
+1e7
+
+KP = 0
+
+Return
+
+15
+
+KP = 1 (ours)
+
+10
+5
+0
+0
+
+2
+
+4
+6
+Environment Steps
+
+8
+1e7
+
+Figure 3. Oscillations in episodic costs (and returns) from the Lagrangian method, KP = 0, KI = 10−2 , are damped by proportional control, KP = 1 (ours), at cost limits 50, 100, 150, 200
+(curves shaded) in D OGGO B UTTON 1.
+
+As predicted in (Platt & Barr, 1988), we found the severity
+of cost overshoot and oscillations to depend on the penalty
+coefficient learning rate, KI . The top left panel of Figure
+4 shows example cost curves from D OGGO G OAL 2 under
+I-control, over a wide range of values for KI (we refer to
+varying KI , assuming KI = 1; the two are interchangeable
+
+We examine the trade-off between reward and constraint violation by forming an overall cost figure of merit (FOM). We
+use the sum of non-discounted
+Pconstraint violations over the
+learning
+iterates,
+C
+=
+F
+OM
+k (D(πθk ) − d)+ , D(πθ ) =
+hP
+i
+T
+0
+Eτ ∼π
+C(s
+,
+a
+,
+s
+)
+,
+and
+estimate it online from the
+t t t
+t=0
+learning data. Figure 5 compares final returns against this
+cost FOM for the same set of experiments as in Figure 4.
+Each point represents a different setting of KI , averaged
+over four runs. PI-control expanded the Pareto frontier of
+this trade-off into a new region of high rewards at relatively low cost which was inaccessible using the Lagrangian
+method. These results constitute a new state of the art over
+the benchmarks in Ray et al. (2019).
+We performed similar experiments on several Safety Gym
+environments in addition to D OGGO G OAL 2: P OINT G OAL 1,
+the simplest domain with a point-like robot, C AR B UTTON 1,
+for slightly more challenging locomotive control, and D OG GO B UTTON 1 for another challenging task (see appendix
+for learning curves like Figure 4). Figure 6 plots the cost
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+Return
+
+12
+10
+
+Figure 5. Pareto frontier of return versus cost FOM, which improves (up and to the left) with PI-control, KP = 0.25, 1. Each
+point is a different setting of KI (see Figure 4).
+
+figure of merit over the same range of values for KI , and
+for two strengths of added proportional control, for these
+environments. PI-control clearly improved the cost FOM
+(lower is better) for KI < 10−1 , above which the fast integral control dominated. Hence robustness to the value
+for KI was significantly improved in all the learning tasks
+studied.
+DoggoButton1
+104
+
+103
+
+103
+
+102
+
+102
+
+101
+10−2
+
+10−4
+
+100
+
+CarButton1
+
+Cost FOM
+
+10
+
+3
+
+102
+10
+
+10−2
+
+100
+
+PointGoal1
+
+KP = 0
+KP = 0.25
+KP = 1
+
+104
+
+0
+
+1
+
+2
+
+3
+
+4
+1e7
+
+0
+
+1
+
+2
+
+3
+
+4
+1e7
+
+0
+
+1
+
+2
+
+3
+
+4
+1e7
+
+200
+150
+
+0.5
+0.0
+1.0
+0.5
+0.0
+0
+
+1
+
+2
+3
+4
+Environment Steps
+
+5
+
+6
+1e6
+
+DoggoGoal2
+
+104
+
+10−4
+
+PI
+I
+
+5
+
+3000
+
+Cost
+
+1000
+2000
+Cost FOM
+
+Control
+
+0
+
+IKI +
+
+10
+
+0
+
+KP = 0
+KP = 0.25
+KP = 1
+
+8
+
+Control
+
+Return
+
+14
+
+103
+102
+
+Figure 7. I- and PI-control with moderate KI = 10−3 and Icontrol with fast KI = 10−1 (IKI + ). Top Returns diminished for
+fast-KI , but high for PI. Second Cost oscillations mostly damped
+by PI, removed by fast-KI . Third Control (smoothed) varies more
+rapidly under fast-KI , is relatively steady for PI. Bottom Control over first 500 RL iterations; fast-KI slams the control to the
+extremes, causing the diminished returns. Environment: D OG GO B UTTON 1, cost limit 200.
+
+101
+100
+
+1
+
+10−4
+
+10−2
+KI
+
+100
+
+10−4
+
+10−2
+
+100
+
+Figure 6. Learning run cost FOM versus penalty learning rate, KI ,
+from four environments spanning the robots in Safety Gym. Each
+point is an average over four runs. In all cases, PI-control improves
+performance (lower is better) over a wide and useful range of KI ,
+easing selection of that hyperparameter.
+
+6.3.2. C ONTROL E FFICIENCY
+We further investigated why increasing the penalty learning
+rate, KI , eventually reduces reward performance, as was
+seen in the robustness study. Figure 7 shows learning curves
+for three settings: I- and PI-control with the same, moderate
+KI = 10−3 , and I-control with high KI = 10−1 . The highKI setting achieved responsive cost performance but lower
+long-term returns, which appears to result from wildly fluctuating control. In contrast, PI-control held relatively steady,
+despite the noise, allowing the agent to do reward-learning
+at every iteration. The bottom panel displays individual
+control iterates, here displayed as u = λ/(1 + λ), over the
+first 7M environment steps, while the others show smoothed
+curves over the entire learning run, over 40M steps.
+
+6.3.3. P REDICTIVE C ONTROL BY D ERIVATIVES
+Figure 8 demonstrates the predictive capabilities of derivative cost control in a noisy deep RL setting. It removed
+cost overshoot from both the I- and PI-controlled baselines.
+It was further able to slow the approach of the cost curve
+towards the limit, a desirable behavior for online learning
+systems requiring safety monitoring. Curves for other environments are available in an appendix.
+
+7. Reward-Scale Invariance
+In the preceding sections, we showed that PID control improves hyperparameter robustness in every constrained RL
+environment we tested. Here we propose a complementary method to promote robustness both within and across
+environments. Specifically, it addresses the sensitivity of
+learning dynamics to the relative numerical scale of reward
+and cost objectives.
+Consider two CMDPs that are identical except that in one
+the rewards are scaled by a constant factor, ρ. The optimal policy parameters, θ∗ remain unchanged, but clearly λ∗
+must scale by ρ. To attain the same learning dynamics, all
+
+Responsive Safety in RL by PID Lagrangian Methods
+KI = 1, KP = 2
+200
+
+200
+KD = 0
+KD = 4
+KD = 5
+
+150
+
+Return
+
+100
+0.0
+
+0.6
+
+1.2
+1e7
+
+0.0
+
+0.6
+
+1.2
+1e7
+
+5
+
+5
+
+0
+
+0
+0.0
+
+KD = 0
+KD = 2
+KD = 4
+
+150
+
+initialization, a point where previous theory provides little
+guidance (Chow et al., 2019) (although here we left λ0 = 0).
+Experiments in other environments and controller settings
+yielded similar results and are included in supplementary
+materials. Other methods, such running normalization of
+rewards and costs, could achieve similar effects and are
+worth investigating, but our simple technique is surprisingly
+effective and is not specific to RL.
+
+0.6
+
+1.2
+1e7
+
+0.0
+
+β=1
+0.6
+1.2
+Environment Steps 1e7
+
+Cost
+
+Cost
+
+KI = 1, KP = 0
+
+One way to promote performance of a single choice of
+controller settings across these cases would be to maintain
+a fixed meaning for the value of λ in terms of the relative
+influence of reward versus cost on the parameter update. To
+this end, we introduce an adjustable scaling factor, βk , in
+the policy gradient:
+∇θ L = (1 − uk )∇θ J(πθk ) − uk βk ∇θ JC (πθk )
+
+(25)
+
+A conspicuous choice for βk is the ratio of un-scaled policy
+gradients:
+||∇θ J(πθk )||
+β∇,k =
+(26)
+||∇θ JC (πθk )||
+since it balances the total gradient to have equal-magnitude
+contribution from reward- and cost-objectives at λ = 1 and
+encourages λ∗ = 1. Furthermore, β∇ is easily computed
+with existing algorithm components.
+
+To test this method, we ran experiments on Safety Gym environments with their rewards scaled up or down by a factor
+of 10. Figure 9 shows a representative cross-section of results from the P OINT G OAL 1 environment using PI-control.
+The different curves within each plot correspond to different
+reward scaling. Without objective-scaling (i.e. β = 1), the
+dynamics under ρ = 10 are as if controller parameters were
+instead divided by 10, and likewise for ρ = 0.1. Note the
+near-logarithmic spacing of λ (λρ=10 has not converged to
+its full value). Using β∇ , on the other hand, the learning
+dynamics are nearly identical across two orders of magnitude of reward scale. λ0 = 1 becomes an obvious choice for
+
+60
+
+40
+
+40
+
+20
+
+Figure 8. Derivative control can prevent cost overshoot and slow
+the rate of cost increase within feasible regions, which the Lagrangian method cannot do. Environment: D OGGO B UTTON 1,
+cost limit 200.
+
+20
+
+Return
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+20
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+20
+ρ = 0.1
+ρ=1
+
+10
+
+10
+
+ρ = 10
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+101
+
+101
+
+0
+
+100
+
+−1
+
+10−1
+
+10
+λ
+
+controller settings, λ0 , KI , KP , and KD must therefore be
+scaled by ρ. This situation might feature naturally within
+a collection of related learning environments. Additionally, within the course of learning an individual CMDP, the
+balance between reward and cost magnitudes can change
+considerably, placing burden on the controller to track the
+necessary changes in the scale of λ.
+
+β = β∇
+
+60
+
+10
+
+0.0
+
+0.5
+1.0
+Environment Steps
+
+1.5
+1e7
+
+Figure 9. Costs, returns, and Lagrange multiplier with rewards
+scaled by ρ ∈ {0.1, 1, 10}; PI-control with KI = 1e − 3, KP =
+0.1. Left column: without objective-weighting, learning dynamics differ dramatically due to required scale of λ. Right column:
+with objective-weighting, learning dynamics are nearly identical.
+Environment: P OINT G OAL 1, cost limit 25.
+
+8. Conclusion
+Starting from a novel development in classic Lagrangian
+methods, we introduced a new set of constrained RL solutions which are straightforward to understand and implement, and we have shown them to be effective when paired
+with deep learning.
+Several opportunities for further work lay ahead. Analysis
+of the modified Lagrangian method and constrained RL as
+a dynamical system may relax theoretical requirements for
+a slowly-changing multiplier. The mature field of control
+theory (and practice) provides tools for tuning controller
+parameters. Lastly, the control-affine form may assist in
+both analysis (see Liang-Liang Xie & Lei Guo (2000) and
+Galbraith & Vinter (2003) for controllability properties for
+uncertain nonlinear dynamics) and by opening to further
+control techniques such as feedback linearization.
+Our contributions improve perhaps the most commonly used
+constrained RL algorithm, which is a workhorse baseline.
+We have addressed its primary shortcoming while preserving
+its simplicity and even making it easier to use—a compelling
+combination to assist in a wide range of applications.
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+Acknowledgements
+Adam Stooke gratefully acknowledges previous support
+from the Fannie and John Hertz Foundation and the NVIDIA
+Corporation. We thank Carlos Florensa and the anonymous
+reviewers for many helpful suggestions which improved the
+manuscript.
+
+References
+
+Geibel, P. and Wysotzki, F. Risk-sensitive reinforcement
+learning applied to control under constraints. CoRR,
+abs/1109.2147, 2011. URL http://arxiv.org/
+abs/1109.2147.
+Gu, S., Lillicrap, T., Sutskever, I., and Levine, S. Continuous deep q-learning with model-based acceleration.
+In International Conference on Machine Learning, pp.
+2829–2838, 2016.
+
+Achiam, J., Held, D., Tamar, A., and Abbeel, P. Constrained
+policy optimization. CoRR, abs/1705.10528, 2017. URL
+http://arxiv.org/abs/1705.10528.
+
+Hestenes, M. R. Multiplier and gradient methods. Journal
+of optimization theory and applications, 4(5):303–320,
+1969.
+
+Altman, E. Constrained markov decision processes with
+total cost criteria: Lagrangian approach and dual linear
+program. Mathematical methods of operations research,
+48(3):387–417, 1998.
+
+Hu, B. and Lessard, L. Control interpretations for first-order
+optimization methods. CoRR, abs/1703.01670, 2017.
+URL http://arxiv.org/abs/1703.01670.
+
+Altman, E. Constrained Markov decision processes, volume 7. CRC Press, 1999.
+An, W., Wang, H., Sun, Q., Xu, J., Dai, Q., and Zhang, L.
+A pid controller approach for stochastic optimization of
+deep networks. 2018 IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, pp. 8522–8531, 2018.
+
+Isidori, A., Thoma, M., Sontag, E. D., Dickinson, B. W.,
+Fettweis, A., Massey, J. L., and Modestino, J. W. Nonlinear Control Systems. Springer-Verlag, Berlin, Heidelberg,
+3rd edition, 1995. ISBN 3540199160.
+
+Åström, K. J. and Hägglund, T. Pid control. IEEE Control
+Systems Magazine, 1066(033X/06), 2006.
+
+Jaderberg, M., Czarnecki, W. M., Dunning, I., Marris, L.,
+Lever, G., Castaneda, A. G., Beattie, C., Rabinowitz,
+N. C., Morcos, A. S., Ruderman, A., et al. Human-level
+performance in 3d multiplayer games with populationbased reinforcement learning. Science, 364(6443):859–
+865, 2019.
+
+Bertsekas, D. P. On penalty and multiplier methods for
+constrained minimization. SIAM Journal on Control and
+Optimization, 14(2):216–235, 1976.
+
+Lessard, L., Recht, B., and Packard, A. Analysis and design of optimization algorithms via integral quadratic
+constraints, 2014.
+
+Bertsekas, D. P. Constrained optimization and Lagrange
+multiplier methods. Academic press, 2014.
+
+Levine, S., Finn, C., Darrell, T., and Abbeel, P. End-toend training of deep visuomotor policies. The Journal of
+Machine Learning Research, 17(1):1334–1373, 2016.
+
+Chow, Y., Nachum, O., Duéñez-Guzmán, E. A., and
+Ghavamzadeh, M. A lyapunov-based approach to safe
+reinforcement learning. CoRR, abs/1805.07708, 2018.
+URL http://arxiv.org/abs/1805.07708.
+Chow, Y., Nachum, O., Faust, A., Ghavamzadeh, M.,
+and Duéñez-Guzmán, E. A. Lyapunov-based safe
+policy optimization for continuous control. CoRR,
+abs/1901.10031, 2019. URL http://arxiv.org/
+abs/1901.10031.
+Dalal, G., Dvijotham, K., Vecerı́k, M., Hester, T., Paduraru,
+C., and Tassa, Y. Safe exploration in continuous action
+spaces. CoRR, abs/1801.08757, 2018. URL http://
+arxiv.org/abs/1801.08757.
+Galbraith, G. N. and Vinter, R. B. Lipschitz continuity of
+optimal controls for state constrained problems. SIAM
+Journal on Control and Optimization, 42(5):1727–1744,
+2003. doi: 10.1137/S0363012902404711. URL https:
+//doi.org/10.1137/S0363012902404711.
+
+Liang-Liang Xie and Lei Guo. How much uncertainty can be
+dealt with by feedback? IEEE Transactions on Automatic
+Control, 45(12):2203–2217, Dec 2000. ISSN 2334-3303.
+doi: 10.1109/9.895559.
+Liu, G.-H. and Theodorou, E. A. Deep learning theory
+review: An optimal control and dynamical systems perspective, 2019.
+Liu, Y., Ding, J., and Liu, X. Ipo: Interior-point policy optimization under constraints. arXiv preprint
+arXiv:1910.09615, 2019.
+Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A.,
+Antonoglou, I., Wierstra, D., and Riedmiller, M. Playing
+atari with deep reinforcement learning. arXiv preprint
+arXiv:1312.5602, 2013.
+Nishihara, R., Lessard, L., Recht, B., Packard, A., and
+Jordan, M. I. A general analysis of the convergence of
+admm, 2015.
+
+Responsive Safety in RL by PID Lagrangian Methods
+
+Nocedal, J. and Wright, S. Numerical optimization. Springer
+Science & Business Media, 2006.
+OpenAI. Openai five. https://blog.openai.com/
+openai-five/, 2018.
+Paternain, S., Chamon, L., Calvo-Fullana, M., and Ribeiro,
+A. Constrained reinforcement learning has zero duality gap. In Advances in Neural Information Processing
+Systems, pp. 7553–7563, 2019.
+Platt, J. C. and Barr, A. H. Constrained differential optimization. In Neural Information Processing Systems, pp.
+612–621, 1988.
+Powell, M. J. A method for nonlinear constraints in minimization problems. Optimization, pp. 283–298, 1969.
+Ray, A., Achiam, J., and Amodei, D. Benchmarking Safe
+Exploration in Deep Reinforcement Learning. 2019.
+Schulman, J., Levine, S., Abbeel, P., Jordan, M., and Moritz,
+P. Trust region policy optimization. In International
+conference on machine learning, pp. 1889–1897, 2015.
+Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and
+Klimov, O. Proximal policy optimization algorithms.
+arXiv preprint arXiv:1707.06347, 2017.
+Skelton, R.
+Dynamic Systems Control: Linear
+Systems Analysis and Synthesis.
+Dynamic Systems Control. John Wiley & Sons, 1988. ISBN
+9780471837794. URL https://books.google.
+com/books?id=egFRAAAAMAAJ.
+Song, Q. and Leland, R. P. An optimal control model of
+neural networks for constrained optimization problems.
+Optimal Control Applications and Methods, 19(5):371–
+376, 1998. doi: 10.1002/(SICI)1099-1514(199809/10)19:
+5h371::AID-OCA636i3.0.CO;2-8.
+URL https:
+//onlinelibrary.wiley.com/doi/abs/10.
+1002/%28SICI%291099-1514%28199809/10%
+2919%3A5%3C371%3A%3AAID-OCA636%3E3.0.
+CO%3B2-8.
+Sutton, R. S. and Barto, A. G. Introduction to Reinforcement
+Learning. MIT Press, Cambridge, MA, USA, 1st edition,
+1998. ISBN 0262193981.
+Tessler, C., Mankowitz, D. J., and Mannor, S. Reward constrained policy optimization. CoRR, abs/1805.11074,
+2018.
+URL http://arxiv.org/abs/1805.
+11074.
+Todorov, E., Erez, T., and Tassa, Y. Mujoco: A physics
+engine for model-based control. In 2012 IEEE/RSJ International Conference on Intelligent Robots and Systems,
+pp. 5026–5033. IEEE, 2012.
+
+Wah, B. W., Wang, T., Shang, Y., and Wu, Z. Improving the
+performance of weighted lagrange-multiplier methods for
+nonlinear constrained optimization. Information Sciences,
+124(1-4):241–272, 2000.
+Yang, T.-Y., Rosca, J., Narasimhan, K., and Ramadge, P. J.
+Projection-based constrained policy optimization. In
+International Conference on Learning Representations,
+2020. URL https://openreview.net/forum?
+id=rke3TJrtPS.
+
+Supplementary Materials for: Responsive Safety in Reinforcement Learning by
+PID Lagrangian Methods
+
+A. Derivations
+
+arXiv:2007.03964v1 [math.OC] 8 Jul 2020
+
+Here we derive the effects of the proportional and derivative control terms on the Differential Multiplier Method.
+A.1. Traditional Lagrangian method
+Start from continuous Lagrangian dynamics for objective f and constraint g:
+L = f (x) + λg(x)
+∂g
+∂f
+−λ
+ẋi = −
+∂xi
+∂xi
+λ̇ = αg(x)
+
+(1)
+(2)
+(3)
+
+with α a scalar. Taking the time-derivative of ẋi :
+
+
+
+
+d ∂f
+∂g
+d
+∂g
+ẍi = −
+− λ̇
+−λ
+dt ∂xi
+∂xi
+dt ∂xi
+
+ X
+
+
+X
+∂2f
+∂
+∂f dxj
+d ∂f
+=
+ẋj
+=
+dt ∂xi
+∂xj ∂xi
+dt
+∂xi ∂xj
+j
+j
+
+ X
+d
+∂g
+∂2g
+=
+ẋj
+dt ∂xi
+∂xi ∂xj
+j
+
+(5)
+
+
+X  ∂2f
+∂2g
+∂g
++λ
+ẋj − αg(x)
+∂x
+∂x
+∂x
+∂x
+∂x
+i
+j
+i
+j
+i
+j
+
+(7)
+
+∂2f
+∂2g
++λ
+∂xi ∂xj
+∂xi ∂xj
+
+(8)
+
+(4)
+
+(6)
+
+and substituting for λ̇:
+ẍi = −
+Defining the damping matrix, A:
+Aij =
+yields the oscillator equation for the i-th component:
+ẍi +
+
+X
+
+Aij ẋj + αg(x)
+
+j
+
+∂g
+=0
+∂xi
+
+(9)
+
+Written in vector form:
+ẍ + Aẋ + αg(x)∇g = 0
+2
+
+2
+
+A = ∇ f + λ∇ g
+with ∇2 f denoting the Hessian of f .
+
+(10)
+(11)
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+A.2. Proportional-Integral Method
+We amend the differential equation for λ as:
+λ̇ = αg(x) + β ġ(x) = αg(x) + β
+
+X ∂g
+j
+
+∂xj
+
+ẋj
+
+(12)
+
+Substitution into ẍ yields:
+
+
+
+X  ∂2f
+X ∂g
+∂2g
+∂g
+∂g
++λ
+ẋj − αg(x)
+−β
+ẋj 
+ẍi = −
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+i
+j
+i
+j
+i
+j
+i
+j
+j
+
+
+X
+∂2f
+∂2g
+∂g ∂g
+∂g
+=−
++λ
++β
+ẋj − αg(x)
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+i
+j
+i
+j
+i
+j
+i
+j
+
+(13)
+(14)
+
+giving the same dynamics as the traditional Lagrangian method except with damping matrix modified by addition of a
+positive-semi-definite term:
+
+ẍ + A + β∇g∇> g ẋ + αg(x)∇g = 0
+(15)
+A.3. Integral-Derivative Method
+
+We use the following differential equation for λ:
+(16)
+
+λ̇ = αg(x) + γg̈(x)
+Expanding the second-derivative:
+
+d
+g(x)
+dt
+
+
+X
+∂g 
+d 
+=
+x˙j
+dt
+xj
+j
+
+X  d  ∂g 
+∂g d
+=
+(ẋj )
+ẋj +
+dt xj
+xj dt
+j
+!
+X
+X ∂2g
+∂g
+=
+ẋj
+ẋk +
+ẍj
+∂xk ∂xj
+∂xj
+j
+
+d
+g̈(x) =
+dt
+
+
+
+(17)
+(18)
+(19)
+(20)
+
+k
+
+Substituting the full expression for λ̇ into ẍi yields:
+
+!
+
+X  ∂2f
+∂2g
+∂g
+∂g X X
+∂2g
+∂g
+ẋj
+ẍi = −
++λ
+x˙j − αg(x)
+−γ
+ẋk +
+ẍj 
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+∂x
+i
+j
+i
+j
+i
+i
+j
+k
+j
+j
+j
+
+(21)
+
+k
+
+where the terms with coefficient γ are due to the derivative update term in λ. Now included are terms of second-order in the
+velocity and additional mixing terms on the acceleration. It is instructive to consider the resulting vector equation in full:
+0 = ẍ + Aẋ + αg(x)∇g + γ∇g ẋ> ∇2 g ẋ + γ∇g∇> gẍ
+
+= (I + γ∇g∇> g)ẍ + Aẋ + αg(x) + γ ẋ> ∇2 g ẋ ∇g
+
+(22)
+(23)
+
+The acceleration terms are coupled together by a positive definite matrix (identity plus the outer product of the vector ∇g
+with itself). Therefore a form without coupling of acceleration can be restored by left-multiplying by the inverse of this
+matrix, letting B = (I + γ∇g∇> g):
+
+ẍ + B −1 Aẋ + αg(x) + γ ẋ> ∇2 g ẋ B −1 ∇g = 0
+(24)
+The effects of thenew terms from the derivative update rule are discussed in the main text.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+A.4. Proportional-Integral-Derivative Method
+Finally, the full PID-Lagrangian method has dynamics which combines the independent effects of the proportional and
+derivative methods:
+
+
+ẍ + B −1 A + β∇g∇> g ẋ + αg(x) + γ ẋ> ∇2 g ẋ B −1 ∇g = 0
+(25)
+
+B. Training Details
+
+All of our experiments began with randomly initialized agents. The reward-value and cost-value estimators shared parameters
+with the policy. We used Generalized Advantage Estimation for both reward and cost advantages. The control input is
+updated once per iteration, which in our settings included multiple gradient updates on the policy. Training batches typically
+included the end of several trajectories, allowing an estimate of the average episodic sum of costs at each iteration.
+Table 1. Experiment hyperparameters.
+H YPERPARAMETER
+LEARNING RATE
+
+NN HIDDEN LAYER SIZE
+NN NONLINEARITY
+BATCH DIMENSION , TIME
+BATCH DIMENSION , ENVS
+PPO EPOCHS
+PPO MINIBATCHES
+PPO RATIO - CLIP
+D ISCOUNT, γ
+λGAE
+C OST SCALING
+E XPONENTIAL MOVING AVERAGE , KP
+E XPONENTIAL MOVING AVERAGE , KD
+D IFFERENCE ITERATES DELAY, KD
+O BSERVATION NORMALIZATION
+β̂
+E XPONENTIAL MOVING AVERAGE , β̂
+
+VALUE
+1 × 10−4
+512
+tanh
+128
+104
+8
+1
+0.1
+0.99
+0.97
+1/10
+0.95
+0.9
+15
+T RUE
+1 ( UNLESS SPECIFIED )
+0.9
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+C. Additional Learning Curves
+C.1. Cost and Reward Curves for Additional Environments
+This section contains learning curves from the experiments used to make the figures showing cost figure-of-merit versus
+Lagrange multiplier learning rate, KI , in the main text. The main text includes curves from D OGGO G OAL 2, the other
+environments are shown here.
+
+KP = 0
+
+KP = 1
+
+KP = 0.25
+50
+
+50
+
+25
+
+25
+
+25
+
+Cost
+
+50
+
+Return
+
+0.0
+25
+20
+15
+10
+5
+0
+
+0.0
+
+1.2
+
+2.4
+1e7
+
+1.2
+2.4
+Env Steps 1e7
+
+0.0
+25
+20
+15
+10
+5
+0
+
+0.0
+
+1.2
+
+1.2
+
+2.4
+1e7
+
+2.4
+1e7
+
+0.0
+25
+20
+15
+10
+5
+0
+
+1.2
+
+2.4
+1e7
+
+KI = 1e-4
+KI = 1e-3
+KI = 1e-2
+KI = 1e-1
+KI = 1
+
+0.0
+
+1.2
+
+2.4
+1e7
+
+Figure 1. Costs and returns with varying Lagrange multiplier learning rate, KI , and proportional control coefficient, KP , in P OINT G OAL 1,
+cost-limit=25.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+KP = 0
+
+Cost
+
+150
+
+KP = 0.25
+
+150
+
+150
+
+100
+
+100
+
+100
+
+50
+
+50
+
+50
+
+Return
+
+0.0
+
+0.9
+
+1.8
+1e7
+
+20
+15
+10
+5
+0
+
+0.0
+
+0.9
+
+1.8
+1e7
+
+20
+15
+10
+5
+0
+0.0
+
+0.9
+1.8
+Env Steps 1e7
+
+KP = 1
+
+0.0
+
+0.9
+
+1.8
+1e7
+
+1.8
+1e7
+
+KI = 1e-4
+KI = 1e-3
+KI = 1e-2
+KI = 1e-1
+KI = 1
+
+20
+15
+10
+5
+0
+0.0
+
+0.9
+
+0.0
+
+0.9
+
+1.8
+1e7
+
+Figure 2. Costs and returns with varying Lagrange multiplier learning rate, KI , and proportional control coefficient, KP , in C AR B UTTON 1,
+cost-limit=50.
+
+Cost
+
+KP = 0
+
+KP = 1
+
+KP = 0.25
+
+250
+
+250
+
+250
+
+200
+
+200
+
+200
+
+Return
+
+150
+
+0.0
+
+2.5
+
+5.0
+1e7
+
+150
+
+0.0
+
+2.5
+
+5.0
+1e7
+
+150
+
+15
+
+15
+
+15
+
+10
+
+10
+
+10
+
+5
+
+5
+
+5
+
+0
+
+0
+
+0
+
+0.0
+
+2.5
+5.0
+Env Steps 1e7
+
+0.0
+
+2.5
+
+5.0
+1e7
+
+0.0
+
+2.5
+
+5.0
+1e7
+
+KI = 1e-4
+KI = 1e-3
+KI = 1e-2
+KI = 1e-1
+KI = 1
+
+0.0
+
+2.5
+
+5.0
+1e7
+
+Figure 3. Costs and returns with varying Lagrange multiplier learning rate, KI , and proportional control coefficient, KP , in D OGGO B UTTON 1, cost-limit=200.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+C.2. Derivative-Control Learning Curves
+
+KI = 1, KP = 0
+
+Cost
+
+30
+Cost
+
+KI = 1, KP = 0
+
+KD = 0
+KD = 1
+KD = 5
+
+20
+10
+0.0
+
+0.6
+
+1.2
+1e7
+
+0.0
+
+Cost
+
+Cost
+
+30
+20
+10
+5
+
+6
+
+100
+80
+60
+40
+
+7
+
+4.5
+
+1e6
+
+1.2
+1e7
+
+5.5
+
+6.5
+1e6
+
+15
+Return
+
+Return
+
+0.6
+
+100
+80
+60
+40
+
+20
+10
+0
+0.0
+
+KD = 0
+KD = 1
+KD = 5
+
+0.6
+1.2
+Environment Steps 1e7
+
+Figure 4. Derivative control slows the increase in cost, causing
+it to rise more gradually, and reducing overshoot. The cost
+limit was increased from 10 to 35 at 5M environment steps.
+Environment: P OINT G OAL 1.
+
+10
+5
+0
+0.0
+
+0.6
+1.2
+Environment Steps1e7
+
+Figure 5. Derivative control slows the increase in cost, causing
+it to rise more gradually, and reducing overshoot. The cost
+limit was increased from 50 to 100 at 5M environment steps.
+Environment: C AR B UTTON 1.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+C.3. Comparison to Unconstrained Algorithms
+This section shows learning curves for the same four environments referenced in the main text. These figures demonstrate
+that the unconstrained algorithm (PPO) does not satisfy the cost constraints, and as a result it achieves higher rewards.
+CarButton1, Cost-Limit=50
+
+250
+
+PPO
+PPO+Lagrangian
+PPO+PI (ours)
+
+200
+Cost
+
+Cost
+
+PointGoal1, Cost-Limit=25
+70
+60
+50
+40
+30
+20
+
+PPO
+PPO+Lagrangian
+PPO+PI (ours)
+
+150
+100
+50
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+1e7
+
+0.0
+
+0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+1.0
+1.5
+Environment Steps
+
+2.0
+
+1e7
+
+20
+
+Return
+
+Return
+
+25
+15
+10
+5
+
+0.0
+
+0.5
+
+1.0
+1.5
+Environment Steps
+
+0
+
+2.0
+1e7
+
+150
+Cost
+
+Cost
+
+1e7
+
+DoggoGoal2, Cost-Limit=50
+
+250
+200
+
+0
+
+2
+
+4
+
+6
+
+8
+
+50
+
+1e7
+
+40
+Return
+
+30
+20
+10
+0
+
+2
+
+4
+6
+Environment Steps
+
+8
+
+1e7
+
+PPO
+PPO+Lagrangian
+PPO+PI (ours)
+
+100
+
+PPO
+PPO+Lagrangian
+PPO+PI (ours)
+
+150
+
+Return
+
+10
+
+DoggoButton1, Cost-Limit=200
+
+300
+
+0
+
+20
+
+0
+
+1
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+4
+
+5
+
+1e7
+
+40
+30
+20
+10
+0
+2
+3
+Environment Steps
+
+1e7
+
+Figure 6. Cost and reward curves for three variants of PPO: unconstrained , Lagrangian, and PI-Controlled. The unconstrained algorithm
+wildly violates all cost-limits used in our experiments. PPO+Lagrangian and PPO+PI use the same Lagrange multiplier learning rate, KI .
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+D. Adaptive Objective-Balancing
+Alternative, KL-Based Estimator The magnitudes of the gradients in θ-space might not fully reflect the relative impacts
+of reward- and cost-learning on agent behavior. Reinforcement learning offers an alternative grounding in policy-space, for
+example using:
+DKL (πθk ||πθRk +1 )
+βKL =
+(26)
+DKL (πθk ||πθCk +1 )
+Here, πθRk+1 and πθCk+1 are hypothetical new policies found using only the reward-objective or only the (un-scaled) costobjective, respectively. We experimented with this estimator and found it to work, although not as well as the gradient-norm
+estimator in our cases. Some results are included in the figures below.
+Figures We include figures for P OINT G OAL 1 using I-control and PI-control, and the more challenging D OGGO G OAL 2
+using I-control. Observe in the un-balanced case (β̂ = 1) that as the controller settings scale with the reward, the learning
+dynamics remained the same. For example, see (KI = 0.1, ρ = 10), (KI = 0.01, ρ = 1), and (KI = 0.001, ρ = 0.1).
+Using gradient-based objective balancing (β∇ ), however, the learning dynamics were roughly the same across all reward
+scales, for given controller settings. Alternatively, KL-based objective balancing (βKL ) was also effective, but did not
+produce dynamics as uniform as the gradient-based method.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+KI = 0.1
+
+Cost
+
+60
+
+=1
+
+60
+
+40
+
+40
+
+20
+
+20
+
+Return
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+20
+10
+0
+
+= 0.1
+=1
+= 10
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+101
+100
+10 1
+
+=
+
+40
+20
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+20
+10
+0
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+101
+100
+10 1
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+Environment Steps
+
+= KL
+
+60
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+20
+10
+0
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+101
+100
+10 1
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+Cost
+
+KI = 0.01
+60
+40
+20
+
+=1
+
+60
+40
+20
+
+Return
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+20
+10
+0
+
+= 0.1
+=1
+= 10
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+=
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+20
+10
+0
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+20
+10
+0
+
+101
+
+101
+
+101
+
+100
+
+100
+
+10 1
+
+10 1
+
+100
+10 1
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+Environment Steps
+
+= KL
+
+60
+40
+20
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+Cost
+
+KI = 0.001
+60
+40
+20
+
+=1
+
+60
+40
+20
+
+Return
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+20
+10
+
+= 0.1
+=1
+= 10
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+Environment Steps
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+20
+
+20
+
+10
+
+10
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+101
+100
+10 1
+
+= KL
+
+60
+40
+20
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+101
+100
+10 1
+
+=
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+101
+100
+10 1
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+0.0 0.2 0.4 0.6 0.8 1.0
+1e7
+
+Figure 7. Reward scaling, I-control, P OINT G OAL 1, cost-limit=25.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+Cost
+
+KP = 0.1
+
+=1
+
+60
+40
+20
+
+Return
+
+0.0
+
+0.5
+
+1.0
+
+20
+10
+
+1.5
+1e7
+= 0.1
+=1
+= 10
+
+0.0
+
+0.5
+
+=
+
+60
+40
+20
+
+1.0
+
+0.0
+
+1.0
+
+1.5
+1e7
+
+20
+10
+
+1.5
+1e7
+
+101
+100
+10 1
+
+0.5
+
+0.5
+1.0
+Environment Steps
+
+0.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+20
+10
+0.5
+
+1.0
+
+1.5
+1e7
+
+101
+100
+10 1
+0.0
+
+= KL
+
+60
+40
+20
+
+101
+100
+10 1
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+Cost
+
+KP = 1
+
+=1
+
+60
+40
+20
+
+Return
+
+0.0
+
+0.5
+
+1.0
+
+20
+10
+
+1.5
+1e7
+= 0.1
+=1
+= 10
+
+0.0
+
+0.5
+
+=
+
+60
+40
+20
+
+1.0
+
+0.0
+
+1.0
+
+1.5
+1e7
+
+20
+10
+
+1.5
+1e7
+
+101
+100
+10 1
+
+0.5
+
+0.5
+1.0
+Environment Steps
+
+0.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+20
+10
+0.5
+
+1.0
+
+1.5
+1e7
+
+101
+100
+10 1
+0.0
+
+= KL
+
+60
+40
+20
+
+101
+100
+10 1
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+KP = 10
+
+=1
+
+Cost
+
+60
+40
+
+40
+
+20
+
+20
+
+Return
+
+0.0
+20
+10
+0
+
+0.5
+
+1.0
+
+1.5
+1e7
+= 0.1
+=1
+= 10
+
+0.0
+
+0.5
+
+=
+
+60
+
+1.0
+
+1.5
+1e7
+
+101
+100
+10 1
+
+40
+20
+0.0
+
+20
+10
+0
+
+0.0
+
+0.5
+
+0.5
+
+1.0
+
+1.0
+
+1.5
+1e7
+
+1.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5
+1.0
+Environment Steps
+
+1.5
+1e7
+
+= KL
+
+60
+
+20
+10
+0
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5
+
+1.0
+
+1.5
+1e7
+
+Figure 8. Reward scaling, PI-control with KI = 0.001, P OINT G OAL 1, cost-limit=25.
+
+Supp: Responsive Safety in RL by PID Lagrangian Methods
+
+KI = 0.001
+
+Cost
+
+=1
+
+=
+
+= KL
+
+100
+
+100
+
+100
+
+50
+
+50
+
+50
+
+Return
+
+0.0
+20
+10
+0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+= 0.1
+=1
+= 10
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+101
+100
+10 1
+
+0.0
+20
+10
+0
+
+0.0
+
+0.5
+
+0.5
+
+1.0
+
+1.5
+
+1.0
+
+1.5
+
+2.0
+
+2.0
+
+2.5
+1e7
+
+2.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5 1.0 1.5 2.0
+Environment Steps
+
+2.5
+1e7
+
+20
+10
+0
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+KI = 0.01
+
+Cost
+
+=1
+
+=
+
+= KL
+
+100
+
+100
+
+100
+
+50
+
+50
+
+50
+
+Return
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+= 0.1
+=1
+= 10
+
+5
+0
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+0.0
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+5
+
+5
+
+0
+
+0
+
+2.5
+1e7
+
+101
+100
+10 1
+
+0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5 1.0 1.5 2.0
+Environment Steps
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+KI = 0.1
+
+Cost
+
+=1
+
+=
+
+= KL
+
+100
+
+100
+
+100
+
+50
+
+50
+
+50
+
+Return
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+5
+= 0.1
+=1
+= 10
+
+0
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+0.0
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+5
+
+5
+
+0
+
+0
+
+2.5
+1e7
+
+101
+100
+10 1
+
+0.5
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5 1.0 1.5 2.0
+Environment Steps
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+101
+100
+10 1
+0.0
+
+0.5
+
+1.0
+
+1.5
+
+2.0
+
+2.5
+1e7
+
+Figure 9. Reward scaling, I-control, D OGGO G OAL 2, cost-limit=50.
+
+

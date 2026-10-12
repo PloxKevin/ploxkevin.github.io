@@ -1,0 +1,175 @@
+
+def finiteFeedbackRisk {X : Type*} (f : X→X) (failure : Set X) (gamma : ℝ) (x : X) : ℝ :=
+  if h : ∃n,f^[n] x∈failure then gamma^(Nat.find h) else 0
+
+theorem actual_finite_feedback_risk_is_discounted_first_failure_mass
+    {X : Type*} (f : X→X) (failure : Set X) (gamma : ℝ) (x : X) :
+    HasSum (fun t : ℕ=>gamma^t*(if h : ∃n,f^[n] x∈failure then
+      (if t=Nat.find h then 1 else 0) else 0)) (finiteFeedbackRisk f failure gamma x) := by
+  classical
+  by_cases h : ∃n,f^[n] x∈failure
+  · simp only [finiteFeedbackRisk,dif_pos h]
+    convert (hasSum_ite_eq (Nat.find h) (gamma^(Nat.find h))) using 1
+    ext t;split_ifs with ht <;> simp_all
+  · simp [finiteFeedbackRisk,h]
+
+theorem actual_feedback_risk_in_unit_interval {X : Type*} (f : X→X) (failure : Set X)
+    (gamma : ℝ) (hg0 : 0≤gamma) (hg1 : gamma≤1) (x : X) :
+    finiteFeedbackRisk f failure gamma x∈Icc (0:ℝ) 1 := by
+  classical
+  unfold finiteFeedbackRisk
+  split_ifs <;> constructor <;> (first | exact pow_nonneg hg0 _ | exact pow_le_one₀ hg0 hg1 | norm_num)
+
+theorem actual_feedback_risk_positive_iff_fails {X : Type*} (f : X→X) (failure : Set X)
+    (gamma : ℝ) (hg : 0<gamma) (x : X) :
+    0<finiteFeedbackRisk f failure gamma x ↔ ∃n,f^[n] x∈failure := by
+  classical
+  unfold finiteFeedbackRisk
+  split_ifs with h
+  · simp [h,pow_pos hg]
+  · simp [h]
+
+theorem actual_feedback_risk_zero_iff_never_fails {X : Type*} (f : X→X) (failure : Set X)
+    (gamma : ℝ) (hg : 0<gamma) (x : X) :
+    finiteFeedbackRisk f failure gamma x=0 ↔ ∀n,f^[n] x∉failure := by
+  classical
+  unfold finiteFeedbackRisk
+  split_ifs with h
+  · have hp := (pow_pos hg (Nat.find h)).ne'
+    simp only [hp,false_iff]
+    intro hh;obtain ⟨n,hn⟩ := h;exact hh n hn
+  · simp only [true_iff]
+    exact fun n hn=>h ⟨n,hn⟩
+
+theorem actual_failing_finite_feedback_risk_has_uniform_discount_lower_bound
+    {X : Type*} [Fintype X] (f : X→X) (failure : Set X) (gamma : ℝ)
+    (hg0 : 0<gamma) (hg1 : gamma≤1) (x : X) (h : ∃n,f^[n] x∈failure) :
+    gamma^(Fintype.card X)≤finiteFeedbackRisk f failure gamma x := by
+  classical
+  rw [finiteFeedbackRisk,dif_pos h]
+  have hn := actual_first_failure_time_is_strictly_below_finite_state_count f failure x (Nat.find h)
+    (Nat.find_spec h) (fun m hm=>Nat.find_min h hm)
+  exact pow_le_pow_of_le_one hg0.le hg1 hn.le
+
+def expectedFiniteFeedbackRisk {X : Type*} [Fintype X] (weights : X→ℝ)
+    (f : X→X) (failure : Set X) (gamma : ℝ) : ℝ :=
+  ∑x,weights x*finiteFeedbackRisk f failure gamma x
+
+def positiveMasses {X : Type*} [Fintype X] (weights : X→ℝ) : Finset ℝ := by
+  classical
+  exact (Finset.univ.filter (fun x=>0<weights x)).image weights
+
+theorem actual_probability_weights_have_nonempty_positive_masses {X : Type*} [Fintype X]
+    (weights : X→ℝ) (hsum : ∑x,weights x=1) : (positiveMasses weights).Nonempty := by
+  classical
+  have h : ∃x,0<weights x := by
+    by_contra hn
+    have hs : ∑x,weights x≤0 := Finset.sum_nonpos (fun x _=>by push_neg at hn;exact hn x)
+    linarith
+  obtain ⟨x,hx⟩ := h
+  exact ⟨weights x,Finset.mem_image.mpr ⟨x,Finset.mem_filter.mpr ⟨Finset.mem_univ x,hx⟩,rfl⟩⟩
+
+def minimumPositiveMass {X : Type*} [Fintype X] (weights : X→ℝ) (hsum : ∑x,weights x=1) : ℝ :=
+  (positiveMasses weights).min' (actual_probability_weights_have_nonempty_positive_masses weights hsum)
+
+theorem actual_minimum_positive_probability_mass_is_positive_and_bounds_each_supported_state
+    {X : Type*} [Fintype X] (weights : X→ℝ) (hsum : ∑x,weights x=1) :
+    0<minimumPositiveMass weights hsum ∧ ∀x,0<weights x→minimumPositiveMass weights hsum≤weights x := by
+  classical
+  constructor
+  · have hm := Finset.min'_mem (positiveMasses weights)
+      (actual_probability_weights_have_nonempty_positive_masses weights hsum)
+    obtain ⟨x,hx,he⟩ := Finset.mem_image.mp hm
+    have hp := (Finset.mem_filter.mp hx).2
+    rw [he] at hp;exact hp
+  · intro x hx
+    exact Finset.min'_le _ _ (Finset.mem_image.mpr ⟨x,Finset.mem_filter.mpr ⟨Finset.mem_univ x,hx⟩,rfl⟩)
+
+theorem actual_initial_probability_weighted_risk_in_unit_interval
+    {X : Type*} [Fintype X] (weights : X→ℝ) (hw : ∀x,0≤weights x) (hsum : ∑x,weights x=1)
+    (f : X→X) (failure : Set X) (gamma : ℝ) (hg0 : 0≤gamma) (hg1 : gamma≤1) :
+    expectedFiniteFeedbackRisk weights f failure gamma∈Icc (0:ℝ) 1 := by
+  constructor
+  · exact Finset.sum_nonneg (fun x _=>mul_nonneg (hw x) (actual_feedback_risk_in_unit_interval f failure gamma hg0 hg1 x).1)
+  · unfold expectedFiniteFeedbackRisk
+    calc
+      _≤∑x,weights x := Finset.sum_le_sum (fun x _=>mul_le_of_le_one_right (hw x)
+        (actual_feedback_risk_in_unit_interval f failure gamma hg0 hg1 x).2)
+      _=1 := hsum
+
+theorem actual_initial_weighted_risk_zero_iff_safe_at_every_positive_mass_state
+    {X : Type*} [Fintype X] (weights : X→ℝ) (hw : ∀x,0≤weights x)
+    (f : X→X) (failure : Set X) (gamma : ℝ) (hg0 : 0<gamma) (hg1 : gamma≤1) :
+    expectedFiniteFeedbackRisk weights f failure gamma=0 ↔
+      ∀x,0<weights x→∀n,f^[n] x∉failure := by
+  classical
+  constructor
+  · intro h x hx
+    have hs : weights x*finiteFeedbackRisk f failure gamma x≤expectedFiniteFeedbackRisk weights f failure gamma :=
+      Finset.single_le_sum (fun y _=>mul_nonneg (hw y)
+        (actual_feedback_risk_in_unit_interval f failure gamma hg0.le hg1 y).1) (Finset.mem_univ x)
+    have hr := (actual_feedback_risk_in_unit_interval f failure gamma hg0.le hg1 x).1
+    have hz : finiteFeedbackRisk f failure gamma x=0 := by rw [h] at hs;nlinarith
+    exact (actual_feedback_risk_zero_iff_never_fails f failure gamma hg0 x).mp hz
+  · intro h
+    unfold expectedFiniteFeedbackRisk
+    apply Finset.sum_eq_zero
+    intro x _
+    by_cases hx : 0<weights x
+    · rw [(actual_feedback_risk_zero_iff_never_fails f failure gamma hg0 x).mpr (h x hx),mul_zero]
+    · have hz : weights x=0 := le_antisymm (le_of_not_gt hx) (hw x)
+      rw [hz,zero_mul]
+
+theorem actual_positive_expected_feedback_risk_has_uniform_mass_discount_lower_bound
+    {X : Type*} [Fintype X] (weights : X→ℝ) (hw : ∀x,0≤weights x) (hsum : ∑x,weights x=1)
+    (f : X→X) (failure : Set X) (gamma : ℝ) (hg0 : 0<gamma) (hg1 : gamma≤1)
+    (hu : 0<expectedFiniteFeedbackRisk weights f failure gamma) :
+    minimumPositiveMass weights hsum*gamma^(Fintype.card X)≤expectedFiniteFeedbackRisk weights f failure gamma := by
+  classical
+  have hex : ∃x,0<weights x ∧ ∃n,f^[n] x∈failure := by
+    by_contra hn
+    have hs : ∀x,0<weights x→∀n,f^[n] x∉failure := by
+      intro x hx n hf;exact hn ⟨x,hx,n,hf⟩
+    have hz := (actual_initial_weighted_risk_zero_iff_safe_at_every_positive_mass_state weights hw f failure gamma hg0 hg1).mpr hs
+    linarith
+  obtain ⟨x,hx,hfail⟩ := hex
+  have hm := (actual_minimum_positive_probability_mass_is_positive_and_bounds_each_supported_state weights hsum).2 x hx
+  have hr := actual_failing_finite_feedback_risk_has_uniform_discount_lower_bound f failure gamma hg0 hg1 x hfail
+  have ht : weights x*finiteFeedbackRisk f failure gamma x≤expectedFiniteFeedbackRisk weights f failure gamma :=
+    Finset.single_le_sum (fun y _=>mul_nonneg (hw y)
+      (actual_feedback_risk_in_unit_interval f failure gamma hg0.le hg1 y).1) (Finset.mem_univ x)
+  exact (mul_le_mul hm hr (pow_nonneg hg0.le _) hx.le).trans ht
+
+theorem actual_finite_feedback_dual_search_stops_with_a_constant_positive_step
+    {X : Type*} [Fintype X] (weights : X→ℝ) (hw : ∀x,0≤weights x) (hsum : ∑x,weights x=1)
+    (policies : ℕ→X→X) (failure : Set X) (gamma eta threshold : ℝ)
+    (hg0 : 0<gamma) (hg1 : gamma≤1) (heta : 0<eta) (lambda : ℕ→ℝ)
+    (hupdate : ∀n,lambda (n+1)=max 0 (lambda n+eta*expectedFiniteFeedbackRisk weights (policies n) failure gamma))
+    (hsafeabove : ∀n,threshold<lambda n→expectedFiniteFeedbackRisk weights (policies n) failure gamma=0) :
+    ∃n,expectedFiniteFeedbackRisk weights (policies n) failure gamma=0 := by
+  by_contra hnone
+  have hpositive : ∀n,0<expectedFiniteFeedbackRisk weights (policies n) failure gamma := by
+    intro n
+    have hh := (actual_initial_probability_weighted_risk_in_unit_interval weights hw hsum (policies n) failure gamma hg0.le hg1).1
+    exact lt_of_le_of_ne hh (Ne.symm (fun hz=>hnone ⟨n,hz⟩))
+  let c := minimumPositiveMass weights hsum*gamma^(Fintype.card X)
+  have hc : 0<c := mul_pos (actual_minimum_positive_probability_mass_is_positive_and_bounds_each_supported_state weights hsum).1 (pow_pos hg0 _)
+  have hlow : ∀n,c≤expectedFiniteFeedbackRisk weights (policies n) failure gamma := by
+    intro n;exact actual_positive_expected_feedback_risk_has_uniform_mass_discount_lower_bound weights hw hsum (policies n) failure gamma hg0 hg1 (hpositive n)
+  have hlinear : ∀n,lambda 0+(n:ℝ)*(eta*c)≤lambda n := by
+    intro n
+    induction n with
+    | zero => simp
+    | succ n ih =>
+      have hs := le_max_right (0:ℝ) (lambda n+eta*expectedFiniteFeedbackRisk weights (policies n) failure gamma)
+      have he := mul_le_mul_of_nonneg_left (hlow n) heta.le
+      rw [←hupdate n] at hs
+      push_cast
+      nlinarith
+  obtain ⟨n,hn⟩ := exists_nat_gt ((threshold-lambda 0)/(eta*c))
+  have hc' : 0<eta*c := mul_pos heta hc
+  have ht : threshold<lambda n := by
+    have hh := (div_lt_iff₀ hc').mp hn
+    have hl := hlinear n
+    nlinarith
+  exact hnone ⟨n,hsafeabove n ht⟩

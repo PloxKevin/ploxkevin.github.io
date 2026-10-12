@@ -1,0 +1,122 @@
+
+namespace SafeLearning.CompleteModulesMatrixScenarioOpenObstruction30
+open ProbabilityTheory WithLp
+open scoped MatrixOrder Matrix.Norms.L2Operator Kronecker
+
+section MultivariateFullSupport
+variable {ι : Type*} [Fintype ι] [DecidableEq ι]
+
+theorem actual_standard_Euclidean_Gaussian_has_full_support :
+    (stdGaussian (EuclideanSpace ℝ ι)).IsOpenPosMeasure := by
+  letI : (gaussianReal 0 1).IsOpenPosMeasure := actual_unit_variance_real_Gaussian_has_full_support
+  letI : (Measure.pi (fun _ : ι => gaussianReal 0 1)).IsOpenPosMeasure := inferInstance
+  rw [←map_pi_eq_stdGaussian]
+  exact (show Continuous (@WithLp.toLp 2 (ι → ℝ)) by fun_prop).isOpenPosMeasure_map
+    (WithLp.toLp_surjective 2)
+
+theorem actual_positive_covariance_multivariate_Gaussian_has_full_support
+    (mean : EuclideanSpace ℝ ι) (S : Matrix ι ι ℝ) (hS : S.PosDef) :
+    (multivariateGaussian mean S).IsOpenPosMeasure := by
+  letI := actual_standard_Euclidean_Gaussian_has_full_support (ι := ι)
+  have hu : IsUnit (CFC.sqrt S) := (CFC.isUnit_sqrt_iff S hS.posSemidef.nonneg).mpr hS.isUnit
+  have hs : Function.Surjective (fun x : EuclideanSpace ℝ ι =>
+      mean+Matrix.toEuclideanCLM (𝕜 := ℝ) (CFC.sqrt S) x) := by
+    intro y
+    obtain ⟨x,hx⟩ := Matrix.mulVec_surjective_iff_isUnit.mpr hu (WithLp.ofLp (y-mean))
+    refine ⟨WithLp.toLp 2 x,?_⟩
+    rw [Matrix.toEuclideanCLM_toLp,hx,WithLp.toLp_ofLp,add_sub_cancel]
+  unfold multivariateGaussian
+  exact (show Continuous (fun x : EuclideanSpace ℝ ι =>
+    mean+Matrix.toEuclideanCLM (𝕜 := ℝ) (CFC.sqrt S) x) by fun_prop).isOpenPosMeasure_map hs
+
+theorem actual_multivariate_Gaussian_is_a_probability
+    (mean : EuclideanSpace ℝ ι) (S : Matrix ι ι ℝ) :
+    IsProbabilityMeasure (multivariateGaussian mean S) := by
+  unfold multivariateGaussian
+  infer_instance
+end MultivariateFullSupport
+
+abbrev PosteriorIndex := Fin 5 × State
+abbrev PosteriorVector := EuclideanSpace ℝ PosteriorIndex
+
+def posteriorVectorToPlant (x : PosteriorVector) : Plant :=
+  ((fun i j => x (j.castSucc,i)),fun i => x (Fin.last 4,i))
+
+def plantPosteriorCoordinate (j : Fin 5) (i : State) (m : Plant) : ℝ :=
+  (Fin.snoc (α := fun _ : Fin 5 => ℝ) (m.1 i) (m.2 i)) j
+
+def matrixNormalPlantLaw (mean : PosteriorVector)
+    (U : Matrix State State ℝ) (V : Matrix (Fin 5) (Fin 5) ℝ) : Measure Plant :=
+  (multivariateGaussian mean (V ⊗ₖ U)).map posteriorVectorToPlant
+
+theorem actual_posterior_vector_to_plant_is_continuous_and_surjective :
+    Continuous posteriorVectorToPlant ∧ Function.Surjective posteriorVectorToPlant := by
+  constructor
+  · unfold posteriorVectorToPlant
+    fun_prop
+  · rintro ⟨A,B⟩
+    refine ⟨WithLp.toLp 2 (fun ji : PosteriorIndex =>
+      (Fin.snoc (α := fun _ : Fin 5 => ℝ) (A ji.2) (B ji.2)) ji.1),?_⟩
+    apply Prod.ext
+    · ext i j
+      change Fin.snoc (α := fun _ : Fin 5 => ℝ) (A i) (B i) j.castSucc=A i j
+      exact Fin.snoc_castSucc (α := fun _ : Fin 5 => ℝ) (A i) (B i) j
+    · ext i
+      change Fin.snoc (α := fun _ : Fin 5 => ℝ) (A i) (B i) (Fin.last 4)=B i
+      exact Fin.snoc_last (α := fun _ : Fin 5 => ℝ) (B i) (A i)
+
+theorem actual_posterior_vector_to_plant_preserves_every_matrix_coordinate
+    (j : Fin 5) (i : State) (x : PosteriorVector) :
+    plantPosteriorCoordinate j i (posteriorVectorToPlant x)=x (j,i) := by
+  cases j using Fin.lastCases <;> simp [plantPosteriorCoordinate,posteriorVectorToPlant]
+
+theorem actual_matrix_normal_latent_covariance_is_the_printed_Kronecker_product
+    (mean : PosteriorVector) (U : Matrix State State ℝ) (V : Matrix (Fin 5) (Fin 5) ℝ)
+    (hU : U.PosDef) (hV : V.PosDef) (i i' : State) (j j' : Fin 5) :
+    cov[fun x => x (j,i),fun x => x (j',i');multivariateGaussian mean (V ⊗ₖ U)] =
+      V j j'*U i i' := by
+  simpa only [Matrix.kronecker_apply] using covariance_eval_multivariateGaussian
+    (hV.kronecker hU).posSemidef (j,i) (j',i')
+
+theorem actual_matrix_normal_plant_covariance_preserves_row_and_column_factors
+    (mean : PosteriorVector) (U : Matrix State State ℝ) (V : Matrix (Fin 5) (Fin 5) ℝ)
+    (hU : U.PosDef) (hV : V.PosDef) (i i' : State) (j j' : Fin 5) :
+    cov[plantPosteriorCoordinate j i,plantPosteriorCoordinate j' i';matrixNormalPlantLaw mean U V] =
+      V j j'*U i i' := by
+  unfold matrixNormalPlantLaw
+  rw [covariance_map (by fun_prop) (by fun_prop)
+    actual_posterior_vector_to_plant_is_continuous_and_surjective.1.measurable.aemeasurable]
+  simpa only [Function.comp_def,actual_posterior_vector_to_plant_preserves_every_matrix_coordinate]
+    using actual_matrix_normal_latent_covariance_is_the_printed_Kronecker_product mean U V hU hV i i' j j'
+
+theorem actual_positive_row_and_column_covariances_give_matrix_normal_full_support
+    (mean : PosteriorVector) (U : Matrix State State ℝ) (V : Matrix (Fin 5) (Fin 5) ℝ)
+    (hU : U.PosDef) (hV : V.PosDef) : (matrixNormalPlantLaw mean U V).IsOpenPosMeasure := by
+  letI := actual_positive_covariance_multivariate_Gaussian_has_full_support mean (V ⊗ₖ U)
+    (hV.kronecker hU)
+  unfold matrixNormalPlantLaw
+  exact actual_posterior_vector_to_plant_is_continuous_and_surjective.1.isOpenPosMeasure_map
+    actual_posterior_vector_to_plant_is_continuous_and_surjective.2
+
+theorem actual_matrix_normal_plant_law_is_a_probability
+    (mean : PosteriorVector) (U : Matrix State State ℝ) (V : Matrix (Fin 5) (Fin 5) ℝ) :
+    IsProbabilityMeasure (matrixNormalPlantLaw mean U V) := by
+  letI := actual_multivariate_Gaussian_is_a_probability mean (V ⊗ₖ U)
+  unfold matrixNormalPlantLaw
+  infer_instance
+
+theorem actual_positive_matrix_normal_posterior_has_positive_printed_initial_LMI_failure
+    (mean : PosteriorVector) (U : Matrix State State ℝ) (V : Matrix (Fin 5) (Fin 5) ℝ)
+    (hU : U.PosDef) (hV : V.PosDef)
+    (Qhalf noisehalf : Matrix State State ℝ) (r : ℝ) :
+    0 < (Measure.pi (fun _ : Fin 5 => matrixNormalPlantLaw mean U V))
+      {s | ¬ ∃ (Y Z : Matrix State State ℝ) (L : State → ℝ),
+        ∀ i,initialEqFourSemidefiniteCertificate (s i) Y Z L Qhalf noisehalf r} := by
+  letI := actual_positive_row_and_column_covariances_give_matrix_normal_full_support mean U V hU hV
+  letI := actual_matrix_normal_plant_law_is_a_probability mean U V
+  obtain ⟨ho,hn⟩ := actual_five_model_obstruction_is_a_nonempty_open_set
+  apply (ho.measure_pos (Measure.pi (fun _ : Fin 5 => matrixNormalPlantLaw mean U V)) hn).trans_le
+  exact measure_mono (fun s hs => actual_open_five_model_event_makes_the_paper_semidefinite_initial_LMI_infeasible
+    s hs Qhalf noisehalf r)
+
+end SafeLearning.CompleteModulesMatrixScenarioOpenObstruction30

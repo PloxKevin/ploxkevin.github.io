@@ -1,0 +1,117 @@
+
+def actualConstrainedPointwiseValue {X U : Type*} (G rho : X → U → ℝ) (x : X) : ℝ :=
+  ⨆ u : {u : U // rho x u = 0}, G x u.val
+
+section PrimalExpected
+variable {X U : Type*} [MeasurableSpace X] [Nonempty U]
+
+theorem actual_common_safe_pointwise_optimum_derives_the_expected_primal_identity
+    (mu : Measure X) [IsProbabilityMeasure mu] (G rho : X → U → ℝ) (B : ℝ)
+    (hG : ∀ u, AEStronglyMeasurable (fun x => G x u) mu)
+    (hrho : ∀ u, AEStronglyMeasurable (fun x => rho x u) mu)
+    (hbound : ∀ x u, |G x u| ≤ B) (hrisk : ∀ x u, rho x u ∈ Icc 0 1)
+    (common : U) (hsafe : ∀ x, rho x common = 0)
+    (hbest : ∀ x u, rho x u = 0 → G x u ≤ G x common) :
+    Integrable (actualConstrainedPointwiseValue G rho) mu ∧
+      actualPrimal (expectedReward mu G) (expectedRisk mu rho) =
+        ∫ x, actualConstrainedPointwiseValue G rho x ∂mu := by
+  have hi := actual_bounded_measurable_reward_and_risk_are_integrable mu G rho B hG hrho hbound hrisk
+  have hb := actual_expected_reward_and_risk_bounds mu G rho B hG hrho hbound hrisk
+  have he : ∀ x, actualConstrainedPointwiseValue G rho x = G x common := by
+    intro x
+    letI : Nonempty {u : U // rho x u = 0} := ⟨⟨common,hsafe x⟩⟩
+    apply le_antisymm
+    · exact ciSup_le (fun u => hbest x u.val u.property)
+    · exact le_ciSup (show BddAbove (range (fun u : {u : U // rho x u = 0} => G x u.val)) from
+        ⟨B,by rintro _ ⟨u,rfl⟩;exact (le_abs_self _).trans (hbound x u.val)⟩) ⟨common,hsafe x⟩
+  have hiv : Integrable (actualConstrainedPointwiseValue G rho) mu :=
+    (hi common).1.congr (ae_of_all _ (fun x => (he x).symm))
+  have hsafeE : expectedRisk mu rho common = 0 := by
+    simp only [expectedRisk,show (fun x => rho x common) = 0 from funext hsafe,integral_zero]
+  letI : Nonempty {u : U // expectedRisk mu rho u = 0} := ⟨⟨common,hsafeE⟩⟩
+  have heint : (∫ x,actualConstrainedPointwiseValue G rho x ∂mu) = expectedReward mu G common := by
+    exact integral_congr_ae (ae_of_all _ he)
+  refine ⟨hiv,le_antisymm ?_ ?_⟩
+  · apply ciSup_le
+    intro u
+    rw [heint]
+    have hu := (actual_expected_zero_risk_iff_almost_sure_zero_pointwise_risk mu rho u.val
+      (hi u.val).2 (fun x => (hrisk x u.val).1)).mp u.property
+    apply integral_mono_ae (hi u.val).1 (hi common).1
+    filter_upwards [hu] with x hx
+    exact hbest x u.val hx
+  · rw [heint]
+    exact le_ciSup (show BddAbove (range (fun u : {u : U // expectedRisk mu rho u = 0} => expectedReward mu G u.val)) from
+      ⟨B,by rintro _ ⟨u,rfl⟩;exact (le_abs_self _).trans (hb.1 u.val)⟩) ⟨common,hsafeE⟩
+
+theorem actual_common_pointwise_SVF_and_safe_optimum_give_zero_duality_gap
+    (mu : Measure X) [IsProbabilityMeasure mu] (G rho : X → U → ℝ) (B p : ℝ)
+    (hG : ∀ u, AEStronglyMeasurable (fun x => G x u) mu)
+    (hrho : ∀ u, AEStronglyMeasurable (fun x => rho x u) mu)
+    (hbound : ∀ x u, |G x u| ≤ B) (hrisk : ∀ x u, rho x u ∈ Icc 0 1)
+    (safe common : U) (hsafe : ∀ x, rho x safe = 0)
+    (hbest : ∀ x u, rho x u = 0 → G x u ≤ G x safe)
+    (hmax : ∀ x u, G x u-p*rho x u ≤ G x common-p*rho x common)
+    (hSVF : ∀ x u, (∀ v, G x v-p*rho x v ≤ G x u-p*rho x u) → rho x u = 0) :
+    actualDual (expectedReward mu G) (expectedRisk mu rho) p =
+      actualPrimal (expectedReward mu G) (expectedRisk mu rho) := by
+  have hc : ∀ x, rho x common = 0 := fun x => hSVF x common (hmax x)
+  have he : ∀ x, G x common = G x safe := by
+    intro x
+    apply le_antisymm (hbest x common (hc x))
+    simpa [hc x,hsafe x] using hmax x safe
+  have hs : ∀ x u, G x u-p*rho x u ≤ G x safe-p*rho x safe := by
+    intro x u
+    simpa [he x,hc x,hsafe x] using hmax x u
+  have hd := (actual_common_pointwise_maximizer_derives_the_dual_expectation_identity
+    mu G rho B p hG hrho hbound hrisk safe hs).2
+  have hp := (actual_common_safe_pointwise_optimum_derives_the_expected_primal_identity
+    mu G rho B hG hrho hbound hrisk safe hsafe hbest).2
+  rw [hd,hp]
+  apply integral_congr_ae
+  apply ae_of_all
+  intro x
+  have hv : pointwiseValue G rho p x = G x safe := by
+    apply le_antisymm
+    · apply ciSup_le
+      intro u
+      simpa [hsafe x] using hs x u
+    · simpa [pointwiseValue,actualDual,hsafe x] using le_ciSup
+        (actual_bounded_rewards_and_unit_risks_bound_every_penalized_return (G x) (rho x) B p (hbound x) (hrisk x)) safe
+  have hcV : actualConstrainedPointwiseValue G rho x = G x safe := by
+    letI : Nonempty {u : U // rho x u = 0} := ⟨⟨safe,hsafe x⟩⟩
+    apply le_antisymm
+    · exact ciSup_le (fun u => hbest x u.val u.property)
+    · exact le_ciSup (show BddAbove (range (fun u : {u : U // rho x u = 0} => G x u.val)) from
+        ⟨B,by rintro _ ⟨u,rfl⟩;exact (le_abs_self _).trans (hbound x u.val)⟩) ⟨safe,hsafe x⟩
+  exact hv.trans hcV.symm
+
+theorem actual_expected_global_maximizer_is_almost_surely_safe_under_pointwise_SVF
+    (mu : Measure X) [IsProbabilityMeasure mu] (G rho : X → U → ℝ) (B p : ℝ)
+    (hG : ∀ u, AEStronglyMeasurable (fun x => G x u) mu)
+    (hrho : ∀ u, AEStronglyMeasurable (fun x => rho x u) mu)
+    (hbound : ∀ x u, |G x u| ≤ B) (hrisk : ∀ x u, rho x u ∈ Icc 0 1)
+    (common : U) (hmax : ∀ x u, G x u-p*rho x u ≤ G x common-p*rho x common)
+    (hSVF : ∀ x u, (∀ v, G x v-p*rho x v ≤ G x u-p*rho x u) → rho x u = 0)
+    (u : U) (hmaxE : expectedReward mu G u-p*expectedRisk mu rho u =
+      actualDual (expectedReward mu G) (expectedRisk mu rho) p) :
+    ∀ᵐ x ∂mu, rho x u = 0 := by
+  have hi := actual_bounded_measurable_reward_and_risk_are_integrable mu G rho B hG hrho hbound hrisk
+  obtain ⟨hiv,hd⟩ := actual_common_pointwise_maximizer_derives_the_dual_expectation_identity
+    mu G rho B p hG hrho hbound hrisk common hmax
+  have hil : Integrable (fun x => G x u-p*rho x u) mu := (hi u).1.sub ((hi u).2.const_mul p)
+  have hnn : ∀ x, 0 ≤ pointwiseValue G rho p x-(G x u-p*rho x u) := by
+    intro x
+    apply sub_nonneg.mpr
+    exact le_ciSup (actual_bounded_rewards_and_unit_risks_bound_every_penalized_return (G x) (rho x) B p (hbound x) (hrisk x)) u
+  have hzero : (∫ x,pointwiseValue G rho p x-(G x u-p*rho x u) ∂mu) = 0 := by
+    rw [integral_sub hiv hil,← actual_expected_lagrangian_is_the_integral_of_the_pointwise_lagrangian mu G rho p u (hi u).1 (hi u).2,← hd,hmaxE,sub_self]
+  have hz := (integral_eq_zero_iff_of_nonneg hnn (hiv.sub hil)).mp hzero
+  filter_upwards [hz] with x hx
+  have he : pointwiseValue G rho p x = G x u-p*rho x u := sub_eq_zero.mp hx
+  apply hSVF x u
+  intro v
+  have h := le_ciSup (actual_bounded_rewards_and_unit_risks_bound_every_penalized_return (G x) (rho x) B p (hbound x) (hrisk x)) v
+  exact h.trans_eq he
+
+end PrimalExpected

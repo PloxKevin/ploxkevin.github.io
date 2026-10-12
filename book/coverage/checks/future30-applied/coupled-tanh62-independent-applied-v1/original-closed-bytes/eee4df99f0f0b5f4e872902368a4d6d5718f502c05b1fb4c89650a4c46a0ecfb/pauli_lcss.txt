@@ -1,0 +1,432 @@
+                                                         Training robust neural networks using Lipschitz bounds
+                                                               Patricia Pauli, Anne Koch, Julian Berberich, Paul Kohler and Frank Allgöwer
+
+
+                                            Abstract— Due to their susceptibility to adversarial perturba-           and Lipschitz interpolation [12], [13]. Based on this notion
+                                         tions, neural networks (NNs) are hardly used in safety-critical             of Lipschitz continuity, we propose a framework for training
+                                         applications. One measure of robustness to such perturbations               of robust NNs that encourages a small Lipschitz constant by
+                                         in the input is the Lipschitz constant of the input-output map
+                                         defined by an NN. In this work, we propose a framework                      including a regularizer or respectively, a constraint on the
+
+
+
+
+arXiv:2005.02929v2 [cs.LG] 15 Sep 2020
+                                         to train multi-layer NNs while at the same time encouraging                 NN’s Lipschitz constant.
+                                         robustness by keeping their Lipschitz constant small, thus                     Trivial Lipschitz bounds of NNs can be determined by
+                                         addressing the robustness issue. More specifically, we design               the product of the spectral norms of the weights [4] which is
+                                         an optimization scheme based on the Alternating Direction                   used during training in [14], [15]. Similar to [16], we use the
+                                         Method of Multipliers that minimizes not only the training
+                                         loss of an NN but also its Lipschitz constant resulting in                  Lipschitz constant as a regularization functional. However,
+                                         a semidefinite programming based training procedure that                    they use local Lipschitz constants whereas we penalize the
+                                         promotes robustness. We design two versions of this training                global one. In [17], Fazlyab et al. propose an interesting
+                                         procedure. The first one includes a regularizer that penalizes              new estimation scheme for more accurate upper bounds
+                                         an accurate upper bound on the Lipschitz constant. The second               on the Lipschitz constant than the weights’ spectral norms
+                                         one allows to enforce a desired Lipschitz bound on the NN at
+                                         all times during training. Finally, we provide two examples to              exploiting the structure of the nonlinear activation functions.
+                                         show that the proposed framework successfully increases the                 Activation functions are gradients of convex potential func-
+                                         robustness of NNs.                                                          tions, and hence monotonically increasing functions with
+                                                                                                                     bounded slopes, which is used in [17] to state the property of
+                                                                 I. I NTRODUCTION                                    slope-restriction as an incremental quadratic constraint and
+                                            Neural networks (NNs) and deep learning have lately been                 then formulate a semidefinite program (SDP) that determines
+                                         successful in many fields [1], [2], where they are mostly used              an upper bound on the Lipschitz constant. In [17], three
+                                         for classification and segmentation problems, as well as in                 variants of the Lipschitz constant estimation framework are
+                                         reinforcement learning [3]. The main advantages of NNs are                  proposed trading off accuracy and computational tractability.
+                                         that they can be trained straightforwardly using backprop-                  In this paper, we disprove by counterexample the most
+                                         agation and as universal function approximators they have                   accurate approach presented in [17], and we employ the other
+                                         the capability to represent complex nonlinearities. While                   approaches for training of robust NNs. More specifically, we
+                                         NNs are powerful and broadly applicable they lack rigorous                  include the SDP-based Lipschitz bound characterization of
+                                         guarantees which is why they are not yet applied to safety-                 [17] in the training procedure via an Alternating Direction
+                                         critical applications such as medical devices and autonomous                Method of Multipliers (ADMM) scheme. We present two
+                                         driving. Adversarial attacks can easily deceive an NN by                    versions of the training method, (i) a regularizer rendering the
+                                         adding imperceptible perturbations to the input [4] which                   Lipschitz constant small and (ii) enforces guaranteed upper
+                                         is a problem that has recently been tackled increasingly in a               bounds on the Lipschitz constant during training.
+                                         number of different ways such as adversarial training [5] and                  The main contributions of this manuscript are the two
+                                         defensive distillation [6]. Another promising approach is to                training procedures for robust NNs based on the notion
+                                         show that an NN is provably robust against norm-bounded                     of Lipschitz continuity, using a tight upper bound on the
+                                         adversarial perturbations [7], [8], e.g. by maximizing margins              Lipschitz constant. In addition, we show that the method
+                                         [9], while yet another one is to use Lipschitz constants                    for Lipschitz constant estimation for NNs that was recently
+                                         as a robustness measure that indicate the sensitivity of the                proposed in [17] requires a modification for the least con-
+                                         output to perturbations in the input [10]. There are a number               servative choice of decision variables. This manuscript is
+                                         of other regression methods that provide guaranteed and                     organized as follows. In Section II, we introduce Lipschitz
+                                         optimized upper bounds on the Lipschitz constant such as                    constant estimation for NNs based on [17] but disprove
+                                         nonlinear set membership predictions, kinky inference [11]                  their most accurate Lipschitz estimator. In Section III, we
+                                                                                                                     present a training procedure with Lipschitz regularization
+                                           This work was funded by Deutsche Forschungsgemeinschaft (DFG,             and outline the setup of the optimization problem that is
+                                         German Research Foundation) under Germanys Excellence Strategy - EXC        solved using ADMM. Subsequently, we introduce a variation
+                                         2075 - 390740016. The authors thank the International Max Planck Research
+                                         School for Intelligent Systems (IMPRS-IS) for supporting Patricia Pauli,    of the proposed procedure that allows to enforce Lipschitz
+                                         Anne Koch, and Julian Berberich.                                            bounds on the NN and finally, we discuss the convergence
+                                           Patricia Pauli, Anne Koch, Julian Berberich, Paul Kohler                  and the computational tractability of the ADMM scheme.
+                                         and Frank Allgöwer are with the Institute for Systems Theory
+                                         and    Automatic     Control,   University     of    Stuttgart,  Germany    In Section IV, we provide two examples on which we
+                                         patricia.pauli@ist.uni-stuttgart.de                                         successfully apply the proposed training procedures.
+          II. L IPSCHITZ CONSTANT ESTIMATION                       where 0 ≤ α < β < ∞. Consider the vector of activation
+                                                                   functions φi : Rni → Rni , φi (xi ) = [ϕ(xi1 ) · · · ϕ(xini )]⊤
+   In this section, we briefly introduce robustness in the
+                                                                   and a fully-connected feed-forward NN with l hidden layers
+context of neural networks. We then state a method to
+                                                                   f : Rn0 → Rnl+1 described by the following equations
+estimate the Lipschitz constant of an NN based on [17] and
+finally argue why one of the methods for Lipschitz constant                  x0 = x,
+estimation proposed in [17] is incorrect.                                  xi+1 = φi+1 (W i xi + bi ),              i = 0, . . . , l − 1,     (3)
+                                                                                       l l       l
+A. Robustness of NNs                                                       f (x) = W x + b ,
+
+   A robust NN should not change its prediction if the input       where W i ∈ Rni+1 ×ni are the weight matrices and bi ∈
+is perturbed imperceptibly. To quantify robustness, a suitable     Rni+1 are the biases of the i-th layers, n0 , · · · , nl+1 being
+robustness measure has to be defined. One definition is that       the dimension of the input, the neurons in the hidden layers,
+perturbations from a norm-bounded uncertainty set may not          and the output. For every neuron, the slope-restriction prop-
+alter the prediction. Alternatively, using probabilistic ap-       erty (2) can be written as an incremental quadratic constraint.
+proaches, random perturbations do not change the prediction        Weighting these quadratic constraints with λii ≥ 0, or
+with a certain probability. A third alternative is the Lipschitz   respectively, all activations with a diagonal weighting matrix
+constant, a sensitivity measure. A function f : Rn → Rm is                                                      n
+                                                                                                                X
+globally Lipschitz continuous if there exists an L ≥ 0 such            T ∈ Dn := {T ∈ Rn×n | T =                      λii ei e⊤
+                                                                                                                              i , λii ≥ 0},
+that                                                                                                            i=1
+                                                                   results in an incremental quadratic constraint for the stacked
+         kf (x) − f (y)k ≤ L kx − yk      ∀x, y ∈ Rn .      (1)    activations:
+                                                                                  ⊤                                     
+The smallest L for which (1) holds is the Lipschitz constant             x̃ − ỹ        −2αβT (α + β)T             x̃ − ỹ
+                                                                                                                               ≥ 0,
+L∗ . If the input changes from x to y, the Lipschitz constant         φ(x̃) − φ(ỹ)    (α + β)T     −2T        φ(x̃) − φ(ỹ)
+gives an upper bound on how much the output f changes.                               |          {z          }
+                                                                                                     :=F (T )
+Hence, a low Lipschitz constant indicates low sensitivity                                                                           (4)
+                                                                                                                   Pl
+which is equivalent to high robustness. In this work, we aim       for all T ∈ Dn , x̃, ỹ ∈ Rn with n =              i=1 n i . Herein,
+to minimize the Lipschitz constant or respectively bound the       the inputs to all neurons are stacked up in one vector
+Lipschitz constant from above during training to increase the      x̃, ỹ, respectively, and the activation function φ : Rn →
+robustness of the resulting NN.                                    Rn , φ(x̃) = [φ1 (x1 )⊤ · · · φl (xl )⊤ ]⊤ is then applied to the
+   Regularization, i.e., adding a penalty term to the objective    concatenated vector. We now formulate an SDP based on
+function of the NN, is a prevalent measure in NN training          [17] that exploits (4) for the estimation of an upper bound
+in order to prevent overfitting. L2 regularization penalizes       on the Lipschitz constant of the map characterized by the
+the squared norm of the weights and L1 regularization the          underlying NN. We therefore define
+weights’ L1 norm. Bounding the weights counteracts the fit                        0                         
+                                                                                   W      ...     0      0
+of sudden peaks and outliers, promotes better generalization,
+                                                                            A =  ...     ..      ..      ..  , B = 0 I  .
+                                                                                 
+and smoothens the resulting NN [18]. Furthermore, the                                        .     .       .              n
+product of the spectral norms of the weights provides a trivial                    0     ...      W l−1         0
+bound on an NN’s Lipschitz constant and consequently, L1
+                                                                   Theorem 1. Suppose there exist L2 > 0, T ∈ Dn such that
+and L2 regularization improve the robustness of an NN in
+the sense of Lipschitz continuity. In this paper, we penalize                                  Pl (L2 , T )  0,                              (5)
+a more accurate estimate of the Lipschitz constant, leading
+                                                                   where
+to a more direct and potentially more effective approach.                                             2                               
+                                                                                     ⊤            −L I                     0   0
+                                                                                     A           A
+B. Lipschitz constant estimation                                    Pl (L2 , T ) :=      F (T )     + 0                       0   0 .
+                                                                                     B           B                                 ⊤
+   In the following, we outline a method to estimate bounds                                            0                       0 Wl Wl
+on the Lipschitz constant of multi-layer NNs exploiting the          Then, (3) is globally Lipschitz continuous with Lipschitz
+slope-restricted structure of the nonlinear activation func-       bound L ≥ L∗ .
+tions, as it was shown in [17]. This method named LipSDP
+yields more accurate bounds than trivial bounds, i.e., the            The proof directly follows from A.4 in [19], the extended
+                                                                   version of [17]. Note that this result differs from Theorem 2
+product of the spectral norms of the weights.
+                                                                   in [17] as T in our case is a diagonal matrix. As we show
+   Continuous nonlinear activation functions ϕ : R → R
+                                                                   in Section II-C, the result does not hold in general for the
+can be interpreted as gradients of continuously differentiable,
+                                                                   larger parametrization of T provided in [17]. The smallest
+convex potential functions and consequently, they are slope-
+                                                                   value for the Lipschitz upper bound is determined by solving
+restricted, i.e., their slope is at least α and at most β,
+                                                                   the SDP
+                 ϕ(x) − ϕ(y)
+           α≤                ≤β          ∀x, y ∈ R,         (2)                min L2 s. t.      Pl (L2 , T )  0, T ∈ Dn ,                   (6)
+                    x−y                                                        L2 ,T
+where T and L2 serve as decision variables.                     which disproves Lemma 1 of [17].
+Remark 2. In the case of one hidden layer the matrix P1                        III. T RAINING ROBUST NN S
+reduces to                                                          In Section II-B, we stated a method that provides cer-
+               "                                      #
+                       0⊤     0     2            0⊤             tificates on an NN’s Lipschitz constant. In this section, we
+                −2αβW     T W   − L   I (α + β)W    T
+  P1 (L2 , T )=                                  ⊤     .        employ these certificates to design a training procedure for
+                   (α + β)T W 0         −2T + W 1 W 1
+                                                                robust NNs. The proposed approach allows us to directly
+C. Counterexample for LipSDP with coupling                      regularize the Lipschitz constant during training, which is
+  In [17], three versions of the method LipSDP for Lipschitz    only possible indirectly in regularization methods such as
+constant estimation are stated that reconcile accuracy of the   L2 regularization. We present two versions of it, the first one
+Lipschitz bound and computational complexity of the method      allows for minimization of the upper bound on the Lipschitz
+by adjusting the number of the decision variables in the SDP.   constant and the second one allows to enforce a desired
+In this section, we give an illustrative counterexample to      bound on the Lipschitz constant.
+show that Theorems 1 and 2 in [17] are incorrect for the
+most accurate variant of LipSDP.                                A. Weights as decision variables
+  Theorem 2 in [17] resembles Theorem 1 of this manuscript         Eq. (6) can be used to assess an NN’s robustness after
+with the difference that in [17] a set of symmetric coupling    training, whereas in this manuscript, to promote robustness
+matrices                                                        during training, we use Eq. (6) to update the weights while
+                               Xn                               minimizing the bound on the Lipschitz constant. Applying
+     Tn ={T ∈ Rn×n | T =          λii ei e⊤
+                                          i                     the Schur complement to (5) for α = 0, the LMI can be
+                X               i=1                             rearranged, yielding an equivalent LMI that is linear in L2
+          +             λij (ei − ej )(ei − ej )⊤ , λij ≥ 0},   and W = (W 0 , · · · , W l ), for fixed T ∈ Dn :
+              1≤i<j≤n                                                                   ⊤                
+                                                                            2           A         0     βT   A
+is introduced whereas we state Theorem 1 for a set of                  Ml (L , W ) :=
+                                                                                        B        βT −2T B
+diagonal matrices Dn . In the following, we give a minimal                                 2                       
+                                                                                             −L I 0 0            0       (7)
+counterexample to show that, as suggested in this manuscript,                              0         0 0        0 
+a further restriction of the class of T is required. For that                          +                         ⊤  0
+                                                                                                                    
+purpose, consider an NN with one hidden layer of size                                          0      0 0 Wl 
+n1 = 2, input and output size n0 = n2 = 1, activation                                          0      0 W l −I
+function tanh and weights and biases                            Remark 3. For α > 0, the underlying constraint is not
+                                                            convex in W . Consequently, we cannot state LMI constraints
+          −1            −1                  
+ W0 =          , b0 =        , W 1 = −1 1 , b1 = −0.5.          for α > 0 and instead set α = 0. This is a conservative
+          −1             1
+                                                                choice for some activation functions, yet the tight lower
+The resulting NN provides a good fit for the cosine function    bound for the most common ones. E.g. for ReLU and tanh
+on x ∈ [− π2 , π2 ] with a maximum deviation in the output      the tight bounds are α = 0 and β = 1 and the sigmoid
+of 0.0843. Therefore, the maximum slope of the cosine           function is slope-restricted with α = 0 and β = 41 .
+gives a good approximation of the Lipschitz constant of
+this NN, which is ±1 at x = ± π2 , such that L∗ ≈ 1.            Remark 4. For the single-layer case, M1 conveniently
+However, the linear matrix inequality (LMI) (5) is feasible     reduces to
+                                                                                                          
+for arbitrarily small L2 and T = (e1 − e2 )(e1 − e2 )⊤ ∈                                          ⊤
+                                                                                        −L2 I βW 0 T    0
+Tn . An arbitrarily small L is obviously no upper bound                M1 (L2 , W ) = βT W 0
+                                                                                                         ⊤
+                                                                                               −2T    W1 .
+on the Lipschitz constant of a cosine like function, thus
+                                                                                         0     W1      −I
+contradicting Theorem 1 in [17].
+    To understand why in this case the LipSDP method fails         While the Lipschitz constant estimation scheme in [17]
+to provide an upper bound on the Lipschitz constant, we look    optimizes over T , throughout the manuscript, we choose
+into the coupling of the neurons accounted for by T ∈ Tn .      T to be a fixed matrix. This introduces conservatism into
+Theorems 1 and 2 in [17] build on the assumption that (4)       the framework and necessitates a suitable choice for T in
+holds for all T ∈ Tn (Lemma 1 in [17]). In the following, we    order to keep the introduced conservatism to a minimum. For
+show by counterexample that Lemma 1 in [17] is incorrect,       instance, the matrix T may be determined from the Lipschitz
+i.e., that for a given slope-restricted function ϕ there are    constant estimation outlined in Section II-B on the vanilla
+x̃, ỹ ∈ Rn and T ∈ Tn that violate (4). We choose n1 = 2,      NN or the L2 regularized NN trained on the same problem.
+ϕ as the ReLU function that is slope-restricted in the sector
+                                                    
+[0, 1], and T = (e1 − e2 )(e1 − e2 )⊤ ∈ Tn . Let x = 0 1
+                                                          ⊤    B. Lipschitz regularization
+                    ⊤                                           In general, NNs are trained on input-output data with the
+and y = −1.5 0 . Then evaluating (4) yields
+                  ⊤                                       objective of minimizing a predefined loss, e.g. the mean
+         x̃ − ỹ        0   T         x̃ − ỹ                   squared error, cross-entropy, or hinge loss. We propose to
+                                                 = −2 < 0,
+      φ(x̃) − φ(ỹ)     T −2T φ(x̃) − φ(ỹ)                     not only minimize the NN’s loss but also its Lipschitz
+constant. This yields an optimization problem with two                 in (9), resulting in a multi-block ADMM scheme. This reduces
+separate objectives that can be solved conveniently using              conservatism but increases computation time.
+ADMM.
+   ADMM is an algorithm that solves optimization problems              C. Enforcing Lipschitz bounds
+by splitting them into smaller subproblems that are easier                In Section III-B, we suggested to minimize an upper bound
+to handle individually [20]. In order to apply the ADMM                on the Lipschitz constant of an NN. Using the proposed
+algorithm, the objective must be separable. The resulting              ADMM framework, it is also possible to enforce a desired
+subobjectives are then defined on uncoupled convex sets and            upper bound on the Lipschitz constant during training of an
+are subject to linear equality constraints. The ADMM scheme            NN. In that case, the Lipschitz constant is not minimized but
+solves the resulting optimization problem through indepen-             instead set to a desired value Ldes . Judiciously, L2 does not
+dent minimization steps on the augmented Lagrangian of the             appear in the optimization objective of this setup
+optimization problem and a dual update step. The objectives
+at hand, i.e., the NN’s loss and the Lipschitz bound, are                             min      L(W ) + 1Ml (L2des , W̄ )
+                                                                                     W,W̄                                         (10)
+indeed separable and defined on uncoupled convex sets.
+                                                                                       s. t.   W = W̄
+However, the problems are not completely independent and
+need to be connected through a linear constraint that requires         where W and W̄ serve as decision variables. For enforce-
+the introduction of additional variables W̄ = (W̄ 0 , . . . , W̄ l )   ment of Lipschitz bounds, we apply the ADMM algorithm
+of equal size as W . The loss of the NN L(W ) is an                    as in (9) to (10) instead of (8), i.e., we set L = Ldes instead
+explicit function of the weights W and the Lipschitz bound             of optimizing over L2 .
+L depends on W̄ through the LMI (7), yielding the following
+optimization problem:                                                  Theorem 6. When training a fully-connected NN with l
+                                                                       hidden layers (3) by executing the ADMM scheme (9) for
+            min         L(W ) + µL2 + 1Ml (L2 , W̄ )                   (10), Ldes is an upper bound on the Lipschitz constant for
+          W,W̄ ,L2                                              (8)    the NN with weights W̄ at all times during training.
+               s. t.    W = W̄
+                                                                       Proof. Theorem 6 follows from the fact that, by design,
+where µ > 0 is a weighting parameter adjusting the trade-off
+                                                                       the bound Ldes on the Lipschitz constant is enforced in
+between accuracy and robustness and
+                       (                                               every iteration of the ADMM scheme, more specifically,
+              2          0 if Ml (L2 , W̄ )  0                        in every Lipschitz update step (9b) by the LMI constraint
+        1M (L , W̄ ) =                           .                     Ml (L2des , W̄ )  0 on the weights W̄ .
+                         ∞ if Ml (L2 , W̄ ) ≻ 0
+is the indicator function. Applying the ADMM scheme to                    The training procedure based on (10) allows to choose the
+problem (8), results in the augmented Lagrangian function              value of the Lipschitz bound and to train NNs with Lipschitz
+                                                                       guarantees. This way, a desired degree of robustness can be
+     Lρ (W, W̄ , L2 , Y ) := L(W ) + µL2 + 1Ml (L2 , W̄ )
+                                                                       directly enforced. However, the choice of such a constraint on
+                                         ρ              2
+                      +tr(Y (W − W̄ )) +    W − W̄                     L is always connected to the trade-off between accuracy and
+                                         2                             robustness, as the fit generally deteriorates when decreasing
+with Lagrange multipliers Y i ∈ Rni ×ni+1 , Y = (Y 0 , Y 1 )           the Lipschitz constant constraint. In addition, it is helpful to
+and the penalty parameter ρ > 0. The optimum for (8) is                initialize the weight parameters appropriately which does not
+then determined via the following iterative ADMM update                only accelerate training but may also facilitate a better fit.
+steps:
+                                                                       D. Convergence
+              Wk+1 = arg min Lρ (W, W̄k , L2k , Yk )           (9a)
+                           W                                              ADMM was first introduced for optimization problems
+    (L2k+1 , W̄k+1 ) = arg min Lρ (Wk+1 , W̄ , L2 , Yk )       (9b)    with convex subobjectives [20] and later, analyses of the
+                         L2 ,W̄                                        ADMM scheme for non-convex objectives including further
+               Yk+1 =Yk + ρ(Wk+1 − W̄k+1 ).                    (9c)    structural assumptions on the objective were formulated
+                                                                       [21]. In the proposed framework, the loss L(W ) clearly is
+   For training of robust NNs, we carry out the corresponding
+                                                                       not convex and has no obvious structural properties which
+updates consecutively until convergence. The loss function
+                                                                       renders a thorough convergence analysis complicated and
+is optimized analytically using backpropagation (Eq. (9a))
+                                                                       beyond the scope of this work. However, looking at the
+whereas the Lipschitz update step (9b) is an SDP, as im-
+                                                                       subproblems (9a) and (9b) separately, we point out that
+plementation of the indicator function corresponds to an
+                                                                       for (9a) gradient descent almost surely converges to local
+LMI constraint. Hence, the Lipschitz update step requires to
+                                                                       minima even for non-convex problems [22], and that (9b) is
+solve an SDP in every iteration and thereby adds additional
+                                                                       a semidefinite program with a unique minimizer. Thus adding
+computations compared to the training of a vanilla NN.
+                                                                       the convex regularization term and the indicator function of
+Remark 5. It is possible to extend the framework and                   a convex set to the optimization problem of NN training, that
+optimize over L2 , T , and W at the same time which requires           converges reliably, does not add complexity in the form of
+a second LMI constraint in (8) and an additional update step           non-convexity to the optimization problem.
+                                                                    is slope-restricted with α = 0, β = 1, and the cross entropy
+                                                                    loss (CEL) as the loss function. For comparison, we train
+    1                              1
+                                                                    three NNs, a vanilla NN, an NN with L2 regularization (L2-
+  0.8                             0.8                               NN) for benchmarking and finally the Lipschitz regularized
+                                                                    NN (Lipschitz-NN) according to Section II-B, wherein the
+  0.6                             0.6
+                                                                    NN loss update step (9a) is solved using stochastic gradient
+  0.4                             0.4                               descent and the SDP (9b) is solved using numerical SDP
+                                                                    solvers [23], [24]. Before training, we initialize the Lipschitz-
+                                  0.2
+  0.2                                                               NN with the L2 regularized NN with penalty parameter λ =
+    0
+                                   0                                4 × 10−3 . The hyperparameters ρ = 0.25 and µ = 1 × 10−5
+        0         0.5        1          0          0.5          1   are chosen such that for comparability the Lipschitz constants
+                                                                    of the L2-NN and the Lipschitz-NN are roughly the same.
+            (a) 2D data                (b) Logits at x2 = 0.5       The resulting cross-entropy losses, accuracies on test data
+               Fig. 1: 2D classification example.                   and bounds on the Lipschitz constant, that are summarized
+                                                                    in Table I, show that the nominal NN achieves a small
+                                                                    CEL, yet a high Lipschitz bound of 242. Comparing the two
+E. Computational tractability                                       regularizers, we see that Lipschitz regularization here leads
+   Computational tractability and scalability of the proposed       to both a lower Lipschitz bound L, hence higher robustness,
+framework depend on the number of decision variables of             and a lower CEL than L2 regularization. Even though, due
+the SDP. Generally, the complexity of SDP solvers scales            to the trade-off between accuracy and robustness, the CEL
+cubically with the number of decision variables. Hence, for         of the Lipschitz-NN is higher than the CEL of the nominal
+high-dimensional decision variables, solving an SDP is com-         NN, the accuracy of the Lipschitz-NN is not compromised.
+putationally more expensive than solving an unconstrained           On the contrary, the Lipschitz-NN even provides the highest
+optimization problem using gradient descent. Therefore, the         accuracy, as the nominal NN tends to overfit the data whereas
+Lipschitz update step (9b) becomes the bottleneck of the            the L2 regularized NN fails to provide a good fit in this
+proposed method as the number of neurons per hidden layers          example. Fig. 1b shows a projection at x2 = 0.5 of the
+and the number of hidden layers, that together determine            logits resulting from the three NNs for all three classes (blue,
+the size of the weights, increases. For example for picture         green, and orange) onto the x1 dimension. We clearly see the
+inputs as commonly used in classification problems, the input       effect of a lower Lipschitz constant in the less steep slopes
+dimension is usually high, potentially leading to high com-         of the curves while the decision boundaries of the Lipschitz-
+putation times or computational intractability. Nevertheless,       NN remain accurate. The price to pay for the improved
+downscaling the input using convolutional or pooling layers         robustness is an increase in computation time (compare
+provides an option to improve computation time on larger            Table I), since training of the Lipschitz-NN requires several
+scale problems and makes the proposed method indeed a               computationally involved ADMM iterations. Note that for
+worthwhile one to infer robustness to a neural network and          low-dimensional problems the Lipschitz update step (9b)
+obtain guarantees on the Lipschitz bound, also on large-            is faster than the loss update step (9a), yet it becomes
+scale problems. In Section IV, we show in an example that           computationally expensive for high-dimensional problems
+our method is applicable to MNIST, a typical benchmark              (cf. Section III-E).
+classification problem.
+                                                                     TABLE I: CEL, accuracy, Lipschitz bound, training times
+   In order to keep the number of Lipschitz update steps to
+a minimum, we advise to first fully train a neural network                                CEL    Accuracy    L     t̄tr (loss/Lip step)
+                                                                               Nom-NN     0.07    88.66%    242            12.6s
+without regularizers or with standard regularizers, such as          2D ex.     L2-NN     0.27    86.10%    69.5           16.9s
+the L2 regularizer, which serves as an initialization of                       Lip-NN     0.22    90.56%    67.2   531s (41.3s/0.63s)
+the matrix T and the weights W , W̄ . Loosely speaking,                        Nom-NN     0.09    96.65%    96.6           56.4s
+our method provides a refinement of the pretrained neural            MNIST      L2-NN     0.26    90.58%    9.49           57.4s
+                                                                               Lip-NN     0.20    96.45%    8.74   2566s (365s/111s)
+network and allows to subsequently optimize robustness or
+impose robustness guarantees on the network by minimizing
+or respectively, by enforcing an upper bound on the Lipschitz          In our second example, we apply the Lipschitz regulariza-
+constant.                                                           tion framework to the high-dimensional benchmark data set
+                                                                    MNIST [25]. We train a feed-forward NN with one pooling
+                   IV. S IMULATION R ESULTS                         layer, one hidden layer with n1 = 50 neurons, the activation
+   In this section, we illustrate the benefits of the presented     function tanh, the cross entropy loss (CEL) and again, we
+framework for training of robust NNs on a 2D toy example            train three NNs, a vanilla NN, an L2-NN, and a Lipschitz-NN
+and on MNIST. Our first illustrative example is a classifica-       with ρ = 0.25 and µ = 0.01, initializing the Lipschitz-NN
+tion problem of 2D data with three classes, shown in Fig. 1a.       from the L2-NN with penalty parameter λ = 3 × 10−3 . The
+We design a feed-forward NN with two hidden layers of               input dimension of the data is 28 × 28 that is downscaled
+n1 = n2 = 10 neurons each, activation function tanh that            by the pooling layer to an input size of 14 × 14. Note
+   100                                100                                                            R EFERENCES
+    90                                 90                                [1] A. Krizhevsky, I. Sutskever, and G. E. Hinton, “Imagenet classification
+                                       80
+                                                                             with deep convolutional neural networks,” in Advances in Neural
+    80
+                                                                             Information Processing Systems, 2012, pp. 1097–1105.
+    70                                 70                                [2] R. Collobert, J. Weston, L. Bottou, M. Karlen, K. Kavukcuoglu,
+      0      0.1   0.2    0.3   0.4      0      0.2   0.4   0.6   0.8        and P. Kuksa, “Natural language processing (almost) from scratch,”
+                                                                             Journal of machine learning research, vol. 12, no. Aug, pp. 2493–
+          (a) Gaussian noise                 (b) Uniform noise               2537, 2011.
+                                                                         [3] Y. LeCun, Y. Bengio, and G. Hinton, “Deep learning,” Nature, vol.
+  Fig. 2: Accuracy on noise corrupted MNIST test data.                       521, no. 7553, pp. 436–444, 2015.
+                                                                         [4] C. Szegedy, W. Zaremba, I. Sutskever, J. Bruna, D. Erhan, I. Goodfel-
+                                                                             low, and R. Fergus, “Intriguing properties of neural networks,” arXiv
+                                                                             preprint arXiv:1312.6199, 2013.
+that the method also works on the 28 × 28 data without                   [5] I. J. Goodfellow, J. Shlens, and C. Szegedy, “Explaining and harness-
+a pooling layer, yet the Lipschitz step becomes significantly                ing adversarial examples,” arXiv preprint arXiv:1412.6572, 2014.
+more time-consuming. From the resulting accuracies on test               [6] N. Papernot, P. McDaniel, X. Wu, S. Jha, and A. Swami, “Distillation
+                                                                             as a defense to adversarial perturbations against deep neural networks,”
+data and bounds on the Lipschitz constant shown in Table I,                  in 2016 IEEE Symposium on Security and Privacy (SP). IEEE, 2016,
+we conclude that on MNIST our framework also finds an                        pp. 582–597.
+NN with a low Lipschitz constant but comparable accuracy                 [7] E. Wong and Z. Kolter, “Provable defenses against adversarial ex-
+                                                                             amples via the convex outer adversarial polytope,” in International
+to the nominal NN, while the accuracy of an L2-NN with a                     Conference on Machine Learning, 2018, pp. 5283–5292.
+comparably low Lipschitz constant is significantly compro-               [8] A. Madry, A. Makelov, L. Schmidt, D. Tsipras, and A. Vladu,
+mised. Fig. 2 shows the evaluation of the three NNs on noise                 “Towards deep learning models resistant to adversarial attacks,” arXiv
+                                                                             preprint arXiv:1706.06083, 2017.
+corrupted data, that was created by adding Gaussian noise                [9] Y. Tsuzuku, I. Sato, and M. Sugiyama, “Lipschitz-margin training:
+N (0, σ 2 ) and respectively, uniform noise U(−b, b) to the                  Scalable certification of perturbation invariance for deep neural net-
+(0, 1)-normalized MNIST data. Advantages of the Lipschitz-                   works,” in Advances in neural information processing systems, 2018,
+                                                                             pp. 6541–6550.
+NN become apparent for Gaussian noise with low standard                 [10] P. Combettes and J.-C. Pesquet, “Lipschitz certificates for layered
+deviation and noise from a narrow uniform distribution.                      network structures driven by averaged activation operators,” 2020.
+   Altogether, the results show that Lipschitz regularization           [11] J.-P. Calliess, “Lazily adapted constant kinky inference for non-
+                                                                             parametric regression and model-reference adaptive control,” arXiv
+can be used to effectively train robust NNs while trading                    preprint arXiv:1701.00178, 2016.
+off robustness and accuracy. Code to reproduce the examples             [12] ——, “Lipschitz optimisation for Lipschitz interpolation,” in 2017
+can be found at https://github.com/st157640/Training-robust-                 American Control Conference (ACC). IEEE, 2017, pp. 3141–3146.
+                                                                        [13] E. Maddalena and C. Jones, “Learning non-parametric models with
+neural-networks-using-Lipschitz-bounds.git.                                  guarantees: A smooth Lipschitz interpolation approach,” Tech. Rep.,
+                                                                             2019.
+                         V. C ONCLUSION                                 [14] M. Cisse, P. Bojanowski, E. Grave, Y. Dauphin, and N. Usunier,
+                                                                             “Parseval networks: Improving robustness to adversarial examples,” in
+   We proposed a framework for training of multi-layer NNs                   International Conference on Machine Learning, 2017, pp. 854–863.
+that encourages robustness, by both considering Lipschitz               [15] H. Gouk, E. Frank, B. Pfahringer, and M. Cree, “Regularisation of
+regularization and by enforcing Lipschitz bounds during                      neural networks by enforcing Lipschitz continuity,” arXiv preprint
+                                                                             arXiv:1804.04368, 2018.
+training. The underlying SDP [17] estimates the upper bound             [16] M. Hein and M. Andriushchenko, “Formal guarantees on the robust-
+on the Lipschitz constant more accurately than traditional                   ness of a classifier against adversarial manipulation,” in Advances in
+methods as it exploits the fact that activation functions are                Neural Information Processing Systems, 2017, pp. 2266–2276.
+                                                                        [17] M. Fazlyab, A. Robey, H. Hassani, M. Morari, and G. Pappas, “Ef-
+slope-restricted. We designed an optimization scheme based                   ficient and accurate estimation of Lipschitz constants for deep neural
+on this SDP that trains an NN to fit input-output data and                   networks,” in Advances in Neural Information Processing Systems,
+at the same time increases its robustness in terms of Lip-                   2019, pp. 11 423–11 434.
+                                                                        [18] A. Krogh and J. A. Hertz, “A simple weight decay can improve gen-
+schitz continuity. We used ADMM to solve the underlying                      eralization,” in Advances in Neural Information Processing Systems,
+optimization problem and to therein conveniently incorporate                 1992, pp. 950–957.
+the trade-off between accuracy and robustness. In addition,             [19] M. Fazlyab, A. Robey, H. Hassani, M. Morari, and G. J. Pappas,
+                                                                             “Efficient and accurate estimation of Lipschitz constants for deep
+we presented a variation of the framework that allows for                    neural networks,” arXiv preprint arXiv:1906.04893, 2019.
+bounding the Lipschitz constant by a desired value, i.e.,               [20] S. Boyd, N. Parikh, E. Chu, B. Peleato, J. Eckstein et al., “Dis-
+training NNs with robustness guarantees. We successfully                     tributed optimization and statistical learning via the alternating di-
+                                                                             rection method of multipliers,” Foundations and Trends R in Machine
+tested our method on two examples where we benchmarked                       learning, vol. 3, no. 1, pp. 1–122, 2011.
+it with L2 regularization.                                              [21] Y. Wang, W. Yin, and J. Zeng, “Global convergence of admm in
+   Next steps include the application of our method to                       nonconvex nonsmooth optimization,” Journal of Scientific Computing,
+                                                                             vol. 78, no. 1, pp. 29–63, 2019.
+control problems by using LMI constraints to verify and                 [22] J. D. Lee, M. Simchowitz, M. I. Jordan, and B. Recht, “Gradient
+enforce properties, such as closed-loop stability, on feed-                  descent only converges to minimizers,” in Conference on learning
+back interconnections that include NN controllers. Also, we                  theory, 2016, pp. 1246–1257.
+                                                                        [23] J. Löfberg, “Yalmip : A toolbox for modeling and optimization in
+plan to explore alternatives for the ADMM algorithm that                     matlab,” in In Proc. of the CACSD Conference, Taipei, Taiwan, 2004.
+solve the underlying optimization problem in an accelerated             [24] MOSEK ApS, The MOSEK optimization                         toolbox for
+manner. In addition, for benchmarking purposes, we plan to                   MATLAB manual. Version 9.0., 2019. [Online]. Available:
+                                                                             http://docs.mosek.com/9.0/toolbox/index.html
+compare the proposed methods to other training procedures               [25] Y. LeCun, “The MNIST database of handwritten digits,” http://yann.
+that improve robustness.                                                     lecun. com/exdb/mnist/.
+

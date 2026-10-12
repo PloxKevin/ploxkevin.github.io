@@ -1,0 +1,212 @@
+
+namespace SafeLearning.CompleteModulesViabilityDualClock30
+
+def stationaryClockFeedback (v : ℕ → Bool) : Option ℕ → Bool
+  | none => false
+  | some n => v n
+
+def feedbackNext (v : ℕ → Bool) (s : Option ℕ) : Option ℕ :=
+  nextState s (stationaryClockFeedback v s)
+
+def feedbackTrajectory (start : Option ℕ) (v : ℕ → Bool) : ℕ → Option ℕ
+  | 0 => start
+  | t+1 => feedbackNext v (feedbackTrajectory start v t)
+
+def shiftedSourcePath (n : ℕ) (u : ℕ → Bool) (t : ℕ) : Option ℕ :=
+  (sourcePath u t).map (fun j => n+j)
+
+def rewardFromClock (n : ℕ) (u : ℕ → Bool) (t : ℕ) : ℝ :=
+  match shiftedSourcePath n u t with
+  | none => 0
+  | some j => if u t then (1/2)*(1-(1/2 : ℝ)^(j+1)) else 0
+
+def failureMassFromClock (n : ℕ) (u : ℕ → Bool) (t : ℕ) : ℝ :=
+  if 0<t ∧ shiftedSourcePath n u (t-1)≠none ∧ shiftedSourcePath n u t=none then 1 else 0
+
+def gainFromClock (n : ℕ) (u : ℕ → Bool) : ℝ :=
+  ∑' t,(1/2 : ℝ)^t*rewardFromClock n u t
+
+def riskFromClock (n : ℕ) (u : ℕ → Bool) : ℝ :=
+  ∑' t,(1/2 : ℝ)^t*failureMassFromClock n u t
+
+def lagrangianFromClock (n : ℕ) (lambda : ℝ) (u : ℕ → Bool) : ℝ :=
+  gainFromClock n u-lambda*riskFromClock n u
+
+def thresholdFeedback (k : ℕ) (n : ℕ) : Bool := decide (k≤n)
+
+theorem actual_surviving_source_clock_is_the_elapsed_time (u : ℕ → Bool) (t : ℕ) :
+    sourcePath u t=none ∨ sourcePath u t=some t := by
+  induction t with
+  | zero => exact Or.inr rfl
+  | succ t ih =>
+    rcases ih with h|h
+    · exact Or.inl (by simp [sourcePath,h,nextState])
+    · cases hu : u t <;> simp [sourcePath,h,nextState,hu]
+
+theorem actual_stationary_feedback_has_the_true_shifted_clock_trajectory
+    (n : ℕ) (v : ℕ → Bool) :
+    ∀t,feedbackTrajectory (some n) v t=shiftedSourcePath n (fun s=>v (n+s)) t := by
+  intro t
+  induction t with
+  | zero => simp [feedbackTrajectory,shiftedSourcePath,sourcePath]
+  | succ t ih =>
+    rcases actual_surviving_source_clock_is_the_elapsed_time (fun s=>v (n+s)) t with h|h
+    · simp [feedbackTrajectory,ih,feedbackNext,stationaryClockFeedback,
+        shiftedSourcePath,sourcePath,h,nextState]
+    · cases hv : v (n+t) <;>
+        simp [feedbackTrajectory,ih,feedbackNext,stationaryClockFeedback,
+          shiftedSourcePath,sourcePath,h,nextState,hv,Nat.add_assoc]
+
+theorem actual_sink_is_immediate_failure_and_all_surviving_clocks_have_a_safe_feedback :
+    (∀v,feedbackTrajectory none v 0=none ∧ ∀t,feedbackTrajectory none v t=none) ∧
+      ∀n t,feedbackTrajectory (some n) (fun _=>false) t=some (n+t) := by
+  constructor
+  · intro v;constructor
+    · rfl
+    · intro t;induction t with
+      | zero => rfl
+      | succ t ih => simp [feedbackTrajectory,feedbackNext,stationaryClockFeedback,ih,nextState]
+  · intro n t
+    rw [actual_stationary_feedback_has_the_true_shifted_clock_trajectory]
+    have hp := actual_arbitrary_history_before_first_jump (fun _=>false) t (by simp) t le_rfl
+    simp [shiftedSourcePath,hp]
+
+theorem actual_shifted_clock_failure_mass_and_risk_are_the_true_first_entry_risk
+    (n : ℕ) (u : ℕ → Bool) :
+    (∀t,failureMassFromClock n u t=sourceFailureMass u t) ∧ riskFromClock n u=actualRisk u := by
+  have he : ∀t,failureMassFromClock n u t=sourceFailureMass u t := by
+    intro t
+    cases h1 : sourcePath u t <;> cases h0 : sourcePath u (t-1) <;>
+      simp [failureMassFromClock,sourceFailureMass,shiftedSourcePath,h1,h0]
+  exact ⟨he,by simp only [riskFromClock,actualRisk,riskTerm,he]⟩
+
+theorem actual_first_jump_from_every_clock_has_the_full_infinite_return
+    (n : ℕ) (u : ℕ → Bool) (j : ℕ) (hj : u j=true) (hb : ∀t<j,u t=false) :
+    HasSum (fun t=>(1/2 : ℝ)^t*rewardFromClock n u t)
+      (jumpRisk j*(1-(1/2 : ℝ)^n*jumpRisk j)) ∧
+      gainFromClock n u=jumpRisk j*(1-(1/2 : ℝ)^n*jumpRisk j) ∧ riskFromClock n u=jumpRisk j := by
+  have hp := actual_arbitrary_history_before_first_jump u j hb
+  have hf := actual_first_jump_enters_failure_and_terminates u j hj hb
+  have hterms : ∀t,(1/2 : ℝ)^t*rewardFromClock n u t=
+      if t=j then jumpRisk j*(1-(1/2 : ℝ)^n*jumpRisk j) else 0 := by
+    intro t
+    by_cases hl : t<j
+    · simp [rewardFromClock,shiftedSourcePath,hp t hl.le,hb t hl,ne_of_lt hl]
+    by_cases he : t=j
+    · subst t
+      simp only [rewardFromClock,shiftedSourcePath,hp j le_rfl,Option.map_some,hj,ite_true]
+      rw [show n+j+1=n+(j+1) by omega,pow_add]
+      simp only [jumpRisk,pow_succ]
+      ring
+    have ht : j+1≤t := by omega
+    obtain ⟨a,rfl⟩ := Nat.exists_eq_add_of_le ht
+    simp [rewardFromClock,shiftedSourcePath,hf.2 a,he]
+  have hs : HasSum (fun t=>(1/2 : ℝ)^t*rewardFromClock n u t)
+      (jumpRisk j*(1-(1/2 : ℝ)^n*jumpRisk j)) := by
+    rw [funext hterms]
+    exact hasSum_ite_eq _ _
+  exact ⟨hs,hs.tsum_eq,by
+    rw [(actual_shifted_clock_failure_mass_and_risk_are_the_true_first_entry_risk n u).2]
+    exact (actual_first_jump_full_infinite_gain_and_risk u j hj hb).2.2.2⟩
+
+theorem actual_every_clock_history_is_safe_zero_or_has_a_genuine_first_jump
+    (n : ℕ) (u : ℕ → Bool) :
+    (actualSafe u ∧ gainFromClock n u=0 ∧ riskFromClock n u=0) ∨
+      ∃j,¬actualSafe u ∧ gainFromClock n u=jumpRisk j*(1-(1/2 : ℝ)^n*jumpRisk j) ∧
+        riskFromClock n u=jumpRisk j := by
+  classical
+  by_cases h : ∃j,u j=true
+  · let j := Nat.find h
+    have hj : u j=true := Nat.find_spec h
+    have hb : ∀t<j,u t=false := by
+      intro t ht;have hn := Nat.find_min h ht;cases he : u t <;> simp_all
+    have hv := actual_first_jump_from_every_clock_has_the_full_infinite_return n u j hj hb
+    refine Or.inr ⟨j,?_,hv.2.1,hv.2.2⟩
+    intro hs;exact hs (j+1) (actual_first_jump_enters_failure_and_terminates u j hj hb).1
+  · have hu : ∀t,u t=false := by intro t;cases he : u t <;> simp_all
+    have hs := actual_never_jumping_full_gain_and_risk_are_zero u hu
+    refine Or.inl ⟨hs.1,?_,?_⟩
+    · have he : ∀t,rewardFromClock n u t=0 := by
+        intro t;unfold rewardFromClock;cases shiftedSourcePath n u t <;> simp [hu t]
+      simp [gainFromClock,he]
+    · rw [(actual_shifted_clock_failure_mass_and_risk_are_the_true_first_entry_risk n u).2]
+      exact hs.2.2.2
+
+theorem actual_common_threshold_feedback_has_the_true_return_from_every_starting_clock
+    (n k : ℕ) :
+    gainFromClock n (fun t=>thresholdFeedback k (n+t))=
+      jumpRisk (k-n)*(1-(1/2 : ℝ)^n*jumpRisk (k-n)) ∧
+      riskFromClock n (fun t=>thresholdFeedback k (n+t))=jumpRisk (k-n) := by
+  have hj : thresholdFeedback k (n+(k-n))=true := by simp [thresholdFeedback];omega
+  have hb : ∀t<k-n,thresholdFeedback k (n+t)=false := by
+    intro t ht;simp [thresholdFeedback];omega
+  exact (actual_first_jump_from_every_clock_has_the_full_infinite_return n _ (k-n) hj hb).2
+
+theorem actual_one_stationary_controller_is_globally_optimal_at_every_starting_clock
+    (k : ℕ) : ∀n u,lagrangianFromClock n (multiplier k) u≤
+      lagrangianFromClock n (multiplier k) (fun t=>thresholdFeedback k (n+t)) := by
+  intro n u
+  have hv := actual_common_threshold_feedback_has_the_true_return_from_every_starting_clock n k
+  have hc : 0≤(1/2 : ℝ)^n := pow_nonneg (by norm_num) _
+  have hglobal : ∀q : ℝ,0≤q→q≤1/2→
+      q*(1-(1/2 : ℝ)^n*q)-multiplier k*q≤
+        jumpRisk (k-n)*(1-(1/2 : ℝ)^n*jumpRisk (k-n))-multiplier k*jumpRisk (k-n) := by
+    intro q hq0 hq1
+    by_cases hnk : n≤k
+    · have he : (1/2 : ℝ)^n*jumpRisk (k-n)=jumpRisk k := by
+        unfold jumpRisk
+        rw [←pow_add]
+        congr 1
+        omega
+      have ha : (1/2 : ℝ)^k=2*((1/2 : ℝ)^n*jumpRisk (k-n)) := by
+        rw [he];simp [jumpRisk,pow_succ];ring
+      have hdiff :
+          (jumpRisk (k-n)*(1-(1/2 : ℝ)^n*jumpRisk (k-n))-multiplier k*jumpRisk (k-n))-
+            (q*(1-(1/2 : ℝ)^n*q)-multiplier k*q)=
+              (1/2 : ℝ)^n*(q-jumpRisk (k-n))^2 := by
+        unfold multiplier
+        rw [ha]
+        ring
+      apply sub_nonneg.mp
+      rw [hdiff]
+      exact mul_nonneg hc (sq_nonneg _)
+    · have hkn : k≤n := by omega
+      have hz : k-n=0 := Nat.sub_eq_zero_of_le hkn
+      have hca : (1/2 : ℝ)^n≤(1/2 : ℝ)^k :=
+        pow_le_pow_of_le_one (by norm_num) (by norm_num) hkn
+      have hprod : (1/2 : ℝ)^n*(1/2+q)≤(1/2 : ℝ)^k :=
+        (mul_le_of_le_one_right hc (by linarith)).trans hca
+      rw [hz]
+      norm_num only [jumpRisk,pow_one]
+      have hdiff :
+          ((1/2)*(1-(1/2 : ℝ)^n*(1/2))-multiplier k*(1/2))-
+            (q*(1-(1/2 : ℝ)^n*q)-multiplier k*q)=
+              (1/2-q)*((1/2 : ℝ)^k-(1/2 : ℝ)^n*(1/2+q)) := by
+        unfold multiplier;ring
+      apply sub_nonneg.mp
+      rw [hdiff]
+      exact mul_nonneg (by linarith) (sub_nonneg.mpr hprod)
+  rcases actual_every_clock_history_is_safe_zero_or_has_a_genuine_first_jump n u with h|⟨j,_,hg,hr⟩
+  · have he := hglobal 0 le_rfl (by norm_num)
+    simpa [lagrangianFromClock,h.2.1,h.2.2,hv.1,hv.2] using he
+  · have hq0 : 0≤jumpRisk j := pow_nonneg (by norm_num) _
+    have hq1 : jumpRisk j≤1/2 := by
+      have hp : (1/2 : ℝ)^j≤1 := pow_le_one₀ (by norm_num) (by norm_num)
+      unfold jumpRisk;rw [pow_succ];nlinarith
+    simpa [lagrangianFromClock,hg,hr,hv.1,hv.2] using hglobal (jumpRisk j) hq0 hq1
+
+theorem actual_common_feedback_controller_recovers_the_exact_nonterminating_search
+    (k : ℕ) :
+    (∀n u,lagrangianFromClock n (multiplier k) u≤
+      lagrangianFromClock n (multiplier k) (fun t=>thresholdFeedback k (n+t))) ∧
+      riskFromClock 0 (fun t=>thresholdFeedback k t)=jumpRisk k ∧
+      max 0 (multiplier k+riskFromClock 0 (fun t=>thresholdFeedback k t))=multiplier (k+1) ∧
+      multiplier k<1 := by
+  have hv := actual_common_threshold_feedback_has_the_true_return_from_every_starting_clock 0 k
+  have hr : riskFromClock 0 (fun t=>thresholdFeedback k t)=jumpRisk k := by simpa using hv.2
+  have old := actual_projected_update_is_exact_and_never_stops k
+  refine ⟨actual_one_stationary_controller_is_globally_optimal_at_every_starting_clock k,hr,?_,old.2.1⟩
+  rw [hr,←(actual_delayed_controller_values k).2.2]
+  simpa using old.2.2.2.1
+
+end SafeLearning.CompleteModulesViabilityDualClock30

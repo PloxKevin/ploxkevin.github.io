@@ -38,9 +38,12 @@ python3 verification/lean/verify.py --output reports/book/lean-verification
 python3 book/check_coverage.py
 ```
 
-The current [correctness audit](../reports/book/README.md) records 499 theorem
-declarations, exact source fingerprints, independent reviews and remaining
-formalization gaps. A theorem count does not count fully verified exercises.
+The [earlier book audit](../reports/book/README.md) records its original
+499 declarations. The [continuing audit](../reports/full-coverage/README.md)
+now checks 11,080 theorems in 1,242 selected files; 535 of 556 exercises are
+complete, and the remaining exercises and material are explicit in the ledgers.
+Use that audit's source-only snapshot commands to reproduce the selected batch.
+A theorem count does not count fully verified exercises.
 
 For rendered verification, use Node 20 or newer, a Chromium executable and CDN
 access. `npm ci` installs the

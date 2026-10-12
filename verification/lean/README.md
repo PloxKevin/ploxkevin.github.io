@@ -61,13 +61,22 @@ always runs a fresh replay.
 
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its 3,002 theorems in 202 files passed the local build, source-exact kernel checks
-and a fresh standard-axiom audit. Twenty-eight modules were freshly replayed;
-174 actual passing replays were reused only after identical source/import and
-compiled dependency fingerprints were validated. The inventory contains 556
-exercises and 12,774 overlapping material review units. Source correspondence
-review can reopen coverage entries while their existing formal proofs remain
-valid. The current published ledgers keep every outstanding clause explicit.
+Its current selected batch contains 11,080 theorems in 1,242 files.
+All 45 new modules received fresh kernel replays in the first audit. After a
+targeted mobile stylesheet fix, a fresh normal aggregate build and axiom audit
+passed again, with 1,242 earlier kernel checks reused under exact source/import
+and dependency fingerprints. The actual audit ran in the separately recorded
+runtime directory. The later source-only snapshot mirrors those bytes and
+contains no copied build cache or earlier snapshot trees.
+
+The inventory contains 556 exercises and 12,774 overlapping material units.
+535 exercises are complete, 8 partial and 13 pending; 8,004 material units
+remain pending. Source correspondence review can reopen entries while their
+formal proofs remain valid. For the exact selected batch in this working tree,
+follow the source-only snapshot reproduction commands in the continuing audit.
+The working Lean directory also retains unselected historical drafts; its
+default aggregate is not the selected checkpoint30 runtime. In a clean
+published checkout the selected sources and aggregate occupy their normal paths.
 
 The separate numerical recomputation can be rerun from the repository root with
 `python3 verification/numerical.py` (NumPy and SciPy required). Browser QA uses

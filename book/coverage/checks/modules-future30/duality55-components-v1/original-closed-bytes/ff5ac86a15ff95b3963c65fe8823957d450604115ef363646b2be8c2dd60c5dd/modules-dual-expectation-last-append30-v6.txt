@@ -1,0 +1,133 @@
+
+def projectedZeroRiskStep (lambda eta cost : ℝ) : ℝ := max 0 (lambda+eta*cost)
+
+theorem actual_zero_budget_projected_step_is_the_true_nonnegative_increment
+    (lambda eta cost : ℝ) (hlambda : 0 ≤ lambda) (heta : 0 < eta) (hcost : 0 ≤ cost) :
+    projectedZeroRiskStep lambda eta cost = lambda+eta*cost ∧
+      lambda ≤ projectedZeroRiskStep lambda eta cost ∧
+      (lambda < projectedZeroRiskStep lambda eta cost ↔ 0 < cost) ∧
+      (projectedZeroRiskStep lambda eta cost = lambda ↔ cost = 0) := by
+  have he : projectedZeroRiskStep lambda eta cost = lambda+eta*cost :=
+    max_eq_right (add_nonneg hlambda (mul_nonneg heta.le hcost))
+  rw [he]
+  exact ⟨rfl,le_add_of_nonneg_right (mul_nonneg heta.le hcost),by
+    constructor <;> intro h <;> nlinarith,by constructor <;> intro h <;> nlinarith⟩
+
+theorem actual_zero_budget_expected_risk_search_stops_exactly_when_the_controller_is_AS_safe
+    {X U : Type*} [MeasurableSpace X]
+    (mu : Measure X) (rho : X → U → ℝ) (u : U) (lambda eta : ℝ)
+    (hlambda : 0 ≤ lambda) (heta : 0 < eta)
+    (hi : Integrable (fun x => rho x u) mu) (hn : ∀ x, 0 ≤ rho x u) :
+    lambda ≤ projectedZeroRiskStep lambda eta (expectedRisk mu rho u) ∧
+      (projectedZeroRiskStep lambda eta (expectedRisk mu rho u) = lambda ↔
+        ∀ᵐ x ∂mu, rho x u = 0) := by
+  have hc : 0 ≤ expectedRisk mu rho u := integral_nonneg hn
+  have h := actual_zero_budget_projected_step_is_the_true_nonnegative_increment lambda eta (expectedRisk mu rho u) hlambda heta hc
+  exact ⟨h.2.1,h.2.2.2.trans (actual_expected_zero_risk_iff_almost_sure_zero_pointwise_risk mu rho u hi hn)⟩
+
+def actualBudgetDual {U : Type*} (reward risk : U → ℝ) (budget p : ℝ) : ℝ :=
+  ⨆ u, reward u-p*(risk u-budget)
+
+theorem actual_bounded_risk_dual_is_the_penalty_dual_plus_its_budget_constant
+    {U : Type*} [Nonempty U] (reward risk : U → ℝ) (B budget p : ℝ)
+    (hR : ∀ u, |reward u| ≤ B) (hC : ∀ u, risk u ∈ Icc 0 1) :
+    actualBudgetDual reward risk budget p = actualDual reward risk p+p*budget := by
+  have hb := actual_bounded_rewards_and_unit_risks_bound_every_penalized_return reward risk B p hR hC
+  have hbb : BddAbove (range (fun u => reward u-p*(risk u-budget))) := by
+    refine ⟨B+|p|+p*budget,?_⟩
+    rintro _ ⟨u,rfl⟩
+    have h := hb.choose_spec (mem_range_self u)
+    have h' : reward u-p*risk u ≤ B+|p| := by
+      have hr := le_ciSup hb u
+      exact (show reward u-p*risk u ≤ B+|p| from by
+        have ha := (abs_sub (reward u) (p*risk u)).trans (add_le_add (hR u) (show |p*risk u| ≤ |p| from by
+          rw [abs_mul,abs_of_nonneg (hC u).1];exact (mul_le_mul_of_nonneg_left (hC u).2 (abs_nonneg p)).trans_eq (mul_one _)))
+        exact (le_abs_self _).trans ha)
+    linarith
+  apply le_antisymm
+  · apply ciSup_le
+    intro u
+    have h := le_ciSup hb u
+    change reward u-p*risk u ≤ actualDual reward risk p at h
+    linarith
+  · have h : actualDual reward risk p ≤ actualBudgetDual reward risk budget p-p*budget := by
+      apply ciSup_le
+      intro u
+      have h := le_ciSup hbb u
+      change reward u-p*(risk u-budget) ≤ actualBudgetDual reward risk budget p at h
+      linarith
+    linarith
+
+theorem actual_attained_primal_and_zero_gap_give_a_feasible_Lagrangian_maximizer_and_saddle
+    {U : Type*} [Nonempty U] (reward risk : U → ℝ) (B budget p : ℝ)
+    (hR : ∀ u, |reward u| ≤ B) (hC : ∀ u, risk u ∈ Icc 0 1)
+    (hp : 0 ≤ p) (primal : U) (hfeasible : risk primal ≤ budget)
+    (hzerogap : actualBudgetDual reward risk budget p = reward primal) :
+    p*(budget-risk primal) = 0 ∧
+      (∀ u, reward u-p*(risk u-budget) ≤ reward primal-p*(risk primal-budget)) ∧
+      (∀ q : ℝ, 0 ≤ q → reward primal-p*(risk primal-budget) ≤ reward primal-q*(risk primal-budget)) := by
+  have hd := actual_bounded_risk_dual_is_the_penalty_dual_plus_its_budget_constant reward risk B budget p hR hC
+  have h0 := le_ciSup (actual_bounded_rewards_and_unit_risks_bound_every_penalized_return reward risk B p hR hC) primal
+  change reward primal-p*risk primal ≤ actualDual reward risk p at h0
+  have hnonneg : 0 ≤ p*(budget-risk primal) := mul_nonneg hp (sub_nonneg.mpr hfeasible)
+  have he : p*(budget-risk primal) = 0 := by rw [hzerogap] at hd;linarith
+  refine ⟨he,?_,?_⟩
+  · intro u
+    have h := le_ciSup (actual_bounded_rewards_and_unit_risks_bound_every_penalized_return reward risk B p hR hC) u
+    change reward u-p*risk u ≤ actualDual reward risk p at h
+    rw [hzerogap] at hd
+    nlinarith
+  · intro q hq
+    have hqnonneg := mul_nonneg hq (sub_nonneg.mpr hfeasible)
+    nlinarith
+
+def actualPaperExampleReward (theta : ℝ) : ℝ := theta/10
+
+def actualPaperExampleCost (theta : ℝ) : ℝ := theta/10
+
+def actualPaperExamplePenalized (theta p : ℝ) : ℝ := theta/10*(1-p/10)
+
+theorem actual_printed_paper_example_at_penalty_ten_ties_every_controller :
+    (∀ theta ∈ Icc (0:ℝ) 1, actualPaperExamplePenalized theta 10 = 0) ∧
+      (∀ theta ∈ Icc (0:ℝ) 1, ∀ other ∈ Icc (0:ℝ) 1,
+        actualPaperExamplePenalized other 10 ≤ actualPaperExamplePenalized theta 10) := by
+  constructor <;> intros <;> norm_num [actualPaperExamplePenalized]
+
+theorem actual_paper_example_has_a_feasible_optimal_tie_an_infeasible_tie_and_a_suboptimal_tie :
+    (1/10:ℝ) ∈ Icc (0:ℝ) 1 ∧
+      actualPaperExampleCost (1/10) = 1/100 ∧
+      (∀ theta ∈ Icc (0:ℝ) 1, actualPaperExampleCost theta ≤ 1/100 →
+        actualPaperExampleReward theta ≤ actualPaperExampleReward (1/10)) ∧
+      1 ∈ Icc (0:ℝ) 1 ∧ ¬ actualPaperExampleCost 1 ≤ 1/100 ∧
+      0 ∈ Icc (0:ℝ) 1 ∧ actualPaperExampleCost 0 ≤ 1/100 ∧
+      actualPaperExampleReward 0 < actualPaperExampleReward (1/10) := by
+  norm_num [actualPaperExampleCost,actualPaperExampleReward]
+
+theorem actual_printed_penalty_parameter_corresponds_to_a_rescaled_Lagrange_multiplier
+    (theta p : ℝ) :
+    actualPaperExamplePenalized theta p = actualPaperExampleReward theta-(p/10)*actualPaperExampleCost theta := by
+  dsimp [actualPaperExamplePenalized,actualPaperExampleReward,actualPaperExampleCost]
+  ring
+
+def actualChainDualProfile (p : ℝ) : ℝ := max (-(7/4)) (-(3/2)-p/4)
+
+theorem actual_chain_dual_profile_has_exact_optimal_ray_one :
+    {p : ℝ | 0 ≤ p ∧ actualChainDualProfile p = -(7/4)} = Ici 1 := by
+  ext p
+  dsimp [actualChainDualProfile]
+  rw [max_eq_left_iff]
+  constructor
+  · rintro ⟨hp,he⟩;linarith
+  · intro hp;constructor <;> linarith
+
+theorem actual_chain_dual_profile_zero_gap_ray_is_strictly_below_the_conservative_threshold :
+    actualChainDualProfile 1 = -(7/4) ∧ (1:ℝ)<15/2 ∧
+      (∀ p : ℝ, 1 < p → -(3/2)-p/4 < -(7/4)) ∧
+      -(3/2)-(1:ℝ)/4 = -(7/4) := by
+  constructor
+  · norm_num [actualChainDualProfile]
+  · constructor
+    · norm_num
+    · constructor
+      · intro p hp;linarith
+      · norm_num

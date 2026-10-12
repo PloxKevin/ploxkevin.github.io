@@ -1,0 +1,1354 @@
+                                                      V IABILITY OF F UTURE ACTIONS :
+                                         ROBUST S AFETY IN R EINFORCEMENT L EARNING VIA E NTROPY
+                                                              R EGULARIZATION
+
+
+                                             Pierre-François Massiani1,*       Alexander von Rohr1,2,*         Lukas Haverbeck1         Sebastian Trimpe1
+
+
+
+
+arXiv:2506.10871v1 [cs.LG] 12 Jun 2025
+                                                                                           *
+                                                                                             Equal contribution
+                                                     1
+                                                         Institute for Data Science in Mechanical Engineering, RWTH Aachen University, Germany
+                                                              2
+                                                                Learning Systems and Robotics Lab, Technical University of Munich, Germany
+                                                                    {massiani,lukas.haverbeck,trimpe}@dsme.rwth-aachen.de
+                                                                                         alex.von.rohr@tum.de
+
+
+
+                                                                                              July 22, 2025
+
+                                                                                              A BSTRACT
+                                                  Despite the many recent advances in reinforcement learning (RL), the question of learning policies
+                                                  that robustly satisfy state constraints under unknown disturbances remains open. In this paper, we
+                                                  offer a new perspective on achieving robust safety by analyzing the interplay between two well-
+                                                  established techniques in model-free RL: entropy regularization, and constraints penalization. We
+                                                  reveal empirically that entropy regularization in constrained RL inherently biases learning toward
+                                                  maximizing the number of future viable actions, thereby promoting constraints satisfaction robust to
+                                                  action noise. Furthermore, we show that by relaxing strict safety constraints through penalties, the
+                                                  constrained RL problem can be approximated arbitrarily closely by an unconstrained one and thus
+                                                  solved using standard model-free RL. This reformulation preserves both safety and optimality while
+                                                  empirically improving resilience to disturbances. Our results indicate that the connection between
+                                                  entropy regularization and robustness is a promising avenue for further empirical and theoretical
+                                                  investigation, as it enables robust safety in RL through simple reward shaping.
+
+                                         1   Introduction
+                                         Safety is the ability of a policy to keep the system away from a failure set of undesirable states. Robustness extends
+                                         the notion to adversarial or noisy settings; robust policies remain outside of the failure set in spite of the noise or
+                                         adversary. While robust reinforcement learning (RL) may be formulated as a constrained optimization problem [1],
+                                         there is a strong appeal in achieving robustly safe policies through reward shaping alone, given the numerous algorithms
+                                         available for unconstrained RL. The purpose of this work is to reveal how robustly safe policies arise naturally from
+                                         two common practices in RL; namely, maximum-entropy RL [2] and failure penalization [3]. Our results support that
+                                         the maximum-entropy RL objective together with failure penalties enable safe operation at testing under action noise
+                                         stronger than that seen at training; a property we call robustness.
+                                         Since “robustness” is a highly overloaded term in RL, we emphasize the notion of robustness in this paper differs
+                                         from those of previous studies [4–6]. Indeed, they guarantee that entropy regularization preserves a high return under
+                                         changes in the reward or dynamics. In other words, the return is robust to such changes. In contrast, we want that safety
+                                         constraints are still satisfied under changes in the dynamics (namely, the level of action noise). These two types of
+                                         objectives are complementary since safety and optimality are generally separate concerns in optimal control, where
+                                         the goal is to act optimally while abiding by safety constraints. Similarly, the term “entropy-regularized RL” is used
+                                             Accepted for publication at ECML-PKDD 2025.
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                          P REPRINT — J ULY 22, 2025
+
+
+                              T                      T                       T                       T
+
+
+                                                                                                         norm. soft-value
+                              T                      T                       T                       T
+                              T                      T                       T                       T
+                              T                      T                       T                       T
+                              T                      T                       T                       T
+                  (a) = 1                (b) = 4                (c) = 8              (d) Max. ent.
+Figure 1: Fenced cliff — Robustness as a function of α: An entropy-regularized policy avoids states with fewer
+actions available (d). The degree is controlled by the temperature parameter α. As it increases (a–c), the policy moves
+away from the constraints, getting more robust but taking longer to reach the target. The mode of the policy is shown as
+a thin blue line.
+
+
+in the literature to refer to various formulations of regularized MDPs [7]. In this paper, we use it specifically to refer
+to methods that optimize the soft RL objective (3) as in Heim and Badri-Spröwitz [8], which are often referred to as
+maximum-entropy RL. From here on, we reserve the term “maximum-entropy” for the special case where the reward is
+identically zero and the agent solely maximizes entropy.
+Our approach builds on two key contributions. First, we empirically show that entropy regularization in a constrained
+environment induces robustness to action noise. We do this by first showing that agents optimizing the entropy-
+regularized objective may sacrifice reward to avoid constraints boundaries, with the degree of avoidance modulated by
+the temperature parameter. This is illustrated in Figure 1, where higher temperatures yield policies whose mode stays
+farther from constraints. Then, we provide empirical evidence that this constraints avoidance translates to robustness to
+action noise, i.e., policies preserving the long-term number of viable actions are generally more robust.
+This general behavior aligns with the viability-based notion of robustness (called “safety” therein) introduced by Heim
+and Badri-Spröwitz [8], Heim et al. [9] (cf. [10]), where the robustness of a state is quantified by the number of viable
+actions — those that allow indefinite constraint satisfaction. We interpret the cumulative discounted entropy of a policy
+as a proxy for the long-term number of safe actions it considers, and thus entropy regularization naturally encourages
+avoidance of states with few viable options.
+Our second contribution shows that this constrained setting can be approximated arbitrarily well using failure penalties.
+For penalties above a finite threshold, the mode of the resulting policy matches that of the constrained problem, offering
+a practical reward-shaping strategy for learning robustly safe policies.
+Making this observation relevant to state-of-the-art RL requires relating the unconstrained and state-constrained
+optimization problems, as most applications focus on the former [11]. This is the role of constraints penalization or,
+more concisely, of penalties. In the absence of entropy regularization, they are known to make constraints violations
+suboptimal, and large enough penalties guarantee that policies optimal for the penalized problem are also optimal
+for the constrained problem [3]. We add entropy regularization to this analysis. Furthermore, penalties above a finite
+threshold recover the mode of the constrained policy.
+Our observations emphasize a benefit of entropy regularization that differs from what is commonly mentioned in the
+literature. Indeed, algorithms such as soft actor-critic (SAC) [2] are often praised for their excellent exploration and
+their robustness to the choice of hyperparameters [2]. Although crucial in practice, these strengths are relevant during
+learning. In contrast, we focus on the optimal policy, that is, on what occurs after successful learning.
+
+Contributions We reveal how robust optimal controllers arise from the combination of entropy regularization together
+with sufficient constraints penalties. Specifically:
+      1. We identify empirically that constraints repel trajectories of optimal controllers in the presence of entropy
+         regularization, by favoring controllers maximizing the number of future viable actions.
+      2. We prove that failure penalties approximate this constrained problem arbitrarily closely.
+      3. Finally, we show that we can extract a safe policy from the optimal solution to the penalized problem and
+         demonstrate that this policy is robustly safe.
+The first contribution strongly supports that the mode of entropy-regularized policies is robust to action noise, as the
+most-likely trajectory is “repelled” by the constraints. We confirm robustness to action noise empirically, and further
+theoretical investigation is a promising avenue for future work. Together, our results enable achieving reward-shaping-
+based robustness, and a novel interpretation of the temperature coefficient in the presence of constraints as a tunable
+robustness parameter.
+
+
+                                                            2
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                               P REPRINT — J ULY 22, 2025
+
+
+The article is organized as follows. We discuss other approaches to robustness in RL in Section 2. We then expose
+necessary preliminaries in Section 3, and formalize the problem we consider in Section 4. Section 5 contains our
+theoretical results, with first a high-level interpretation of the constrained, entropy-regularized problem, and our main
+theorem guaranteeing approximation with penalties. The empirical evidence on robustness follows in Section 6, together
+with further empirical validation of our theoretical results.
+
+
+2   Related work
+
+Viability and safety in RL There is a variety of definitions of safety in RL [11]. We consider the case of avoiding
+state constraints with certainty (level 3 in [11]). Such a definition of safety falls into the general problem of viability [10].
+Many specialized algorithms were developed to solve this safe RL problem, both model-free and model-based [12].
+It has been shown in [3] that sufficient failure penalties enforce equivalence between the unconstrained and safety-
+constrained problems, making safe RL amenable to unconstrained algorithms. This idea falls in the class of penalty
+methods, a general idea in optimization which has been studied in the context of optimal control [13, 14]; a reformulation
+of the results of [3] is that the discounted risk is an exact penalty function. Our results show that it is no longer the
+case for entropy-regularized RL, as no finite penalty exactly recovers the constrained problem. Yet, we show it can be
+approximated arbitrarily closely. Regardless, the above works only guarantee safety and neglect robustness. We extend
+the analysis and proof methods of Massiani et al. [3] to entropy-regularized RL, which naturally yields robustness in
+addition to safety.
+
+Robustness in optimal control Robustness is a well-studied topic in optimal control [15] and consists of preserving
+viability despite model uncertainties. Classical approaches consist of robust model predictive control [16, 17] and
+Hamilton-Jacobi reachability analysis [18]. They provide worst-case guarantees, mainly through constraints tightening.
+The robustness of entropy-regularized controllers does not fit directly in this category, as their full support makes them
+explore the whole viability kernel. Instead, they seem to exhibit a form of “expected” constraints tightening, which
+translates into robustness to action noise of the mode, as we illustrate empirically. Finally, alternative methods such as
+scenario optimization [19] address quantitative uncertainty instead of worst-case, but the connection to the robustness
+discussed in this article is still open.
+
+Robustness in RL Achieving robustness for RL policies is an active area of research [1]. A common formalization
+is that of a two-player game between the agent and an adversary [20, 21]. This setup is akin to that of Hamilton-
+Jacobi reachability analysis, only with a discounted cost. These approaches achieve robustness through an adversary
+controlling, for instance, disturbances [21] or action noise [22], yielding worst-case robustness. However, such
+adversarially-robust RL requires specialized algorithms and training the adversary. In contrast, entropy-regularized RL
+is a popular framework with many standard implementations, which, as we show, also yields robustness solely through
+reward shaping.
+The work of Heim et al. [9] introduces a state-dependent safety measure based on the number of viable actions available
+in each state. Our work extends this notion to robust safety of policies. A detailed discussion on the connection with the
+safety measure therein is in Appendix C.
+We are not the first to report that entropy-regularization leads to robustness. Some empirical [4, 5] and theoretical
+works [6] highlight the inherent robustness of entropy-regularized RL. As mentioned above, however, their definition of
+robustness differs: Eysenbach and Levine [6] consider robustness of the return to changes in the dynamics, whereas we
+are interested in preserving constraints satisfaction.
+The observation that action noise during training can lead to more robust behavior was already made in [23, Example
+6.6] on the famous cliff walking grid-world. There, ε-greedy action selection resulted in more robust behavior for the
+case of on-policy learning (SARSA), whereas Q-learning (an off-policy method) learns to the optimal, non-robust,
+policy. We take the same example in Fig. 1 and observe that entropy regularization leads to robust behavior in off-policy
+RL. Similarly, the G-learning algorithm exhibits the same robust behavior on the cliff environment [24]. Our results
+and interpretation provide a general explanation for this observation.
+
+
+3   Preliminaries
+
+We introduce concepts to frame the optimization problems and their constraints. In particular, we address entropy-
+regularized RL and viability.
+
+
+                                                               3
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                     P REPRINT — J ULY 22, 2025
+
+
+3.1   Entropy-regularized RL
+
+We consider finite sets X and A called the state and action spaces, respectively, and deterministic dynamics f : Q → X ,
+where Q = X × A is the state-action space. A policy π : Q → [0, 1] is a map whose partial evaluation in any x ∈ X is
+a probability mass function on A; we write π(· | x), and Π is the set of all policies. The state at time t ∈ N from initial
+state x ∈ X and following π ∈ Π is X(t; x, π), and the action taken by π at that time is A(t; x, π). If the policy and
+initial state are unambiguous, we simply write Xt and At .
+We also consider r : Q → R a bounded reward function. The return of π ∈ Π from initial state x ∈ X is then
+                                                              ∞
+                                                              X
+                                                G(x, π) =              γ t r(Xt , At ),                                     (1)
+                                                               t=0
+
+where γ ∈ (0, 1) is the discount factor. A smaller γ disregards delayed rewards, but can be overcome if the said
+rewards have large magnitude. The expected return is Ḡ(x, π) = E[G(x, π)]. With H as the entropy, we introduce the
+discounted cumulative entropy of π ∈ Π from x ∈ X as
+                                                            ∞
+                                                            X
+                                               S(x, π) =           γ t H(π(· | Xt )),                                       (2)
+                                                             t=0
+
+and its expectation S̄(x, π) = E[S(x, π)]. The objective of entropy-regularized RL is then to find an optimal policy,
+that is, a policy πopt ∈ Π such that
+                                    πopt ∈ arg max Ḡ(x, π) + αS̄(x, π),                  ∀x ∈ X ,                          (3)
+                                                     π∈Π
+
+where α ∈ R≥0 is a design parameter called the temperature. It is known that there exists an optimal policy [2].
+Specifically, one can be computed by leveraging the optimal soft-Q-value function q : Q → R, which satisfies for all
+(x, a) ∈ Q [25]:                                          "                    #
+                                                            X         1    ′
+                                q(x, a) = r(x, a) + γα ln       exp     q(x , b) ,                               (4)
+                                                                      α
+                                                                       b∈A
+                                   ′
+where we defined the shorthand x = f (x, a). An equivalent definition is [25, Theorem 16]
+                                   q(x, a) = max r(x, a) + γ Ḡ(x′ , π) + αγ S̄(x′ , π).                                    (5)
+                                                π∈Π
+
+Once q is known, the softmax policy solves (3):
+                                                                          
+                                                                  1
+                                 πopt (a | x) = softmax             q(x, ·) (a) ∀(x, a) ∈ Q.                                (6)
+                                                                  α
+Finally, for any policy π ∈ Π, its mode is the policy
+                                                            1
+                                       π̂(a | x) =                      δarg max π(·|x) (a),                                (7)
+                                                     |arg max π(· | x)|
+where |A| is the cardinality and δA (a) is the indicator function of a set A ⊂ A.
+
+3.2   Viability
+
+We consider a set of failure states XC ⊂ X that the system should never visit. Avoiding XC is a dynamic concern, and
+some states that are not in XC themselves may still lead there inevitably. We address this through viability theory [10,
+Chapter 2].
+Definition 1 (Viability kernel). The viability kernel XV is the set of states from where XC can be avoided at all times
+almost surely:
+                                 XV = {x ∈ X | ∃π ∈ Π, ∀t ∈ N>0 , P[Xt ∈     / XC ] = 1}.
+By definition, any state that is not in the viability kernel leads to XC in finite time. Such states are called unviable. The
+viability kernel is therefore the largest set that enables recursive feasibility of the problem of avoiding transitions into
+XC . A closely related concept is the viable set, which is the set of state-action pairs that preserve viability [8]:
+                                       QV = {(x, a) ∈ Q | x ∈ XV ∧ f (x, a) ∈ XV }.
+We also define the unviable set QU = Q \ QV , and the critical set Qcrit = QU ∩ (XV × A) [26].
+
+
+                                                                   4
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                            P REPRINT — J ULY 22, 2025
+
+
+Definition 2. Let π ∈ Π. We say that π is safe from the state x ∈ X if P[Xt ∈    / XC ] = 1 for all t ∈ N>0 . We say that π
+is safe if it is safe from any x ∈ XV . For δ > 0, we say that π is δ-safe
+                                                                       T   if max Qcrit π ≤ δ. We denote the set of policies
+safe from the state x by ΠV (x) and that of safe policies by ΠV = x∈XV ΠV (x).
+
+By definition of the viability kernel, the condition for a safe policy can be replaced with P[Xt ∈ XV ] = 1 for all t ∈ N.
+Remark 1. Another meaningful
+                          P       definition of δ-safety could be that the policy assigns at most δ of probability mass to
+unviable actions, that is, a∈Qcrit [x] π(a | x) ≤ δ for all x ∈ XV , where Qcrit [x] is the X -slice of Qcrit in x. This is
+                                                                                  P
+equivalent to Definition 2 up to the choice of δ, since a δ-safe policy satisfies a∈Qcrit [x] π(a | x) ≤ δ · |Qcrit [x]|.
+In the next section, we consider an RL problem over the set of safe policies and dual relaxations thereof. To allow for
+general such relaxations, we introduce dynamic indicators.
+Definition 3 (Dynamic indicator). Let c : Q → R≥0 and the associated discounted risk
+                                                           ∞
+                                                           X
+                                               ρ(x, π) =         γ t c(Xt , At ).                                        (8)
+                                                           t=0
+
+We say that c is a dynamic indicator of XC if, for all x ∈ XV , E[ρ(x, π)] > 0 if, and only if, π ∈
+                                                                                                  / ΠV (x).
+The notion is independent of γ ∈ (0, 1). A simple example is the composition of the indicator function of XC with the
+dynamics; it is a dynamic indicator of XC [3, Lemma 1]. While this one is always available, more elaborate dynamic
+indicators help penalize unviable states earlier in the Lagrangian relaxation and lower required penalties, eventually
+leading to better conditioning.
+Remark 2 (Recovering from constraints violation). Our results hold in the two settings where visiting XC terminates
+the episode or not. The second case is fully consistent with the setup of infinite time-horizon RL that precedes. Then,
+actions taken from XC may map back into XV : trajectories leaving XV may only return there after visiting XC . We
+even have XC ∩ XV ̸= ∅ in general, and the intersection is composed of states with actions that map in XV \ XC . The
+first case, however, is not naturally framed in infinite time-horizon. Indeed, while adding an absorbing state with null
+reward and dynamic indicator as in [3] effectively cuts the sums in G(x, π) and ρ(x, π), the sum in S(x, π) cannot be
+handled similarly without additional notation. In the interest of conciseness and clarity, we thus only introduce formally
+the case of non-terminal XC . We emphasize that this is the more challenging case, as forbidding entropy collection
+after failure effectively further penalizes failure states.
+
+4   Problem formulation
+We consider a standard constrained RL problem with dynamics f , constraint set XC , viability kernel XV , return G, and
+entropy regularization with temperature α > 0, as defined in Section 3:
+                                               max Ḡ(x, π) + αS̄(x, π).                                                 (9)
+                                               π∈ΠV
+
+We investigate the following questions:
+Question 1. In what sense can we interpret (9) as a robust control problem?
+Question 2. Can we make (9) amenable to unconstrained algorithms?
+We provide an empirical answer to Question 1 by identifying that the constraints repel trajectories of optimal controllers
+to an extent controlled by α, using tools from viability theory. The higher α, the stronger the repulsion. We then
+interpret this repulsion as a form of robustness to action noise, as the mode of the solution to (9) favors visiting states
+where adversarial action noise takes longer to bring the agent to states with constraints. We support this high-level
+interpretation with empirical demonstrations on toy examples and standard RL benchmarks. We then answer Question 2
+through constraints penalties: we show that the solutions of (9) are approximated arbitrarily closely by solving a
+Lagrangian relaxation of the constraint π ∈ ΠV . Provided that one can solve the resulting unconstrained problem in
+practice (using for instance classical RL algorithms such as SAC), our results provide a model-free way to approximate
+robustly-safe controllers arbitrarily closely with a tunable degree of robustness, as well as a clear interpretation of the
+temperature and penalty parameters.
+
+5   Theoretical results
+In this section, we explain on a high level why entropy regularization causes constraints to repel trajectories of optimal
+controllers and state our theoretical results on how to approximate (9) with a classical unconstrained problem. The
+proofs are in Appendix D.
+
+
+                                                             5
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                           P REPRINT — J ULY 22, 2025
+
+
+5.1   Preserving future viable options
+
+Explanation Our starting point to understand the claimed phenomenon is the observation that, for x ∈ XV , the
+maximum immediate entropy achievable by a safe controller is limited by the number of unsafe actions available in x.
+Specifically, it follows immediately from properties of H that
+                                          ∀π ∈ ΠV , H(π(· | x)) ≤ ln|QV [x]|.                                          (10)
+Since S̄ is the (expected discounted) sum of the left-hand side of (10) along trajectories, it is meaningful that entropy-
+regularized, safe optimal controllers avoid states for which this upper bound is low, i.e., where |QV [x]| is low. On the
+other hand, completely forbidding actions leading to such states is also harmful, since it “propagates” the constraints
+backwards along trajectories, enforcing a similar upper bound on the immediate entropy obtainable in those previous
+states as well. In other words, entropy-regularized controllers limit the probability of actions that eventually lead to
+states with a low bound in (10), without completely avoiding such actions to avoid loss of immediate entropy. The
+more steps it takes to reach states with many constraints, the less pronounced this effect of the constraints is. It follows
+from this reasoning that trajectories that go towards states with many constraints generally have lower probability than
+trajectories that go away from them.
+This discussion supports on a high level that entropy regularization with constraints promotes constraints avoidance
+by preserving the long-term number of future viable options. Next, we identify this behavior as a form of robustness
+to action noise of the mode policy. Indeed, the mode policy tends to minimize the long-term proportion of actions
+unavailable because of constraints, and thus the probability that action noise selects such an action is also approximately
+minimized. We leave a precise formalization of this idea to future work, and support it with empirical evidence in
+Section 6.
+
+A metric of robustness This discussion highlights that, for any π ∈ ΠV and x ∈ XV , the quantity S̄(x, π) captures
+the long-term number of viable actions that π considers from x. A controller achieving a high S̄(x, π) successfully
+avoids highly-constrained states. This motivates taking the cumulative entropy as a quantitative measurement of
+robustness, which enables comparing the robustness of controllers.
+Definition 4. We say that π1 ∈ ΠV is less S-robust than π2 ∈ ΠV , and write π1 ⪯ π2 , if
+                                           S̄(x, π1 ) ≤ S̄(x, π2 ),   ∀x ∈ XV .                                        (11)
+
+Behavior for increasing temperatures For α = 0, (9) recovers the constrained, unregularized problem
+                                                      max Ḡ(x, π).                                                    (12)
+                                                      π∈ΠV
+
+We are then maximizing the return over viable policies with no concerns about robustness. As α increases, entropy is
+                                                                                                           ⋆
+more and more prevalent in the objective of (9), whose solution converges to the maximum entropy policy πent
+                                          ⋆
+                                         πent = arg max S̄(x, π),      ∀x ∈ XV .                                       (13)
+                                                      π∈ΠV
+
+This is best seen through the soft-value function.
+Theorem 1. Consider the soft-Q-value functions Qent and Qα of (13) and (9), respectively and for all α ∈ R≥0 . Then,
+maxQV | α1 Qα − Qent |→ 0 as α → ∞.
+                            ⋆
+Corollary 1. Denote by πent    and πα⋆ the solutions of (13) and (9), respectively and for all α ∈ R≥0 . Then, the map
+α 7→ πα⋆ is monotonic for ⪯ and maxQV |πα⋆ − πent  ⋆
+                                                     | → 0 as α → ∞.
+Corollary 1 formalizes that the solution of (9) becomes more S-robust and approaches that of (13) as α increases. The
+mode of (9) thus gets robust to action noise by the preceding explanations and empirical evidence of Section 6.
+
+5.2   Relaxing safety constraints with penalties
+
+A practical consequence of our observation is that solving (9) yields controllers that preserve a safe distance to the
+constraints with high probability. An important drawback, however, is that the problem involves the viable set QV ,
+which is unknown in model-free situations. We now leverage a Lagrangian relaxation of these viability constraints to
+make the problem amenable to model-free algorithms. The results in this section extend those of [3] to the case of an
+entropy-regularized objective.
+In this section, we consider c a dynamic indicator function of XC and ρ the associated discounted risk (Definition 3).
+We are interested in the following penalized problem
+                                    ⋆
+                                   πα,p = arg max Ḡ(x, π) + αS̄(x, π) − pρ(x, π),                                     (14)
+                                                π∈Π
+
+
+                                                             6
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                             P REPRINT — J ULY 22, 2025
+
+
+where p ∈ R≥0 is a penalty parameter. It is known that in the case α = 0, (14) and (9) share the same solutions
+if p is large enough [3, Theorem 2]. Unfortunately, this result does not directly carry to the case α > 0: from (6),
+  ⋆                                                          ⋆
+πα,p (a | x) > 0 for all (x, a) ∈ Q, and thus in particular πα,p ∈
+                                                                 / ΠV . However, scaling the penalty remains possible if
+one accepts to trade viability for δ-safety.
+Theorem 2. For any δ > 0, ϵ > 0, and α > 0, there exists p⋆ ∈ R≥0 such that, for all p > p⋆ , the optimal policy of
+      ⋆
+(14) πα,p is δ-safe and
+                                                        ⋆
+                                                   max|πα,p − πα⋆ | < ϵ.                                                 (15)
+                                                    QV
+
+
+
+
+Sketch of proof. The penalty enforces an upper-bound on the soft Q-value of state-actions in Qcrit (Lemma 2). Values
+there thus decrease arbitrarily low as the penalty increases, while it remains lower-bounded on QV . This, in turn, shows
+              ⋆                                                                                                        ⋆
+δ-safety of πα,p  for p large enough. Therefore, the value function of (14) approximates to that of (9) on QV , and πα,p
+gets arbitrarily close to πα⋆ .
+
+5.3   Safe policies from the relaxed problem
+                                             ⋆                                                                     ⋆
+It follows from Theorem 2 that the solution πα,p to the penalized problem (14) is a δ-safe policy and the mode of πα,p
+is safe if the penalty is sufficient.
+Corollary 2. Under the same notations as Theorem 2, there exists δ̄ ∈ (0, 1) such that, if δ ∈ (0, δ̄), then the policy
+                                 ⋆
+π̂α,p following the mode (7) of πα,p is safe.
+
+
+Proof. This directly follows from Theorem 2.
+
+
+We empirically investigate the robustness of this policy in the next section.
+
+Conclusion on the questions Finally, we are able to answer Questions 1 and 2 based on the following arguments.
+Entropy regularization in the presence of constraints biases the learning problem towards policies that avoid constraints
+to preserve a high number of viable options, with the temperature coefficient monotonically controlling the degree of
+S-robustness. Furthermore, the viability constraints of (9) can be relaxed by a Lagrangian formulation at the price of
+trading viability for δ-safety. Specifically, the solution of (14) approximates arbitrarily closely that of (9), provided that
+the penalty is sufficiently high. In particular, penalties above a finite threshold recover the mode of (9) exactly and the
+policy following that mode is therefore safe. Put together, these results provide a model-free way to approximate safe
+and robust controllers with tunable degrees of robustness.
+
+
+6     Empirical results
+
+We provide in this section the empirical evidence that entropy regularization with constraints yields policies whose
+mode avoids constraints and is robustly safe under increased action noise, and that penalties enable approximating these
+constraints. We start with a discrete grid world, where we can solve the constrained problem numerically, to showcase
+how constraints repel trajectories in the presence of entropy regularization. Second, we introduce failure penalties
+to reveal how they recover the constraints. Finally, we illustrate the claimed robustness to increased action noise on
+MuJoCo benchmarks1 . These experimental results confirm our interpretation of the two hyperparameters: penalties
+control the probability of failure, while the temperature controls the degree of robustness.
+
+6.1   Cliff walking
+
+Our gridworld (Fig. 1) is an adaptation of the cliff environment [23, Example 6.6]. Three states in the middle of the
+bottom row represent the cliff; the failure set XC the agent should robustly avoid. The right column represents the target
+of escaping the cliff. The failure and target states are invariant under all actions. Otherwise, the dynamics follow the
+direction of the chosen action, or map back into the current state if the agent hits a border. Actions outside of the cliff or
+target get a −1 reward.
+
+
+                                                              7
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                       P REPRINT — J ULY 22, 2025
+
+
+                                                 T               T                T
+                                                 T               T                T
+                             p = 10              T
+                                                 T
+                                                                 T
+                                                                 T
+                                                                                  T
+                                                                                  T
+
+
+
+
+                                                                                      normalized soft-value
+                                        C C C    T       C C C   T       C C C    T
+                                                 T               T                T
+                                                 T               T                T
+                             p = 15              T
+                                                 T
+                                                                 T
+                                                                 T
+                                                                                  T
+                                                                                  T
+                                        C C C    T       C C C   T       C C C    T
+                                                 T               T                T
+                                                 T               T                T
+                             p = 100             T
+                                                 T
+                                                                 T
+                                                                 T
+                                                                                  T
+                                                                                  T
+                                        C C C    T       C C C   T       C C C    T
+                                          =1              =4               =8
+Figure 2: Unconstrained cliff — Safety and robustness as functions of α and p: Safety and robustness can be
+achieved by penalizing (p) the constraints XC and adjusting the temperature (α).
+
+
+6.1.1   Interaction of constraints and entropy
+
+The constrained version of the environment — the fenced cliff — only offers three actions to an agent neighboring the
+cliff, imposing a lower upper-bound on the entropy in those states as per (10). This observation is key in understanding
+why entropy regularization avoids states with unviable actions, yielding robustness (Fig. 1.d).
+Indeed, when maximizing entropy only (Fig. 1.d), the optimal policy favors transitioning away from states neighboring
+the constraints due to the aforementioned upper bound on immediate entropy. In turn, the immediate entropy of
+the policy in the 2-step neighbors is also reduced since some transitions are less desirable. The same logic applies
+recursively “outwards” from states with unviable actions, and the policy generally pushes trajectory away from the
+constraints; that is, towards the top corners. When initialized on the right, the policy aims at reaching the invariant
+target states where full entropy is available. When initialized on the left, the mode of the policy favors the top-left
+corner to avoid the low entropy of states close to the constraints, overcoming the long-term benefit of the target state.
+This trade-off between short- and long-term entropy depends on the discount factor γ.
+In contrast, finite temperatures (Fig. 1.a–c) further encourage reaching the goal state to avoid the negative reward. The
+agent thus takes more risks to collect rewards while preserving some distance from the constraints. This trade-off
+between performance and robustness is controlled by the temperature parameter α: high values favor entropy (and,
+thus, robustness by what precedes), whereas lower ones favor performance. While high robustness may be desirable, it
+comes at the price of suboptimality. Too high a temperature may entirely prevent task completion for the mode policy if
+the path thereto is inherently risky, leading to unsuccessful learning outcomes due to poor choice of hyperparameters.
+
+
+6.1.2   Interaction of penalties and entropy
+
+Sufficient penalties enable solving the constrained problem (Fig. 2), consistently with Theorem 2. The example shows
+the robustness–performance trade-off with different temperatures and penalties. Importantly, entropy and penalties are
+now competing, and any fixed penalty is eventually overcome by high temperatures, degrading safety (Fig. 3). The
+penalty thus needs to scale with the temperature to ensure δ-safety with a low δ.
+The minimum sufficient value for the penalty depends not only on α, but also on other hyperparameters such as the
+reward function, discount factor, and dynamic indicator. For instance, if the dynamic indicator is simply the indicator
+function of the constraints set, then the minimum penalty scales exponentially with the longest trajectory contained in
+X \ (XV ∪ XC ). Other choices of dynamic indicators may improve this dependency by incurring the penalty earlier in
+the trajectory, but choosing the penalty remains a problem-specific concern. While theory suggests picking it as high as
+possible, too high a penalty may introduce numerical instabilities when combined with value function approximators
+outside of tabular methods. We refer to [3] for an extended discussion.
+
+   1
+   The code to reproduce results is available at www.github.com/Data-Science-in-Mechanical-Engineering/entropy_
+robustness.
+
+
+                                                           8
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                                   P REPRINT — J ULY 22, 2025
+
+
+                                                                                                                                5
+                                                                             0.8
+                 16                                                                                                             4
+                                                                             0.6
+                 14                                                                                                             3
+         pmode                                                               0.4                                                log2 ( )
+                 12                                                                                                             2
+                                                                             0.2
+                 10
+                                                                             0.0                                                0
+                      0    10          20              30                             0               20               40
+                                                                                                            p
+Figure 3: Effect of the temperature on the minimum safe penalty pmode (left) and δ-safety (right) on the cliff:
+Left: The minimum penalty such that the mode of the stochastic policy is safe. Right: The minimum δ such that the
+policy is δ-safe as functions of p and α. Policies get safer as p increases, but less safe as α does.
+
+                                 α = 0.1                          α = 0.3                        α=1
+
+
+
+
+                                                XC                                 XC                             XC
+
+                                 0.1     0.85    0.16    0.00    0.00           0.76    0.44    0.19    0.05     0.1
+                                       (±0.27) (±0.21) (±0.00) (±0.00)        (±0.26) (±0.37) (±0.28) (±0.12)
+
+                                 0.2     1.00    0.96    0.32    0.00           0.95    0.55    0.19    0.08     0.3
+                                       (±0.00) (±0.10) (±0.18) (±0.01)        (±0.12) (±0.36) (±0.32) (±0.26)
+
+                                 0.4     1.00    1.00    0.88    0.28           0.95    0.70    0.37    0.23     0.5
+                                       (±0.00) (±0.00) (±0.04) (±0.10)        (±0.15) (±0.35) (±0.39) (±0.40)
+
+                                 0.6     1.00    1.00    1.00    0.51           1.00    0.97    0.82    0.58     0.8
+                                       (±0.00) (±0.00) (±0.01) (±0.08)        (±0.00) (±0.08) (±0.26) (±0.43)
+
+                                         0.5     1.0        1.5    2.0          0.2       0.4   0.6        0.8
+
+
+Figure 4: Learning robust policies with SAC Top: With a target angle at 40◦ (dashed-dotted line) the agent learns
+to stabilize at different angles depending on the training temperature. For higher temperatures, the agent stabilizes
+the pendulum further away from the failure set XC . Bottom: Rate of successful failure avoidance on the disturbed
+Pendulum-v1 (left heat map) and Hopper-v4 (right heat map) environments. As the temperature increases the mode
+of the stochastic policy is robust to higher levels of action noise ϵ.
+
+
+6.2     Reinforcement learning benchmarks
+
+We now illustrate on standard RL benchmarks that this constraints avoidance translates into increased robustness
+to action noise. For this, we train entropy-regularized agents on two popular MuJoCo benchmarks, namely the
+Pendulum-v1 and the Hopper-v4 environment [27], with various temperatures. We then evaluate the mode of the
+learned policy under additional external action noise, whereas training is noise-free. The action noise is sampled from a
+uniform distribution U(−ϵ, ϵ). For each value of the temperature, we evaluate the frequency of successful constraints
+avoidance over 100 episodes. Further details on the setup are in Appendix B and additional results are in Appendix A.
+Consistently with our theoretical results, we find that (i) entropy-regularization decreases the return by avoiding
+high-value states with many unviable actions; and (ii) the mode of entropy-regularized policies is more robust to
+disturbances as the training temperature increases.
+
+6.2.1    Pendulum
+We modify the Pendulum-v1 environment as follows to incorporate robustness concerns: (i) the initial state is the still,
+upright position; (ii) the constraints consist of angles with magnitude beyond 90° and the penalty is 90; and (iii) the
+
+
+                                                                         9
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                           P REPRINT — J ULY 22, 2025
+
+
+reward is the squared angular difference to a target angle of 40°, which is outside of the viability kernel since the agent
+exerts bounded torque.
+The results are shown in Fig. 4. All policies lean towards the target state but avoid leaving the viability kernel and
+reaching the constraints. The sufficient penalty emulates the boundary of the viability kernel, which reduces the effective
+number of available actions when leaning to one side. This pushes entropy-regularized policies away from the target
+state, and they learn to stabilize angles closer to 0 as α increases — the maximum entropy policy keeps the pendulum
+upright. The results show a robustness–performance trade-off between staying upright and leaning as far as possible
+towards the target, which is controlled by the temperature α. Furthermore, the mode of the entropy-regularized policy
+can cope with significantly higher action disturbances when trained with higher temperatures.
+
+6.2.2   Hopper
+We repeat the same experiment as in the previous section for a modified Hopper-v4 environment [27]. We modify
+the environment by penalizing the “unhealthy” states with a penalty of p = 500. The results are shown in Fig. 4.
+Increasing the temperature improves the robustness to additional action noise. However, the learned gait is slower,
+hinting at a performance–robustness trade-off for this environment (see Appendix A.2). Interestingly, as the temperature
+is increased, the training finds two distinct robust behaviors: one is the intended hopping forward; the other is standing
+still and only collecting the healthy reward, which is arguably the most robust behaviour.
+Our experiments inform hyperparameter settings for RL practitioners: while entropy regularization leads to robustly
+safe policies, high temperatures (or minimum entropy constraints [28]) can make parts of the state space unreachable,
+lead to conservative policies, and may even entirely prevent task completion as seen in the Hopper example.
+
+7   Conclusion
+We study the interaction between entropy regularization and state constraints in RL and reveal empirically that this
+favors policies that are constraints-avoiding and robust to increased action noise, as they preserve an expected long-term
+number of viable actions. We also show both in theory and in practice how to approximate the constraints with failure
+penalties. In particular, the mode of the policy — which is often what is deployed after training completion — is
+recovered exactly by penalties above a finite threshold.
+The connection between entropy regularization with constraints and control-theoretic robustness is novel, to the
+best of our knowledge. This study identifies the phenomenon, its relevance for RL, and opens many interesting
+avenues for future work. A particularly promising one is the systematic study of the identified robustness. Indeed, we
+hypothesize that entropy regularization with constraints induces a kind of soft constraints tightening; that is, restricts
+the optimization domain to controllers that go away from the constraints with at least some given probability. Such a
+result would enable identifying “softly invariant sets”: subsets of the viability kernel that are control invariant under a
+robustly safe controller (but not directly under entropy-regularized controllers, as they have full action support) and
+contain the entropy-regularized controller’s trajectory with high probability. This would draw a clear theoretical bridge
+between entropy-regularized constrained RL and robust control through constraints tightening. An alternative would be
+identifying a noise model to which the modes of entropy-regularized, constrained policies are robust. More generally, it
+would be interesting to find other regularization terms that promote robustness and that are amenable to RL beyond the
+cumulative entropy, following ideas from [7]. Such regularizers could enable novel robustness properties with rigorous
+guarantees, and perhaps help training policies that are less sensitive to the sim-to-real gap.
+In the meantime, we expect our findings to inform practitioners when applying RL algorithms such as SAC. While
+entropy regularization has mainly been developed as an exploration mechanism [2], it biases the policy to robustness
+to action noise if one uses constraints penalties. This understanding enables principled decisions when tuning the
+temperature and penalties, for instance by discouraging the common practice of annealing the temperature if robustness
+is a concern.
+
+Acknowledgments
+The authors thank Zeheng Gong for help with the empirical results. Simulations were performed with computing
+resources granted by RWTH Aachen University under project rwth1626. This work has been supported by the Robotics
+Institute Germany, funded by BMBF grant 16ME0997K.
+
+Disclosure of interests
+The authors have no competing interests to declare.
+
+
+                                                            10
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                      P REPRINT — J ULY 22, 2025
+
+
+References
+ [1] Janosch Moos, Kay Hansel, Hany Abdulsamad, Svenja Stark, Debora Clever, and Jan Peters. Robust reinforcement
+     learning: A review of foundations and recent advances. Machine Learning and Knowledge Extraction, 4(1):
+     276–315, 2022. ISSN 2504-4990. doi: 10.3390/make4010013.
+ [2] Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy
+     deep reinforcement learning with a stochastic actor. In International conference on machine learning, pages
+     1861–1870. PMLR, 2018.
+ [3] Pierre-François Massiani, Steve Heim, Friedrich Solowjow, and Sebastian Trimpe. Safe Value Functions. IEEE
+     Transactions on Automatic Control, 2023.
+ [4] Tuomas Haarnoja, Vitchyr Pong, Aurick Zhou, Murtaza Dalal, Pieter Abbeel, and Sergey Levine. Composable
+     deep reinforcement learning for robotic manipulation. In IEEE International Conference on Robotics and
+     Automation, pages 6244–6251, 2018. doi: 10.1109/ICRA.2018.8460756.
+ [5] Tuomas Haarnoja, Sehoon Ha, Aurick Zhou, Jie Tan, George Tucker, and Sergey Levine. Learning to walk via deep
+     reinforcement learning. In Proceedings of Robotics: Science and Systems, 2019. doi: 10.15607/RSS.2019.XV.011.
+ [6] Benjamin Eysenbach and Sergey Levine. Maximum entropy RL (provably) solves some robust RL problems. In
+     International Conference on Learning Representations, 2022.
+ [7] Matthieu Geist, Bruno Scherrer, and Olivier Pietquin. A theory of regularized Markov decision processes. In
+     Proceedings of the 36th International Conference on Machine Learning, volume 97, pages 2160–2169, 2019.
+ [8] Steve Heim and Alexander Badri-Spröwitz. Beyond basins of attraction: Quantifying robustness of natural
+     dynamics. IEEE Transactions on Robotics, 35(4):939–952, 2019.
+ [9] Steve Heim, Alexander Rohr, Sebastian Trimpe, and Alexander Badri-Spröwitz. A Learnable Safety Measure. In
+     Conference on Robot Learning, pages 627–639. PMLR, May 2020.
+[10] Jean-Pierre Aubin, Alexandre M Bayen, and Patrick Saint-Pierre. Viability theory: new directions. Springer
+     Science & Business Media, 2011.
+[11] Lukas Brunke, Melissa Greeff, Adam W Hall, Zhaocong Yuan, Siqi Zhou, Jacopo Panerati, and Angela P Schoellig.
+     Safe learning in robotics: From learning-based control to safe reinforcement learning. Annual Review of Control,
+     Robotics, and Autonomous Systems, 5:411–444, 2022.
+[12] Joshua Achiam, David Held, Aviv Tamar, and Pieter Abbeel. Constrained policy optimization. In International
+     conference on machine learning, pages 22–31. PMLR, 2017.
+[13] Eric C Kerrigan and Jan M Maciejowski. Soft constraints and exact penalty functions in model predictive control.
+     In Control 2000 Conference, Cambridge, pages 2319–2327, 2000.
+[14] An-Qing Xing and Chung-Lie Wang. Applications of the exterior penalty method in constrained optimal control
+     problems. Optimal Control Applications and Methods, 10(4):333–345, 1989.
+[15] Kemin Zhou, John Doyle, and Keith Glover. Robust and optimal control. Prentice Hall, 1996.
+[16] Lars Grüne and Jürgen Pannek. Nonlinear Model Predictive Control. Springer, 2 edition, 2017.
+[17] Daniel Limon, Teodoro Alamo, Davide M Raimondo, D Muñoz De La Peña, José Manuel Bravo, Antonio
+     Ferramosca, and Eduardo F Camacho. Input-to-state stability: a unifying framework for robust model predictive
+     control. Nonlinear Model Predictive Control: Towards New Challenging Applications, pages 1–26, 2009.
+[18] Somil Bansal, Mo Chen, Sylvia Herbert, and Claire J Tomlin. Hamilton-jacobi reachability: A brief overview and
+     recent advances. In Conference on Decision and Control, pages 2242–2253, 2017.
+[19] Giuseppe Carlo Calafiore and Marco C Campi. The scenario approach to robust control design. IEEE Transactions
+     on automatic control, 51(5):742–753, 2006.
+[20] Jun Morimoto and Kenji Doya. Robust reinforcement learning. Neural Computation, 17(2):335–359, 2005. doi:
+     10.1162/0899766053011528.
+[21] Lerrel Pinto, James Davidson, Rahul Sukthankar, and Abhinav Gupta. Robust adversarial reinforcement learning.
+     In Doina Precup and Yee Whye Teh, editors, Proceedings of the 34th International Conference on Machine
+     Learning, volume 70 of Proceedings of Machine Learning Research, pages 2817–2826, 2017.
+[22] Chen Tessler, Yonathan Efroni, and Shie Mannor. Action robust reinforcement learning and applications in contin-
+     uous control. In Kamalika Chaudhuri and Ruslan Salakhutdinov, editors, Proceedings of the 36th International
+     Conference on Machine Learning, volume 97, pages 6215–6224, 2019.
+[23] Richard S Sutton and Andrew G Barto. Reinforcement learning: An introduction. MIT press, 2018.
+
+
+                                                        11
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                      P REPRINT — J ULY 22, 2025
+
+
+[24] Roy Fox, Ari Pakman, and Naftali Tishby. Taming the noise in reinforcement learning via soft updates. In 32nd
+     Conference on Uncertainty in Artificial Intelligence, pages 202–211, 2016.
+[25] Ofir Nachum, Mohammad Norouzi, Kelvin Xu, and Dale Schuurmans. Bridging the gap between value and policy
+     based reinforcement learning. Advances in neural information processing systems, 30, 2017.
+[26] Pierre-François Massiani, Steve Heim, and Sebastian Trimpe. On exploration requirements for learning safety
+     constraints. In Learning for Dynamics and Control, pages 905–916. PMLR, 2021.
+[27] Mark Towers, Jordan K. Terry, Ariel Kwiatkowski, John U. Balis, Gianluca de Cola, Tristan Deleu, Manuel Goulão,
+     Andreas Kallinteris, Arjun KG, Markus Krimmel, Rodrigo Perez-Vicente, Andrea Pierré, Sander Schulhoff,
+     Jun Jet Tai, Andrew Tan Jin Shen, and Omar G. Younis. Gymnasium, March 2023. URL https://zenodo.org/
+     record/8127025.
+[28] Tuomas Haarnoja, Aurick Zhou, Kristian Hartikainen, George Tucker, Sehoon Ha, Jie Tan, Vikash Kumar,
+     Henry Zhu, Abhishek Gupta, Pieter Abbeel, et al. Soft actor-critic algorithms and applications. arXiv preprint
+     arXiv:1812.05905, 2018.
+[29] Shengyi Huang, Rousslan Fernand Julien Dossa, Chang Ye, Jeff Braga, Dipam Chakraborty, Kinal Mehta, and
+     João G.M. Araújo. Cleanrl: High-quality single-file implementations of deep reinforcement learning algorithms.
+     Journal of Machine Learning Research, 23(274):1–18, 2022. URL http://jmlr.org/papers/v23/21-1342.
+     html.
+[30] Emanuel Todorov, Tom Erez, and Yuval Tassa. Mujoco: A physics engine for model-based control. In 2012
+     IEEE/RSJ international conference on intelligent robots and systems, pages 5026–5033. IEEE, 2012.
+
+
+
+
+                                                        12
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                  P REPRINT — J ULY 22, 2025
+
+
+A     Extended empirical results
+We provide some additional empirical results to support our findings in Section 6.
+
+A.1   Cliff walking
+
+Policy entropy In Fig. 5, we show the immediate entropy of the optimal policy in each state for both the maximum
+entropy policy and the regularized policy. Fig. 5.a shows the effect of constraints on the maximum entropy policy,
+pushing away trajectories. In the regularized setting (Fig. 5.b) the optimal policy trades entropy for return.
+
+                                                    T                      T
+
+
+
+                                                                                     policy entropy
+                                                    T                      T
+                                                                                  1.2
+                                                    T                      T
+                                                    T                      T
+                                                                                  1.0
+                                                    T                      T
+                                 (a) Max. entropy       (b) Regularized policy
+Figure 5: Immediate entropy of the maximum entropy policy (a) and of the regularized policy (b): To avoid states
+                                                                          ⋆
+with unviable actions (and thus low maximum entropy as per (10)), πent        moves away from the constraint (a). The
+regularized policy (α = 4) trades entropy for return and stays closer to the constraints (b). The colormap is the entropy
+of the optimal policy and the blue arrows the expected actions. Shorter arrows thus mean a higher action distribution
+entropy.
+
+
+
+
+                                                            13
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                            P REPRINT — J ULY 22, 2025
+
+
+A.2   RL benchmarks
+
+Trade-off between robustness and return In Fig. 6 we show for different values of α the total return of the trained
+policies in the undisturbed pendulum and hopper environments. The result shows that returns decrease as α increases,
+that is, as policies become more robust.
+For the pendulum, the return is directly correlated to the angle at which it stabilizes. The decrease in return reflects a
+more upright stabilized position (cf. Fig 4). Given the finite torque the agent can apply to the pendulum, the upright
+equilibrium is the most robust viable position in this environment and, indeed, for higher temperatures the agent
+stabilizes the pendulum closer to its equilibrium.
+A similar trend can be observed for the hopper environment. The overall return decreases as the agent learns a
+smaller but more robust gait. For higher temperatures, we observe two different learning outcomes, depending on the
+randomness of the learning process. One where the agent still learns to walk slowly forward and another where the
+agents stands still. This example already indicates that training with high entropy and penalties can lead to undesired
+outcomes where the agent cannot complete its task anymore since doing so would be too risky.
+
+                                                                                      250
+                                       20
+                                                                                      200
+                              Return   30
+                                                                                      150
+                                       40
+                                            0.1 0.4 0.7 1.0 0.1 0.4 0.7 1.0
+
+Figure 6: Effect of the temperature on return: Evaluation on the Pendulum-v1 (left) and Hopper-v4 (right)
+environments. As the temperature increases, the mode of the policy trades return for robustness and gets more
+conservative.
+
+Success rate under disturbances We show in Fig. 7 and Fig. 8 extended versions of the heat maps shown in Fig. 4.
+They show the dependency between the training temperature α and the maximum magnitude of disturbances ϵ the agent
+can withstand at evaluation. Generally, as the training temperature increases, so does the robustness of the mode of
+the learned policy. For the hopper environment (Fig. 8) the trend is intact but our results exhibit high variance over
+different training runs, especially for high temperatures. We attribute this to suboptimal solutions found during learning.
+When inspecting the trained policy’s behavior we see that sometimes the agent learns to stand still in order to increase
+robustness.
+
+
+
+
+                                                           14
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                                                P REPRINT — J ULY 22, 2025
+
+
+
+
+                                                1.00      1.00      0.95      0.73      0.45       0.16      0.03      0.00      0.00      0.00      0.00
+
+
+
+
+     1.0 0.9 0.8 0.7 0.6 0.5 0.4 0.3 0.2 0.1
+                                               (±0.00)   (±0.00)   (±0.16)   (±0.36)   (±0.35)    (±0.21)   (±0.07)   (±0.01)   (±0.00)   (±0.00)   (±0.00)
+                                                1.00      1.00      1.00      1.00      1.00       0.96      0.76      0.46      0.20      0.04      0.00
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.01)    (±0.10)   (±0.21)   (±0.20)   (±0.15)   (±0.07)   (±0.01)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      0.97      0.79      0.53      0.26      0.08
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.02)   (±0.09)   (±0.13)   (±0.13)   (±0.09)   (±0.04)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      1.00      0.97      0.76      0.53      0.28
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.00)   (±0.03)   (±0.06)   (±0.09)   (±0.10)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      1.00      1.00      0.92      0.67      0.42
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.00)   (±0.00)   (±0.04)   (±0.05)   (±0.05)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      1.00      1.00      0.98      0.79      0.51
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.00)   (±0.00)   (±0.03)   (±0.07)   (±0.08)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      1.00      1.00      0.98      0.84      0.55
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.00)   (±0.02)   (±0.07)   (±0.11)   (±0.09)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      1.00      1.00      0.98      0.89      0.63
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.00)   (±0.01)   (±0.06)   (±0.09)   (±0.08)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      1.00      1.00      1.00      0.94      0.66
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.02)   (±0.04)
+                                                1.00      1.00      1.00      1.00      1.00       1.00      0.99      0.96      0.92      0.85      0.61
+                                               (±0.00)   (±0.00)   (±0.00)   (±0.00)   (±0.00)    (±0.00)   (±0.03)   (±0.11)   (±0.20)   (±0.25)   (±0.21)
+
+                                                0.0       0.2       0.4       0.6       0.8           1.0    1.2       1.4       1.6       1.8       2.0
+
+
+Figure 7: Robustness to disturbances for the pendulum environment: Evaluation of a policy trained with different
+temperatures α. We show the mean and standard deviation of the success rate evaluated over training with 25 random
+seeds. As the magnitude ϵ of the disturbance is increased, the mode policy retains higher success rates for higher
+temperatures.
+
+
+
+
+                                                                                                 15
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                                                    P REPRINT — J ULY 22, 2025
+
+
+
+
+                                                0.93      0.89      0.76      0.59      0.44           0.31      0.19      0.10      0.05      0.01      0.00
+
+
+
+
+     1.0 0.9 0.8 0.7 0.6 0.5 0.4 0.3 0.2 0.1
+                                               (±0.20)   (±0.19)   (±0.26)   (±0.33)   (±0.37)        (±0.35)   (±0.28)   (±0.20)   (±0.12)   (±0.05)   (±0.01)
+                                                0.92      0.91      0.84      0.73      0.56           0.35      0.22      0.12      0.06      0.02      0.01
+                                               (±0.21)   (±0.18)   (±0.26)   (±0.36)   (±0.36)        (±0.36)   (±0.34)   (±0.26)   (±0.17)   (±0.08)   (±0.03)
+                                                1.00      1.00      0.95      0.77      0.55           0.30      0.19      0.11      0.08      0.07      0.06
+                                               (±0.00)   (±0.02)   (±0.12)   (±0.31)   (±0.36)        (±0.33)   (±0.32)   (±0.27)   (±0.26)   (±0.22)   (±0.19)
+                                                0.96      0.98      0.99      0.94      0.82           0.67      0.54      0.42      0.27      0.15      0.09
+                                               (±0.20)   (±0.10)   (±0.05)   (±0.09)   (±0.23)        (±0.33)   (±0.40)   (±0.39)   (±0.31)   (±0.26)   (±0.22)
+                                                1.00      0.99      0.95      0.86      0.70           0.54      0.37      0.27      0.23      0.19      0.14
+                                               (±0.00)   (±0.03)   (±0.15)   (±0.24)   (±0.35)        (±0.38)   (±0.39)   (±0.40)   (±0.40)   (±0.35)   (±0.27)
+                                                0.94      0.94      0.93      0.91      0.85           0.73      0.57      0.40      0.30      0.25      0.21
+                                               (±0.23)   (±0.22)   (±0.24)   (±0.24)   (±0.28)        (±0.32)   (±0.36)   (±0.40)   (±0.41)   (±0.41)   (±0.37)
+                                                0.99      0.98      0.98      0.97      0.93           0.85      0.75      0.64      0.54      0.42      0.30
+                                               (±0.03)   (±0.09)   (±0.10)   (±0.11)   (±0.18)        (±0.29)   (±0.36)   (±0.42)   (±0.43)   (±0.40)   (±0.38)
+                                                1.00      1.00      1.00      0.99      0.97           0.92      0.82      0.69      0.58      0.49      0.42
+                                               (±0.01)   (±0.01)   (±0.00)   (±0.01)   (±0.08)        (±0.19)   (±0.26)   (±0.36)   (±0.43)   (±0.45)   (±0.42)
+                                                0.96      0.97      0.97      0.98      0.98           0.95      0.88      0.76      0.62      0.47      0.34
+                                               (±0.20)   (±0.15)   (±0.10)   (±0.07)   (±0.06)        (±0.11)   (±0.21)   (±0.31)   (±0.36)   (±0.38)   (±0.39)
+                                                0.89      0.86      0.85      0.85      0.85           0.83      0.78      0.70      0.60      0.54      0.48
+                                               (±0.29)   (±0.32)   (±0.33)   (±0.32)   (±0.33)        (±0.33)   (±0.32)   (±0.36)   (±0.41)   (±0.42)   (±0.43)
+
+                                                0.0       0.1       0.2       0.3       0.4            0.5       0.6       0.7       0.8       0.9       1.0
+
+
+Figure 8: Robustness to disturbances for the hopper environment: Evaluation of a policy trained with different
+temperatures α. We show the mean and standard deviation of the success rate evaluated over training with 25 random
+seeds. As the magnitude ϵ of the disturbance is increased, the mode policy retains higher success rates for higher
+temperatures.
+
+
+
+
+                                                                                                 16
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                             P REPRINT — J ULY 22, 2025
+
+
+B     Experimental details
+
+All experiments in Sec. 6.2 were conducted on a compute cluster. In total, around 50 core-hours on an Intel Xeon 8468
+Sapphire and 450 core-hours on an NVIDIA H100 have been used to produce the results. The code will be published
+upon acceptance and is also part of the supplementary material of the submission.
+The hyperparameters for the tabular value iteration to compute the policies in Sec. 6.1 are given in Table 1.
+We train the neural network policies in Sec. 6.2 using the SAC implementation of Huang et al. [29] with different fixed
+temperature values (no automatic tuning). The hyperparameters are reported in Table 2. For each α, we train on 25
+random seeds and evaluate the trained policy in terms of return and robustness. Training curves are shown in Fig. 10. To
+evaluate robustness, we take the mode of each trained policy and add a disturbance sampled from a uniform distribution
+U(−ϵ, ϵ) to the action at each environment step. An episode is successful if the agent abides by the constraint despite
+the input disturbance. We test each trained policy for 100 episodes and report the success rate and return.
+
+B.1   Environments
+
+Fenced Cliff The Fenced Cliff environment is illustrated in Fig. 1 and Fig. 5. The agent starts in the bottom-left
+corner with the goal of reaching one of the target states in the right column (marked as T). In general, the agent can take
+one of four actions to move to adjacent states (excluding diagonal moves) or remain in place if the action would lead
+out of bounds. However, actions that would lead in the failure set are not available. Consequently, states bordering the
+cliff have a smaller action space than all other states. In particular, the agent cannot enter the cliff. The agent receives a
+reward of −1 (plus the entropy reward) for every action outside a target state. Reaching a target state does not end the
+episode. Instead, the agent keeps collecting entropy rewards in target states and remains in its current state for all four
+actions.
+
+Unconstrained Cliff The Unconstrained Cliff environment is illustrated in Fig. 2. It relaxes the Fenced Cliff
+environment by allowing the agent to enter the cliff, that is, the failure set (marked as C). Transitioning into the cliff
+from a non-failure state results in a penalty of −p where p varies between experiments. Similar to target states, entering
+the cliff does not end the episode but traps the agent there indefinitely, as all four actions in the cliff map back to it. In
+particular, the agent keeps collecting entropy rewards inside failure states.
+
+Pendulum We use the standard Pendulum-v1 environment [27] with a modified reward function
+                                                r(x, a) = −(θ − θtarget )2 ,                                             (16)
+that incentivizes the agent to move towards the edge of the viability kernel, as illustrated in Fig. 9. The agent starts in
+the upright position and applies control inputs in [−2; 2] exercising a torque τ that effectively controls the angle θ. We
+use a target angle of θtarget = 40° relative to the upright position. The failure set comprises those states with an angle
+of at least 90° and entering the failure set results in a penalty of 90. The still, upright position is therefore the most
+robust state as it maintains the largest distance to the constraint set. Episodes terminate after 200 steps or when entering
+the failure set.
+
+
+                                                             θ
+                                                   θtarget
+                                                                  τ
+                                                                      XC
+
+           Figure 9: A sketch of the pendulum environment with target angle θtarget and constraint set XC .
+
+
+Hopper We use the standard Hopper-v4 MuJoCo environment [27, 30]. This environment has a built-in notion of
+the agent being healthy, defined as fulfilling a set of constraints under which the agent maintains a human-like upright
+position. The environment thus admits a natural failure set, namely the set of states in which the agent is not healthy. In
+our modification of the environment, entering the failure set results in a penalty of 500. Other than that, we use the
+default reward function which incentivizes moving forward and maintaining a healthy state while avoiding large control
+inputs. To that end, the agent applies control inputs in [−1; 1]3 exerting torques on its three joints, thereby controlling
+movement and posture. Episodes terminate after 1000 steps or when entering the failure set.
+
+
+                                                             17
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                        P REPRINT — J ULY 22, 2025
+
+
+B.2   Implementation details
+
+Model selection for SAC For our study on the robustness of the trained policies in the Pendulum and Hopper
+environments, we choose the policy that achieved the highest objective value during training, that is, the weighted sum
+of returns and entropy.
+
+Early termination for SAC In contrast to the cliff walking experiments, we terminate an episode whenever we enter
+the failure set. We do this because this is how the standard benchmarks are implemented. However, early termination
+affects the entropy regularized value function since the agent cannot collect any more entropy in the failure set and
+therefore reduces the discounted reward. Early termination is therefore equivalent to an additional penalty and reduces
+p⋆ where this reduction automatically scales with the temperature.
+
+        Table 1: Hyperparameters for tabular RL experiments on Fenced Cliff and Unconstrained Cliff.
+ Parameter                                     Value
+ Discount factor                                    0.95
+ Maximum number of iterations                       1, 000
+ Convergence tolerance                              0.00001
+
+
+                   Table 2: Hyperparameters for deep RL experiments on Pendulum and Hopper.
+ Parameter                                       Value (Pendulum)                   Value (Hopper)
+ Penalty                                            90                                    300
+ Total steps                                        250, 000                              1, 000, 000
+ Buffer size                                        250, 000                              1, 000, 000
+ Batch size                                         256                                   256
+ Discount factor                                    0.99                                  0.99
+ Target smoothing coefficient                       0.005                                 0.005
+ Policy learning rate                               0.0003                                0.0003
+ Q learning rate                                    0.001                                 0.001
+ Optimizer                                          Adam                                  Adam
+ Policy update frequency                            2−1                                   2−1
+ Target network update frequency                    1                                     1
+
+
+
+
+                                                          18
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                      P REPRINT — J ULY 22, 2025
+
+
+
+
+                                   0.1           0.3              0.5                0.7                 0.9
+                                   0.2           0.4              0.6                0.8                 1.0
+
+
+
+
+ Environment Return
+                       50
+                                                               2000
+                       75
+                      100
+                                                                  0
+
+                      100
+
+
+ Entropy Return
+                                                                100
+                      50
+                                                                  0
+                       0
+                            0          100        200                   0            500          1000
+                                Pendulum Steps (× 1000)                     Hopper Steps (× 1000)
+
+Figure 10: Mean undiscounted environment return (top row) and discounted entropy return (bottom row) during training
+in the Pendulum-v1 (left column) and Hopper-v4 (right column) environments with bootstrapped 95% confidence
+interval over 25 random seeds for each temperature α.
+
+
+
+
+                                                          19
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                              P REPRINT — J ULY 22, 2025
+
+
+C    Relation to the off-policy safety measure of Heim et al. [9]
+In this section we discuss potential problems when using, instead of the cumulative discounted entropy S in Definition 4,
+the cumulative discounted safety measure, which is introduced in Heim et al. [9]. This safety measure defines the
+“natural robustness of a state x ∈ XV ” as the number of viable actions available in that state, that is, the cardinality of
+QV [x].
+A first observation is that the safety measure of a state, Λ(x), is closely connected to the entropy of the uniform viable
+policy uV through H(uV (· | x) = ln(Λ(x)). In other words, using the (logarithm of the) safety measure as a reward
+means maximizing the quantity                             "∞                   #
+                                                            X
+                                          T̄ (x, π) = Eπ       H(uV (· | Xt )) ,
+                                                            t=0
+
+which differs from S̄ defined in (1) by replacing the policy used to compute the entropy by uV . It might — at first
+sight — seem like a meaningful quantification of robustness, since it directly measures the “long term number of viable
+actions” available by following a policy.
+Unfortunately, this quantification is not satisfactory. Indeed, it allows, for instance, visiting states where most viable
+actions lead to only having only few viable options remaining, as long as at least one path guarantees many choices. A
+compelling example illustrating why a policy with a high such T̄ should not be called robust is available below.
+
+
+
+
+                                                  S2
+
+
+
+                                      S1                     S4                      F
+
+
+
+                                                  S3
+
+
+
+Figure 11: Counterexample for an off-policy metric of robustness based on entropy. The constraint set is XC = {F }.
+Example 1. Consider the Markov decision process of Fig 11, and two policies: π1 , that goes from S1 to S2, and π2 ,
+that goes from S1 to S3. Arguably, in the absence of a noise model, a meaningful notion of robustness should say that
+π1 is more robust than π2 ; indeed, in the presence of action perturbations, both may end up in S4, but π1 takes a path
+with more “chances” to avoid — or delay — going there. Yet, the value of T̄ (S1 , π2 ) is the same as that of T̄ (S1 , π1 ),
+since the former is increased by the additional action from S3 to S4. Choosing this metric thus classifies π2 as equally
+robust as π1 , which is the not the desired outcome.
+The property of the above metric allowing this example is that the policy only needs to visit states with a high number of
+viable actions, without considering whether those actions preserve a high number of viable actions themselves, as long as
+at least one does. In other words, the policy does not need to commit to the viable actions that contribute to the value of
+its metric, and the evaluation of the robustness via H(uV (· | Xt )) is myopic. There are two simple solutions to this issue.
+The first is to use an on-policy metric of robustness, which is what we do in the present work by replacing uV in the
+previous proposition by the policy itself, yielding S̄. Then, there are policies that visit S2 with a metric higher than the
+value achieved by any policy that visits S3. The second option is to use a quantity that Pis already sensitive to the long-term
+                                                                                             ∞     t
+robustness of a state instead of H(uV (· | Xt )), such as for instance    I(x)
+                                                                        P∞ t    =  E uV
+                                                                                        [    t=0 γ H{uV (· | X(t; x, uV ))}],
+and to define robustness as having a high value of Ū (x, π) = Eπ [ t=0 γ I(Xt )]. This raises the problem, however,
+that computing this I involves solving a reinforcement learning problem itself.
+
+
+
+
+                                                             20
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                 P REPRINT — J ULY 22, 2025
+
+
+D     Proofs
+In all of this section, we identify real functions defined on QV with vectors in R|QV | , and use operators defined on the
+functions on their vector representations indistinctly.
+
+D.1   Proof of Theorem 1
+
+Proof. For α ∈ R>0 , consider the operators B ⋆ and Bα⋆ defined on RQV by, for all h ∈ RQV and (x, a) ∈ QV ,
+                                                                        
+                                                     X
+                             (B ⋆ h)(x, a) = γ ln         exp[h(x′ , b)] ,
+                                                        b∈QV [x]
+                                                                               
+                                              1                 X
+                               (Bα⋆ h)(x, a) = r(x, a) + γ ln    exp[h(x′ , b)] ,
+                                              α
+                                                                       b∈QV [x]
+                                       ′
+where we introduced the shorthand x = f (x, a). The operator B ⋆ is the optimal soft-Bellman operator associated with
+(13), and Bα⋆ is that associated with (12), scaled by the factor α1 . Let now Rα = α1 Qα . By properties of the optimal
+Bellman operator, Rα and Qent are the unique fixed points of Bα⋆ and B ⋆ , respectively.
+Let us fix a strictly increasing sequence (αn )n∈N , and define for conciseness Rαn = Rn and Bα⋆ n = Bn⋆ . The sequence
+(Rn )n∈N is clearly bounded. Therefore, there exists R ∈ R|QV | and (mn )n∈N , strictly increasing, such that Rmn → R
+as n → ∞. We show B ⋆ (R) = R. For all n ∈ N,
+                 ∥R − B ⋆ R∥ ≤ ∥R − Rmn ∥ + ∥Bm⋆
+                                                 n
+                                                   (Rmn ) − B ⋆ (Rmn )∥ + ∥B ⋆ (Rmn ) − B ⋆ (R)∥
+                                             1
+                             ≤ ∥R − Rmn ∥ +    ∥r∥ + ∥B ⋆ (Rmn ) − B ⋆ (R)∥,
+                                            αn
+                               ⋆
+where we used the identity Bm    n
+                                    (Rmn ) = Rmn in the first inequality. By continuity of B ⋆ , we have B ⋆ (Rmn ) →
+B (R), and thus the right-hand side converges to 0 as n → ∞. We deduce that R = B ⋆ (R). But then, by uniqueness of
+  ⋆
+
+the fixed point of B ⋆ , R = Qent . This shows that the bounded sequence (Rn )n∈N admits a unique accumulation point
+Qent , and thus converges to Qent . We have thus shown that for any strictly increasing sequence (αn )n∈N , Rαn → Qent
+as n → ∞. This concludes the proof by the sequential characterization of convergence of a function.
+
+D.2   Proof of Corollary 1
+
+Proof. We focus on monotonicity since convergence follows immediately from Theorem 1 and (6). Let α and β be in
+R≥0 , with α ≤ β. Let x ∈ XV . By definition of πα⋆ and πβ⋆ , we have both
+                                    Ḡ(x, πα⋆ ) + αS̄(x, πα⋆ ) ≥ Ḡ(x, πβ⋆ ) + αS̄(x, πβ⋆ ),
+                                    Ḡ(x, πα⋆ ) + β S̄(x, πα⋆ ) ≤ Ḡ(x, πβ⋆ ) + β S̄(x, πβ⋆ ).
+Taking the difference and rearranging yields
+                                           (α − β)(S̄(x, πα⋆ ) − S̄(x, πβ⋆ )) ≥ 0.
+We deduce that the two factors have the same sign, i.e., S̄(x, πα⋆ ) ≤ S̄(x, πα⋆ ). Since this is valid for all x ∈ XV , this
+concludes the proof.
+
+D.3   Proof of Theorem 2
+
+We begin with two preliminary technical results on dynamic indicators. For any trajectory τ = [(xn , an )]n∈N ⊂ QN ,
+we introduce the notations
+                                     TC (τ ) = min{t ∈ N | xt ∈ XC },
+                                     TR (τ ) = min{t ∈ N | xt ∈ XC ∧ xt+1 ∈
+                                                                          / XC },
+with the convention min ∅ = ∞.
+Lemma 1 (Characterization of dynamic indicators). Let c : Q → R≥0 . Then, c is dynamic indicator of XC if, and
+only if, c|QV = 0 and for any trajectory τ = [(xt , at )]t∈N ⊂ QN such that x0 ∈ XV and TC (τ ) < ∞, there exists
+t ≤ TR (τ ) such that c(xt , at ) > 0.
+
+
+                                                               21
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                                          P REPRINT — J ULY 22, 2025
+
+
+Proof. We first show the converse implication. Let x ∈ XV and π ∈ Π. If π ∈  / ΠV (x), then let τ = [(xn , an )]n∈N be
+a trajectory starting from x and generated by π with positive probability such TC (τ ) < ∞. Let t ≤ TR (τ ) such that
+c(xt , at ) > 0. Then,
+                                                       ∞
+                                                       X
+                                 ρ̄(x, π) ≥ L ·              γ u c(xu , au ) ≥ L · γ t c(xt , at ) > 0,
+                                                       u=0
+
+where we defined L = P[((X(t; x, π), A(t; x, π)))t∈{0,...,T } = ((xt , at ))t∈{0,...,T } ] > 0 for conciseness. Conversely,
+if ρ̄(x,
+      P∞ π) > 0, then there must exist a trajectory τ = [(xt , at )]t∈N starting from x and with positive probability such
+that t=0 γ t c(xt , at ) > 0. But there must then be a t ∈ N such that (xt , at ) ∈/ QV , by assumption on c. By definition,
+the trajectory τ reaches XC in finite time after that time t. Since τ has positive probability by following π, this shows
+that π ∈ / ΠV (x) and shows the implication.
+For the converse implication, assume that c is a dynamic indicator of XC . Let (x, a) ∈ QV , and take any policy π ∈ ΠV
+such that π(a | x) = 1 (such a policy exists by definition of the viability kernel). Then, 0 = ρ̄(x, π) ≥ c(x, a), and
+thus c|QV = 0. Next, let τ = [(xt , at )]t∈N be such that x0 ∈ XV and TC (τ ) < ∞. Introduce TV = max{t ∈ N | t ≤
+TC (τ ) ∧ (xt , at ) ∈ QV }, and define (x, a) = (xTV +1 , aTV +1 ). For every y ∈ X , define the set of actions that τ takes
+in state y,
+                                        τ (y) = {b ∈ A | ∃t ∈ N, (xt , at ) = (y, b)}.
+Let θ : X → A be a map such that
+
+      1. θ(x) = a;
+      2. for all y ∈ XV with y ̸= x, θ(y) ∈ QV [y];
+      3. for all y ∈
+                   / XV with τ (y) ̸= ∅, θ(y) ∈ τ (y).
+
+Define the policy π(b | y) = δθ(y) (b). Clearly, π ∈ / ΠV (x), since it takes action a in x, and thus ρ̄(x, π) > 0. Define
+now τ0:R = {(y, b) ∈ Q | ∃t ∈ {0, . . . , TR (τ )}, (y, b) = (xt , at )}. Crucially, π only explores state-action pairs that
+are either in QV or in τ0:R when initialized in XV . We thus obtain (almost-surely)
+                                       ∞
+                                       X
+                          ρ̄(x, π) =         γ t c(X(t; x, π), A(t; x, π))
+                                       t=0
+                                       ∞
+                                       X       X
+                                   =                     γ t c(y, b) · δy (X(t; x, π)) · δb (A(t; x, π))
+                                       t=0 (y,b)∈τ0:R
+
+                                          X                     ∞
+                                                                X
+                                   =                c(y, b) ·         γ t · δy (X(t; x, π)) · δb (A(t; x, π)),
+                                       (y,b)∈τ0:R               t=0
+
+where we leveraged the fact that c|QV = 0. Therefore, there must be (y, b) ∈ τ0:R such that c(y, b) > 0, concluding the
+proof.
+Corollary 3. Let c be a dynamic indicator of XC , ρ the associated discounted risk (8), and q ∈ Qcrit . For any q ∈ Qcrit ,
+c(q) + γ minπ∈Π ρ̄(f (q), π) > 0.
+
+Proof. From classical results on dynamic programming, there exists η ∈ Π such that ρ̄(f (q), η) = minπ∈Π ρ̄(f (q), π).
+Furthermore, η can be chosen deterministic. Consider then the trajectory of η starting from f (q), and prepend q
+to it. Let us call τ the resulting trajectory. It begins in XV and TC (τ ) < ∞, since q ∈ Qcrit . Therefore, by
+Lemma 1, there exists t ≤ TR (τ ) such that c(xt , at ) > 0, where τ = [(xu , au )]u∈N . The result follows from
+c(q) + ρ̄(f (q), η) ≥ γ t c(xt , at ) > 0.
+
+The following lemma is the core of the proof of Theorem 2: it upper-bounds the soft-Q-value on Qcrit , and lower-bounds
+it on QV . It is a generalization to the present setting of [3, Lemma 2].
+Lemma 2. There exists constants v1 , u1 , u2 ∈ R and u3 ∈ R>0 such that, for all α ∈ R>0 and p ∈ R≥0 ,
+                                               min Qα,p ≥ v1 ,                                                                  (17)
+                                                QV
+                                               max Qα,p ≤ u1 + α · u2 − p · u3 .                                                (18)
+                                               Qcrit
+
+
+                                                                      22
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                              P REPRINT — J ULY 22, 2025
+
+
+Proof. By [28, Theorem 1], we have in particular for all α ∈ R≥0 and p ∈ R≥0 that Qα,p ≥ Qπα,p , where Qπα,p is the
+                                                                                                   π
+soft Q-value function of an arbitrary policy π ∈ Π, that is, the only fixed point of the operator Bα,p  defined for all
+       Q
+h ∈ R as
+                                 π
+                               (Bα,p h)(x, a) = r(x, a) + γE[h(x′ , A1 ) − ln π(A1 | x′ )],
+for all (x, a) ∈ Q and where we defined the shorthand x′ = f (x, a). Take for π a deterministic policy. Then, Bα,p π
+
+simplifies to the classical Bellman operator, and thus the soft-Q-value function coincides with the classical Q-value
+function Qπp . Therefore, Qα,p ≥ Qπp for any π ∈ Π deterministic. This holds in particular if π ∈ ΠV , for which
+                               Qπp (x, a) = r(x, a) − p · c(x, a) + γ(G(x′ , π) − pρ(x′ , π))
+                                       = r(x, a) + γG(x′ , π),
+for all (x, a) ∈ QV and with x′ = f (x, a). Indeed, c(x, a) = 0 by Lemma 1 since (x, a) ∈ QV , and ρ(x′ , π) = 0 since
+π ∈ ΠV (x′ ). Since the right-hand side is lower-bounded (by boundedness of r) by a constant independent of p and α,
+we deduce the existence of v1 as announced.
+In contrast, from [25, Theorem 16], it follows that for all (x, a) ∈ Qcrit
+                    Qα,p (x, a) = max r(x, a) + γ Ḡ(x′ , π) + αγS(x′ , π) − pc(x, a) − pγ ρ̄(x′ , π)
+                                    π∈Π
+                                            1
+                                 ≤ max        (sup r + αγ|A| ln|A|) − pc(x, a) − pγ ρ̄(x′ , π)
+                                    π∈Π 1 − γ   Q
+                                                                             
+                                                                         ′
+                                 = u1 + α · u2 − p · c(x, a) + γ min ρ̄(x , π) ,
+                                                                          π∈Π
+       ′                                                   1                       1
+with x = f (x, a). Here, we have defined u1 =             1−γ supQ r and u2  = 1−γ   |A| ln|A|. Furthermore, let u3 =
+minq∈Qcrit [c(q) + minπ∈Π ρ̄(f (q), π)], which is positive by Corollary 3 and since Qcrit is finite. This yields the
+desired upper bound for all (x, a) ∈ Qcrit . Since the constants are independent of α and p, this concludes the proof.
+
+This enables showing convergence of the unconstrained, penalized soft-Q-value to its constrained counterpart.
+Lemma 3. For all α > 0, we have
+                                                 sup Qα,p −−−→ −∞,
+                                                      Qcrit         p→∞
+
+                                                sup|Qα,p − Qα | −−−→ 0.
+                                                QV                  p→∞
+
+
+Proof. The first claim follows immediately from Lemma 2. For the second one, recall from Nachum et al. [25,
+Theorem 16] that for all (x, a) ∈ Q
+                   Qα,p (x, a) = max r(x, a) + γ Ḡ(x′ , π) + αγS(x′ , π) − pc(x, a) − pγ ρ̄(x′ , π).
+                                    π∈Π
+It follows that the function p 7→ Qα,p (x, a) is nonincreasing. If (x, a) ∈ QV , it is also lower-bounded by Lemma 2.
+Therefore, there exists Q̄ : QV → R such that limp→∞ Qα,p = Q̄, pointwise on QV (and, thus, uniformly as well). We
+show Q̄ = Qα .
+Let (x, a) ∈ QV and x′ = f (x, a). For any p ∈ R≥0 , the definition of Qα,p as the unique fixed point [25] of the
+soft-Bellman operator associated to the reward r − pc gives
+                                                           "                       #
+                                                             X       1
+                             Qα,p (x, a) = r(x, a) + αγ ln     exp     Qα,p (x′ , b) ,
+                                                                     α
+                                                                    b∈A
+recalling that c(x, a) = 0. Taking the limit as p → ∞ on both sides yields
+                                                   "                                  #
+                                                     X           1                ′
+                        Q̄(x, a) = r(x, a) + αγ ln      exp         lim Qα,p (x , b)
+                                                                 α p→∞
+                                                    b∈A
+                                                                                                    
+                                                                                 
+                                                       X              1                   X
+                                 = r(x, a) + αγ ln            exp      Q̄(x′ , b) +                0
+                                                            ′
+                                                                      α                          ′
+                                                     b∈QV [x ]                         b∈Qcrit [x ]
+                                                                                   
+                                                                                 
+                                                       X              1
+                                 = r(x, a) + αγ ln            exp      Q̄(x′ , b)  ,
+                                                            ′
+                                                                      α
+                                                        b∈QV [x ]
+
+
+
+                                                              23
+ROBUST SAFETY IN RL VIA E NTROPY R EGULARIZATION                                        P REPRINT — J ULY 22, 2025
+
+
+where we used the fact that limp→∞ Qα,p (x, b) = −∞ for all b ∈ Qcrit [x′ ]. In other words, Q̄ is a fixed point of the
+same Bellman operator as Qα . Since that fixed point is unique and equal to Qα , this concludes the proof.
+
+Proof of Theorem 2. Let δ, ϵ, and α be in R>0 . Let p1 = u1u−v3
+                                                                1
+                                                                   + u2 −ln
+                                                                        u3
+                                                                            δ
+                                                                              α and p > p1 . By Lemma 2, we have
+                                                           1              
+                                      ⋆                exp α Qα,p (x, a)
+                                     πα,p (a | x) = P             1          
+                                                        b∈A exp α Q(x, b)
+                                                                                 
+                                                           u1 − v1             u3
+                                                  ≤ exp              + u2 − p
+                                                              α                 α
+                                                  < δ,
+for all (x, a) ∈ Qcrit .
+Next, it follows from Lemma 3 that exp α1 Qα,p (x, a) converges to exp α1 Qα (x, a) if (x, a) ∈ QV , and to 0 if
+                                                                                         
+
+(x, a) ∈ Qcrit . It follows immediately that there exists p2 ∈ R≥0 such that, for all (x, a) ∈ QV and p > p2 ,
+                                                                                
+                                        1                              1
+                              softmax     Qα,p (x, ·) (a) − softmax      Qα (x, ·) (a) < ϵ.
+                                        α                              α
+The result follows by taking p⋆ = max{p1 , p2 }.
+
+
+
+
+                                                          24
+
