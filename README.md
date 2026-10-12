@@ -127,7 +127,8 @@ The [continuing coverage audit](reports/full-coverage/README.md) now verifies
 11,267 theorems in 1,254 selected Lean files. Of 556 exercises, 536 are complete,
 8 partial and 12 pending; 7,933 overlapping teaching-material units remain
 pending. The latest sources and evidence use source-only snapshots. Checkpoint
-31 is published with all 31 live asset hashes confirmed; checkpoint 32 adds six
-proof files and six reviewed material mappings. Its current delivery status is
-in [the progress ledger](book/coverage/progress.json). Browser reports identify
+32 is published with all 31 live asset hashes confirmed; it adds six proof
+files and six reviewed material mappings. Its current delivery status is
+in [the progress ledger](book/coverage/progress.json). The
+[continuation note](book/coverage/CONTINUATION.md) lists the remaining work. Browser reports identify
 the exact site bytes they checked.

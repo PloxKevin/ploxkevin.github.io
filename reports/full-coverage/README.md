@@ -44,7 +44,11 @@ the frozen owner ledger; every claim and original record is retained. The workin
 tree also contains unselected historical proofs. The published checkout uses the
 selected sources and aggregate at the normal paths.
 
-Checkpoint 32 is verified locally; its GitHub delivery is pending.
+Checkpoint 32 content is published at `f78234f7`. Its Pages jobs
+completed successfully, and the [fresh live check](live-checkpoint-32-attempt1.json)
+verified all 31 asset hashes. The [actual content delivery](publication32-content-delivery-recovery-v1.json)
+preserves the commit, push and served-byte evidence. Delivery metadata and
+its execution receipts are recorded separately. Full mathematical coverage remains unfinished.
 Checkpoint 31's content and metadata delivery is
 [fully confirmed](publication31-finish-recovery-v1.json), including successful
 Pages jobs and a fresh all-31-asset check. The previous session's interrupted
