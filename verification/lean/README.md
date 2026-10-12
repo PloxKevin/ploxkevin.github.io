@@ -61,22 +61,21 @@ always runs a fresh replay.
 
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its current selected batch contains 11,080 theorems in 1,242 files.
-All 45 new modules received fresh kernel replays in the first audit. After a
-targeted mobile stylesheet fix, a fresh normal aggregate build and axiom audit
-passed again, with 1,242 earlier kernel checks reused under exact source/import
-and dependency fingerprints. The actual audit ran in the separately recorded
-runtime directory. The later source-only snapshot mirrors those bytes and
-contains no copied build cache or earlier snapshot trees.
+Its current selected batch contains 11,184 theorems in 1,248 files.
+Six new modules received fresh kernel replays; 1,242 exact earlier results
+were reused under source/import and dependency fingerprints. The normal
+aggregate build and every theorem's standard-axiom audit ran again. The
+actual audit ran in `runtime-checkpoint-31-source81-v1`. The source-only
+snapshot mirrors its bytes and contains no copied build cache or earlier trees.
 
 The inventory contains 556 exercises and 12,774 overlapping material units.
-535 exercises are complete, 8 partial and 13 pending; 8,004 material units
+536 exercises are complete, 8 partial and 12 pending; 7,939 material units
 remain pending. Source correspondence review can reopen entries while their
-formal proofs remain valid. For the exact selected batch in this working tree,
-follow the source-only snapshot reproduction commands in the continuing audit.
-The working Lean directory also retains unselected historical drafts; its
-default aggregate is not the selected checkpoint30 runtime. In a clean
-published checkout the selected sources and aggregate occupy their normal paths.
+formal proofs remain valid. Follow the source-only snapshot reproduction
+commands in the continuing audit for the exact selected batch. The working
+directory also retains unselected historical sources, and its default
+aggregate is not the selected checkpoint31 runtime. In a clean published
+checkout the selected sources and aggregate occupy their normal paths.
 
 The separate numerical recomputation can be rerun from the repository root with
 `python3 verification/numerical.py` (NumPy and SciPy required). Browser QA uses

@@ -1,79 +1,69 @@
 # Continuing full mathematical coverage
 
-Checkpoint 30 passed the local Lean 4.34.1 build and standard-axiom audit:
-11,080 public theorems and lemmas in 1,242 selected files. The 45 additions
-passed 90 separate compiler commands and received fresh kernel replays in
-the [first actual audit](lean-checkpoint-30/verification-original.json).
-The [final audit](lean-checkpoint-30-final-css-v1/verification-original.json)
-checked the corrected mobile stylesheet, rebuilt the aggregate and reran
-every theorem's axiom audit. Its 1,242 earlier successful kernel results were
-reused only after exact module, transitive import and dependency identities
-matched. There are no nonstandard axiom dependencies.
-[Actual commands and times](verify-runtime-checkpoint30-final-css-execution-v1.json)
-retain the real runtime directory; no compiler execution in the later
-source-only snapshot is claimed.
+Checkpoint 31 passed the local Lean 4.34.1 build, kernel checks and standard-axiom
+audit: **11,184 public theorems in 1,248 selected files**. Six new files passed
+twelve standalone and named compiler commands, then received fresh kernel
+replays. The 1,242 earlier kernel results were reused only after exact module,
+transitive import and dependency identities matched. The normal aggregate build
+and every theorem's axiom audit ran again. There are no nonstandard axioms.
+The [original audit](lean-checkpoint-31-source81-v1/verification-original.json)
+and [actual execution record](verify-runtime-checkpoint31-source81-execution-v1.json)
+preserve commands, outputs, hashes, times and the real runtime directory.
 
-Coverage remains partial: 535 of 556 exercises are complete, 8 partial and
-13 pending. Of 12,774 overlapping material units, 4,770 are reviewed and
-8,004 pending. The [working ledger](lean-checkpoint-30/ledger-audit-working-v1.json)
-and [frozen ledger](lean-checkpoint-30-final-css-v1/ledger-audit-frozen-v1.json)
-passed integrity checks. Independent reviews establish source correspondence;
-Lean checks the encoded statements. Whole-exercise decisions preserve their
-explicit hypotheses. Component results do not silently complete an exercise.
+Coverage remains partial: **536 of 556 exercises are complete, 8 partial and
+12 pending**. Of 12,774 overlapping material units, 4,835 are reviewed and
+7,939 pending. The [working ledger](lean-checkpoint-31/ledger-audit-working-v1.json)
+and [frozen ledger](lean-checkpoint-31/ledger-audit-frozen-v1.json) pass integrity
+checks. Independent reviews establish correspondence with the exact lesson
+text and assumptions; Lean checks the encoded statements. Component proofs
+do not silently complete whole exercises or enclosing paragraphs.
 
-The additions cover foundational norm, linear-algebra, convergence and
-optimization material; delayed control, Gaussian-process calculations,
-thermal Bellman bounds, viability and continuous-control examples; and
-monitoring, spike and discrete trajectory probability results. Corrections
-66–79 repair exact values, rounding, dimensions and theorem assumptions.
-[Their actual application](source66-79-corrections-application-v3.json)
-retains the original text and fourteen full-page parser checks. The
-[owner integration](owner30-reviewed-candidate-integration-v2.json) preserves
-the five original ledgers and exact forward/inverse mapping evidence.
-General Filippov trajectory existence, the remaining module exercises and
-other mathematical teaching material remain in the review queue.
+The new sources cover full spectral induction including repeated eigenvalues,
+logarithmic and polynomial growth comparisons, log-determinant Taylor
+estimates, discounted-return and fixed-point explorer captions, and integral
+tracking with exact offsets and spectral radii. Actual bounded Filippov
+velocities and discrete Euler nodes are proved as components; integral-curve
+existence and the whole invariance exercise remain pending. [Corrections 80–81](source80-81-corrections-application-v3.json)
+add the positive-dimension qualification to eigenbasis nonuniqueness and
+distinguish exact values from rounded integral-tracking numbers. Full-page
+parser checks, preserved originals and exact inverse evidence accompany
+the [five reviewed owner records](owner31-reviewed-candidate-integration-v4.json).
 
-[Static book checks](integration-30-final-css-v1.json) passed on 29 pages,
-556 exercises and 21 application labs. [Source-exact fresh browser checks](browser-checkpoint-30-changed-pages-final-v1.json)
-passed on all six actual changed pages at five viewport widths each. Five
-additional widths were checked on the unchanged optimization primer. The
-initial page-list mistake is retained in the original reports and closed by
-the separate fresh Primer 0 run. The application-region screenshot review is
-bounded; it does not claim whole-page visual coverage. Long display formulas can extend beyond a capture while
-remaining inside scroll containers. The CMDP page's two long inline
-guarantees now scroll within the column on small phones; [actual mouse-wheel
-checks](cmdp-mobile-math30-v1.json) reached both ends at 320px and 360px.
-Original failed checks are preserved alongside the subsequent passing checks.
+[Static book checks](integration-31-source81-v2.json) pass for 29 pages,
+556 exercises and 21 application labs. [Browser checks](browser-checkpoint-31-changed2-v1.json)
+pass on both corrected pages at five widths each. [Separate captures](browser31-source81-two-changed-regions-v1.json)
+show the corrected original proof sketch and Exercise 14.5 at 360px and 1280px;
+their visual review is limited to those regions. All failed earlier attempts
+remain preserved alongside their subsequent passing records.
 
-The [selection](checkpoint-30-selection.json) retains all 1,197 earlier
-proof sources. The [manifest](checkpoint-30-manifest.json) identifies the
-1,298 files in the compact source-only snapshot. Earlier snapshots and Lean
-build output were not copied. Historical mathematical bodies, assumptions,
-reviews, failures, outputs and times remain at their original hashed paths
-and in Git history. Only three unused Applied proof metadata entries are
-omitted from the frozen ledger; every claim and original raw ledger is retained.
+The [selection](checkpoint-31-selection.json) retains all 1,242 earlier proof
+sources. The [manifest](checkpoint-31-manifest.json) identifies
+1,304 files in the source-only snapshot.
+No old snapshot or Lean build tree was copied. The actual compiler ran in
+`runtime-checkpoint-31-source81-v1`; the later frozen snapshot mirrors its
+source bytes. Only three unused Applied proof metadata entries are omitted
+from the frozen owner ledger; all claims and original raw records remain.
+The working tree has additional unselected historical sources, and its
+default aggregate differs from the selected runtime. In the published
+checkout, selected sources and their aggregate occupy the normal paths.
 
-Checkpoint 30 is published at content commit `ae9e7865`. Its GitHub Pages
-workflow completed successfully, and the [fresh live check](live-checkpoint-30-attempt2.json)
-verified all 31 asset hashes. The [actual push](publication30-content-push-v1.json)
-and [actual check](live30-content-confirmation-execution-v2.json) preserve their
-commands, outputs and times. The first live attempt ran while Pages was still
-building and remains recorded as unsuccessful. Checkpoint 29's successful
-content and metadata delivery is retained. Full mathematical coverage work
-continues; delivery does not establish completion of the remaining material.
+Checkpoint 31 is verified locally; its GitHub delivery is pending.
+Checkpoint 30's content and metadata delivery is [fully confirmed](publication30-finish-root-v1.json),
+including successful Pages jobs and the [fresh metadata all-31-asset check](live-checkpoint-30-attempt3.json).
+Further conditional-expectation, IQC, Newton, norm and convolution work remains
+outside this selected batch until compilation and independent source review.
 
-To reproduce the selected Lean audit and ledger from the local source-only
-snapshot, use fresh report paths:
+To reproduce the selected Lean audit and ledger from this local snapshot,
+use fresh report paths:
 
 ```sh
-cd reports/full-coverage/checkpoint-30
-python3 book/coverage/validate.py --output reports/ledger-reproduction30.json
+cd reports/full-coverage/checkpoint-31
+python3 book/coverage/validate.py --output reports/ledger-reproduction31.json
 cd verification/lean
 lake exe cache get
-python3 verify.py --output ../../reports/lean-reproduction30
+python3 verify.py --output ../../reports/lean-reproduction31
 ```
 
-The published repository contains selected inputs at their original paths.
-Its [Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
-and archived audit records remain available in Git. The full coverage
-objective remains unfinished.
+The [published Lean sources](https://github.com/PloxKevin/ploxkevin.github.io/tree/main/verification/lean)
+and original audit records are available in Git. The full coverage objective
+remains unfinished.
