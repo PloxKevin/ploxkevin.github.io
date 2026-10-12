@@ -40,7 +40,7 @@ python3 book/check_coverage.py
 
 The [earlier book audit](../reports/book/README.md) records its original
 499 declarations. The [continuing audit](../reports/full-coverage/README.md)
-now checks 11,267 theorems in 1,254 selected files; 536 of 556 exercises are
+now checks 11,345 theorems in 1,261 selected files; 536 of 556 exercises are
 complete, and the remaining exercises and material are explicit in the ledgers.
 Use that audit's source-only snapshot commands to reproduce the selected batch.
 A theorem count does not count fully verified exercises.
