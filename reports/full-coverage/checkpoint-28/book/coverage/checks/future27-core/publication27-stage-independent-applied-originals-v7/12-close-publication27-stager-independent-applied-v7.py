@@ -1,0 +1,22 @@
+from pathlib import Path
+from datetime import datetime,timezone
+import hashlib,json,shutil
+ROOT=Path('/home/oxrexkevin/SafetyBased');sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+helper=ROOT/'book/coverage/checks/root_stage_publication27_v7.py';obsn=Path('/tmp/publication27-stager-independent-applied-observations-v7.json');actualn=Path('/tmp/publication27-stager-independent-applied-actual-v7.json')
+prior_n=ROOT/'book/coverage/checks/future27-core/publication27-stager-independent-applied-review-v6.json';prior=json.loads(prior_n.read_bytes());obs=json.loads(obsn.read_bytes());actual=json.loads(actualn.read_bytes())
+assert obs['status']=='passed_independent_checkpoint27_publication_stager_full_code_and_native_fixture_review' and obs['errors']==[]
+assert type(actual['actual_exit_code']) is int and actual['actual_exit_code']==0 and actual['protection_errors']==[]
+assert sha(helper)=='67cc3e1f859993a06fda63d7774e2e6f981f6743ca90afe2a8552235b3c657de' and obs['prior_v6_full_body_and_time']==prior
+base=ROOT/'book/coverage/checks/future27-core/publication27-stage-independent-applied-originals-v7';base.mkdir(exist_ok=False)
+closed=dict(prior['closed_evidence_sha256']);aliases=dict(prior['original_closed_byte_aliases'])
+for original,row in aliases.items():assert sha(ROOT/row['file'])==row['sha256']==closed[original]
+files=[helper,Path('/tmp/check-publication27-stager-independent-applied-v7.py'),Path('/tmp/run-publication27-stager-independent-applied-v7.py'),Path('/tmp/run-publication27-stager-independent-applied-v7-launch2.py'),Path('/tmp/publication27-stager-independent-applied-v7-initial-launch-observation-v1.json'),obsn,actualn,actualn.with_suffix('.log'),prior_n,ROOT/'book/coverage/checks/future27-core/publication27-additional-closed-reference-byte-aliases-v1.json',ROOT/'reports/full-coverage/stage-publication27-execution-v1.json',ROOT/'reports/full-coverage/stage-publication27-execution-v1.log',Path(__file__)]
+for i,p in enumerate(files):
+ dest=base/(f'{i:02d}-'+p.name);shutil.copyfile(p,dest);assert sha(p)==sha(dest)
+ closed[str(p)]=sha(p);aliases[str(p)]={'file':dest.relative_to(ROOT).as_posix(),'sha256':sha(p)}
+peer={'status':'passed_independent_checkpoint27_publication_stager_full_code_review','errors':[],'reviewer':'Applied independent of Root stager authorship','reviewed_at_utc':datetime.now(timezone.utc).isoformat(),'helper':{'file':helper.relative_to(ROOT).as_posix(),'sha256':sha(helper)},'helper_sha256':sha(helper),'full_source_read':True,'whole_delta_and_native_fixture_observations':obs,'actual_independent_fixture_execution':{'file':str(actualn),'sha256':sha(actualn)},'prior_v6_full_review_body_and_time':prior,'coverage_complete':False,'production_helper_execution':False,'production_pub_or_git_mutation':False,'closed_evidence_sha256':closed,'original_closed_byte_aliases':aliases,'scope':'Full final7 source and exact6→7 reverse read; new actual exact closed_peer fixtures test general relative originals through explicit same-SHA retained copies with original Root hash always verified, strict prepared/supplemental retained binding, missing/stale/unsafe rejection, absolute originals retaining their original explicit-copy requirement, and raw Applied manifest-working SHA plus unchanged pruned Pub bytes. Full prepare/main/config/whitelist/budget ASTs unchanged. All18 genuine native execution records and all122 additional real retained byte aliases rehashed read-only. Prior61+33+28+62 full observations/body/times retained unchanged and not counted as newly run. Real stage6 prewrite failure1 is preserved as failure1; no production helper, PUB/Git or publication execution by reviewer. Own initial outer-wrapper launch failure before checker due copied v6 record target retained explicitly; launch2 changed only target and genuine checker0 closed.'}
+out=ROOT/'book/coverage/checks/future27-core/publication27-stager-independent-applied-review-v7.json'
+with out.open('x') as f:f.write(json.dumps(peer,ensure_ascii=False,indent=2)+'\n')
+catalog=base/'closed-original-byte-aliases-v1.json'
+with catalog.open('x') as f:f.write(json.dumps({'status':'closed_byte_exact_originals','original_byte_aliases':{k+'::'+v['sha256']:v for k,v in aliases.items()},'peer':{'file':out.relative_to(ROOT).as_posix(),'sha256':sha(out)}},indent=2)+'\n')
+print(json.dumps({'peer':str(out),'sha256':sha(out),'helper_sha256':sha(helper),'new_fixture_count':obs['fixture_count'],'original_closed_files':len(aliases),'catalog':str(catalog),'catalog_sha256':sha(catalog)}))
