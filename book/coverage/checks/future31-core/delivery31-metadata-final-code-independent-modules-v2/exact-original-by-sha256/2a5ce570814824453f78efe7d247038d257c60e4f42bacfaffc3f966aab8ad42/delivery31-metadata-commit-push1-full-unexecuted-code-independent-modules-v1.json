@@ -1,0 +1,253 @@
+{
+  "status": "completed_full_independent_code_review_changes_required_unexecuted_helper",
+  "reviewed_at_utc": "2026-10-12T17:09:32.486484+00:00",
+  "reviewed_entire_source": {
+    "file": "/home/oxrexkevin/SafetyBased/book/coverage/checks/root_commit_push_delivery31_metadata_v1.py",
+    "sha256": "955cf5805b7883e1aa893994a3cbdf14d6c0fb953c2723bf982a4e553bc3ee9e",
+    "bytes": 5189
+  },
+  "entire_source_TMP_copy": {
+    "file": "/tmp/modules-delivery31-metadata-commit-push1-independent-code-review-v1/root_commit_push_delivery31_metadata_v1-complete-unexecuted-source.py",
+    "sha256": "955cf5805b7883e1aa893994a3cbdf14d6c0fb953c2723bf982a4e553bc3ee9e",
+    "bytes": 5189
+  },
+  "entire_reviewed_code": "\"\"\"Stage exact real delivery metadata, commit it, or push its recorded commit.\"\"\"\nfrom pathlib import Path\nfrom datetime import datetime, timezone\nimport argparse, hashlib, json, shutil, subprocess, time\n\nROOT = Path(__file__).resolve().parents[3]\nPUB = ROOT / 'reports/book/publication-repo'\nCONTENT = json.loads((ROOT / 'reports/full-coverage/publication31-content-commit-v1.json').read_bytes())['commit']\nCOMMIT = 'reports/full-coverage/publication31-metadata-commit-v1.json'\nPUSH = 'reports/full-coverage/publication31-metadata-push-v1.json'\n\n\ndef sha(p):\n    return hashlib.sha256(p.read_bytes()).hexdigest()\n\n\ndef git(args, data=None):\n    return subprocess.run(['git', *args], cwd=PUB, input=data, capture_output=True, check=True).stdout\n\n\ndef read(n):\n    return json.loads((ROOT / n).read_bytes())\n\n\ndef execute(command, record_name):\n    path = ROOT / record_name; log = path.with_suffix('.log')\n    assert not path.exists() and not log.exists()\n    started = datetime.now(timezone.utc).isoformat(); tick = time.monotonic()\n    with log.open('xb') as out:\n        result = subprocess.run(command, cwd=PUB, stdout=out, stderr=subprocess.STDOUT)\n    record = {'status': 'passed' if result.returncode == 0 else 'failed', 'actual_exit_code': result.returncode,\n              'actual_command': command, 'actual_workdir': str(PUB), 'started_at_utc': started,\n              'finished_at_utc': datetime.now(timezone.utc).isoformat(), 'elapsed_seconds': time.monotonic() - tick,\n              'raw_log': log.relative_to(ROOT).as_posix(), 'raw_log_sha256': sha(log),\n              'content_commit': CONTENT, 'coverage_complete': False}\n    return path, record\n\n\nap = argparse.ArgumentParser(description=__doc__)\nap.add_argument('mode', choices=['commit', 'push'])\nargs = ap.parse_args()\nif args.mode == 'commit':\n    assert git(['rev-parse', 'HEAD']).decode().strip() == CONTENT\n    assert not git(['diff', '--cached', '--name-only', '-z'])\n    preparation_name = 'reports/full-coverage/publication31-delivery-metadata-preparation-v1.json'\n    preparation = read(preparation_name)\n    assert preparation['status'] == 'actual_checkpoint31_content_delivery_recorded_metadata_commit_and_push_pending'\n    expected = dict(preparation['exact_metadata_paths_sha256'])\n    extras = [preparation_name, 'reports/full-coverage/prepare-delivery31-metadata-execution-v1.json',\n              'reports/full-coverage/prepare-delivery31-metadata-execution-v1.log',\n              'book/coverage/checks/root_commit_push_delivery31_metadata_v1.py']\n    for n in extras:\n        target = PUB / n; target.parent.mkdir(parents=True, exist_ok=True)\n        shutil.copyfile(ROOT / n, target); expected[n] = sha(ROOT / n)\n    assert all(sha(PUB / n) == sha(ROOT / n) == h for n, h in expected.items())\n    for row in git(['status', '--porcelain', '-z', '--untracked-files=all']).decode().split('\\0'):\n        if row:\n            assert row[:2] in {' M', '??'} and row[3:] in expected, row\n    native = read('reports/full-coverage/prepare-delivery31-metadata-execution-v1.json')\n    assert native['status'] == 'passed' and native['actual_exit_code'] == 0\n    git(['--literal-pathspecs', 'add', '-f', '--pathspec-from-file=-', '--pathspec-file-nul'],\n        b'\\0'.join(n.encode() for n in sorted(expected)) + b'\\0')\n    names = {n.decode() for n in git(['diff', '--cached', '--name-only', '-z']).split(b'\\0') if n}\n    assert names and names <= set(expected) and not git(['diff', '--name-only', '-z'])\n    for n in names:\n        assert hashlib.sha256(git(['show', ':' + n])).hexdigest() == expected[n]\n    path, record = execute(['git', 'commit', '--quiet', '-m', 'Record checkpoint 31 successful Pages and all 31 live asset checks'], COMMIT)\n    record['actual_committed_paths_sha256'] = {n: expected[n] for n in names}\n    if record['actual_exit_code'] == 0:\n        record['commit'] = git(['rev-parse', 'HEAD']).decode().strip()\n        assert git(['rev-parse', 'HEAD^']).decode().strip() == CONTENT\n        assert not git(['status', '--porcelain', '-z', '--untracked-files=all'])\n    with path.open('x') as out:\n        out.write(json.dumps(record, indent=2) + '\\n')\nelse:\n    commit = read(COMMIT)\n    assert commit['status'] == 'passed' and commit['actual_exit_code'] == 0\n    assert git(['rev-parse', 'HEAD']).decode().strip() == commit['commit']\n    assert not git(['status', '--porcelain', '-z', '--untracked-files=all'])\n    assert git(['ls-remote', 'origin', 'refs/heads/main']).decode().split()[0] == CONTENT\n    path, record = execute(['git', 'push', 'origin', 'main'], PUSH)\n    record['commit'] = commit['commit']\n    if record['actual_exit_code'] == 0:\n        record['remote_main_after'] = git(['ls-remote', 'origin', 'refs/heads/main']).decode().split()[0]\n        assert record['remote_main_after'] == commit['commit']\n    record['metadata_Pages_or_metadata_live_success_claimed'] = False\n    with path.open('x') as out:\n        out.write(json.dumps(record, indent=2) + '\\n')\nprint(json.dumps({'status': record['status'], 'actual_exit_code': record['actual_exit_code'],\n                  'commit': record.get('commit'), 'coverage_complete': False}))\nraise SystemExit(record['actual_exit_code'])\n",
+  "entire91_lines_read": true,
+  "producer_helper_import_or_execution": false,
+  "fixture_or_PUB_git_index_stage_commit_push_mutation": false,
+  "all_material_findings_immediately_reported_to_parent": true,
+  "findings": [
+    {
+      "id": "D31M1",
+      "severity": "material",
+      "lines": [
+        25,
+        36,
+        67,
+        73,
+        81,
+        87
+      ],
+      "finding": "Measured actual git subprocess receipt is not durable until after success postchecks. HEAD/HEAD-parent/status or ls-remote failure/mismatch after a real successful commit/push causes exit before the actual native JSON is written, losing actual code0/command/time while the real external effect and log exist.",
+      "required_change": "Preserve immutable actual subprocess native receipt before dependent postchecks, or guarantee writing it in finally with actual command exit code retained and separately typed postcheck/runner failures. Do not replace a true git0 with a helper1 or overwrite the receipt."
+    },
+    {
+      "id": "D31M2",
+      "severity": "material_gate_gap",
+      "lines": [
+        43,
+        78,
+        81
+      ],
+      "finding": "No code gate binds refs/heads/main to the recorded commit. HEAD checks permit detached/other-branch HEAD; push origin main acts on local main, which can then differ from HEAD and the intended metadata commit.",
+      "required_change": "Before commit/push require symbolic-ref HEAD=refs/heads/main or directly verify refs/heads/main=the exact intended HEAD/commit, and use an explicit intended refspec. Current observed main branch is contextual evidence only."
+    },
+    {
+      "id": "D31M3",
+      "severity": "postcommit_association_gap",
+      "lines": [
+        65,
+        68,
+        70,
+        72
+      ],
+      "finding": "actual_committed_paths_sha256 is derived from the precommit index, with no after-commit tree/hash and changed-path check. HEAD-parent and clean worktree alone do not prove the actual committed tree equals the measured index. Current repository has no non-example hooks, so no actual mismatch is claimed.",
+      "required_change": "Bind the committed parent-child path delta and tree blob hashes to exact expected changed paths after real commit, recording failed checks separately from the genuine command receipt."
+    },
+    {
+      "id": "D31M4",
+      "severity": "receipt_provenance_improvement",
+      "lines": [
+        31,
+        35,
+        80,
+        85
+      ],
+      "finding": "Metadata native omits helper SHA and explicit remote_main_before although it checks the remote against CONTENT before push. The companion content helper includes both provenance fields.",
+      "required_change": "Record exact executed helper SHA and observed remote_main_before, alongside preparation/native references and the actual command, for a complete typed receipt chain."
+    }
+  ],
+  "positive_code_gates_and_limits": [
+    {
+      "scope": "git/index gates",
+      "lines": [
+        43,
+        44,
+        56,
+        58,
+        63,
+        64
+      ],
+      "conclusion": "Commit requires HEAD at CONTENT, initially empty staged diff, only expected modified/untracked paths, then a nonempty staged set contained in expected and no tracked unstaged diff. Expected-but-unchanged paths may be absent from the staged delta; subset rather than equality is intentional metadata behavior."
+    },
+    {
+      "scope": "literal path staging/blob gates",
+      "lines": [
+        48,
+        55,
+        61,
+        66
+      ],
+      "conclusion": "Uses --literal-pathspecs and NUL pathspec-from-stdin; stages only explicit expected metadata+four extras; checks ROOT/PUB bytes against exact preparation hashes and each staged blob SHA. This avoids colon pathspec interpretation. Safe path/symlink and authentic preparation schema are supplied by the separately reviewed preparation producer, not repeated here."
+    },
+    {
+      "scope": "baseline and remote gates",
+      "lines": [
+        71,
+        77,
+        80,
+        85
+      ],
+      "conclusion": "Successful metadata commit must have CONTENT parent; push requires passing recorded commit, exact local HEAD, clean PUB, and remote main at CONTENT; it uses non-force push and checks remote after against recorded commit. Explicit main binding and actual receipt preservation still need repair."
+    },
+    {
+      "scope": "native timing and incomplete-coverage fields",
+      "lines": [
+        27,
+        35,
+        86,
+        91
+      ],
+      "conclusion": "Fresh native/log absence prevents overwrite; timestamps are UTC and elapsed uses monotonic around real subprocess; actual nonzero command returns are preserved on the ordinary failed-command path. coverage_complete remains False, and metadata Pages/live success is explicitly not claimed."
+    }
+  ],
+  "actual_readonly_git_observations": [
+    {
+      "actual_command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo",
+      "actual_exit_code": 0,
+      "GIT_OPTIONAL_LOCKS": "0",
+      "stderr": "",
+      "stdout": "676db1f7d13ddbf65c2f0253d1fab79c44948a7e\n"
+    },
+    {
+      "actual_command": [
+        "git",
+        "symbolic-ref",
+        "--quiet",
+        "--short",
+        "HEAD"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo",
+      "actual_exit_code": 0,
+      "GIT_OPTIONAL_LOCKS": "0",
+      "stderr": "",
+      "stdout": "main\n"
+    },
+    {
+      "actual_command": [
+        "git",
+        "diff",
+        "--cached",
+        "--name-only",
+        "-z"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo",
+      "actual_exit_code": 0,
+      "GIT_OPTIONAL_LOCKS": "0",
+      "stderr": "",
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "record_count": 0,
+      "first10_records": []
+    },
+    {
+      "actual_command": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo",
+      "actual_exit_code": 0,
+      "GIT_OPTIONAL_LOCKS": "0",
+      "stderr": "",
+      "output_sha256": "279dd4e3a9d84cf0faf0ce33aaa3cd6ac055aa6d3ef02ee62a4a2279287b2ad3",
+      "record_count": 2098,
+      "first10_records": [
+        " M SafeLearning/nn-in-the-loop.html",
+        " M SafeLearning/primer-linalg.html",
+        " M _config.yml",
+        " M book/README.md",
+        " M book/coverage/applied-promotions.json",
+        " M book/coverage/applied.json",
+        " M book/coverage/core.json",
+        " M book/coverage/foundations.json",
+        " M book/coverage/inventory.json",
+        " M book/coverage/material-corrections.json"
+      ]
+    },
+    {
+      "actual_command": [
+        "git",
+        "remote",
+        "get-url",
+        "origin"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo",
+      "actual_exit_code": 0,
+      "GIT_OPTIONAL_LOCKS": "0",
+      "stderr": "",
+      "stdout": "https://github.com/ploxkevin/ploxkevin.github.io.git\n"
+    },
+    {
+      "actual_command": [
+        "git",
+        "config",
+        "--get",
+        "core.hooksPath"
+      ],
+      "actual_workdir": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo",
+      "actual_exit_code": 1,
+      "GIT_OPTIONAL_LOCKS": "0",
+      "stderr": "",
+      "stdout": ""
+    }
+  ],
+  "PUB_index_observed_ref": {
+    "file": "/home/oxrexkevin/SafetyBased/reports/book/publication-repo/.git/index",
+    "sha256": "1fa7791e704de179258a5d77d76cb0482ea26373022e81aec782e726a1795bca",
+    "bytes": 21732271
+  },
+  "index_observation_is_not_a_freeze_against_Root_disjoint_publication": true,
+  "non_example_executable_hooks_observed": [],
+  "future_actual_delivery_input_receipts_observed": [
+    {
+      "file": "reports/full-coverage/publication31-content-commit-v1.json",
+      "exists": false,
+      "not_an_actual_delivery_approval": true
+    },
+    {
+      "file": "reports/full-coverage/publication31-delivery-metadata-preparation-v1.json",
+      "exists": false,
+      "not_an_actual_delivery_approval": true
+    },
+    {
+      "file": "reports/full-coverage/prepare-delivery31-metadata-execution-v1.json",
+      "exists": false,
+      "not_an_actual_delivery_approval": true
+    },
+    {
+      "file": "reports/full-coverage/publication31-metadata-commit-v1.json",
+      "exists": false,
+      "not_an_actual_delivery_approval": true
+    },
+    {
+      "file": "reports/full-coverage/publication31-metadata-push-v1.json",
+      "exists": false,
+      "not_an_actual_delivery_approval": true
+    }
+  ],
+  "previous_readonly_observation_error_preserved": {
+    "actual_workdir": "/home/oxrexkevin/SafetyBased",
+    "actual_exit_code": 129,
+    "error": "Initial git observations launched from workspace root, which is not a Git repository. Corrected to PUB with GIT_OPTIONAL_LOCKS=0; no helper, stage, commit, push, index, source or owner mutation occurred."
+  },
+  "whole_coverage_or_actual_Pages_live_or_future_delivery_approval": false,
+  "code_approved_for_commit_push": false,
+  "required_before_code_close": "Repair D31M1 and D31M2; review complete new exact helper. Final real input/readiness binding remains pending actual content31 receipt/Pages/all31 live evidence."
+}

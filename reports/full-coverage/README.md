@@ -47,7 +47,11 @@ The working tree has additional unselected historical sources, and its
 default aggregate differs from the selected runtime. In the published
 checkout, selected sources and their aggregate occupy the normal paths.
 
-Checkpoint 31 is verified locally; its GitHub delivery is pending.
+Checkpoint 31 is published at content commit `06271d02`. Its Pages jobs
+completed successfully, and the [fresh live check](live-checkpoint-31-attempt2.json)
+verified all 31 asset hashes. The [actual push](publication31-content-push-v1.json)
+preserves its command, output and time. The delivery metadata commit is pending;
+full mathematical coverage remains unfinished.
 Checkpoint 30's content and metadata delivery is [fully confirmed](publication30-finish-root-v1.json),
 including successful Pages jobs and the [fresh metadata all-31-asset check](live-checkpoint-30-attempt3.json).
 Further conditional-expectation, IQC, Newton, norm and convolution work remains
