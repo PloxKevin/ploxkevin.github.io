@@ -1,0 +1,13 @@
+import { chromium } from 'file:///home/oxrexkevin/SafetyBased/qa/node_modules/playwright-core/index.mjs';
+import path from 'node:path';
+const browser=await chromium.launch({executablePath:process.env.HOME+'/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell'});
+const page=await browser.newPage({viewport:{width:390,height:1000}});
+await page.goto('file://'+path.resolve('book/solutions/candidates/safe-bo-v2/SafeLearning/safe-bo.html'),{waitUntil:'networkidle'});
+await page.waitForFunction(()=>!!document.querySelector('.katex'),null,{timeout:20000});
+await page.evaluate(()=>document.querySelectorAll('details').forEach(d=>d.open=true));
+const e2=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Exercise 4.2'})}).first();
+await e2.scrollIntoViewIfNeeded();
+const table=e2.locator('table');await table.screenshot({path:'reports/solution-review/safe-bo-render-v2/shots/interval-example-mobile-v2.png'});
+const e5=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Exercise 4.5'})}).first();await e5.scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/safe-bo-render-v2/shots/entropy-top-mobile-v2.png'});
+await page.setViewportSize({width:1280,height:900});await page.locator('#sbx-svg').scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/safe-bo-render-v2/shots/explorer-viewport-v2.png'});
+await browser.close();

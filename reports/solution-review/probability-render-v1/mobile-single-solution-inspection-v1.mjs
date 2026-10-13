@@ -1,0 +1,12 @@
+import { chromium } from 'file:///home/oxrexkevin/SafetyBased/qa/node_modules/playwright-core/index.mjs';
+const browser=await chromium.launch({executablePath:process.env.HOME+'/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell'});
+const page=await browser.newPage({viewport:{width:390,height:844}});
+await page.goto('file:///home/oxrexkevin/SafetyBased/book/solutions/candidates/primer-probability-v1/SafeLearning/primer-probability.html',{waitUntil:'networkidle'});
+await page.waitForTimeout(1000);
+const result=await page.evaluate(() => {const d=[...document.querySelectorAll('details')].find(e=>e.querySelector(':scope > summary')?.textContent.includes('Exercise C.4'));d.open=true;d.querySelector('details').open=true;return {label:d.querySelector(':scope > summary').textContent.trim(),page_height:document.documentElement.scrollHeight};});
+await page.waitForTimeout(700);
+await page.evaluate(()=>[...document.querySelectorAll('details')].find(e=>e.querySelector(':scope > summary')?.textContent.includes('Exercise C.4')).querySelector('details').scrollIntoView({block:'start'}));
+await page.waitForTimeout(700);
+result.viewport=await page.evaluate(()=>({scroll_y:window.scrollY,height:document.documentElement.scrollHeight,visible_text:document.elementFromPoint(100,300)?.textContent?.slice(0,80)}));
+await page.screenshot({path:'/home/oxrexkevin/SafetyBased/reports/solution-review/probability-render-v1/shots/concentration-solution-mobile-single-v1.png'});
+await browser.close();console.log(JSON.stringify(result));

@@ -1,0 +1,14 @@
+import { chromium } from 'file:///home/oxrexkevin/SafetyBased/qa/node_modules/playwright-core/index.mjs';
+const browser = await chromium.launch({ executablePath: process.env.HOME + '/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await page.goto('file:///home/oxrexkevin/SafetyBased/book/solutions/candidates/primer-probability-v1/SafeLearning/primer-probability.html', {waitUntil:'networkidle'});
+await page.waitForFunction(() => typeof window.renderMathInElement === 'function');
+await page.locator('#pr-explorer').scrollIntoViewIfNeeded();
+await page.screenshot({path:'/home/oxrexkevin/SafetyBased/reports/solution-review/probability-render-v1/shots/explorer-viewport-v1.png'});
+await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open=true); const target=[...document.querySelectorAll('details')].find(d => d.querySelector(':scope > summary')?.textContent.includes('Exercise C.7')); target.querySelector('details').scrollIntoView({block:'start'}); });
+await page.screenshot({path:'/home/oxrexkevin/SafetyBased/reports/solution-review/probability-render-v1/shots/conformal-solution-viewport-v1.png'});
+await page.setViewportSize({width:390,height:844});
+await page.evaluate(() => { const target=[...document.querySelectorAll('details')].find(d => d.querySelector(':scope > summary')?.textContent.includes('Exercise C.4')); target.querySelector('details').scrollIntoView({block:'start'}); });
+await page.screenshot({path:'/home/oxrexkevin/SafetyBased/reports/solution-review/probability-render-v1/shots/concentration-solution-mobile-v1.png'});
+await browser.close();
+console.log(JSON.stringify({status:'completed_three_native_viewport_screenshots'}));

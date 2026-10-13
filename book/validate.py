@@ -188,7 +188,15 @@ def build_idempotence():
                     files_compared=len(after_second))
 
 
-def validate(allow_reviewed_corrections=False):
+def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=None):
+    """Validate the actual site, with an optional audited solution restore chain.
+
+    Only the solution-release wrapper supplies this internal argument, after
+    checking every current page against its independently approved decisions
+    and verifying exact preservation of all other bytes. Restored Source90
+    text is used solely for the historical pre-book comparison; links, labs,
+    counts, scripts and build checks always inspect the actual current site.
+    """
     errors = []
     warnings = []
     checks = []
@@ -338,13 +346,20 @@ def validate(allow_reviewed_corrections=False):
         stripped = remove_insertions(doc.source)
         equal = stripped == original
         documented=[c for c in corrections if c['source']=='SafeLearning/'+name]
-        restored=stripped
+        comparison_source=(approved_preservation_sources or {}).get(name)
+        # Corrections can occur inside book insertions and can form a chain
+        # whose intermediate preimage is absent from the oldest baseline.
+        # Reverse the exact chronological chain on the full source first;
+        # only then remove the book insertions and compare every remaining byte.
+        restored_full=comparison_source if comparison_source is not None else doc.source
         for c in reversed(documented):
             for replacement in reversed(c.get('replacements', [c])):
-                if restored.count(replacement['after'])!=1 or original.count(replacement['before'])!=1:
-                    error('correction_source_mismatch',name,'Documented mathematical correction is not an exact unique source replacement',line=c['line'])
+                if restored_full.count(replacement['after'])!=1:
+                    error('correction_source_mismatch',name,'Documented mathematical correction is not an exact unique source replacement',
+                          line=c.get('line'),correction_id=c.get('correction_id'))
                 else:
-                    restored=restored.replace(replacement['after'],replacement['before'],1)
+                    restored_full=restored_full.replace(replacement['after'],replacement['before'],1)
+        restored=remove_insertions(restored_full)
         reviewed_equal=restored==original
         base_items = exercises(Document(original).root)
         total_baseline_exercises += len(base_items)
@@ -354,12 +369,17 @@ def validate(allow_reviewed_corrections=False):
                   baseline=len(base_items), new=len(new_items), current=len(current_items))
         p = dict(file=name, original_sha256=digest(original), stripped_current_sha256=digest(stripped),
                  original_teaching_body_byte_identical=equal)
+        if comparison_source is not None:
+            p.update(approved_solution_restore_source_sha256=digest(comparison_source),
+                     approved_solution_restore_stripped_sha256=digest(remove_insertions(comparison_source)),
+                     after_audited_solution_restore_and_documented_corrections_matches_baseline=reviewed_equal,
+                     current_bytes_are_not_claimed_identical_to_historical_baseline=True)
         if documented:
             p.update(documented_mathematical_corrections=len(documented),
                      documented_corrections_record=str(corrections_path.relative_to(ROOT)),
                      after_reversing_documented_corrections_matches_baseline=reviewed_equal)
         preservation.append(p)
-        if not equal and not (documented and reviewed_equal):
+        if not equal and not ((documented or comparison_source is not None) and reviewed_equal):
             diff = list(difflib.unified_diff(original.splitlines(),stripped.splitlines(),fromfile='baseline/'+name,tofile='stripped-current/'+name,n=1))
             error('original_body_changed', name, 'Original teaching-page source differs after removing only book insertions', diff_excerpt=diff[:35])
         lab_reports.append(dict(file=name, fragment=str(source_path.relative_to(ROOT)),

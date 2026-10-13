@@ -1,3 +1,11 @@
+The reviewed Source91 solution release has a separate selected-proof runtime
+at `reports/solution-review/runtime-source91-selected35-v1`. It contains exactly
+the same 1,267 selected checkpoint35 proof sources with new 31 asset hashes. The actual
+build and all 11,472 axiom checks pass; unchanged module/import kernel evidence is
+reused with its original command, workdir and logs. The source-correspondence rebase
+for expanded answers remains pending. The canonical working folder retains
+11 unselected future files; use the selected runtime for this exact audit.
+
 # Safe Learning: local Lean verification
 
 This project checks selected mathematical statements from the Safe Learning

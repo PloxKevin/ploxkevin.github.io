@@ -1,3 +1,14 @@
+# Formal coverage and worked solutions
+
+The current teaching pages are Source91. All 556 solutions have independent
+mathematical/student-depth review; 251 are expanded and 305 retained. Actual rendered,
+reader and selected-proof checks pass. See [the solution release](../../book/solutions/RELEASE.md).
+Source91 formal correspondence for rewritten answers awaits an explicit rebase.
+
+The following checkpoint35 counts and reports describe its historical Source90
+bytes. Its delivery is complete at `069532b7` / `36b715de`; see
+[the actual delivery receipt](publication35-finish-v1.json).
+
 # Continuing full mathematical coverage
 
 Checkpoint35 passed the Lean4.34.1 build, kernel replay and standard-axiom audit:
@@ -53,6 +64,3 @@ Atomic kernel/final-report writes, source-only exact reruns and finalizer log
 checks passed isolated failure-injection tests. Earlier failed attempts remain
 untouched. These tests establish pipeline behavior and do not diagnose a client crash.
 
-Checkpoint35 content is published at `069532b7`. All three Pages jobs and a fresh all 31-asset hash check passed. Delivery metadata is pending; mathematical coverage remains partial.
-
-The user also requested thorough, student-followable solutions for all 556 exercises. Questions and hints remain intact. The byte-bound audit and draft work are in `book/solutions/`; these drafts are separate from the verified Source90 site.

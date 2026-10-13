@@ -728,13 +728,39 @@
 <div style="padding:14px 16px;font-size:14px;"><p>On an open operating region the desired correction is $u_*(T,d)=0.04(T-40)+0.02(d-0.5)$, with coefficients carrying the units needed to produce metres per second. Can an exactly matching map on that region have normalized-input Lipschitz constant at most 0.3?</p>
 <p><strong>Review:</strong> <a href="lipschitz-by-design.html#why-by-design">Sensitivity constraints and expressivity</a>.</p>
 <details><summary>Show hint</summary><div><p>Rewrite the affine target in terms of $z_1,z_2$ and compute its gradient norm.</p></div></details>
-<details><summary>Show worked solution</summary><div><p>Because $T-40=10z_1$ and $d-0.5=0.1z_2$, the target is $u_*(z)=0.4z_1+0.002z_2$. Its gradient norm is $\sqrt{0.4^2+0.002^2}\approx0.400005\,\mathrm{m/s}$ per normalized input unit. On an open region, increments in that gradient direction attain this slope, exceeding 0.3. Exact matching is impossible under the chosen budget. Options include reducing the target response or revisiting the downstream sensitivity allowance; changing the training loss cannot remove the contradiction.</p></div></details>
+<details><summary>Show worked solution</summary><div><p><strong>Put the target in the same coordinates as the architectural gain.</strong> From $z_1=(T-40)/10$ and $z_2=(d-0.5)/0.1$, we have $T-40=10z_1$ and $d-0.5=0.1z_2$. Substitute these into the target:</p>
+<div class="math-block">$$u_*(z)=0.04(10z_1)+0.02(0.1z_2)
+=0.4z_1+0.002z_2\quad\text{metres per second}.$$</div>
+<p>Thus its normalized-input gradient is $g=(0.4,0.002)^\top$, with norm</p>
+<div class="math-block">$$\|g\|_2=\sqrt{0.4^2+0.002^2}
+=\sqrt{0.16+0.000004}
+\approx0.400005\ \text{m/s per normalized input unit}.$$</div>
+<p><strong>Show why an open region makes this a necessary gain.</strong> Choose any point $z$ inside the operating region. Openness means that a sufficiently short segment in every direction remains inside it. In particular, for $v=g/\|g\|_2$ and sufficiently small $t\gt0$, both $z$ and $z+tv$ lie in that region, and</p>
+<div class="math-block">$$
+\frac{|u_*(z+tv)-u_*(z)|}{\|tv\|_2}
+=\frac{|t g^\top v|}{t}
+=\|g\|_2\approx0.400005\gt0.3 .
+$$</div>
+<p>Any map matching the target exactly at every point of the region must have those same differences. It therefore cannot have normalized-input Lipschitz constant at most $0.3$. This is a mathematical incompatibility, rather than a claim that the optimizer did not find suitable weights.</p>
+<p>The specification must change to permit exact matching: reduce the target sensitivity, reconsider the downstream allowance, or change the intended coordinate specification with the physical scalings accounted for. Merely changing a training loss cannot make the two contradictory increment requirements hold simultaneously.</p></div></details>
 </div></details><details id="book-m13-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
 <summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 13.B2 &mdash; Hard: Reserve gain for approximate orthogonality</summary>
 <div style="padding:14px 16px;font-size:14px;"><p>Replace the exact orthogonal stage by six stages. For each implemented matrix $\widehat Q_i$, an exact orthogonal $Q_i$ exists with $\|\widehat Q_i-Q_i\|_2\le0.002$; activations between stages remain 1-Lipschitz. Find an external scale sufficient to retain overall gain at most 0.3.</p>
 <p><strong>Review:</strong> <a href="lipschitz-by-design.html#orthogonal-layers">Implemented orthogonal-layer bounds</a>.</p>
 <details><summary>Show hint</summary><div><p>Use the triangle inequality for each matrix norm and multiply the six stage bounds.</p></div></details>
-<details><summary>Show worked solution</summary><div><p>Every implemented norm is at most $\|Q_i\|_2+0.002=1.002$. The stack gain is therefore at most $1.002^6\approx1.012060$. Choose $c\le0.3/(1.002^6)\approx0.296425\,\mathrm{m/s}$. Then $c\prod_i\|\widehat Q_i\|_2\le0.3$, restoring the earlier sensor-error budget. This is a sufficient worst-case allowance; errors need not align to attain it. It relies on the stated operator-error bounds, not merely small entrywise rounding errors or an informal claim that the matrices remain almost orthogonal.</p></div></details>
+<details><summary>Show worked solution</summary><div><p><strong>Bound each implemented stage using its stated operator error.</strong> Write $E_i=\widehat Q_i-Q_i$, so $\|E_i\|_2\le0.002$. An exact orthogonal matrix has norm one. By the matrix-norm triangle inequality,</p>
+<div class="math-block">$$\|\widehat Q_i\|_2=\|Q_i+E_i\|_2
+\le\|Q_i\|_2+\|E_i\|_2
+\le1+0.002=1.002.$$</div>
+<p>Each intervening activation is $1$-Lipschitz, and the lab's unit readout has gain one. Applying the composition inequality successively through all six stages bounds the unscaled map's gain by</p>
+<div class="math-block">$$\prod_{i=1}^{6}\|\widehat Q_i\|_2
+\le(1.002)^6\approx1.012060160.$$</div>
+<p><strong>Reserve the external scale for that worst case.</strong> Multiplication by a scalar $c$ gives gain at most $|c|(1.002)^6$. For a nonnegative external scale in metres per second, require</p>
+<div class="math-block">$$c(1.002)^6\le0.3
+\iff 0\le c\le\frac{0.3}{(1.002)^6}
+\approx0.296425066\ \text{m/s}.$$</div>
+<p>If a signed scale is used, the same condition applies to its absolute value. Choosing this scale restores the overall normalized-input gain of at most $0.3$. In particular, the original hardware-error radius $\sqrt{0.02^2+0.03^2}$ still gives velocity-change bound $0.3\sqrt{0.0013}\approx0.010817\text{ m/s}$, below the lab's $0.012\text{ m/s}$ allowance.</p>
+<p>The product is a sufficient worst-case bound; individual stage errors need not align to attain it. It uses the given spectral-norm errors, rather than treating small entrywise errors or a description such as “almost orthogonal” as an end-to-end certificate.</p></div></details>
 </div></details>
 <h3 class="subsection-heading">Synthesis and bridge</h3>
 
@@ -764,7 +790,18 @@
         <p style="margin-top:0;">For $A=\begin{bmatrix}0&1\\-1&0\end{bmatrix}$ compute $Q=(I-A)(I+A)^{-1}$ and $Q(3,-4)^\top$. Check the input and output norms.</p>
         <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-first-course">Primer A: matrix arithmetic</a>; <a href="#orthogonal-layers">this module's relevant section</a>.</p>
         <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Hint</summary><p>The inverse of $I+A$ is $\tfrac12\begin{bmatrix}1&-1\\1&1\end{bmatrix}$.</p></details>
-        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Step 1.</strong> Multiplying gives $Q=\begin{bmatrix}0&-1\\1&0\end{bmatrix}$. Its columns are orthonormal, so $Q^\top Q=I$.</p><p><strong>Step 2.</strong> $Q(3,-4)^\top=(4,3)^\top$. Both norms are $\sqrt{3^2+4^2}=5$.</p><p><strong>Step 3.</strong> This is a right-angle rotation. The skew-symmetric free matrix generated a norm-preserving weight by construction, without a norm penalty.</p></div></details>
+        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Compute the inverse and multiply in the stated order.</strong> The two matrices are</p>
+<div class="math-block">$$I+A=\begin{bmatrix}1&1\\-1&1\end{bmatrix},
+\qquad I-A=\begin{bmatrix}1&-1\\1&1\end{bmatrix}.$$</div>
+<p>The determinant of $I+A$ is $1(1)-1(-1)=2\ne0$, so the ordinary $2\times2$ inverse formula gives $(I+A)^{-1}=\tfrac12\begin{bmatrix}1&-1\\1&1\end{bmatrix}$. Therefore</p>
+<div class="math-block">$$Q=(I-A)(I+A)^{-1}
+=\frac12\begin{bmatrix}1&-1\\1&1\end{bmatrix}
+\begin{bmatrix}1&-1\\1&1\end{bmatrix}
+=\frac12\begin{bmatrix}0&-2\\2&0\end{bmatrix}
+=\begin{bmatrix}0&-1\\1&0\end{bmatrix}.$$</div>
+<p>Its columns $(0,1)^\top$ and $(-1,0)^\top$ have unit norm and zero inner product, so $Q^\top Q=I$.</p>
+<p><strong>Apply it to the given vector.</strong> Matrix multiplication gives $Q(3,-4)^\top=(0(3)+(-1)(-4),1(3)+0(-4))^\top=(4,3)^\top$. The input norm is $\sqrt{3^2+(-4)^2}=\sqrt{25}=5$, and the output norm is $\sqrt{4^2+3^2}=5$.</p>
+<p>The map is a counterclockwise right-angle rotation. The skew-symmetric parameter produced a norm-preserving matrix by the Cayley identity; a penalty encouraging a small norm would not give this exact identity.</p></div></details>
       </div>
     </details>
     <details id="practice-easy-3" style="margin:14px 0;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
@@ -782,7 +819,18 @@
         <p style="margin-top:0;">A logit network has certified bound $\gamma=0.8$ in normalized coordinates. Raw inputs are normalized with coordinate standard deviations $0.5$ and $0.25$. Find a raw-input bound and the strict Euclidean radius when the raw input has margin $0.4$.</p>
         <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-matrix-norms">Primer A: spectral norms and products</a>; <a href="#sll-sandwich">this module's relevant section</a>.</p>
         <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Hint</summary><p>The normalization matrix is $\operatorname{diag}(2,4)$; constants subtracted from inputs cancel in differences.</p></details>
-        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Step 1.</strong> The normalization map has spectral norm $4$. The composite raw-input logit map is therefore at most $4(0.8)=3.2$-Lipschitz.</p><p><strong>Step 2.</strong> The standard logit-margin rule gives $r=0.4/(\sqrt2\cdot3.2)=1/(8\sqrt2)\approx0.0883883$.</p><p><strong>Step 3.</strong> This certifies $\|\delta\|_2\lt r$ measured in raw input units. Using $0.8$ directly would claim a radius four times too large.</p></div></details>
+        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Include the normalization map in the difference.</strong> If the coordinate means are $\mu_1,\mu_2$, normalization subtracts them and divides by the positive standard deviations. The means cancel between two inputs, leaving</p>
+<div class="math-block">$$\Delta z=S\Delta x,\qquad
+S=\operatorname{diag}\left(\frac1{0.5},\frac1{0.25}\right)=\operatorname{diag}(2,4).$$</div>
+<p>The diagonal matrix's largest singular value is $4$, so $\|\Delta z\|_2\le4\|\Delta x\|_2$. If $f$ denotes the normalized-coordinate logit network, its raw-input composite satisfies</p>
+<div class="math-block">$$\|f(z(x+\delta))-f(z(x))\|_2
+\le0.8\|\Delta z\|_2
+\le0.8(4)\|\delta\|_2=3.2\|\delta\|_2.$$</div>
+<p><strong>Keep each competing logit gap positive.</strong> A vector-logit bound $L_{\rm raw}=3.2$ gives competing-gap Lipschitz bound $\sqrt2L_{\rm raw}$, by Cauchy–Schwarz with the difference of two standard basis vectors. With margin $0.4$, the gap remains positive when $0.4-\sqrt2(3.2)\|\delta\|_2\gt0$. Solving gives</p>
+<div class="math-block">$$\|\delta\|_2\lt r_{\rm raw}
+=\frac{0.4}{3.2\sqrt2}
+=\frac1{8\sqrt2}\approx0.0883883.$$</div>
+<p>This is a radius in raw input units. Using $0.8$ without the preprocessing factor would claim $0.4/(0.8\sqrt2)=4r_{\rm raw}$, four times the justified radius. At equality the margin lower bound is zero and may allow a tie; the rule certifies the strict ball.</p></div></details>
       </div>
     </details>
     <h3 class="subsection-heading" id="practice-medium">Medium: connect two or three steps</h3>
@@ -829,7 +877,11 @@
         <p style="margin-top:0;">A direct parameterization reaches every network certified by a particular LMI at bound $1$. A network has true constant $1$ but the minimum bound from that LMI is $2$. Must the parameterization represent that network at bound $1$? Use $\operatorname{ReLU}(x)-\operatorname{ReLU}(-x)$ as the concrete case for diagonal LipSDP.</p>
         <p><strong>Review if needed:</strong> <a href="lipsdp.html#lipsdp-derivation">Module 12: the LipSDP certificate</a>; <a href="#why-by-design">this module's relevant section</a>.</p>
         <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Hint</summary><p>Distinguish the set of truly Lipschitz networks from the subset that the LMI can certify.</p></details>
-        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Step 1.</strong> Completeness says that the image equals the LMI certificate set. It does not say that the certificate set equals all networks with true constant at most $1$.</p><p><strong>Step 2.</strong> The example computes $x$ and has exact constant $1$. Its weights also admit the independent all-active slope pattern, with slope $2$; diagonal LipSDP must cover that pattern and cannot return a bound below $2$.</p><p><strong>Step 3.</strong> Therefore this weight representation is outside the LipSDP certificate set at bound $1$, and completeness does not require reaching it there. The same function may have another, simpler certified representation; completeness concerns the stated weight/certificate set.</p></div></details>
+        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Read completeness as a statement about a specified set.</strong> Let $\Theta_{\rm cert}(1)$ be the weight representations that the given LMI can certify at bound one. A complete direct parameterization has image exactly $\Theta_{\rm cert}(1)$. Validity gives $\Theta_{\rm cert}(1)\subseteq\{\theta:\operatorname{Lip}(f_\theta)\le1\}$, but does not make the inclusion an equality. A truly $1$-Lipschitz representation whose least LMI bound is two is outside that image.</p>
+<p><strong>Verify the concrete representation.</strong> For $f(x)=\operatorname{ReLU}(x)-\operatorname{ReLU}(-x)$, the positive and negative branches both give $f(x)=x$, so its exact constant is one. The weight matrices are $W_0=(1,-1)^\top$ and $W_1=(1,-1)$. Their independent slope abstraction includes the all-active matrix $D=I$, for which</p>
+<div class="math-block">$$W_1DW_0=(1,-1)\begin{bmatrix}1\\-1\end{bmatrix}=1+1=2.$$</div>
+<p>The two actual neurons cannot be simultaneously active, since that would require $x\gt0$ and $-x\gt0$. The diagonal QCs nevertheless permit those two slopes independently, so any diagonal LipSDP certificate must also bound the slope-two linear pattern. Its reported gain is therefore at least two. The product bound is $\sqrt2\sqrt2=2$ and is feasible for LipSDP, so the minimum is exactly two.</p>
+<p>Consequently completeness for the bound-one LMI does not require this weight representation to be reached. The <em>function</em> $x$ can have a simpler certified representation, such as a single identity linear map. The restriction concerns the stated architecture and weight/certificate set, rather than an impossibility of representing that function by every certified architecture.</p></div></details>
       </div>
     </details>
     <details id="practice-hard-2" style="margin:14px 0;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
@@ -838,7 +890,21 @@
         <p style="margin-top:0;">Take identity activations and weights $W_0=\operatorname{diag}(4,1/4)$, $W_1=\operatorname{diag}(1/4,4)$. Compute their norm product and the composite gain. Find $X_1$ so $W_0^\top X_1W_0=I$ and $W_1^\top W_1=X_1$.</p>
         <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-psd">Primer A: quadratic forms and PSD order</a>; <a href="#sll-sandwich">this module's relevant section</a>.</p>
         <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Hint</summary><p>The second layer reverses the first layer's directional scaling.</p></details>
-        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Step 1.</strong> Both spectral norms are $4$, so their product is $16$. Yet $W_1W_0=I$, and the composite gain is exactly $1$. Identity activation is slope-restricted in $[0,1]$.</p><p><strong>Step 2.</strong> Set $X_1=\operatorname{diag}(1/16,16)$. Direct multiplication gives $W_0^\top X_1W_0=I$ and $W_1^\top W_1=X_1$.</p><p><strong>Step 3.</strong> The intermediate weighted energy is therefore equal to input energy and output energy. This example explains why coupling directions through a certificate can prove gain $1$ while enforcing ordinary norm at most $1$ for each stored layer would exclude these weights.</p></div></details>
+        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Compare the ordinary norms with the composite.</strong> The largest absolute diagonal entries of both $W_0=\operatorname{diag}(4,1/4)$ and $W_1=\operatorname{diag}(1/4,4)$ are four, so their spectral-norm product is $4(4)=16$. Yet</p>
+<div class="math-block">$$W_1W_0
+=\operatorname{diag}\left(\frac14(4),\,4\left(\frac14\right)\right)
+=\operatorname{diag}(1,1)=I.$$</div>
+<p>With identity activations, the network therefore maps $x$ to $x$ and has exact Euclidean gain one. The identity activation's chord slope is one, which is allowed in $[0,1]$.</p>
+<p><strong>Find the intermediate directional weight.</strong> The required output-layer equality determines</p>
+<div class="math-block">$$X_1=W_1^\top W_1
+=\operatorname{diag}\left((1/4)^2,4^2\right)
+=\operatorname{diag}(1/16,16)\succ0.$$</div>
+<p>Now check the other equality coordinate by coordinate:</p>
+<div class="math-block">$$W_0^\top X_1W_0
+=\operatorname{diag}\left(4\frac1{16}4,\
+\frac14(16)\frac14\right)=I.$$</div>
+<p>For an input increment $\Delta x$ and hidden increment $\Delta z_1=W_0\Delta x$, these identities give $\Delta z_1^\top X_1\Delta z_1=\|\Delta x\|_2^2$ and $\|\Delta f\|_2^2=\Delta z_1^\top X_1\Delta z_1$. Thus the input, weighted hidden, and output energies agree exactly.</p>
+<p>The second layer reverses the first layer's directional scaling. Passing an ellipsoidal weight between layers records that cancellation; the separate ordinary norm product discards it. Enforcing norm at most one on each stored weight would exclude these particular weights even though their composition is nonexpansive.</p></div></details>
       </div>
     </details>
     <details id="practice-hard-3" style="margin:14px 0;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
@@ -847,7 +913,23 @@
         <p style="margin-top:0;">For $K=\begin{bmatrix}0&-0.2\\0.2&0\end{bmatrix}$ deploy $S_2=I+K+K^2/2$ instead of $e^K$. Compute its exact norm and compare it with $1+0.2^3/6$. What bound follows for a composition of ten such layers and 1-Lipschitz activations?</p>
         <p><strong>Review if needed:</strong> <a href="primer-linalg.html#la-matrix-norms">Primer A: spectral norms and products</a>; <a href="#orthogonal-layers">this module's relevant section</a>.</p>
         <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Hint</summary><p>$K^2=-0.04I$, so $S_2=0.98I+K$ and $S_2^\top S_2$ is diagonal.</p></details>
-        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Step 1.</strong> $S_2^\top S_2=(0.98^2+0.2^2)I=1.0004I$, so $\|S_2\|_2=\sqrt{1.0004}\approx1.00019998$, slightly above one.</p><p><strong>Step 2.</strong> The skew-exponential remainder bound is $\|e^K-S_2\|_2\le0.2^3/6\approx0.00133333$. Since $e^K$ is orthogonal, $\|S_2\|_2\le1+0.2^3/6$. The rounded bound $\|S_2\|_2\le1.00133333$ is also valid here by the exact norm in Step 1.</p><p><strong>Step 3.</strong> For ten layers the remainder-based product bound is $(1+0.2^3/6)^{10}\approx1.01341362$. Exact layer norms give $(\sqrt{1.0004})^{10}\approx1.00200160$. Intermediate activations can reduce the true gain, but calling the truncated network exactly 1-Lipschitz would be unjustified.</p></div></details>
+        <details style="margin:10px 0;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Worked solution</summary><div style="padding:8px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;"><p><strong>Compute the implemented matrix itself.</strong> Multiplication gives $K^2=-0.04I$, so</p>
+<div class="math-block">$$S_2=I+K+\frac{K^2}{2}
+=0.98I+K
+=\begin{bmatrix}0.98&-0.2\\0.2&0.98\end{bmatrix}.$$</div>
+<p>Since $K^\top=-K$, the cross terms cancel in its Gram matrix:</p>
+<div class="math-block">$$S_2^\top S_2=(0.98I-K)(0.98I+K)
+=0.98^2I-K^2
+=(0.9604+0.04)I=1.0004I.$$</div>
+<p>Both squared singular values are $1.0004$, hence $\|S_2\|_2=\sqrt{1.0004}\approx1.000199980$. The implemented layer is slightly expansive even though the exact exponential is orthogonal.</p>
+<p><strong>Compare the remainder-based upper bound.</strong> The degree-two polynomial retains the terms of orders zero, one and two. For this skew-symmetric $K$, $\|K\|_2=0.2$, and the stated exponential remainder theorem gives</p>
+<div class="math-block">$$\|e^K-S_2\|_2\le\frac{0.2^3}{3!}
+=\frac{0.008}{6}=\frac1{750}.$$</div>
+<p>Using $\|e^K\|_2=1$ and the triangle inequality, $\|S_2\|_2\le1+1/750=751/750\approx1.001333333$. This is a valid, somewhat larger bound than the exact norm just calculated.</p>
+<p><strong>Carry the factor through all ten layers.</strong> Every intervening activation has gain at most one. Repeated composition therefore gives either the remainder-based bound</p>
+<div class="math-block">$$L_{\rm net}\le\left(\frac{751}{750}\right)^{10}
+\approx1.013413618,$$</div>
+<p>or, using the exact implemented layer norms, the sharper bound $L_{\rm net}\le(\sqrt{1.0004})^{10}=(1.0004)^5\approx1.002001601$. These are upper bounds for arbitrary allowed activations; the actual network gain can be smaller. With identity activations the exact-layer-norm product is attained because $S_2^\top S_2$ is a scalar multiple of identity. The truncated implementation cannot be declared exactly $1$-Lipschitz from the orthogonality of $e^K$.</p></div></details>
       </div>
     </details>
     <details id="practice-hard-4" style="margin:14px 0;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
@@ -885,12 +967,37 @@
         <p style="margin-top:0;">Let $W\in\mathbb R^{m\times n}$, $T=\operatorname{diag}(t_i)\succ0$ with $W^{\top}W\preceq T$, and $h(x)=x-2WT^{-1}\varphi(W^{\top}x+b)$ with $\varphi$ slope-restricted in $[0,1]$. (a) Using the incremental QC with multiplier $\Lambda=2T^{-1}$, prove $\|\Delta x\|^2-\|\Delta h\|^2\ge4\Delta\varphi^{\top}T^{-1}(T-W^{\top}W)T^{-1}\Delta\varphi\ge0$. (b) Prove that $T_{ii}=\sum_j|W^{\top}W|_{ij}\,q_j/q_i$ ($q_i\gt0$) satisfies $W^{\top}W\preceq T$. (c) For $W=\begin{bmatrix}1&amp;1\\0&amp;1\end{bmatrix}$ compute $T$ for $q=(1,1)$ and $q=(1,2)$ and check $T-W^{\top}W\succeq0$.</p>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
-            <p><strong>(a)</strong> $\|\Delta h\|^2=\|\Delta x\|^2-4\Delta x^{\top}WT^{-1}\Delta\varphi+4\Delta\varphi^{\top}T^{-1}W^{\top}WT^{-1}\Delta\varphi$, and the QC with $\Lambda=2T^{-1}$ reads $q:=4\Delta\varphi^{\top}T^{-1}(W^{\top}\Delta x-\Delta\varphi)\ge0$. Hence
-            $$\begin{aligned}\|\Delta x\|^2-\|\Delta h\|^2&amp;=4\Delta\varphi^{\top}T^{-1}W^{\top}\Delta x-4\Delta\varphi^{\top}T^{-1}W^{\top}WT^{-1}\Delta\varphi\\&amp;=q+4\Delta\varphi^{\top}T^{-1}\big(T-W^{\top}W\big)T^{-1}\Delta\varphi\ \ge\ 0 .\end{aligned}$$</p>
-            <p><strong>(b)</strong> With $Q=\operatorname{diag}(1/q_i)$, $T-QW^{\top}WQ^{-1}=Q(T-W^{\top}W)Q^{-1}$ is similar to the symmetric $T-W^{\top}W$. Its entries are $T_{ii}\delta_{ij}-(W^{\top}W)_{ij}q_j/q_i$; since $(W^{\top}W)_{ii}\ge0$, the diagonal entry of row $i$ is $\sum_{j\ne i}|W^{\top}W|_{ij}q_j/q_i$, exactly the sum of the absolute off-diagonal entries of that row. By Gershgorin every eigenvalue $z$ of a matrix $M$ satisfies $|z-M_{ii}|\le\sum_{j\ne i}|M_{ij}|$ for some row $i$; for $M=Q(T-W^{\top}W)Q^{-1}$ every disc is centred at a nonnegative number with radius equal to it, so its real points lie in $[0,2M_{ii}]$. Similar matrices have the same eigenvalues, and those of the symmetric $T-W^{\top}W$ are real, so they are all $\ge0$.</p>
-            <p><strong>(c)</strong> $W^{\top}W=\begin{bmatrix}1&amp;1\\1&amp;2\end{bmatrix}$. For $q=(1,1)$ (AOL): $T=\operatorname{diag}(2,3)$, $T-W^{\top}W=\begin{bmatrix}1&amp;-1\\-1&amp;1\end{bmatrix}$, eigenvalues $0,2$. For $q=(1,2)$: $T=\operatorname{diag}(3,2.5)$, $T-W^{\top}W=\begin{bmatrix}2&amp;-1\\-1&amp;0.5\end{bmatrix}$, determinant $0$, trace $2.5$, eigenvalues $0,2.5$. Both are PSD and tight in one direction; neither dominates ($T_{11}$ is smaller for $q=(1,1)$, $T_{22}$ for $q=(1,2)$), which is why SLL learns $q$. SN would use $T=\|W\|^2I=\tfrac{3+\sqrt5}{2}I\approx2.618\,I$.</p>
-          </div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><strong>(a) Expand the actual residual difference.</strong> Let $\Delta x=x-y$, $\Delta\varphi=\varphi(W^\top x+b)-\varphi(W^\top y+b)$, and $\Delta v=W^\top\Delta x$. The bias cancels. Since $T$ is positive diagonal, $\Lambda=2T^{-1}$ is also diagonal with positive entries and is an admissible incremental multiplier. Its QC is</p>
+<div class="math-block">$$r_{\rm QC}:=2\Delta\varphi^\top\Lambda(\Delta v-\Delta\varphi)
+=4\Delta\varphi^\top T^{-1}(W^\top\Delta x-\Delta\varphi)\ge0.$$</div>
+<p>The residual difference is $\Delta h=\Delta x-2WT^{-1}\Delta\varphi$. Expanding its squared norm yields</p>
+<div class="math-block">$$\|\Delta h\|_2^2
+=\|\Delta x\|_2^2-4\Delta x^\top WT^{-1}\Delta\varphi
++4\Delta\varphi^\top T^{-1}W^\top WT^{-1}\Delta\varphi.$$</div>
+<p>Add and subtract $4\Delta\varphi^\top T^{-1}\Delta\varphi$ when forming the norm difference. This separates the known QC from the matrix residual:</p>
+<div class="math-block">$$\begin{aligned}
+\|\Delta x\|_2^2-\|\Delta h\|_2^2
+&=r_{\rm QC}
++4\Delta\varphi^\top T^{-1}(T-W^\top W)T^{-1}\Delta\varphi\\
+&\ge4\Delta\varphi^\top T^{-1}(T-W^\top W)T^{-1}\Delta\varphi\ge0.
+\end{aligned}$$</div>
+<p>The first inequality drops the nonnegative QC. The second uses $T-W^\top W\succeq0$: the displayed term is its quadratic form on $2T^{-1}\Delta\varphi$. Taking nonnegative square roots proves $\|\Delta h\|_2\le\|\Delta x\|_2$.</p>
+<p><strong>(b) Prove the analytic diagonal choice dominates the Gram matrix.</strong> Put $G=W^\top W$ and $Q=\operatorname{diag}(1/q_i)$, with all $q_i\gt0$. Because $Q$ and $T$ are diagonal,</p>
+<div class="math-block">$$M:=Q(T-G)Q^{-1}=T-QGQ^{-1}.$$</div>
+<p>This is a similarity transformation, so $M$ has the same eigenvalues as the symmetric matrix $T-G$, even though $M$ need not itself be symmetric. For the proposed $T_{ii}=\sum_j|G_{ij}|q_j/q_i$, use $G_{ii}=\|W_{\cdot i}\|_2^2\ge0$ to calculate</p>
+<div class="math-block">$$M_{ii}=T_{ii}-G_{ii}
+=\sum_{j\ne i}|G_{ij}|\frac{q_j}{q_i}\ge0,\qquad
+\sum_{j\ne i}|M_{ij}|=\sum_{j\ne i}|G_{ij}|\frac{q_j}{q_i}=M_{ii}.$$</div>
+<p>Gershgorin's theorem places each eigenvalue in a disc centered at some $M_{ii}$ with radius equal to $M_{ii}$. Every real point in that disc lies in $[0,2M_{ii}]$. All these eigenvalues are real because they equal those of symmetric $T-G$. Therefore every eigenvalue is nonnegative and $T-G\succeq0$.</p>
+<p>This argument permits equality and proves the dominance condition. To use $T^{-1}$ in the layer, $T$ must additionally be nonsingular. A nonzero column of $W$ gives $T_{ii}\ge G_{ii}\gt0$; a zero column may give $T_{ii}=0$. Adding a fixed positive $\varepsilon$ to every diagonal entry then preserves dominance and supplies invertibility.</p>
+<p><strong>(c) Compute both scalings explicitly.</strong> For the given $W$, $G=\begin{bmatrix}1&1\\1&2\end{bmatrix}$. With $q=(1,1)$, $T_{11}=1+1=2$ and $T_{22}=1+2=3$, giving</p>
+<div class="math-block">$$T-G=\begin{bmatrix}1&-1\\-1&1\end{bmatrix}
+=\begin{bmatrix}1\\-1\end{bmatrix}\begin{bmatrix}1&-1\end{bmatrix}\succeq0.$$</div>
+<p>With $q=(1,2)$, $T_{11}=1(1/1)+1(2/1)=3$ and $T_{22}=1(1/2)+2(2/2)=5/2$, so</p>
+<div class="math-block">$$T-G=\begin{bmatrix}2&-1\\-1&1/2\end{bmatrix}
+=\begin{bmatrix}\sqrt2\\-1/\sqrt2\end{bmatrix}
+\begin{bmatrix}\sqrt2&-1/\sqrt2\end{bmatrix}\succeq0.$$</div>
+<p>The eigenvalues of these rank-one matrices are $0,2$ and $0,5/2$, respectively, from their zero determinants and positive traces. Both choices are tight in one direction. Neither diagonal $T$ dominates the other: one has the smaller first entry, the other the smaller second. Learning $q$ can adapt the directional allowance. For comparison, spectral normalization would use the scalar choice $T=\|W\|_2^2I=(3+\sqrt5)I/2$, obtained from the eigenvalues of $G$.</p></div>
         </details>
       </div>
     </details>
@@ -903,11 +1010,42 @@
         <p style="margin-top:0;">Let $AA^{\top}+BB^{\top}=I$, $\Psi\succ0$ diagonal, and write the sandwich layer as $v=Uh_{\rm in}+b$, $z=\varphi(v)$, $h_{\rm out}=Yz$ with $U=\sqrt2\Psi^{-1}B$, $Y=\sqrt2A^{\top}\Psi$. (a) Show $2\Lambda-Y^{\top}Y-\Lambda UU^{\top}\Lambda=0$ for $\Lambda=\Psi^2$ and conclude that $\begin{bmatrix}I&amp;-U^{\top}\Lambda&amp;0\\-\Lambda U&amp;2\Lambda&amp;-Y^{\top}\\0&amp;-Y&amp;I\end{bmatrix}\succeq0$, so the layer is 1-Lipschitz. (b) Evaluate the same expression for $\Lambda=\tfrac12\Psi^2$. (c) Show that for one hidden layer the $\gamma$-form LMI with multiplier $\Lambda$ is equivalent to LipSDP's $M(\rho,T)\preceq0$ ($\alpha=0$, $\beta=1$) with $\rho=\gamma^2$, $T=\gamma\Lambda$.</p>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
-            <p><strong>(a)</strong> $Y^{\top}Y=2\Psi AA^{\top}\Psi$ and $\Lambda UU^{\top}\Lambda=\Psi^2\cdot2\Psi^{-1}BB^{\top}\Psi^{-1}\cdot\Psi^2=2\Psi BB^{\top}\Psi$, so the expression is $2\Psi(I-AA^{\top}-BB^{\top})\Psi=0$. It is the Schur complement of the $3\times3$ matrix with respect to its two uncoupled identity blocks, so that matrix is PSD. It is Wang &amp; Manchester's LMI with $\gamma=1$, no hidden-to-hidden weights, input matrix $U$ and output matrix $Y$, and the incremental QC gives $\|\Delta x\|^2-\|\Delta h_{\rm out}\|^2\ge2\Delta z^{\top}\Lambda(\Delta v-\Delta z)\ge0$.</p>
-            <p><strong>(b)</strong> $\Psi^2-2\Psi AA^{\top}\Psi-\tfrac12\Psi BB^{\top}\Psi=\Psi\big(\tfrac12I-\tfrac32AA^{\top}\big)\Psi$ using $BB^{\top}=I-AA^{\top}$. This is negative definite whenever $AA^{\top}\succ\tfrac13I$; for $B=0$ and orthogonal $A$ it is $-\Psi^2$. So $\tfrac12\Psi^2$ is not a certificate for the LMI as written; $\Psi^2$ is.</p>
-            <p><strong>(c)</strong> For $\gamma\gt0$, the Schur complement on the last block gives $H\succeq0\iff\begin{bmatrix}\gamma I&amp;-W_0^{\top}\Lambda\\-\Lambda W_0&amp;2\Lambda-\tfrac1\gamma W_1^{\top}W_1\end{bmatrix}\succeq0$. Multiplying by $\gamma$ and negating gives $\begin{bmatrix}-\gamma^2I&amp;W_0^{\top}(\gamma\Lambda)\\(\gamma\Lambda)W_0&amp;-2\gamma\Lambda+W_1^{\top}W_1\end{bmatrix}\preceq0$, which is $M(\rho,T)=\begin{bmatrix}-\rho I&amp;W_0^{\top}T\\TW_0&amp;-2T+W_1^{\top}W_1\end{bmatrix}\preceq0$ with $\rho=\gamma^2$, $T=\gamma\Lambda$; both certify $\sqrt\rho=\gamma$.</p>
-          </div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><strong>(a) Substitute the common Cayley identity.</strong> With positive diagonal $\Psi$ and $\Lambda=\Psi^2$, the input and output matrices give</p>
+<div class="math-block">$$Y^\top Y=2\Psi AA^\top\Psi,\qquad
+UU^\top=2\Psi^{-1}BB^\top\Psi^{-1},\qquad
+\Lambda UU^\top\Lambda=2\Psi BB^\top\Psi.$$</div>
+<p>Therefore</p>
+<div class="math-block">$$2\Lambda-Y^\top Y-\Lambda UU^\top\Lambda
+=2\Psi(I-AA^\top-BB^\top)\Psi=0.$$</div>
+<p><strong>Verify the whole matrix and the gain implication.</strong> Let $H=\begin{bmatrix}I&-U^\top\Lambda&0\\-\Lambda U&2\Lambda&-Y^\top\\0&-Y&I\end{bmatrix}$. For arbitrary vectors $p,z,r$ of the input, hidden and output sizes, completing both squares gives</p>
+<div class="math-block">$$\begin{aligned}
+(p,z,r)^\top H(p,z,r)
+={}&\|p-U^\top\Lambda z\|_2^2+\|r-Yz\|_2^2\\
+&+z^\top(2\Lambda-\Lambda UU^\top\Lambda-Y^\top Y)z\ge0.
+\end{aligned}$$</div>
+<p>The residual is zero by the identity, so $H\succeq0$. This is also its Schur complement after grouping the two uncoupled identity blocks.</p>
+<p>For an actual pair of layer inputs, use $p=\Delta h_{\rm in}$, $z=\Delta z$, $r=\Delta h_{\rm out}=Y\Delta z$ and $\Delta v=U\Delta h_{\rm in}$. The same quadratic form becomes $\|\Delta h_{\rm in}\|_2^2-\|\Delta h_{\rm out}\|_2^2-2\Delta z^\top\Lambda(\Delta v-\Delta z)$. Its nonnegativity and the valid diagonal activation QC imply</p>
+<div class="math-block">$$\|\Delta h_{\rm in}\|_2^2-\|\Delta h_{\rm out}\|_2^2
+\ge2\Delta z^\top\Lambda(\Delta v-\Delta z)\ge0.$$</div>
+<p>Taking square roots proves a gain of at most one for all input pairs. The activation must satisfy the stated slope restriction; the Cayley identity alone is not a replacement for that assumption.</p>
+<p><strong>(b) Evaluate the half-sized multiplier.</strong> If $\Lambda=\tfrac12\Psi^2$, the three terms instead give</p>
+<div class="math-block">$$\begin{aligned}
+2\Lambda-Y^\top Y-\Lambda UU^\top\Lambda
+&=\Psi(I-2AA^\top-\tfrac12BB^\top)\Psi\\
+&=\Psi(\tfrac12I-\tfrac32AA^\top)\Psi .
+\end{aligned}$$</div>
+<p>Here $BB^\top=I-AA^\top$ was used in the second line. This expression is PSD only when $AA^\top\preceq I/3$; it is negative definite when $AA^\top\succ I/3$. In particular, $B=0$ and orthogonal $A$ give $-\Psi^2\prec0$. The half-sized multiplier is therefore not a universally valid certificate for this LMI as written, although it can work for some special parameters. The correct universal choice is $\Psi^2$; failure of the other choice does not make the constructed layer expansive.</p>
+<p><strong>(c) Translate the performance and multiplier conventions.</strong> For the chapter's positive gain $\gamma\gt0$, eliminate the last block $\gamma I$ of the one-hidden-layer matrix by its definite Schur complement:</p>
+<div class="math-block">$$H_\gamma\succeq0
+\iff
+\begin{bmatrix}\gamma I&-W_0^\top\Lambda\\-\Lambda W_0&
+2\Lambda-\gamma^{-1}W_1^\top W_1\end{bmatrix}\succeq0.$$</div>
+<p>Multiplication by positive $\gamma$ preserves PSD, and negation changes PSD to negative semidefiniteness. Thus the condition is equivalent to</p>
+<div class="math-block">$$\begin{bmatrix}
+-\gamma^2I&W_0^\top(\gamma\Lambda)\\
+(\gamma\Lambda)W_0&-2\gamma\Lambda+W_1^\top W_1
+\end{bmatrix}=M(\rho,T)\preceq0\quad\text{with }\rho=\gamma^2,\ T=\gamma\Lambda.$$</div>
+<p>The transformation is reversible because $\gamma\gt0$: recover $\Lambda=T/\gamma$ and divide before restoring the last block. Corresponding multiplier signs are preserved. Both forms certify the norm gain $\sqrt\rho=\gamma$; the symbols differ because one stores the bound and the other its square.</p></div>
         </details>
       </div>
     </details>
@@ -920,13 +1058,38 @@
         <p style="margin-top:0;">A single-channel convolution $y_k=K_0w_k+K_1w_{k-1}$ (no activation). (a) Give a state-space realization and check that $A$ is nilpotent. (b) With input gain $Q_0=\rho^2$, free $H=h$ and $\varepsilon\ge0$, compute $X$ of Lemma 7, $P=X^{-1}$ and $F$. (c) For $\rho=h=1$, $\varepsilon=0$ and the unit vector $\tilde u=(\cos\theta,\sin\theta)^\top$ with $\theta=\pi/3$ (as produced by a Cayley transform), set $[C\ \ D]=[K_1\ \ K_0]=\tilde u^{\top}\operatorname{chol}(F)$ and compute the kernel (this is the linear-layer version of Theorem 8: without an activation there is no multiplier, the certificate is just $F-\hat C^{\top}\hat C\succeq0$, and no $\Gamma$ is needed). (d) Verify the gain bound via the dissipation LMI $F-\hat C^{\top}\hat C\succeq0$ and via $\sup_\omega|K_0+K_1e^{-j\omega}|$. (e) Show $|K_0|+|K_1|\le\rho$ for every $\theta$ and admissible $P$; when is it tight?</p>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
-            <p><strong>(a)</strong> State $x_k=w_{k-1}$: $A=0$, $B=1$, $C=K_1$, $D=K_0$ ($\ell=2$, one state). $A^1=0$: nilpotent of index $\ell-1=1$.</p>
-            <p><strong>(b)</strong> Only the $k=0$ term survives: $X=1/\rho^2+h^2+\varepsilon$, $P=\rho^2/\big(1+\rho^2(h^2+\varepsilon)\big)$, and $F=\operatorname{diag}(P,\ \rho^2-P)$. Whenever $h^2+\varepsilon\gt0$ (always under Lemma 7's $\varepsilon\gt0$, and here also for $\varepsilon=0$, $h\ne0$) we get $P\in(0,\rho^2)$ and $F\succ0$, as Lemma 7 promises; for $h=\varepsilon=0$, $P=\rho^2$ and $F$ is only semidefinite, which is why the lemma needs $\varepsilon\gt0$.</p>
-            <p><strong>(c)</strong> $X=2$, $P=0.5$, $F=\operatorname{diag}(0.5,0.5)$, $\operatorname{chol}(F)=\tfrac1{\sqrt2}I\approx0.7071\,I$, so $K_1=\tfrac{\cos(\pi/3)}{\sqrt2}=\tfrac{\sqrt2}{4}\approx0.3536$ and $K_0=\tfrac{\sin(\pi/3)}{\sqrt2}=\tfrac{\sqrt6}{4}\approx0.6124$.</p>
-            <p><strong>(d)</strong> $F-\hat C^{\top}\hat C=\begin{bmatrix}3/8&amp;-\sqrt3/8\\-\sqrt3/8&amp;1/8\end{bmatrix}\approx\begin{bmatrix}0.375&amp;-0.2165\\-0.2165&amp;0.125\end{bmatrix}$. The exact matrix has determinant $0$ and trace $0.5$, eigenvalues $0$ and $0.5$: PSD. This holds for every unit $\tilde u$: with $F=L^{\top}L$ and $\hat C=\tilde u^{\top}L$, $F-\hat C^{\top}\hat C=L^{\top}(I-\tilde u\tilde u^{\top})L\succeq0$. This is the dissipation inequality $V(x_{k+1})-V(x_k)\le\rho^2w_k^2-y_k^2$ with $V(x)=Px^2$ (the bounded-real lemma), and summing from $x_0=0$ gives $\sum y_k^2\le\rho^2\sum w_k^2$. In frequency, $|K_0+K_1e^{-j\omega}|\le|K_0|+|K_1|=\tfrac{\sqrt2+\sqrt6}{4}\approx0.9659\le\rho=1$, attained at $\omega=0$.</p>
-            <p><strong>(e)</strong> <span class="math-scroll">$|K_0|+|K_1|=|\sin\theta|\sqrt{\rho^2-P}+|\cos\theta|\sqrt P\le\sqrt{\sin^2\theta+\cos^2\theta}\,\sqrt{\rho^2-P+P}=\rho$</span> by Cauchy&ndash;Schwarz: the parameterization cannot violate the bound. Equality iff $\tan^2\theta=(\rho^2-P)/P$; for $P=\rho^2/2$ (here) that is $\theta=\pi/4$, giving $K_0=K_1=0.5$ and gain exactly 1.</p>
-          </div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><strong>(a) Realize the one-step memory.</strong> Take $x_k=w_{k-1}$, so $x_{k+1}=w_k$ and $y_k=K_1x_k+K_0w_k$. The matrices are $A=0,B=1,C=K_1,D=K_0$. Zero padding gives $x_0=0$, and $A^1=0$ is nilpotent of index one.</p>
+<p><strong>(b) Evaluate the finite Gramian and its domain.</strong> Assume $\rho\gt0$ as in the chapter. Since every positive power of $A$ is zero, only the $k=0$ term survives:</p>
+<div class="math-block">$$X=\frac1{\rho^2}+h^2+\varepsilon
+=\frac{1+\rho^2(h^2+\varepsilon)}{\rho^2},\qquad
+P=X^{-1}=\frac{\rho^2}{1+\rho^2(h^2+\varepsilon)}.$$</div>
+<p>Substitute $A=0,B=1,Q_0=\rho^2$ into the storage/input block:</p>
+<div class="math-block">$$F=
+\begin{bmatrix}P-A^\top PA&-A^\top PB\\-B^\top PA&Q_0-B^\top PB\end{bmatrix}
+=\operatorname{diag}(P,\rho^2-P).$$</div>
+<p>If $h^2+\varepsilon\gt0$, the denominator for $P$ exceeds one, so $0\lt P\lt\rho^2$ and $F\succ0$. This includes every $\varepsilon\gt0$ in Lemma 7 and also $\varepsilon=0,h\ne0$. If $h=0,\varepsilon=0$, then $P=\rho^2$ and $F=\operatorname{diag}(\rho^2,0)$ is only semidefinite; that boundary does not meet the lemma's strict conclusion.</p>
+<p><strong>(c) Read off the exact kernel.</strong> With $\rho=h=1,\varepsilon=0$, $X=2,P=1/2,F=I/2$. In the upper-factor convention $F=L^\top L$, take $L=\operatorname{chol}(F)=I/\sqrt2$. At $\theta=\pi/3$, $\tilde u=(1/2,\sqrt3/2)^\top$ is unit, so</p>
+<div class="math-block">$$[K_1\ \ K_0]=\tilde u^\top L
+=\frac1{\sqrt2}[1/2\ \ \sqrt3/2],
+\qquad K_1=\frac{\sqrt2}{4}\approx0.353553,\quad
+K_0=\frac{\sqrt6}{4}\approx0.612372.$$</div>
+<p>The coefficient order is delayed input first, current input second, because the state is $w_{k-1}$. Without an activation this is a linear-layer construction and requires no activation multiplier or $\Gamma$.</p>
+<p><strong>(d) Verify both certificate routes.</strong> Put $\hat C=[K_1\ \ K_0]$. Its outer product is $\begin{bmatrix}1/8&\sqrt3/8\\\sqrt3/8&3/8\end{bmatrix}$, and subtracting from $F=I/2$ gives</p>
+<div class="math-block">$$F-\hat C^\top\hat C
+=\begin{bmatrix}3/8&-\sqrt3/8\\-\sqrt3/8&1/8\end{bmatrix}\succeq0.$$</div>
+<p>The diagonals are nonnegative, the determinant is $3/64-3/64=0$, and the trace is $1/2$, so its eigenvalues are $0$ and $1/2$. More generally, $\hat C=\tilde u^\top L$ with a unit vector gives $F-\hat C^\top\hat C=L^\top(I-\tilde u\tilde u^\top)L\succeq0$; $I-\tilde u\tilde u^\top$ is the orthogonal projection onto the perpendicular direction.</p>
+<p>Evaluating that matrix at $(x_k,w_k)$ gives $Px_k^2+(\rho^2-P)w_k^2-y_k^2\ge0$. Since $x_{k+1}=w_k$, rearrangement yields</p>
+<div class="math-block">$$V(x_{k+1})-V(x_k)
+=P(w_k^2-x_k^2)\le\rho^2w_k^2-y_k^2,\qquad V(x)=Px^2.$$</div>
+<p>Sum this over a finite horizon from $x_0=0$; intermediate storages cancel and the final storage is nonnegative. Hence $\sum y_k^2\le\rho^2\sum w_k^2$, and the same bound holds on an infinite horizon for finite-energy inputs by taking limits.</p>
+<p>In frequency, the triangle inequality gives $|K_0+K_1e^{-j\omega}|\le|K_0|+|K_1|$. Both example coefficients are positive, so equality is attained at $\omega=0$. The exact peak gain is</p>
+<div class="math-block">$$\frac{\sqrt6+\sqrt2}{4}\approx0.965925826\le1=\rho.$$</div>
+<p><strong>(e) Check all parameters and equality cases.</strong> For a general admissible $0\lt P\le\rho^2$, the diagonal factor gives $K_1=\cos\theta\sqrt P$ and $K_0=\sin\theta\sqrt{\rho^2-P}$. Cauchy–Schwarz gives</p>
+<div class="math-block">$$|K_1|+|K_0|
+=|\cos\theta|\sqrt P+|\sin\theta|\sqrt{\rho^2-P}
+\le\sqrt{\cos^2\theta+\sin^2\theta}\sqrt{P+\rho^2-P}
+=\rho.$$</div>
+<p>For $0\lt P\lt\rho^2$, equality holds exactly when the two nonnegative vectors are proportional: $|\cos\theta|=\sqrt P/\rho$ and $|\sin\theta|=\sqrt{\rho^2-P}/\rho$, equivalently $\tan^2\theta=(\rho^2-P)/P$. At the semidefinite boundary $P=\rho^2$, equality requires $|\cos\theta|=1$, giving a pure delay with gain $\rho$. In the example $P=\rho^2/2$, $\theta=\pi/4$ gives $K_0=K_1=1/2$ and exact gain one. For arbitrary real signs, the frequency peak still equals the absolute sum: choose $\omega=0$ for matching signs or $\omega=\pi$ for opposite signs.</p></div>
         </details>
       </div>
     </details>
@@ -939,12 +1102,27 @@
         <p style="margin-top:0;">A 3-class network has logits $f(x)=(4.0,\,3.1,\,0.6)$ and predicts class 1. It is a 1-Lipschitz feature map followed by a linear layer with $\|W\|\le L=1$ and $\|w_1-w_2\|=1.2$, $\|w_1-w_3\|=1.35$. (a) Compute $M_f/(\sqrt2L)$. (b) Compute LipNeXt's one-versus-rest radius $\min_j|f_1-f_j|/K_j$ with $K_j=\sqrt2L$ and with $K_j=\|w_1-w_j\|$. (c) Prove $\|w_1-w_j\|\le\sqrt2\|W\|$. (d) Which radii certify $\varepsilon=36/255$ and $72/255$ for inputs in $[0,1]$? Repeat if the certificate was computed for normalized inputs $\tilde x=(x-\mu)/0.25$.</p>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
-            <p><strong>(a)</strong> $M_f=4.0-3.1=0.9$, radius $0.9/\sqrt2\approx0.6364$.</p>
-            <p><strong>(b)</strong> With $K_j=\sqrt2$: $\min(0.9,3.4)/\sqrt2\approx0.6364$, identical to (a). With pairwise constants: $\min(0.9/1.2,\ 3.4/1.35)=\min(3/4,\ 68/27)=3/4=0.750$ (with $68/27\approx2.519$), about 18% larger.</p>
-            <p><strong>(c)</strong> $w_1-w_j=W^{\top}(e_1-e_j)$, so $\|w_1-w_j\|\le\|W\|\,\|e_1-e_j\|=\sqrt2\|W\|\le\sqrt2L$: pairwise radii are never smaller than the global one.</p>
-            <p><strong>(d)</strong> $36/255\approx0.1412$ and $72/255\approx0.2824$, so both radii certify both levels. With normalization $\|\Delta\tilde x\|=4\|\Delta x\|$, so a radius $r$ in $\tilde x$ is $r/4$ in pixel units: $0.9/(4\sqrt2)\approx0.159$ and $3/16=0.1875$, which certify $36/255$ but not $72/255$. This illustrates the same normalization effect as the "about $4.1\gamma$" reported for Wang &amp; Manchester's normalization layer; the factor in this example is exactly $4$.</p>
-          </div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><strong>Identify both positive competing margins.</strong> Class one wins, and its gaps are $g_{12}=4.0-3.1=0.9$ and $g_{13}=4.0-0.6=3.4$. The feature map has gain at most one, so the final matrix bound $\|W\|_2\le L=1$ also bounds the composite logit map by one.</p>
+<p><strong>(a) Apply the vector-logit rule.</strong> The smallest gap is $M_f=\min\{0.9,3.4\}=0.9$. Therefore</p>
+<div class="math-block">$$r_{\rm global}=\frac{M_f}{\sqrt2L}
+=\frac{0.9}{\sqrt2}\approx0.636396103.$$</div>
+<p>The label is certified for every perturbation with norm strictly below this radius; at equality a zero margin lower bound may allow a tie.</p>
+<p><strong>(b) Check each binary gap before taking the minimum.</strong> With $K_j=\sqrt2L=\sqrt2$, the two radii are $0.9/\sqrt2$ and $3.4/\sqrt2$, whose minimum is the global radius. With the supplied pairwise constants, they are</p>
+<div class="math-block">$$r_{12}=\frac{0.9}{1.2}=\frac34,\qquad
+r_{13}=\frac{3.4}{1.35}=\frac{68}{27}\approx2.518519,
+\qquad r_{\rm pair}=\min\{r_{12},r_{13}\}=\frac34.$$</div>
+<p>Both gaps remain positive only while both of their conditions hold, which is why the overall rule uses the minimum. The ratio $r_{\rm pair}/r_{\rm global}=5\sqrt2/6\approx1.178511$ gives about $17.9\%$ improvement. This improvement comes from tighter bounds on the actual competing gaps, rather than a different probability guarantee.</p>
+<p><strong>(c) Prove the comparison of bounds.</strong> With $w_i$ denoting row $i$ of $W$, their row difference is $(e_1-e_j)^\top W$, or its transpose is $W^\top(e_1-e_j)$. The transpose has the same Euclidean norm, so</p>
+<div class="math-block">$$\|w_1-w_j\|_2
+=\|W^\top(e_1-e_j)\|_2
+\le\|W^\top\|_2\|e_1-e_j\|_2
+=\sqrt2\|W\|_2\le\sqrt2L.$$</div>
+<p>Here $\|W^\top\|_2=\|W\|_2$ because their nonzero singular values coincide, and the basis-vector difference has two entries of magnitude one. Biases cancel in the gap increments. Multiplication by the feature gain of one leaves these constants unchanged. Each pairwise denominator is no larger than the corresponding global denominator, so its radius is no smaller; taking minima preserves that comparison.</p>
+<p><strong>(d) Compare in the specified input units.</strong> In pixel coordinates, $36/255=12/85\approx0.141176471$ and $72/255=24/85\approx0.282352941$. Both levels are strictly below both $0.636396103$ and $0.75$, so either radius certifies both requested levels for perturbations up to those norms.</p>
+<p>If the original certificates instead apply to $\tilde x=(x-\mu)/0.25$, the means cancel and $\Delta\tilde x=4\Delta x$. A normalized-coordinate radius $r$ therefore gives pixel radius $r/4$, rather than $4r$:</p>
+<div class="math-block">$$r_{\rm global,pixel}=\frac{0.9}{4\sqrt2}\approx0.159099026,\qquad
+r_{\rm pair,pixel}=\frac{3/4}{4}=\frac3{16}=0.1875.$$</div>
+<p>Both still exceed $36/255$, and both are below $72/255$. Thus they certify the smaller requested level but do not certify the larger one under that normalization. Failure to certify it is not proof a label changes there. This example's preprocessing factor is exactly four; other standard deviations require their own factor.</p></div>
         </details>
       </div>
     </details>

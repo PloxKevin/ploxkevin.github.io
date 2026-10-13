@@ -1,0 +1,10 @@
+import { chromium } from 'file:///home/oxrexkevin/SafetyBased/qa/node_modules/playwright-core/index.mjs';
+import path from 'node:path';
+const browser=await chromium.launch({executablePath:process.env.HOME+'/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell'});
+const page=await browser.newPage({viewport:{width:390,height:1000}});
+await page.goto('file://'+path.resolve('book/solutions/candidates/safe-bo-theory-v2/SafeLearning/safe-bo-theory.html'),{waitUntil:'networkidle'});
+await page.waitForFunction(()=>!!document.querySelector('.katex'),null,{timeout:20000});await page.evaluate(()=>document.querySelectorAll('details').forEach(d=>d.open=true));
+const b=page.locator('#book-m5-b2');await b.scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/safe-bo-theory-render-v2/shots/envelope-mobile-v2.png'});
+const e=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Exercise 5.4'})}).first();await e.scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/safe-bo-theory-render-v2/shots/grid-solution-mobile-v2.png'});
+await page.setViewportSize({width:1280,height:900});await page.locator('#st-b-svg').scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/safe-bo-theory-render-v2/shots/beta-explorer-v2.png'});await page.locator('#st-mc-svg').scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/safe-bo-theory-render-v2/shots/mc-explorer-v2.png'});
+await browser.close();

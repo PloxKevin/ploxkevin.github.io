@@ -96,8 +96,8 @@ opens every box at phone, tablet and desktop widths.
 
 The book adds an application lab to each of the six primers and fifteen modules,
 plus a reading path, glossary and three connected projects. The 67 new exercises
-have separate hints and worked solutions; the original 489 exercise bodies are
-preserved. Start at `SafeLearning/book.html`.
+have separate hints and worked solutions. All 556 solutions now have independent
+mathematical and student-depth review; the exercise questions and hints are preserved. Start at `SafeLearning/book.html`.
 
 The authored application sources live in `book/chapters/`; the three reference
 page sources are `book/frontmatter.html`, `book/case-studies.html` and
@@ -105,30 +105,32 @@ page sources are `book/frontmatter.html`, `book/case-studies.html` and
 
 ```sh
 python3 book/build.py
-python3 book/validate28_v1.py --allow-reviewed-corrections --output reports/book/static-current.json
+python3 -B book/solutions/solution_release.py check --plan-sha256 58455c17c48c091f9c6934165d64d003ff43bfee7bda888d10f438d02e7cc11e --report reports/solution-review/reproduce-source91-integration-v1.json
 python3 book/checks/foundations.py
 python3 book/checks/applied.py
 python3 book/checks/modules.py
 python3 book/checks/core.py
 python3 book/checks/projects.py
-python3 verification/lean/verify.py --output reports/book/lean-verification
 python3 book/check_coverage.py
 ```
 
-`book/validate28_v1.py` checks static links, navigation, exercise disclosures and
-preservation of the original teaching pages. The Lean project pins Lean 4.34.1
+`book/solutions/solution_release.py check` checks static links, navigation, disclosures,
+all selected solutions and the exact protected-byte preservation chain. The Lean project pins Lean 4.34.1
 and Mathlib; its runner builds the proofs, replays course declarations in Lean's
 kernel and audits their axiom dependencies. The formal coverage is partial:
 theorem counts do not count completely verified exercises. Read
 `reports/book/coverage.json` and `book/review/new-formal-map.json` for the scope
 and remaining gaps.
 
-The [continuing coverage audit](reports/full-coverage/README.md) verifies
-11,472 theorems in 1,267 selected Lean files. Of 556 exercises, 539 are complete,
-6 partial and 11 pending; 7,896 overlapping teaching-material units remain pending.
-Checkpoint35 adds 13 theorems, completes Exercise 5.B2 and 20 whole material units,
-and preserves earlier evidence. Native recording and atomic progress writes
-support interrupted-run recovery. Delivery status is recorded separately in
-[the progress ledger](book/coverage/progress.json); the
-[continuation note](book/coverage/CONTINUATION.md) retains all remaining work.
-Browser evidence stays bound to the exact unchanged site bytes.
+The [worked-solution release](book/solutions/RELEASE.md) reviews all 556 solutions:
+251 are expanded and 305 retained. Full-site reader and rendered-math checks pass.
+The selected proof audit passes 11,472 theorems in 1,267 files with the new asset
+fingerprints. The current working Lean tree also contains unselected future
+proofs; use the selected Source91 runtime to reproduce this exact bundle.
+
+Checkpoint35 is published and delivered at content `069532b7` and metadata
+`36b715de`. Its Source90 formal coverage remains historical: 539 complete,
+6 partial and 11 pending exercises, with 7,896 pending material units.
+Expanded-answer formal correspondence requires a separate rebase. Publication
+of the reviewed Source91 answers is recorded separately in the
+[progress ledger](book/coverage/progress.json).

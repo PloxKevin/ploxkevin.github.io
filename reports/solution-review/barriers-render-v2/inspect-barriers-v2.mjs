@@ -1,0 +1,6 @@
+import {chromium} from 'file:///home/oxrexkevin/SafetyBased/qa/node_modules/playwright-core/index.mjs';
+import path from 'node:path';
+const browser=await chromium.launch({executablePath:process.env.HOME+'/.cache/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell'});
+const page=await browser.newPage({viewport:{width:390,height:1000}});await page.goto('file://'+path.resolve('book/solutions/candidates/barriers-v2/SafeLearning/barriers.html'),{waitUntil:'networkidle'});await page.waitForFunction(()=>!!document.querySelector('.katex'),null,{timeout:20000});await page.evaluate(()=>document.querySelectorAll('details').forEach(d=>d.open=true));
+for(const n of ['3','6']){const e=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Exercise 10.'+n})}).first();await e.scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/barriers-render-v2/shots/solution-10-'+n+'-mobile-v2.png'});}
+await page.setViewportSize({width:1280,height:900});await page.locator('#cb-svg-plane').scrollIntoViewIfNeeded();await page.screenshot({path:'reports/solution-review/barriers-render-v2/shots/explorer-v2.png'});await browser.close();
