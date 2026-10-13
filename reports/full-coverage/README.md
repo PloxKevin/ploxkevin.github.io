@@ -35,7 +35,11 @@ snapshot mirrors its exact proof, site and project bytes. No earlier snapshot
 or Lean build tree is copied. Three unused Applied proof metadata entries are
 omitted from the frozen ledger; every claim is preserved.
 
-Checkpoint 34 is verified locally; its GitHub delivery is pending.
+Checkpoint 34 content is published at `4d8c1b5f`. Its Pages jobs
+completed successfully, and the [fresh live check](live-checkpoint-34-attempt1.json)
+verified all 31 asset hashes. The [actual content delivery](publication34-content-delivery-v1.json)
+preserves the commit, push and served-byte evidence. Delivery metadata and
+its execution receipts are recorded separately. Full mathematical coverage remains unfinished.
 Checkpoint33 delivery is [fully confirmed](publication33-finish-v1.json).
 The [continuation note](../../book/coverage/CONTINUATION.md) and
 [remaining exercises](../../book/coverage/remaining-exercises34.json) identify further work.
