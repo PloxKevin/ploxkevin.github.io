@@ -1,38 +1,36 @@
 # Continue full mathematical coverage
 
-The objective remains every exercise and established mathematical teaching
-claim, with local Lean proofs, exact source correspondence, independent review
-and published evidence. Passing checkpoints represent partial progress.
+Checkpoint34 verifies 11,459 theorems in 1,264 selected files. Coverage is
+538 complete, 7 partial and 11 pending exercises; 4,858 reviewed and 7,916
+pending overlapping material units. Full mathematical coverage remains unfinished.
+`remaining-exercises34.json` lists the 18 incomplete exercises and current gaps.
+Read `progress.json` and `../../reports/full-coverage/README.md` for delivery status.
 
-Checkpoint33 checks 11,345 theorems in 1,261 selected files. Coverage is
-536 complete, 8 partial and 12 pending exercises; 4,851 reviewed and 7,923
-pending overlapping material units. `remaining-exercises33.json` lists the
-20 incomplete exercises and their current unproved subclaims. Read `progress.json`
-and `../../reports/full-coverage/README.md` for actual delivery status.
+All three packets in `checks/checkpoint34-preparation-root/three-future34-paired-packets-v1.json`
+are now selected and installed. IQC21, NN65 and Conditional28 add 114 theorems;
+source89–90 and the v3 owner candidates close Exercises14.3/14.6 and seven new
+whole material units. Do not select them or promote their units again.
+The prepared NN26 is redundant with NN65 and remains unselected.
 
-The selected audit ran in `../../reports/full-coverage/runtime-checkpoint-33-source88-v1`.
-The source-only `../../reports/full-coverage/checkpoint-33` reproduces its bytes.
-Its manifest and selection retain all earlier selected proofs. The main working
-Lean tree retains unselected historical sources; its default aggregate differs
-from the selected runtime. Use the selected snapshot for reproduction.
+The actual audit ran in `../../reports/full-coverage/runtime-checkpoint-34-source90-v1`.
+The source-only `../../reports/full-coverage/checkpoint-34` mirrors its bytes.
+The working Lean tree retains unselected historical sources; use the selected
+snapshot or published checkout for exact reproduction.
 
-The publication Git checkout is `../../reports/book/publication-repo`.
-The project root has no Git repository. Preserve original command receipts,
-raw logs, owner ledgers and source history. Use fresh outputs for each run.
-Copy no earlier snapshot tree or `.lake` output into new snapshots.
-Current static checks use `../validate28_v1.py --allow-reviewed-corrections`;
-the older validator does not support the chained source-correction registry.
+The publication checkout is `../../reports/book/publication-repo`; the project
+root has no Git repository. Preserve original logs, command receipts, source
+history and owner decisions. Copy no earlier snapshot or `.lake` build tree.
+Static checks use `../validate28_v1.py --allow-reviewed-corrections`.
 
-Source88 applies corrections82–88 to Basics and Linalg, with exact inverse and
-independent full29-page inventory evidence. The seven families in
-`checks/recovery32/next-batch-source-qualification-index-v1.json` are now selected;
-do not add or promote them again. Ten whole material units are newly reviewed,
-eighteen carried components are rebased, and one Basics node922 component is
-proved. Broader linked algorithm obligations in whole node922 remain pending.
+The installation and finalization helpers in `checks/checkpoint34-root/` use
+atomic writes and accept only exact completed or original stages on a rerun.
+`../../reports/full-coverage/finalize-checkpoint34-recovery-execution-v1.json`
+retains the genuine audit input hashes and exact finalization command.
 
-The current next-work index is `checks/checkpoint33-review/next-unselected-work-index-v1.json`.
-Prepared conditional-expectation and neural-loop packets remain unselected
-until their exact correspondence requirements are met. Filippov polygonal
-construction is a component: actual integral-curve existence, derivative
-inclusion and the enclosing invariance exercise remain open. Inspect exact
-packet bytes, statements and peers before changing source or promoting coverage.
+The current pending-material triage is
+`checks/full-coverage-material-triage/source90-owner34-v3-pending-material-triage-v1.json`.
+Its queue is not proof coverage. Broader Basics node922 algorithms, Filippov
+integral-curve existence/derivative inclusion and enclosing invariance remain
+pending. Review exact current source and independently qualified statements
+before further promotion. Finite scalar observations and the 2D explorer remain
+distinct scopes, as recorded in the Source90 visual review.

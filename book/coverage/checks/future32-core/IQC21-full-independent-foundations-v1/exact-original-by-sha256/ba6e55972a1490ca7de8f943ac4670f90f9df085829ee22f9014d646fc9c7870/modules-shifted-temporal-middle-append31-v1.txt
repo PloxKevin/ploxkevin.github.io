@@ -1,0 +1,55 @@
+
+namespace SafeLearning.CompleteModulesShiftedTemporalIQC31
+
+def actualFIRWindowCoefficient (ell : ℕ) (c : ℤ→ℝ) :
+    Matrix (Fin (ell+1)) (Fin (ell+1)) ℝ :=
+  fun i j=>if i=0 then c (-(j.val:ℤ)) else if j=0 then c (i.val:ℤ) else 0
+
+def actualFIRWindowMiddle (ell : ℕ) (c : ℤ→ℝ) :
+    Matrix (Fin (ell+1)⊕Fin (ell+1)) (Fin (ell+1)⊕Fin (ell+1)) ℝ :=
+  Matrix.fromBlocks 0 (actualFIRWindowCoefficient ell c)ᵀ (actualFIRWindowCoefficient ell c) 0
+
+def actualFIRWindowSupply (ell : ℕ) (c : ℤ→ℝ) (v w : ℕ→ℝ) (t : ℕ) : ℝ :=
+  2*(actualLagWindow ell w t⬝ᵥ(actualFIRWindowCoefficient ell c*ᵥactualLagWindow ell v t))
+
+theorem actual_printed_FIR_middle_matrix_has_the_exact_first_row_and_column_action
+    (ell : ℕ) (c : ℤ→ℝ) (u : Fin (ell+1)→ℝ) :
+    (actualFIRWindowCoefficient ell c*ᵥu) 0=∑ j,c (-(j.val:ℤ))*u j ∧
+      ∀ i : Fin ell,(actualFIRWindowCoefficient ell c*ᵥu) i.succ=c (i.val+1:ℤ)*u 0 := by
+  constructor
+  · simp [actualFIRWindowCoefficient,Matrix.mulVec]
+  · intro i
+    simp [actualFIRWindowCoefficient,Matrix.mulVec,Fin.succ_ne_zero,ite_mul]
+
+theorem actual_full_printed_FIR_window_quadratic_form_equals_its_exact_supply
+    (ell : ℕ) (c : ℤ→ℝ) (v w : ℕ→ℝ) (t : ℕ) :
+    (Sum.elim (actualLagWindow ell v t) (actualLagWindow ell w t))⬝ᵥ
+      (actualFIRWindowMiddle ell c*ᵥ(Sum.elim (actualLagWindow ell v t) (actualLagWindow ell w t)))=
+        actualFIRWindowSupply ell c v w t := by
+  simp only [actualFIRWindowMiddle,Matrix.fromBlocks_mulVec,sumElim_dotProduct_sumElim,
+    Matrix.zero_mulVec,zero_add,add_zero]
+  rw [Matrix.dotProduct_transpose_mulVec]
+  unfold actualFIRWindowSupply
+  ring
+
+theorem actual_FIR_supply_is_the_two_causal_delay_sums_without_double_counting_zero
+    (ell : ℕ) (c : ℤ→ℝ) (v w : ℕ→ℝ) (t : ℕ) :
+    actualFIRWindowSupply ell c v w t=
+      2*(w t*(∑ j : Fin (ell+1),c (-(j.val:ℤ))*zeroPaddedDelay v t j.val)+
+        v t*((∑ j : Fin (ell+1),c (j.val:ℤ)*zeroPaddedDelay w t j.val)-c 0*w t)) := by
+  have hp := actual_printed_FIR_middle_matrix_has_the_exact_first_row_and_column_action ell c
+    (actualLagWindow ell v t)
+  have hzv := (actual_delay_window_is_the_zero_initialized_causal_shift_register ell v).1 t
+  have hzw := (actual_delay_window_is_the_zero_initialized_causal_shift_register ell w).1 t
+  have hpos : (∑ j : Fin (ell+1),c (j.val:ℤ)*zeroPaddedDelay w t j.val)-c 0*w t=
+      ∑ j : Fin ell,c (j.val+1:ℤ)*zeroPaddedDelay w t (j.val+1) := by
+    rw [Fin.sum_univ_succ]
+    simp [zeroPaddedDelay]
+  unfold actualFIRWindowSupply dotProduct
+  rw [Fin.sum_univ_succ]
+  simp only [hp.1]
+  simp_rw [hp.2]
+  rw [hzv,hzw,hpos]
+  simp [actualLagWindow,Finset.mul_sum,mul_comm,mul_left_comm,mul_assoc]
+
+end SafeLearning.CompleteModulesShiftedTemporalIQC31
