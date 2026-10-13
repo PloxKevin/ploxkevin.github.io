@@ -41,7 +41,11 @@ Only three unused Applied proof metadata entries are omitted from the frozen
 ledger; every claim remains. The working tree retains unselected historical
 proofs. A published checkout uses selected sources at their normal paths.
 
-Checkpoint 33 is verified locally; its GitHub delivery is pending.
+Checkpoint 33 content is published at `c53f6c94`. Its Pages jobs
+completed successfully, and the [fresh live check](live-checkpoint-33-attempt1.json)
+verified all 31 asset hashes. The [actual content delivery](publication33-content-delivery-v1.json)
+preserves the commit, push and served-byte evidence. Delivery metadata and
+its execution receipts are recorded separately. Full mathematical coverage remains unfinished.
 Checkpoint32 content and metadata delivery is [fully confirmed](publication32-finish-recovery-v1.json).
 Full mathematical coverage remains unfinished. The [continuation note](../../book/coverage/CONTINUATION.md)
 and [remaining exercises](../../book/coverage/remaining-exercises33.json) identify further work.
