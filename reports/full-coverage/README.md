@@ -52,3 +52,7 @@ Native command recording passed nine interruption/restart/corruption scenarios.
 Atomic kernel/final-report writes, source-only exact reruns and finalizer log
 checks passed isolated failure-injection tests. Earlier failed attempts remain
 untouched. These tests establish pipeline behavior and do not diagnose a client crash.
+
+Checkpoint35 content is published at `069532b7`. All three Pages jobs and a fresh all 31-asset hash check passed. Delivery metadata is pending; mathematical coverage remains partial.
+
+The user also requested thorough, student-followable solutions for all 556 exercises. Questions and hints remain intact. The byte-bound audit and draft work are in `book/solutions/`; these drafts are separate from the verified Source90 site.

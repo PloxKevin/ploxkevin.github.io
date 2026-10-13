@@ -1,0 +1,43 @@
+<section class="book-chapter" id="book-lab">
+<h2 class="section-heading">From the mathematics to a real decision</h2>
+<h3 class="subsection-heading">Learning objectives</h3>
+<ul><li>Compose architectural bounds through preprocessing and physical output scaling.</li><li>Recognize when a desired physical response is incompatible with a selected sensitivity budget.</li><li>Carry approximation errors through a finite stack of nominally orthogonal layers.</li></ul>
+<h3 class="subsection-heading">A commissioning decision</h3>
+
+<p>The robot now uses a learned velocity correction based on enclosure temperature and wall distance. Normalize readings as $z_1=(T-40)/10$ and $z_2=(d-0.5)/0.1$, where temperature is in degrees Celsius and distance in metres. The deployed correction $u$ has units metres per second. The architect chooses</p>
+<div class="math-block">$$u(z)=c\,q^\top\operatorname{ReLU}(Qz+b),\qquad c=0.3\,\mathrm{m/s},\quad \|q\|_2=1.$$</div>
+<p>Here $Q$ is a two-by-two orthogonal matrix, $b$ is a dimensionless bias, and ReLU is coordinatewise. Assume exact orthogonality and exact real arithmetic for the first calculation. A later exercise revises that implementation assumption. Training may change $Q$, $q$, and $b$ while preserving these constraints. The structural promise concerns increments, so arbitrary bias does not change it.</p>
+<p>Hardware calibration bounds temperature error by 0.2 degrees and distance error by 0.003 metres. The robot's safety layer allows at most $0.012\,\mathrm{m/s}$ change in this correction from sensor error. Assume both errors can occur simultaneously and in either direction. No statistical averaging of their magnitudes is allowed in this worst-case component requirement.</p>
+
+<h3 class="subsection-heading">Worked decision, with its limits</h3>
+
+<p><strong>Inspect one architecture instance.</strong> A Cayley construction with scalar parameter 0.5 can produce $Q=\left[\begin{smallmatrix}0.6&-0.8\\0.8&0.6\end{smallmatrix}\right]$. Its columns have unit norm and inner product zero, so $Q^\top Q=I$. Choosing $q=(1,0)$ is one admissible readout, though the following bound holds for every unit $q$ and every bias.</p>
+<p><strong>Compose the gain.</strong> Orthogonality preserves Euclidean norm. Coordinatewise ReLU is 1-Lipschitz, and the unit readout has operator norm 1. Therefore $|u(z)-u(\bar z)|\le0.3\|z-\bar z\|_2$ in metres per second. This argument applies to every pair of normalized inputs, without retraining or solving a new SDP after each admissible weight update.</p>
+<p><strong>Map the hardware box.</strong> The normalized errors satisfy $|\Delta z_1|\le0.02$ and $|\Delta z_2|\le0.03$. Their largest Euclidean norm is $r=\sqrt{0.02^2+0.03^2}\approx0.036056$. The resulting velocity change is at most $0.3r\approx0.010817\,\mathrm{m/s}$. This passes the $0.012\,\mathrm{m/s}$ budget with about $0.001183\,\mathrm{m/s}$ remaining.</p>
+<p><strong>Keep the promise narrow enough to be true.</strong> The gain bound says nothing about the absolute velocity correction: biases can make it large. A separate output limit or safety filter may be necessary. Likewise, the robot's plant can amplify a small input change over time. The architecture supplies one component inequality for that subsequent dynamical analysis, rather than a complete collision-avoidance proof.</p>
+<p>The benefit of the design is predictable sensitivity throughout training. Its cost is a restriction on representable responses. An optimizer cannot fit a desired map whose increments exceed the imposed gain; treating that failure as merely poor optimization overlooks a mathematical incompatibility. B1 makes this tradeoff visible in physical units.</p>
+
+<h3 class="subsection-heading">A tempting wrong approach</h3>
+
+<div class="warning-box"><div class="box-label">Common mistake &mdash; Normalize by an underestimate</div><p>If a matrix has true norm 2 but a power-iteration estimate is 1.9, dividing by that estimate gives norm $20/19\gt1$. Four such layers can have product bound $(20/19)^4\approx1.227738$. The preceding sensor-error bound would then inflate to about $0.013280\,\mathrm{m/s}$ and fail. A numerical estimate close to the norm is useful for training, but a by-construction certificate must bound the implemented operation in the correct direction.</p></div>
+
+<h3 class="subsection-heading">Transfer the argument</h3>
+<details id="book-m13-b1" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 13.B1 &mdash; Medium: Check whether the target response is expressible</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>On an open operating region the desired correction is $u_*(T,d)=0.04(T-40)+0.02(d-0.5)$, with coefficients carrying the units needed to produce metres per second. Can an exactly matching map on that region have normalized-input Lipschitz constant at most 0.3?</p>
+<p><strong>Review:</strong> <a href="lipschitz-by-design.html#why-by-design">Sensitivity constraints and expressivity</a>.</p>
+<details><summary>Show hint</summary><div><p>Rewrite the affine target in terms of $z_1,z_2$ and compute its gradient norm.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>Because $T-40=10z_1$ and $d-0.5=0.1z_2$, the target is $u_*(z)=0.4z_1+0.002z_2$. Its gradient norm is $\sqrt{0.4^2+0.002^2}\approx0.400005\,\mathrm{m/s}$ per normalized input unit. On an open region, increments in that gradient direction attain this slope, exceeding 0.3. Exact matching is impossible under the chosen budget. Options include reducing the target response or revisiting the downstream sensitivity allowance; changing the training loss cannot remove the contradiction.</p></div></details>
+</div></details><details id="book-m13-b2" style="margin-bottom:14px;border:1px solid #d0d8ea;border-radius:6px;overflow:hidden;">
+<summary style="padding:12px 16px;background:#f0f4fb;cursor:pointer;font-weight:600;font-size:14px;">Exercise 13.B2 &mdash; Hard: Reserve gain for approximate orthogonality</summary>
+<div style="padding:14px 16px;font-size:14px;"><p>Replace the exact orthogonal stage by six stages. For each implemented matrix $\widehat Q_i$, an exact orthogonal $Q_i$ exists with $\|\widehat Q_i-Q_i\|_2\le0.002$; activations between stages remain 1-Lipschitz. Find an external scale sufficient to retain overall gain at most 0.3.</p>
+<p><strong>Review:</strong> <a href="lipschitz-by-design.html#orthogonal-layers">Implemented orthogonal-layer bounds</a>.</p>
+<details><summary>Show hint</summary><div><p>Use the triangle inequality for each matrix norm and multiply the six stage bounds.</p></div></details>
+<details><summary>Show worked solution</summary><div><p>Every implemented norm is at most $\|Q_i\|_2+0.002=1.002$. The stack gain is therefore at most $1.002^6\approx1.012060$. Choose $c\le0.3/(1.002^6)\approx0.296425\,\mathrm{m/s}$. Then $c\prod_i\|\widehat Q_i\|_2\le0.3$, restoring the earlier sensor-error budget. This is a sufficient worst-case allowance; errors need not align to attain it. It relies on the stated operator-error bounds, not merely small entrywise rounding errors or an informal claim that the matrices remain almost orthogonal.</p></div></details>
+</div></details>
+<h3 class="subsection-heading">Synthesis and bridge</h3>
+
+<p>Architectural constraints turn a certificate into a maintained design invariant, but only for the mathematical architecture and the implemented operations actually covered. Preprocessing and output scaling remain part of the end-to-end map. The target-gradient calculation provides a useful feasibility check before committing substantial training effort.</p>
+<p>The next chapter places the neural module inside feedback. There the central question changes from how far a function output can move to whether repeated interaction with the physical plant converges, remains inside an operating set, or stays bounded under disturbances.</p>
+
+</section>

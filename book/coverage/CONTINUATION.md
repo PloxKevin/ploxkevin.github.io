@@ -37,3 +37,7 @@ owner installation and finalization accept exact completed stages on reruns.
 The recorder and writer passed injected interruption/corruption tests.
 These checks address pipeline resumption; client/application crash causes were
 not diagnosed. Checkpoint34 delivery remains preserved separately.
+
+Checkpoint35 content is published at `069532b7`. All three Pages jobs and a fresh all 31-asset hash check passed. Delivery metadata is pending; mathematical coverage remains partial.
+
+The user also requested thorough, student-followable solutions for all 556 exercises. Questions and hints remain intact. The byte-bound audit and draft work are in `book/solutions/`; these drafts are separate from the verified Source90 site.
