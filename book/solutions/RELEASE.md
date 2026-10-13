@@ -41,3 +41,8 @@ To repeat static integration without overwriting a report:
 ```sh
 python3 -B book/solutions/solution_release.py check --plan-sha256 58455c17c48c091f9c6934165d64d003ff43bfee7bda888d10f438d02e7cc11e --report reports/solution-review/reproduce-source91-integration-v1.json
 ```
+
+Source91 content is delivered at `e98d46758478cf51f5be2e6f66381596756ab572`. All three Pages jobs and all
+31 live asset hashes pass. The publication metadata will be committed and
+checked separately; formal correspondence for expanded answers remains pending.
+See [actual content delivery](../../reports/solution-review/source91-content-delivery-attempt4.json).

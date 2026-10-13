@@ -64,3 +64,8 @@ Atomic kernel/final-report writes, source-only exact reruns and finalizer log
 checks passed isolated failure-injection tests. Earlier failed attempts remain
 untouched. These tests establish pipeline behavior and do not diagnose a client crash.
 
+
+Source91 content is delivered at `e98d46758478cf51f5be2e6f66381596756ab572`. All three Pages jobs and all
+31 live asset hashes pass. The publication metadata will be committed and
+checked separately; formal correspondence for expanded answers remains pending.
+See [actual content delivery](../../reports/solution-review/source91-content-delivery-attempt4.json).

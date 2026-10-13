@@ -134,3 +134,6 @@ Checkpoint35 is published and delivered at content `069532b7` and metadata
 Expanded-answer formal correspondence requires a separate rebase. Publication
 of the reviewed Source91 answers is recorded separately in the
 [progress ledger](book/coverage/progress.json).
+
+Source91 content `e98d46758478cf51f5be2e6f66381596756ab572` is published. All three Pages jobs and all 31
+live asset hashes pass; delivery metadata is recorded separately.

@@ -4,7 +4,8 @@ The student solution release has independent approval for all 556 exercises:
 251 expanded, 305 retained. Actual installation, authored integration, all 29-page
 reader QA and the selected proof audit pass. See
 `../solutions/RELEASE.md` and `../../reports/solution-review/source91-release-ready-v1.json` for exact evidence.
-Source91 publication is pending its actual commit, push, Pages jobs and live hashes.
+Source91 content `e98d46758478cf51f5be2e6f66381596756ab572` is published; all three Pages jobs and all
+31 live hashes pass. Actual delivery metadata is recorded separately.
 
 Checkpoint35 delivery is complete at content `069532b7` / metadata `36b715de`.
 Its exact Source90 audit verifies 11,472 theorems in 1,267 selected files and historical
