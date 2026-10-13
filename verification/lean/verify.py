@@ -9,10 +9,12 @@ from datetime import datetime, timezone
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import time
+import tempfile
 import sys
 
 PROJECT = Path(__file__).resolve().parent
@@ -55,6 +57,20 @@ def sha(p):
         for block in iter(lambda: source.read(1024 * 1024), b''):
             digest.update(block)
     return digest.hexdigest()
+
+
+def atomic_json(path, value):
+    """Keep the last complete receipt if verification is interrupted mid-write."""
+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            output.write(json.dumps(value, indent=2) + '\n')
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 proof_files = sorted((PROJECT / 'SafeLearning').glob('*.lean'))
@@ -247,7 +263,7 @@ for module in modules:
         record.update(module=module, log_sha256=sha(OUT / filename),
                       evidence_mode='fresh_kernel_replay', actual_workdir=str(PROJECT))
     kernel_progress['checks'][module] = record
-    kernel_progress_path.write_text(json.dumps(kernel_progress, indent=2) + '\n')
+    atomic_json(kernel_progress_path, kernel_progress)
     checks.append(record)
     label = 'Kernel evidence reused (identical imports)' if record.get('reused_from') else 'Kernel replay passed'
     print(f'{label}: {module}', flush=True)
@@ -302,5 +318,5 @@ report = {
         'Optional reused kernel checks retain actual prior command/cwd/log provenance and require identical module and transitive local-import source hashes, Lean and dependency pins; build and all-theorem axiom audit are fresh.'
     ]
 }
-(OUT / 'verification.json').write_text(json.dumps(report, indent=2) + '\n')
+atomic_json(OUT / 'verification.json', report)
 print(f'Passed: {len(declarations)} theorems in {len(proof_files)} files; kernel replay and standard-axiom audit.')

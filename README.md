@@ -123,11 +123,12 @@ theorem counts do not count completely verified exercises. Read
 `reports/book/coverage.json` and `book/review/new-formal-map.json` for the scope
 and remaining gaps.
 
-The [continuing coverage audit](reports/full-coverage/README.md) now verifies
-11,459 theorems in 1,264 selected Lean files. Of 556 exercises, 538 are complete,
-7 partial and 11 pending; 7,916 overlapping teaching-material units remain
-pending. Checkpoint 34 is published with all 31 live asset hashes confirmed. It adds three
-proof files, 114 theorems, two complete exercises and seven reviewed material
-units. Its current delivery status is in [the progress ledger](book/coverage/progress.json).
-The [continuation note](book/coverage/CONTINUATION.md) lists the remaining work.
-Browser reports identify the exact site bytes they checked.
+The [continuing coverage audit](reports/full-coverage/README.md) verifies
+11,472 theorems in 1,267 selected Lean files. Of 556 exercises, 539 are complete,
+6 partial and 11 pending; 7,896 overlapping teaching-material units remain pending.
+Checkpoint35 adds 13 theorems, completes Exercise 5.B2 and 20 whole material units,
+and preserves earlier evidence. Native recording and atomic progress writes
+support interrupted-run recovery. Delivery status is recorded separately in
+[the progress ledger](book/coverage/progress.json); the
+[continuation note](book/coverage/CONTINUATION.md) retains all remaining work.
+Browser evidence stays bound to the exact unchanged site bytes.

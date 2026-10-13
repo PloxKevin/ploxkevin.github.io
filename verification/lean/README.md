@@ -61,20 +61,20 @@ always runs a fresh replay.
 
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its current selected batch contains 11,459 theorems in 1,264 files.
-Three new modules received fresh kernel replays; 1,261 exact earlier results
+Its current selected batch contains 11,472 theorems in 1,267 files.
+Three new modules received fresh kernel replays; 1,264 exact earlier results
 were reused under source/import and dependency fingerprints. The normal
 aggregate build and every theorem's standard-axiom audit ran again. The
-actual audit ran in `runtime-checkpoint-34-source90-v1`. The source-only
+actual audit ran in `runtime-checkpoint-35-source90-v1`. The source-only
 snapshot mirrors its bytes and contains no copied build cache or earlier trees.
 
 The inventory contains 556 exercises and 12,774 overlapping material units.
-538 exercises are complete, 7 partial and 11 pending; 7,916 material units
+539 exercises are complete, 6 partial and 11 pending; 7,896 material units
 remain pending. Source correspondence review can reopen entries while their
 formal proofs remain valid. Follow the source-only snapshot reproduction
 commands in the continuing audit for the exact selected batch. The working
 directory also retains unselected historical sources, and its default
-aggregate is not the selected checkpoint34 runtime. In a clean published
+aggregate is not the selected checkpoint35 runtime. In a clean published
 checkout the selected sources and aggregate occupy their normal paths.
 
 The separate numerical recomputation can be rerun from the repository root with
@@ -110,3 +110,5 @@ the imported environment; this run does not freshly replay all transitive
 Mathlib dependencies or use an independent proof checker. Lean verifies the
 formal statement that was written, so correspondence with the prose also needs
 the recorded human-style source review.
+
+Kernel-progress and final-report JSON are installed atomically, preserving the last complete receipt if a write is interrupted.

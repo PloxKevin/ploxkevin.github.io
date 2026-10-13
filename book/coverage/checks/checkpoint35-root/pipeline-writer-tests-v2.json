@@ -1,0 +1,105 @@
+{
+  "status": "passed",
+  "actual_exit_code": 0,
+  "actual_command": [
+    "/home/oxrexkevin/.local/oss-cad-suite/bin/tabbypy3",
+    "-B",
+    "/home/oxrexkevin/SafetyBased/book/coverage/checks/checkpoint35-root/test_pipeline_writes35.py",
+    "--report",
+    "book/coverage/checks/checkpoint35-root/pipeline-writer-tests-v2.json"
+  ],
+  "actual_workdir": "/home/oxrexkevin/SafetyBased",
+  "input_sha256_before": [
+    {
+      "file": "verification/lean/verify.py",
+      "sha256": "c8d8bbf41a97b76ddd528d74fbf9fcd3b2a69251a52dab25d48a16addf46219f"
+    },
+    {
+      "file": "reports/full-coverage/source-history/verification-before-checkpoint35-v1/verification/lean/verify.py",
+      "sha256": "4f39878e69cda33c5a04030c2c5bd8870dea32b7a798cdbf2a9aa23e372513a1"
+    },
+    {
+      "file": "book/coverage/checks/checkpoint35-root/prepare_runtime35.py",
+      "sha256": "2ea36be77489b4eb7ced629793151f37252b879c79c888b3a7df5aed5560040b"
+    },
+    {
+      "file": "book/coverage/checks/checkpoint35-root/test_pipeline_writes35.py",
+      "sha256": "4afae7cc511334dd64624049a28b820362dd5ba2ce7ad643b0b0a6d11dc5369e"
+    }
+  ],
+  "input_sha256_after": [
+    {
+      "file": "verification/lean/verify.py",
+      "sha256": "c8d8bbf41a97b76ddd528d74fbf9fcd3b2a69251a52dab25d48a16addf46219f"
+    },
+    {
+      "file": "reports/full-coverage/source-history/verification-before-checkpoint35-v1/verification/lean/verify.py",
+      "sha256": "4f39878e69cda33c5a04030c2c5bd8870dea32b7a798cdbf2a9aa23e372513a1"
+    },
+    {
+      "file": "book/coverage/checks/checkpoint35-root/prepare_runtime35.py",
+      "sha256": "2ea36be77489b4eb7ced629793151f37252b879c79c888b3a7df5aed5560040b"
+    },
+    {
+      "file": "book/coverage/checks/checkpoint35-root/test_pipeline_writes35.py",
+      "sha256": "4afae7cc511334dd64624049a28b820362dd5ba2ce7ad643b0b0a6d11dc5369e"
+    }
+  ],
+  "verify_source_diff_review": {
+    "status": "passed",
+    "only_changes": "os/tempfile imports, atomic_json, and two complete JSON-writer call replacements",
+    "atomic_json_source_sha256": "6ab6b6f8cbaa47b59efe3ceb94e1c203c81abbb04685f62f575d02da91f60355",
+    "exact_diff": "--- reports/full-coverage/source-history/verification-before-checkpoint35-v1/verification/lean/verify.py\n+++ verification/lean/verify.py\n@@ -9,10 +9,12 @@\n import argparse\n import hashlib\n import json\n+import os\n import re\n import shutil\n import subprocess\n import time\n+import tempfile\n import sys\n \n PROJECT = Path(__file__).resolve().parent\n@@ -55,6 +57,20 @@\n         for block in iter(lambda: source.read(1024 * 1024), b''):\n             digest.update(block)\n     return digest.hexdigest()\n+\n+\n+def atomic_json(path, value):\n+    \"\"\"Keep the last complete receipt if verification is interrupted mid-write.\"\"\"\n+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)\n+    try:\n+        with os.fdopen(fd, 'w') as output:\n+            output.write(json.dumps(value, indent=2) + '\\n')\n+            output.flush()\n+            os.fsync(output.fileno())\n+        os.replace(temporary, path)\n+    finally:\n+        if os.path.exists(temporary):\n+            os.unlink(temporary)\n \n \n proof_files = sorted((PROJECT / 'SafeLearning').glob('*.lean'))\n@@ -247,7 +263,7 @@\n         record.update(module=module, log_sha256=sha(OUT / filename),\n                       evidence_mode='fresh_kernel_replay', actual_workdir=str(PROJECT))\n     kernel_progress['checks'][module] = record\n-    kernel_progress_path.write_text(json.dumps(kernel_progress, indent=2) + '\\n')\n+    atomic_json(kernel_progress_path, kernel_progress)\n     checks.append(record)\n     label = 'Kernel evidence reused (identical imports)' if record.get('reused_from') else 'Kernel replay passed'\n     print(f'{label}: {module}', flush=True)\n@@ -302,5 +318,5 @@\n         'Optional reused kernel checks retain actual prior command/cwd/log provenance and require identical module and transitive local-import source hashes, Lean and dependency pins; build and all-theorem axiom audit are fresh.'\n     ]\n }\n-(OUT / 'verification.json').write_text(json.dumps(report, indent=2) + '\\n')\n+atomic_json(OUT / 'verification.json', report)\n print(f'Passed: {len(declarations)} theorems in {len(proof_files)} files; kernel replay and standard-axiom audit.')\n",
+    "limitation": "Atomic replacement protects against process interruption; the production writer does not fsync the parent directory for power-loss durability."
+  },
+  "actual_ast_extracted_atomic_json_tests": [
+    {
+      "initial_complete_receipt": true,
+      "prior_preserved_or_missing_on_failure": true,
+      "successful_retry_complete": true,
+      "temporary_files_removed": true,
+      "actual_function_calls": 2,
+      "events": [
+        "fsync-complete-temporary",
+        "replace-injected-failure",
+        "fsync-complete-temporary",
+        "replace-success"
+      ]
+    },
+    {
+      "initial_complete_receipt": false,
+      "prior_preserved_or_missing_on_failure": true,
+      "successful_retry_complete": true,
+      "temporary_files_removed": true,
+      "actual_function_calls": 2,
+      "events": [
+        "fsync-complete-temporary",
+        "replace-injected-failure",
+        "fsync-complete-temporary",
+        "replace-success"
+      ]
+    }
+  ],
+  "actual_runtime_put_tests": [
+    {
+      "case": "existing_exact_or_corrupt_object",
+      "exact_rerun_preserved": true,
+      "corrupt_bytes_rejected": true
+    },
+    {
+      "case": "interrupted_new_runtime_object",
+      "missing_destination_preserved": true,
+      "successful_retry_exact": true,
+      "temporary_files_removed": true,
+      "actual_replace_attempts": [
+        {
+          "source_complete": true,
+          "destination_existed": false
+        }
+      ]
+    }
+  ],
+  "full_verify_module_imported": false,
+  "full_runtime_preparation_executed": false,
+  "scope": "Process-interruption safety and exact object reruns in synthetic ephemeral fixtures. No aggregate success or client-crash diagnosis inferred."
+}
