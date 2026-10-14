@@ -27,6 +27,9 @@ formal completion credit. Review
 before using an old Primer 0 mapping: adding warm-ups and local practice has
 shifted ordinal keys. Exact correspondence for all eighty current answers
 is pending; the other 506 reader exercise bodies are unchanged from Source92.
+Inserting practice also shifts ordinal material-unit keys on Primer 0.
+Rematch retained theory leaves by exact HTML/text and context; do not carry
+their old node positions forward as current proof correspondence.
 
 Landscape Exercise 1.5 remains byte-identical, so its mapping is rebased in
 `../solutions/releases/source93-foundations-v1/formal-rebase.json`. It retains

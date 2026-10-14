@@ -63,3 +63,7 @@ tree or recreate the frozen runtime; do not scan the workspace's unselected
 future files. Historical checks and failed candidate observations are kept
 separately. Publication plans and live delivery receipts are recorded under
 `reports/solution-review/` after the actual commit and deployment.
+
+Content delivery is confirmed at `8d6a3216a7892215c8accd2b1f310554dbeb1027`: all 31 live asset
+hashes and all three Pages jobs pass. The final metadata-delivery receipt is
+retained locally after its actual check and included at the next checkpoint.
