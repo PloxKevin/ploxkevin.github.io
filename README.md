@@ -124,9 +124,16 @@ and remaining gaps.
 
 The [worked-solution release](book/solutions/RELEASE.md) reviews all 556 solutions:
 251 are expanded and 305 retained. Full-site reader and rendered-math checks pass.
-The selected proof audit passes 11,472 theorems in 1,267 files with the new asset
-fingerprints. The current working Lean tree also contains unselected future
-proofs; use the selected Source91 runtime to reproduce this exact bundle.
+Source91 formal piece 01 checks **Exercise 1.5(i)** in the Landscape module:
+12 mathematical clauses and seven complete direct leaf units. The whole exercise
+remains partial, with parts (ii) and (iii) still pending. The current selected
+proof audit passes **11,508 theorems in 1,271 files**: four fresh kernel replays,
+1,267 exact prior reuses, a fresh aggregate build and every theorem's axiom audit.
+See the [piece ledger](book/coverage/source91-piece01/ledger-v1.json) and
+[reproduction and next step](book/coverage/source91-piece01/README.md).
+The working Lean tree retains eight unselected future modules; use the frozen
+`reports/full-coverage/runtime-source91-piece01-v1` runtime for this exact audit.
+The published checkout contains only the selected proofs at their normal paths.
 
 Checkpoint35 is published and delivered at content `069532b7` and metadata
 `36b715de`. Its Source90 formal coverage remains historical: 539 complete,

@@ -1,0 +1,136 @@
+import SafeLearning.CompleteModulesLandscapeARLawLimit
+import SafeLearning.CompleteModulesLandscapeStationaryCharacterization
+import SafeLearning.CompleteModulesLandscapeARPathFluctuation
+
+set_option autoImplicit false
+set_option relaxedAutoImplicit false
+set_option maxHeartbeats 2400000
+noncomputable section
+open MeasureTheory ProbabilityTheory Filter
+open scoped BigOperators Topology NNReal
+
+namespace SafeLearning.CompleteModulesLandscapeSource91ARPartI
+open CompleteModulesLandscapeARGaussianAlgebra CompleteModulesLandscapeARGaussianLaw
+open CompleteModulesLandscapeARStableMoments CompleteModulesLandscapeARStationaryGaussian
+open CompleteModulesLandscapeARLawLimit CompleteModulesLandscapeARPathFluctuation
+
+theorem source_stability_interval_is_exactly_the_strict_absolute_multiplier_condition (k : ℝ) :
+    (0 < k ∧ k < 2) ↔ |1-k| < 1 := by
+  rw [abs_lt]
+  constructor <;> rintro ⟨h₁,h₂⟩ <;> constructor <;> linarith
+
+theorem actual_centered_infinite_state_has_the_printed_initial_value_and_recursion
+    (k goal sigma : ℝ) (w : ℕ → ℝ) :
+    infiniteTrajectory k goal sigma w 0-goal = -goal ∧
+      ∀ t : ℕ, infiniteTrajectory k goal sigma w (t+1)-goal =
+        (1-k)*(infiniteTrajectory k goal sigma w t-goal)+sigma*w t := by
+  constructor
+  · simp [infiniteTrajectory]
+  · intro t
+    rw [infiniteTrajectory]
+    ring
+
+theorem actual_first_two_centered_substitutions_are_the_printed_values
+    (k goal sigma : ℝ) (w : ℕ → ℝ) :
+    infiniteTrajectory k goal sigma w 1-goal = (1-k)*(-goal)+sigma*w 0 ∧
+      infiniteTrajectory k goal sigma w 2-goal =
+        (1-k)^2*(-goal)+sigma*((1-k)*w 0+w 1) := by
+  constructor <;> simp only [infiniteTrajectory] <;> ring
+
+theorem actual_centered_infinite_state_has_the_printed_unrolled_finite_sum
+    (k goal sigma : ℝ) (w : ℕ → ℝ) (t : ℕ) :
+    infiniteTrajectory k goal sigma w t-goal =
+      (1-k)^t*(-goal)+sigma*∑ j ∈ Finset.range t, (1-k)^(t-1-j)*w j := by
+  rw [actual_infinite_trajectory_agrees_with_every_existing_finite_horizon_prefix
+    k goal sigma w t t le_rfl,
+    actual_recursive_trajectory_is_exactly_the_finite_affine_noise_transformation]
+  have hs : (∑ j : Fin t, coefficient k sigma t j.val*w j.val) =
+      ∑ j ∈ Finset.range t, sigma*(1-k)^(t-1-j)*w j := by
+    calc
+      _ = ∑ j : Fin t, if j.val<t then sigma*(1-k)^(t-1-j.val)*w j.val else 0 := by
+        apply Finset.sum_congr rfl
+        intro j _
+        simp [coefficient,j.isLt]
+      _ = _ := finite_product_sum_truncates_to_the_actual_time_range t t le_rfl
+        (fun j => sigma*(1-k)^(t-1-j)*w j)
+  rw [hs]
+  simp only [trueMean,mul_assoc,←Finset.mul_sum]
+  ring
+
+theorem actual_infinite_standard_noise_has_zero_mean_and_unit_variance (t : ℕ) :
+    (∫ w, w t ∂infiniteNoiseLaw) = 0 ∧
+      Var[fun w => w t; infiniteNoiseLaw] = 1 := by
+  have h := actual_infinite_noises_are_independent_normalized_standard_gaussians.2 t
+  constructor
+  · rw [h.integral_eq,integral_id_gaussianReal]
+  · rw [h.variance_eq,variance_id_gaussianReal]
+    norm_num
+
+theorem actual_distinct_infinite_noise_cross_covariances_are_zero
+    (s t : ℕ) (hst : s ≠ t) :
+    cov[fun w => w s, fun w => w t; infiniteNoiseLaw] = 0 := by
+  have h := actual_infinite_noises_are_independent_normalized_standard_gaussians
+  exact (h.1.indepFun hst).covariance_eq_zero
+    ((h.2 s).memLp (memLp_id_gaussianReal' 2 (by norm_num)))
+    ((h.2 t).memLp (memLp_id_gaussianReal' 2 (by norm_num)))
+
+theorem actual_infinite_state_has_the_same_internally_derived_gaussian_marginal
+    (k goal sigma : ℝ) (t : ℕ) :
+    HasLaw (fun w : ℕ → ℝ => infiniteTrajectory k goal sigma w t)
+      (gaussianReal (trueMean k goal t) (trueVariance k sigma t).toNNReal) infiniteNoiseLaw := by
+  have hf : HasLaw (fun w : Fin t → ℝ => trajectory k goal sigma w t)
+      (gaussianReal (trueMean k goal t) (trueVariance k sigma t).toNNReal) (noiseLaw t) :=
+    ⟨(actual_state_at_its_finite_noise_horizon_is_measurable k goal sigma t).aemeasurable,
+      actual_state_at_each_time_has_its_internally_derived_gaussian_law k goal sigma t⟩
+  have h := hf.comp (actual_infinite_noise_prefix_has_the_existing_finite_product_law t)
+  convert h using 1
+  funext w
+  exact actual_infinite_trajectory_agrees_with_every_existing_finite_horizon_prefix
+    k goal sigma w t t le_rfl
+
+theorem actual_infinite_state_mean_and_variance_are_the_printed_finite_formulas
+    (k goal sigma : ℝ) (t : ℕ) :
+    (∫ w, infiniteTrajectory k goal sigma w t ∂infiniteNoiseLaw) = goal*(1-(1-k)^t) ∧
+      Var[fun w => infiniteTrajectory k goal sigma w t; infiniteNoiseLaw] =
+        sigma^2*∑ i ∈ Finset.range t, (1-k)^(2*i) := by
+  have h := actual_infinite_state_has_the_same_internally_derived_gaussian_marginal k goal sigma t
+  constructor
+  · rw [h.integral_eq,integral_id_gaussianReal]
+    rfl
+  · rw [h.variance_eq,variance_id_gaussianReal,
+      Real.coe_toNNReal _ (actual_state_variance_is_nonnegative k sigma t)]
+    rfl
+
+theorem the_two_printed_variance_sums_are_equal (k sigma : ℝ) (t : ℕ) :
+    sigma^2*(∑ j ∈ Finset.range t, (1-k)^(2*(t-1-j))) =
+      sigma^2*(∑ i ∈ Finset.range t, (1-k)^(2*i)) := by
+  rw [Finset.sum_range_reflect (fun i => (1-k)^(2*i)) t]
+
+theorem the_printed_denominator_factorization_is_positive_on_the_source_stability_interval
+    (k : ℝ) (hk : 0 < k) (hk2 : k < 2) :
+    1-(1-k)^2 = k*(2-k) ∧ 0 < k*(2-k) := by
+  exact ⟨by ring,mul_pos hk (by linarith)⟩
+
+theorem actual_states_on_one_infinite_noise_space_converge_in_distribution_to_the_stationary_law
+    (k goal sigma : ℝ) (hk : 0 < k) (hk2 : k < 2) :
+    TendstoInDistribution (fun t => fun w : ℕ → ℝ => infiniteTrajectory k goal sigma w t)
+      atTop (fun x : ℝ => x) (fun _ => infiniteNoiseLaw)
+      (gaussianReal goal (stationaryVariance k sigma)) := by
+  apply TendstoInDistribution.of_tendsto_charFun
+    (fun t => (actual_infinite_state_has_the_same_internally_derived_gaussian_marginal
+      k goal sigma t).aemeasurable) measurable_id.aemeasurable
+  intro z
+  have h := ProbabilityMeasure.tendsto_iff_tendsto_charFun.mp
+    (actual_recursive_state_laws_converge_weakly_to_the_actual_stationary_gaussian_law
+      k goal sigma hk hk2) z
+  have hmap : ∀ t : ℕ, infiniteNoiseLaw.map
+      (fun w : ℕ → ℝ => infiniteTrajectory k goal sigma w t) = actualTimeLaw k goal sigma t := by
+    intro t
+    exact (actual_infinite_state_has_the_same_internally_derived_gaussian_marginal
+      k goal sigma t).map_eq.trans
+      (actual_state_at_each_time_has_its_internally_derived_gaussian_law k goal sigma t).symm
+  change Tendsto (fun t => charFun (actualTimeLaw k goal sigma t) z) atTop
+    (𝓝 (charFun (stationaryLaw k goal sigma) z)) at h
+  simpa only [hmap,Measure.map_id,stationaryLaw] using h
+
+end SafeLearning.CompleteModulesLandscapeSource91ARPartI

@@ -1,10 +1,24 @@
-The reviewed Source91 solution release has a separate selected-proof runtime
-at `reports/solution-review/runtime-source91-selected35-v1`. It contains exactly
-the same 1,267 selected checkpoint35 proof sources with new 31 asset hashes. The actual
-build and all 11,472 axiom checks pass; unchanged module/import kernel evidence is
-reused with its original command, workdir and logs. The source-correspondence rebase
-for expanded answers remains pending. The canonical working folder retains
-11 unselected future files; use the selected runtime for this exact audit.
+Source91 formal piece 01 closes **Exercise 1.5(i)** in the Landscape module:
+12 mathematical clauses and seven complete direct leaf units, with zero newly
+complete whole exercises. Parts (ii)/(iii) and the containing answer/exercise
+remain pending. The actual selected bundle has **1,271 files / 11,508 theorems**,
+36 newly selected theorem bodies, four fresh kernel replays and 1,267 exact prior
+kernel reuses. The aggregate build and every theorem's standard-axiom audit pass.
+See [the exact current ledger](../../book/coverage/source91-piece01/ledger-v1.json)
+and [native audit](../../reports/full-coverage/source91-piece01/lean-audit/verification-original.json).
+
+The current Source91 inventory has 556 exercises and 14,270 overlapping material
+units. Only this exact piece has new current-source completion credit; other
+correspondence awaits explicit rebase/review. All 556 student solutions remain
+independently depth-reviewed. The historical Source90 counts below remain attached
+to their original ledgers and bytes.
+
+Use `reports/full-coverage/runtime-source91-piece01-v1` for the workspace audit.
+The canonical working tree retains eight unselected future modules, which the
+selected aggregate does not import. In a clean published checkout exactly the
+selected sources and aggregate occupy their normal paths, so the reproduction
+command below applies directly. This piece's actual commit/push/Pages/live
+receipt is recorded separately; full formal coverage remains in progress.
 
 # Safe Learning: local Lean verification
 
@@ -69,20 +83,20 @@ always runs a fresh replay.
 
 The expanded checkpoint is documented in
 [`../../reports/full-coverage/README.md`](../../reports/full-coverage/README.md).
-Its current selected batch contains 11,472 theorems in 1,267 files.
+Its historical Source90 checkpoint35 batch contains 11,472 theorems in 1,267 files.
 Three new modules received fresh kernel replays; 1,264 exact earlier results
 were reused under source/import and dependency fingerprints. The normal
 aggregate build and every theorem's standard-axiom audit ran again. The
 actual audit ran in `runtime-checkpoint-35-source90-v1`. The source-only
 snapshot mirrors its bytes and contains no copied build cache or earlier trees.
 
-The inventory contains 556 exercises and 12,774 overlapping material units.
+The historical Source90 inventory contains 556 exercises and 12,774 overlapping material units.
 539 exercises are complete, 6 partial and 11 pending; 7,896 material units
 remain pending. Source correspondence review can reopen entries while their
 formal proofs remain valid. Follow the source-only snapshot reproduction
 commands in the continuing audit for the exact selected batch. The working
-directory also retains unselected historical sources, and its default
-aggregate is not the selected checkpoint35 runtime. In a clean published
+directory also retains unselected historical sources, and its selected piece01
+aggregate differs from the historical checkpoint35 runtime. In a clean published
 checkout the selected sources and aggregate occupy their normal paths.
 
 The separate numerical recomputation can be rerun from the repository root with

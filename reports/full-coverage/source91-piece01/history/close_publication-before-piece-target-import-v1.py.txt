@@ -1,0 +1,142 @@
+"""Close this one actual commit/push/Pages delivery and retain its remaining gaps."""
+import argparse
+from datetime import datetime, timezone
+import json
+import subprocess
+import sys
+import common as c
+import export_audit
+import finish_piece
+import prepare_publication_inputs as selection
+
+sys.path.insert(0, str(c.ROOT/'book/solutions'))
+import solution_release as release
+import stage_solution_publication as staging
+
+PLAN = 'reports/full-coverage/source91-piece01/publication-plan-v1.json'
+FINAL = 'reports/full-coverage/source91-piece01/publication-finish-v1.json'
+SUBJECT = 'Verify Source91 piece 1: Gaussian state moments and stationary limits'
+HISTORY = 'reports/full-coverage/source91-piece01/history/before-delivery-closure-v1'
+
+
+def native(name, command):
+    row = c.read(name)
+    assert row['status'] == 'passed' and row['actual_exit_code'] == 0
+    assert row['actual_command'] == command
+    assert row['helper_sha256_before'] == row['helper_sha256_after'] and not row['binding_errors_after']
+    assert c.ref(row['log'])['sha256'] == row['log_sha256']
+    assert c.ref(row['started_receipt'])['sha256'] == row['started_receipt_sha256']
+    for path, digest in row['helper_sha256_after'].items():
+        assert c.ref(path)['sha256'] == digest, path
+    return row
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--delivery', required=True)
+    parser.add_argument('--native', required=True)
+    args = parser.parse_args()
+    delivered = c.read(args.delivery)
+    assert delivered['status'] == 'passed_source91_all31_live_assets_and_all3_Pages_jobs'
+    assert delivered['phase'] == 'content'
+    commit = delivered['expected_commit']
+    assert delivered['remote_main'] == commit and len(commit) == 40
+    release_plan = release.load_plan(c.ref(release.PLAN)['sha256'])
+    assert delivered['plan'] == c.ref(release.PLAN)
+    assets = delivered['assets']
+    assert len(assets) == 31 and all(r['matches'] and r['http_status'] == 200 for r in assets)
+    assert {r['source']: r['actual_sha256'] for r in assets} == release_plan['site_source91_sha256']
+    assert delivered['Pages_build']['commit'] == commit and delivered['Pages_build']['status'] == 'built'
+    run = delivered['selected_run']
+    assert run['head_sha'] == commit and run['status'] == 'completed' and run['conclusion'] == 'success'
+    assert run['name'] == 'pages build and deployment'
+    assert len(delivered['jobs']) == 3 and all(r['status'] == 'completed' and r['conclusion'] == 'success' for r in delivered['jobs'])
+    attempt = args.delivery.rsplit('attempt', 1)[1].removesuffix('.json')
+    assert args.delivery == 'reports/solution-review/source91-content-delivery-attempt' + attempt + '.json'
+    command = ['python3', '-B', 'book/solutions/verify_solution_delivery.py', '--plan-sha256',
+               c.ref(release.PLAN)['sha256'], '--commit', commit, '--phase', 'content', '--attempt', attempt]
+    execution = native(args.native, command)
+    assert execution['actual_workdir'] == str(c.ROOT)
+    assert c.read(execution['log'])['report'] == c.ref(args.delivery)
+    assert delivered['helper'] == c.ref('book/solutions/verify_solution_delivery.py')
+    for field in ['helper_sha256_before', 'helper_sha256_after']:
+        assert execution[field]['book/solutions/verify_solution_delivery.py'] == delivered['helper']['sha256']
+    for key in ['remote_observation', 'Pages_build_observation', 'actions_runs_observation', 'actions_jobs_observation']:
+        row = delivered[key]
+        assert row['actual_exit_code'] == 0 and row['actual_workdir'] == str(staging.PUB)
+        c.exact(row['log'])
+    evidence = [c.ref(args.delivery), c.ref(args.native)]
+    for action, command in [('commit', ['git', 'commit', '-m', SUBJECT]), ('push', ['git', 'push', 'origin', 'main'])]:
+        name = 'reports/full-coverage/source91-piece01/publication-' + action + '-native-v1.json'
+        assert native(name, command)['actual_workdir'] == str(staging.PUB)
+        evidence.append(c.ref(name))
+    plan = c.read(PLAN)
+    assert plan['expected_publication_head'] == selection.HEAD
+    for row in plan['files']:
+        assert c.sha(staging.target(row['file']).read_bytes()) == row['sha256'], row['file']
+    assert c.sha(staging.target(PLAN).read_bytes()) == c.ref(PLAN)['sha256']
+    completed = c.read(finish_piece.REPORT)
+    c.exact(completed['ledger']);c.exact(completed['independent_source_review']);c.exact(completed['audit_export'])
+    assert completed['proved_clauses'] == 12 and completed['complete_whole_leaf_units'] == 7
+    assert completed['newly_completed_exercises'] == 0 and completed['whole_exercise_status'] == 'partial'
+    audit = c.read(c.read(export_audit.REPORT)['original_native_report']['file'])
+    assert audit['status'] == 'passed' and audit['proof_file_count'] == 1271 and audit['theorem_count'] == 11508
+    actual = {p.relative_to(staging.PUB).as_posix() for p in (staging.PUB/'verification/lean/SafeLearning').glob('*.lean')}
+    assert actual == set(audit['proof_sha256'])
+    for field in ['proof_sha256', 'source_sha256', 'project_sha256']:
+        for name, digest in audit[field].items():
+            assert c.ref(name)['sha256'] == digest == c.sha(staging.target(name).read_bytes()), name
+    observations = []
+    for command in [['git', 'rev-parse', 'HEAD'], ['git', 'rev-parse', 'HEAD^'],
+                    ['git', 'ls-remote', 'origin', 'refs/heads/main'],
+                    ['git', 'status', '--porcelain=v1', '--untracked-files=all'], ['git', 'symbolic-ref', '--short', 'HEAD']]:
+        result = subprocess.run(command, cwd=staging.PUB, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        observations.append({'actual_command': command, 'actual_exit_code': result.returncode,
+            'actual_workdir': str(staging.PUB), 'stdout': result.stdout, 'stderr': result.stderr})
+    assert observations[0]['stdout'].strip() == commit and observations[1]['stdout'].strip() == selection.HEAD
+    assert observations[2]['stdout'].split()[0] == commit and not observations[3]['stdout'].strip()
+    assert observations[4]['stdout'].strip() == 'main'
+    final = {'status': 'passed_actual_Source91_formal_piece01_commit_push_Pages_all31_delivery',
+        'checked_at_utc': datetime.now(timezone.utc).isoformat(), 'commit': commit,
+        'previous_commit': selection.HEAD, 'completion': c.ref(finish_piece.REPORT),
+        'publication_plan': c.ref(PLAN), 'evidence': evidence, 'actual_publication_observations': observations,
+        'proof_files': 1271, 'public_theorems': 11508, 'newly_selected_theorems': 36,
+        'proved_clauses': 12, 'complete_whole_leaf_units': 7, 'newly_completed_exercises': 0,
+        'whole_exercise_status': 'partial', 'all3_Pages_jobs_successful': True, 'all31_live_asset_hashes_match': True,
+        'reader_pages_unchanged': True, 'formal_coverage_complete': False,
+        'next_piece': completed['next_piece'], 'helper': c.ref('book/coverage/source91-piece01/close_publication.py'),
+        'receipt_publication': 'This closure is local evidence to include with the next bounded piece.'}
+    if c.path(FINAL).exists():
+        prior = c.read(FINAL)
+        omitted = {'checked_at_utc', 'actual_publication_observations'}
+        assert {k:v for k,v in prior.items() if k not in omitted} == {k:v for k,v in final.items() if k not in omitted}
+        final = prior
+    c.json_put(FINAL, final)
+    name = 'book/coverage/progress.json'
+    saved = HISTORY + '/progress.json'
+    expected = next(r['sha256'] for r in plan['files'] if r['file'] == name)
+    if not c.path(saved).exists():
+        raw = c.path(name).read_bytes()
+        assert c.sha(raw) == expected
+        c.put(saved, raw)
+    assert c.ref(saved)['sha256'] == expected
+    progress = c.read(saved)
+    progress['last_published_commit'] = commit
+    progress['last_published_content_commit'] = commit
+    progress['publication_status'] = 'Source91_formal_piece01_Pages_all31_live_confirmed'
+    progress['live_delivery_status'] = 'passed_Source91_formal_piece01_Pages_all31_asset_hashes'
+    progress['formal_coverage_piecewise_work'].update(current_piece_publication='delivered',
+        current_piece_commit=commit, completed_delivery=c.ref(FINAL))
+    progress['formal_coverage_piece01_delivery'] = {'commit': commit, 'completed_delivery': c.ref(FINAL),
+        'delivery': c.ref(args.delivery), 'native_delivery': c.ref(args.native)}
+    data = (json.dumps(progress, indent=2) + '\n').encode()
+    assert c.path(name).read_bytes() in (c.path(saved).read_bytes(), data), 'Unexpected final progress edit'
+    if c.path(name).read_bytes() != data:
+        release.atomic_copy(c.path(name), data)
+    assert c.path(name).read_bytes() == data
+    print(json.dumps({'status': final['status'], 'commit': commit, 'receipt': c.ref(FINAL)}))
+
+
+if __name__ == '__main__':
+    main()

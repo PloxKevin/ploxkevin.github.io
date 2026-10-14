@@ -1,9 +1,37 @@
+# Current Source91 formal piece 01
+
+**Exercise 1.5(i)** in the Landscape module has independent correspondence review
+for 12 mathematical clauses and seven complete direct leaf units. Its exact
+[ledger](../../book/coverage/source91-piece01/ledger-v1.json) closes only part (i):
+zero newly complete whole exercises. Parts (ii)/(iii) and parent scopes remain
+pending. Full formal coverage is still in progress.
+
+The selected native audit passes **1,271 proof files and 11,508 theorems**,
+including 36 newly selected theorem bodies, four fresh kernel replays and 1,267
+exact prior reuses. The aggregate build and all-theorem standard-axiom audit run
+again. See the [unaltered actual report](source91-piece01/lean-audit/verification-original.json),
+[native execution](source91-piece01/selected-audit-native-v1.json) and
+[completed local scope](source91-piece01/completion-v1.json).
+
+Source91 has 556 exercises and 14,270 overlapping material units. Only the exact
+piece above has new current-source completion credit; all other entries need
+explicit rebase or review. All 556 worked solutions remain independently
+student-depth reviewed (251 expanded, 305 retained), and all 31 reader assets
+stay unchanged in this formal piece. Historical Source90 totals below are
+preserved with their own original source and owner ledgers.
+
+The workspace audit runs in `runtime-source91-piece01-v1`; a published checkout
+contains the selected sources at their normal paths. Reproduction instructions,
+interruption history and the next part (ii) scope are in
+[the piece instructions](../../book/coverage/source91-piece01/README.md).
+Actual publication and live delivery are recorded separately from proof completion.
+
 # Formal coverage and worked solutions
 
 The current teaching pages are Source91. All 556 solutions have independent
 mathematical/student-depth review; 251 are expanded and 305 retained. Actual rendered,
 reader and selected-proof checks pass. See [the solution release](../../book/solutions/RELEASE.md).
-Source91 formal correspondence for rewritten answers awaits an explicit rebase.
+Source91 formal correspondence advances in bounded pieces described below.
 
 The following checkpoint35 counts and reports describe its historical Source90
 bytes. Its delivery is complete at `069532b7` / `36b715de`; see
@@ -66,6 +94,6 @@ untouched. These tests establish pipeline behavior and do not diagnose a client 
 
 
 Source91 content is delivered at `e98d46758478cf51f5be2e6f66381596756ab572`. All three Pages jobs and all
-31 live asset hashes pass. The publication metadata will be committed and
-checked separately; formal correspondence for expanded answers remains pending.
+31 live asset hashes pass. Metadata delivery at `54a8fac0` is complete; see
+[the actual final receipt](../solution-review/source91-publication-finish-v1.json).
 See [actual content delivery](../../reports/solution-review/source91-content-delivery-attempt4.json).

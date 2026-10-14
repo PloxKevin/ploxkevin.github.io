@@ -1,37 +1,36 @@
-# Continue full mathematical coverage
+# Continue formal coverage one piece at a time
 
-The student solution release has independent approval for all 556 exercises:
-251 expanded, 305 retained. Actual installation, authored integration, all 29-page
-reader QA and the selected proof audit pass. See
-`../solutions/RELEASE.md` and `../../reports/solution-review/source91-release-ready-v1.json` for exact evidence.
-Source91 content `e98d46758478cf51f5be2e6f66381596756ab572` is published; all three Pages jobs and all
-31 live hashes pass. Actual delivery metadata is recorded separately.
+Source91 piece01 closes **Exercise 1.5 part(i)**: centering/unrolling, actual Gaussian
+noise and state moments, the geometric variance formula, stationary Gaussian
+characterization, distribution convergence on one infinite noise space, and the
+distinction from almost-sure path convergence. Twelve mathematical clauses and
+seven complete direct leaf units have independent source correspondence and a
+real pinned Lean build, four fresh kernel replays and all-theorem axiom audit.
+The selected bundle contains 1,271 files and 11,508 theorems (36 newly selected).
+See `source91-piece01/ledger-v1.json` and
+`../../reports/full-coverage/source91-piece01/completion-v1.json`.
 
-Checkpoint35 delivery is complete at content `069532b7` / metadata `36b715de`.
-Its exact Source90 audit verifies 11,472 theorems in 1,267 selected files and historical
-coverage 539 complete / 6 partial / 11 pending exercises; 4,878 reviewed / 7,896 pending
-material units. All earlier proofs, owner decisions and failure evidence remain.
+The whole exercise remains partial. Next: **Exercise 1.5 part(ii)**, Gaussian
+tail probabilities, expectation of the finite indicator sum, deterministic
+zero-noise handling and the integral definition of erfc. Part(iii) numerical
+enclosures and joint-failure interpretation follow as later pieces.
 
-Source91 changes solution explanations and adds an inventory of 14,270 overlapping
-material units. The selected proof statements remain unchanged and pass their
-native build/kernel-provenance/axiom audit. HTML-to-proof mappings for rewritten
-answers require explicit rebase before new coverage claims. Retain the Source90
-inventory and owner ledgers as historical evidence; do not simply replace their
-source hashes with Source91 hashes. The 17 old incomplete exercise families and
-unselected checkpoint36 work also remain to be completed.
+The Source91 inventory has 556 exercises and 14,270 overlapping material units.
+Only this exact piece has new current-source formal completion credit. Original
+Source90 counts (539 complete / 6 partial / 11 pending; 4,878 reviewed material
+units) remain historical, with their exact owner ledgers and original proofs.
+Rebase further entries explicitly; successful compilation alone is not source
+correspondence. Keep every earlier proof and failure record.
 
-The project root is not a Git repository. Publication uses
-`../../reports/book/publication-repo`. Native commands use
-`checks/checkpoint35-root/record_native35.py`; failed or unfinished attempts require
-fresh names. `book/solutions/solution_release.py apply` accepts each target only
-at its recorded before/after SHA and saves atomic per-file completion receipts.
-The completed Source91 plan SHA is `58455c17c48c091f9c6934165d64d003ff43bfee7bda888d10f438d02e7cc11e`.
+All 556 student solutions remain independently depth-reviewed and published:
+251 expanded, 305 retained. The questions and hints stay preserved. Source91's
+solution release content/metadata commits are e98d4675 / 54a8fac0.
 
-Actual verification runs in
-`../../reports/solution-review/runtime-source91-selected35-v1` with exactly the
-selected 1,267 proofs and 31 site assets. Runtime cache symlinks and immutable hardlinked
-objects stay local. The working canonical proof folder retains 11 unselected files.
-Never copy prior snapshots, recursive archives or .lake caches into publication.
-Final device-bloat cleanup remains due after full mathematical coverage and final
-publication. Pipeline recovery is tested; client/application crash causes remain
-undiagnosed.
+This formal piece is locally complete; its own commit/push/Pages/live delivery
+is recorded separately. Publication checkout: `../../reports/book/publication-repo`.
+Run the exact selected audit in `../../reports/full-coverage/runtime-source91-piece01-v1`.
+Canonical working proofs still include eight unselected future modules. Native
+commands use `checks/checkpoint35-root/record_native35.py`; interrupted or failed
+attempts require fresh names. Never copy archives, source objects or .lake caches
+into publication. Final bloat cleanup remains due after full coverage and final
+publication. Client/application crash causes remain undiagnosed.

@@ -1,0 +1,123 @@
+"""Select this proved piece and its evidence without copying runtimes or caches."""
+import os
+import sys
+from pathlib import Path
+import common as c
+import export_audit
+import finish_piece
+import prepare_runtime
+
+sys.path.insert(0, str(c.ROOT / 'book/solutions'))
+import solution_release as release
+import stage_publication as staging
+
+LIST = 'reports/full-coverage/source91-piece01/publication-files-v1.json'
+REPORT = 'reports/full-coverage/source91-piece01/publication-inputs-v1.json'
+HEAD = '54a8fac0f8d59250e9e9326bfdb7a273fa5c331e'
+HISTORY = 'reports/full-coverage/source91-piece01/history/before-selected-publication-v1'
+
+
+def main():
+    completed = c.read(finish_piece.REPORT)
+    assert completed['status'] == 'passed_source91_piece01_twelve_clauses_seven_leaves_whole_exercise_partial'
+    assert completed['proof_files'] == 1271 and completed['public_theorems'] == 11508
+    assert completed['proved_clauses'] == 12 and completed['complete_whole_leaf_units'] == 7
+    assert completed['newly_completed_exercises'] == 0 and not completed['formal_coverage_complete']
+    for key in ['ledger', 'independent_source_review', 'audit_export', 'helper']:
+        c.exact(completed[key])
+    ledger = c.read(finish_piece.LEDGER)
+    assert ledger['exercise_status'] == 'partial' and ledger['completed_subpart'] == '(i)'
+    assert len(ledger['claims']) == 12 and len(ledger['complete_leaf_material_units']) == 7
+    export = c.read(export_audit.REPORT)
+    for key in ['native_execution', 'original_native_report', 'runtime_plan', 'runtime_preparation']:
+        c.exact(export[key])
+    audit = c.read(export['original_native_report']['file'])
+    assert audit['status'] == 'passed' and audit['proof_file_count'] == 1271 and audit['theorem_count'] == 11508
+    infrastructure_reviews = []
+    for name in ['runtime-independent-review-v1.json', 'export-finish-independent-review-v1.json']:
+        name = 'reports/full-coverage/source91-piece01/' + name
+        decision = c.read(name)
+        assert decision['status'] == 'approved' and not decision['errors']
+        if name.endswith('/runtime-independent-review-v1.json'):
+            assert decision['helper'] == c.ref('book/coverage/source91-piece01/prepare_runtime.py')
+            c.exact(decision['helper'])
+        else:
+            expected_helpers = [c.ref('book/coverage/source91-piece01/' + n)
+                                for n in ['export_audit.py', 'finish_piece.py']]
+            assert decision['reviewed_helpers'] == expected_helpers
+            for binding in decision['reviewed_helpers']:
+                c.exact(binding)
+        infrastructure_reviews.append(c.ref(name))
+    assert staging.git(['rev-parse', 'HEAD']).decode().strip() == HEAD
+    assert staging.git(['symbolic-ref', '--short', 'HEAD']).decode().strip() == 'main'
+    assert not staging.dirty()
+    selected = audit['proof_sha256']
+    assert c.ref(prepare_runtime.AUDIT)['sha256'] == prepare_runtime.AUDIT_SHA256
+    prior_audit = c.read(prepare_runtime.AUDIT)
+    prior = prior_audit['proof_sha256']
+    assert c.sha(staging.target('verification/lean/SafeLearning.lean').read_bytes()) == \
+        prior_audit['project_sha256']['verification/lean/SafeLearning.lean']
+    assert len(prior) == 1267 and set(prior) <= set(selected)
+    assert {n for n in selected if n not in prior} == {
+        'verification/lean/SafeLearning/' + n + '.lean' for n in prepare_runtime.ADDITIONS}
+    assert {p.relative_to(staging.PUB).as_posix() for p in
+            (staging.PUB/'verification/lean/SafeLearning').glob('*.lean')} == set(prior)
+    for name, digest in selected.items():
+        assert c.ref(name)['sha256'] == digest, name
+        if name in prior:
+            assert prior[name] == digest == c.sha(staging.target(name).read_bytes()), name
+    for name, digest in audit['source_sha256'].items():
+        assert c.ref(name)['sha256'] == digest == c.sha(staging.target(name).read_bytes()), name
+    for name, digest in audit['project_sha256'].items():
+        if name != 'verification/lean/SafeLearning.lean':
+            assert c.ref(name)['sha256'] == digest == c.sha(staging.target(name).read_bytes()), name
+
+    aggregate = 'verification/lean/SafeLearning.lean'
+    data = c.path(prepare_runtime.RUNTIME + '/' + aggregate).read_bytes()
+    assert c.sha(data) == audit['project_sha256'][aggregate]
+    history = HISTORY + '/' + aggregate
+    if not c.path(history).exists():
+        c.put(history, c.path(aggregate).read_bytes())
+    assert c.path(aggregate).read_bytes() in (c.path(history).read_bytes(), data)
+    if c.path(aggregate).read_bytes() != data:
+        release.atomic_copy(c.path(aggregate), data)
+    assert c.sha(c.path(aggregate).read_bytes()) == audit['project_sha256'][aggregate]
+
+    files = {aggregate, LIST, REPORT, 'README.md', 'book/coverage/progress.json', 'book/coverage/CONTINUATION.md',
+             'verification/lean/README.md', 'reports/full-coverage/README.md'}
+    files.update(set(selected) - set(prior))
+    for top in ['book/coverage/source91-piece01', 'reports/full-coverage/source91-piece01']:
+        for parent, directories, names in os.walk(c.ROOT/top, followlinks=False):
+            directories[:] = [d for d in directories if d not in {'.git', '.lake', '__pycache__', 'source-objects'}
+                and not d.startswith(('runtime-', 'isolated-runtime', 'archive'))
+                and not (Path(parent)/d).is_symlink()]
+            for name in names:
+                p = Path(parent)/name
+                if name.startswith('.') or name.endswith(('.lock', '.pyc', '.olean', '.ilean', '.o', '.trace')) or p.is_symlink():
+                    continue
+                files.add(p.relative_to(c.ROOT).as_posix())
+    # The previous student's release closure was made after its final metadata commit.
+    closure = 'reports/solution-review/source91-publication-finish-v1.json'
+    previous = c.read(closure)
+    assert previous['status'] == 'passed_actual_Source91_content_and_metadata_push_Pages_all31_delivery'
+    files.add(closure)
+    for binding in previous['evidence']:
+        c.exact(binding)
+        files.add(binding['file'])
+    assert 0 < len(files) < 5000
+    for name in files:
+        staging.target(name)
+        if name not in {LIST, REPORT}:
+            assert c.path(name).is_file() and c.path(name).stat().st_size < 95_000_000, name
+    c.json_put(LIST, sorted(files))
+    c.json_put(REPORT, {'status': 'passed_exact_piece01_publication_inputs',
+        'completion': c.ref(finish_piece.REPORT), 'infrastructure_reviews': infrastructure_reviews,
+        'file_list': c.ref(LIST), 'files': len(files), 'selected_proofs': 1271,
+        'selected_aggregate': c.ref(aggregate), 'original_aggregate': c.ref(history),
+        'reader_assets_unchanged': 31, 'whole_exercise_status': 'partial',
+        'formal_coverage_complete': False, 'commit_push_and_delivery_claimed': False})
+    print({'status': 'passed_exact_piece01_publication_inputs', 'files': len(files), 'file_list': c.ref(LIST)})
+
+
+if __name__ == '__main__':
+    main()
