@@ -1,5 +1,10 @@
 # SafetyBased: Safe Learning study notes
 
+Current recovery: **56 further step-by-step solution expansions across 113 reviewed openings**.
+The selected Source92 Lean audit passes **11,522 theorems in 1,272 files**.
+Exercise 1.5 remains formally partial. See the [current release](book/solutions/releases/source92-opening-v1/README.md)
+and [formal continuation](book/coverage/CONTINUATION.md). Earlier Source91/Source90 counts below are historical.
+
 Interactive research notes on safe RL, safe learning-based control and certified neural networks. The Trimpe group
 (RWTH Aachen, DSME) and Patricia Pauli (TU/e) get extra depth. Six math primers (0, A–E) take a reader from one first
 course in linear algebra (plus single-variable calculus) to every tool the fifteen modules use. Readers who need a
@@ -96,7 +101,7 @@ opens every box at phone, tablet and desktop widths.
 
 The book adds an application lab to each of the six primers and fifteen modules,
 plus a reading path, glossary and three connected projects. The 67 new exercises
-have separate hints and worked solutions. All 556 solutions now have independent
+have separate hints and worked solutions. The Source91 release gave all 556 solutions independent
 mathematical and student-depth review; the exercise questions and hints are preserved. Start at `SafeLearning/book.html`.
 
 The authored application sources live in `book/chapters/`; the three reference
@@ -126,12 +131,12 @@ The [worked-solution release](book/solutions/RELEASE.md) reviews all 556 solutio
 251 are expanded and 305 retained. Full-site reader and rendered-math checks pass.
 Source91 formal piece 01 checks **Exercise 1.5(i)** in the Landscape module:
 12 mathematical clauses and seven complete direct leaf units. The whole exercise
-remains partial, with parts (ii) and (iii) still pending. The current selected
-proof audit passes **11,508 theorems in 1,271 files**: four fresh kernel replays,
+remains partial, with parts (ii) and (iii) still pending. The earlier Source91 selected
+proof audit passed **11,508 theorems in 1,271 files**: four fresh kernel replays,
 1,267 exact prior reuses, a fresh aggregate build and every theorem's axiom audit.
 See the [piece ledger](book/coverage/source91-piece01/ledger-v1.json) and
 [reproduction and next step](book/coverage/source91-piece01/README.md).
-The working Lean tree retains eight unselected future modules; use the frozen
+The working Lean tree retains unselected future modules; use the frozen
 `reports/full-coverage/runtime-source91-piece01-v1` runtime for this exact audit.
 The published checkout contains only the selected proofs at their normal paths.
 

@@ -1,3 +1,13 @@
+# Current Source92 selection
+
+The current frozen workspace runtime is
+`../../reports/solution-review/runtime-source92-piece02-v1`.
+It audits 1,272 selected files / 11,522 theorems. The published checkout has
+those selected sources at their normal paths. Exercise1.5 correspondence covers
+27 mathematical clauses and 12 complete leaves; the exercise remains partial.
+See `../../book/solutions/releases/source92-opening-v1/formal-rebase-v1.json`.
+Older source/version counts below describe their historical snapshots.
+
 Source91 formal piece 01 closes **Exercise 1.5(i)** in the Landscape module:
 12 mathematical clauses and seven complete direct leaf units, with zero newly
 complete whole exercises. Parts (ii)/(iii) and the containing answer/exercise

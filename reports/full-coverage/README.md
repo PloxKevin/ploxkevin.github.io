@@ -1,4 +1,25 @@
-# Current Source91 formal piece 01
+# Current Source92 recovery checkpoint
+
+The recovered solution pass reviews **113 exercises** and expands **56 answers**:
+all 50 exercises in Primer 0, the first three in each other primer, and the first
+three actual document-order exercises on each non-primer exercise page. Questions,
+hints, anchors, scripts, retained answers and all other page bytes are preserved.
+All 18 changed pages pass reader/rendered-math checks at 320–1280 pixels.
+See the [release and review provenance](../../book/solutions/releases/source92-opening-v1/README.md).
+
+The selected Source92 audit passes **1,272 files and 11,522 theorems**. Formal
+piece02 adds 14 theorem bodies, **15 mathematical clauses and five complete
+source leaves**. Exact unchanged-byte rebase retains piece01 too: 27 clauses
+and 12 complete leaves in the current source, with **zero complete whole-exercise
+credit**. Exercise 1.5 remains partial. The mixed erfc paragraph still needs a
+numerical model for CDF rounding and tail underflow; part (iii) remains pending.
+See the [current rebase](../../book/solutions/releases/source92-opening-v1/formal-rebase-v1.json).
+
+Compilation, kernel replay and the all-theorem axiom audit verify encoded
+statements. They do not make unreviewed source scopes complete. Actual delivery
+is recorded separately. The earlier Source91/Source90 reports below are history.
+
+# Historical Source91 formal piece 01
 
 **Exercise 1.5(i)** in the Landscape module has independent correspondence review
 for 12 mathematical clauses and seven complete direct leaf units. Its exact

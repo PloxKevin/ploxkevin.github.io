@@ -1,0 +1,174 @@
+import SafeLearning.CompleteModulesLandscapeSource91ARPartI
+import SafeLearning.CompleteModulesLandscapeARViolationCounts
+import SafeLearning.CompleteModulesGaussianErfcTail
+
+set_option autoImplicit false
+set_option relaxedAutoImplicit false
+set_option maxHeartbeats 2600000
+noncomputable section
+open Set MeasureTheory ProbabilityTheory
+open scoped BigOperators NNReal
+
+namespace SafeLearning.CompleteModulesLandscapeSource91ARPartII
+open CompleteModulesLandscapeARGaussianAlgebra CompleteModulesLandscapeARGaussianLaw
+open CompleteModulesLandscapeARPathFluctuation CompleteModulesLandscapeSource91ARPartI
+open CompleteModulesLandscapeARViolationCounts CompleteModulesLandscapeGaussianTailCounts
+open CompleteModulesLandscapeFiniteCounts CompleteModulesGaussianErfcTail
+open CompleteAppliedGaussianCDF
+
+def infiniteViolationCount (k goal sigma : ℝ) (T : ℕ) (w : ℕ → ℝ) : ℝ :=
+  ∑ t : Fin T, stepCost {w | 1 < infiniteTrajectory k goal sigma w (t.val+1)} w
+
+theorem actual_infinite_state_is_measurable (k goal sigma : ℝ) (t : ℕ) :
+    Measurable (fun w : ℕ → ℝ => infiniteTrajectory k goal sigma w t) := by
+  induction t with
+  | zero => exact measurable_const
+  | succ t ih =>
+    have hn : Measurable (fun w : ℕ → ℝ => sigma*w t) :=
+      measurable_const.mul (measurable_pi_apply t)
+    exact (ih.sub ((ih.sub measurable_const).const_mul k)).add
+      hn
+
+theorem actual_infinite_positive_time_state_has_the_existing_standard_deviation_law
+    (k goal sigma : ℝ) (t : ℕ) :
+    HasLaw (fun w : ℕ → ℝ => infiniteTrajectory k goal sigma w t)
+      (gaussianReal (trueMean k goal t) ((stateSD k sigma t)^2)) infiniteNoiseLaw := by
+  rw [stateSD, NNReal.sq_sqrt]
+  exact actual_infinite_state_has_the_same_internally_derived_gaussian_marginal k goal sigma t
+
+theorem the_printed_standardized_event_is_pointwise_the_original_infinite_state_event
+    (k goal sigma : ℝ) (t : ℕ) (hv : 0 < trueVariance k sigma t) (w : ℕ → ℝ) :
+    (1 < infiniteTrajectory k goal sigma w t) ↔
+      ((1-trueMean k goal t)/Real.sqrt (trueVariance k sigma t) <
+        (infiniteTrajectory k goal sigma w t-trueMean k goal t)/Real.sqrt (trueVariance k sigma t)) := by
+  simp only [div_lt_div_iff_of_pos_right (Real.sqrt_pos_of_pos hv), sub_lt_sub_iff_right]
+
+theorem actual_standardized_infinite_positive_time_state_has_standard_gaussian_law
+    (k goal sigma : ℝ) (t : ℕ) (ht : 0 < t) (hsigma : sigma ≠ 0) :
+    HasLaw (fun w : ℕ → ℝ =>
+      (infiniteTrajectory k goal sigma w t-trueMean k goal t)/Real.sqrt (trueVariance k sigma t))
+      (gaussianReal 0 1) infiniteNoiseLaw := by
+  have hl := actual_infinite_positive_time_state_has_the_existing_standard_deviation_law k goal sigma t
+  have hn := (actual_positive_time_and_nonzero_noise_make_the_standardizing_denominator_nonzero
+    k sigma t ht hsigma).1
+  have h := gaussianReal_div_const (gaussianReal_sub_const hl (trueMean k goal t))
+    (stateSD k sigma t : ℝ)
+  have hv : NNReal.mk ((stateSD k sigma t : ℝ)^2) (sq_nonneg _) = (stateSD k sigma t)^2 := by
+    ext
+    rfl
+  rw [hv, div_self (pow_ne_zero 2 hn)] at h
+  norm_num only [sub_self, zero_div] at h
+  simpa only [stateSD, Real.sqrt] using h
+
+theorem actual_infinite_one_based_failure_probability_is_the_true_piecewise_tail
+    (k goal sigma : ℝ) (T : ℕ) (t : Fin T) :
+    infiniteNoiseLaw.real {w | 1 < infiniteTrajectory k goal sigma w (t.val+1)} =
+      exactTail k goal sigma (t.val+1) := by
+  have hp := actual_infinite_noise_prefix_has_the_existing_finite_product_law T
+  have he := hp.measureReal_eq (p := fun w : Fin T → ℝ => 1 < stateAt k goal sigma t w)
+    (measurableSet_Ioi.preimage (actual_one_based_state_is_measurable k goal sigma T t))
+  have hs : (fun w : ℕ → ℝ => stateAt k goal sigma t (fun j : Fin T => w j.val)) =
+      (fun w => infiniteTrajectory k goal sigma w (t.val+1)) := by
+    funext w
+    exact (actual_infinite_trajectory_agrees_with_every_existing_finite_horizon_prefix
+      k goal sigma w T (t.val+1) (by omega)).symm
+  have hset : {w : ℕ → ℝ | 1 < stateAt k goal sigma t (fun j : Fin T => w j.val)} =
+      {w | 1 < infiniteTrajectory k goal sigma w (t.val+1)} := by
+    ext w
+    change (1 < stateAt k goal sigma t (fun j : Fin T => w j.val)) ↔ _
+    rw [congrFun hs w]
+  rw [hset] at he
+  exact he.trans (actual_each_one_based_violation_probability_is_the_printed_piecewise_tail
+    k goal sigma T t)
+
+theorem actual_infinite_violation_count_is_the_finite_prefix_count_pointwise
+    (k goal sigma : ℝ) (T : ℕ) (w : ℕ → ℝ) :
+    infiniteViolationCount k goal sigma T w =
+      violationCount k goal sigma (fun j : Fin T => w j.val) := by
+  classical
+  unfold infiniteViolationCount violationCount
+  apply Finset.sum_congr rfl
+  intro t _
+  have hs := actual_infinite_trajectory_agrees_with_every_existing_finite_horizon_prefix
+    k goal sigma w T (t.val+1) (by omega)
+  simp only [stepCost, Set.indicator_apply, mem_setOf_eq, hs, stateAt,
+    vectorTrajectory, oneBasedTime]
+
+theorem actual_infinite_violation_count_is_integrable
+    (k goal sigma : ℝ) (T : ℕ) :
+    Integrable (infiniteViolationCount k goal sigma T) infiniteNoiseLaw := by
+  exact integrable_finset_sum _ (fun t _ => (integrable_const (1:ℝ)).indicator
+    (measurableSet_Ioi.preimage (actual_infinite_state_is_measurable k goal sigma (t.val+1))))
+
+theorem actual_one_to_T_infinite_indicator_expectation_is_the_sum_of_its_marginal_probabilities
+    (k goal sigma : ℝ) (T : ℕ) :
+    (∫ w, infiniteViolationCount k goal sigma T w ∂infiniteNoiseLaw) =
+      ∑ t : Fin T, infiniteNoiseLaw.real {w | 1 < infiniteTrajectory k goal sigma w (t.val+1)} := by
+  unfold infiniteViolationCount
+  rw [integral_finsetSum (Finset.univ : Finset (Fin T)) (μ := infiniteNoiseLaw)
+    (f := fun (t : Fin T) w => stepCost {w | 1 < infiniteTrajectory k goal sigma w (t.val+1)} w)
+    (fun (t : Fin T) _ => (integrable_const (1:ℝ)).indicator
+      (measurableSet_Ioi.preimage (actual_infinite_state_is_measurable k goal sigma (t.val+1))))]
+  apply Finset.sum_congr rfl
+  intro t _
+  exact integral_indicator_one
+    (measurableSet_Ioi.preimage (actual_infinite_state_is_measurable k goal sigma (t.val+1)))
+
+theorem actual_one_to_T_infinite_count_expectation_is_the_printed_piecewise_tail_sum
+    (k goal sigma : ℝ) (T : ℕ) :
+    (∫ w, infiniteViolationCount k goal sigma T w ∂infiniteNoiseLaw) =
+      ∑ t : Fin T, exactTail k goal sigma (t.val+1) := by
+  rw [actual_one_to_T_infinite_indicator_expectation_is_the_sum_of_its_marginal_probabilities]
+  exact Finset.sum_congr rfl (fun t _ =>
+    actual_infinite_one_based_failure_probability_is_the_true_piecewise_tail k goal sigma T t)
+
+theorem actual_positive_noise_one_to_T_infinite_count_expectation_is_the_printed_erfc_sum
+    (k goal sigma : ℝ) (T : ℕ) (hsigma : sigma ≠ 0) :
+    (∫ w, infiniteViolationCount k goal sigma T w ∂infiniteNoiseLaw) =
+      ∑ t : Fin T, (1/2:ℝ)*erfc
+        (((1-trueMean k goal (t.val+1))/Real.sqrt (trueVariance k sigma (t.val+1)))/Real.sqrt 2) := by
+  rw [actual_one_to_T_infinite_count_expectation_is_the_printed_piecewise_tail_sum]
+  apply Finset.sum_congr rfl
+  intro t _
+  rw [exactTail, if_neg hsigma,
+    ← (actual_standard_gaussian_upper_tail_is_the_cdf_complement_and_density_integral _).1,
+    (actual_density_change_of_variable_gives_the_complementary_error_function _).2]
+
+theorem actual_zero_noise_infinite_count_uses_strict_mean_indicators_and_boundary_equality_is_safe
+    (k goal : ℝ) (T : ℕ) :
+    (∫ w, infiniteViolationCount k goal 0 T w ∂infiniteNoiseLaw) =
+      ∑ t : Fin T, (if 1 < trueMean k goal (t.val+1) then 1 else 0) ∧
+    ∀ t : Fin T, trueMean k goal (t.val+1) = 1 →
+      infiniteNoiseLaw.real {w | 1 < infiniteTrajectory k goal 0 w (t.val+1)} = 0 := by
+  constructor
+  · simp [actual_one_to_T_infinite_count_expectation_is_the_printed_piecewise_tail_sum, exactTail]
+  · intro t ht
+    simp [actual_infinite_one_based_failure_probability_is_the_true_piecewise_tail,
+      exactTail, ht]
+
+theorem actual_zero_noise_has_zero_variance_and_zero_standardizing_denominator
+    (k : ℝ) (t : ℕ) :
+    trueVariance k 0 t = 0 ∧ Real.sqrt (trueVariance k 0 t) = 0 := by
+  simp [trueVariance]
+
+theorem actual_time_zero_is_safe_and_zero_horizon_has_zero_count_expectation
+    (k goal sigma : ℝ) :
+    (∀ w : ℕ → ℝ, infiniteTrajectory k goal sigma w 0 = 0) ∧
+    infiniteNoiseLaw.real {w | 1 < infiniteTrajectory k goal sigma w 0} = 0 ∧
+    (∫ w, infiniteViolationCount k goal sigma 0 w ∂infiniteNoiseLaw) = 0 := by
+  norm_num [infiniteTrajectory, infiniteViolationCount, Measure.real]
+
+theorem actual_nonzero_noise_positive_horizon_count_is_positive_so_a_rounded_zero_cannot_certify_zero_cost
+    (k goal sigma : ℝ) (T : ℕ) (hT : 0 < T) (hsigma : sigma ≠ 0) :
+    0 < (∫ w, infiniteViolationCount k goal sigma T w ∂infiniteNoiseLaw) := by
+  rw [actual_one_to_T_infinite_indicator_expectation_is_the_sum_of_its_marginal_probabilities]
+  apply Finset.sum_pos'
+  · intro t _
+    exact measureReal_nonneg
+  · refine ⟨⟨0,hT⟩, Finset.mem_univ _, ?_⟩
+    rw [actual_infinite_one_based_failure_probability_is_the_true_piecewise_tail,
+      ←actual_each_one_based_violation_probability_is_the_printed_piecewise_tail]
+    exact actual_nondegenerate_noise_makes_every_positive_time_violation_probability_positive
+      k goal sigma T ⟨0,hT⟩ hsigma
+
+end SafeLearning.CompleteModulesLandscapeSource91ARPartII

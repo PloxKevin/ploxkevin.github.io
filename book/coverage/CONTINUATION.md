@@ -1,36 +1,31 @@
-# Continue formal coverage one piece at a time
+# Continue from Source92, one formal piece at a time
 
-Source91 piece01 closes **Exercise 1.5 part(i)**: centering/unrolling, actual Gaussian
-noise and state moments, the geometric variance formula, stationary Gaussian
-characterization, distribution convergence on one infinite noise space, and the
-distinction from almost-sure path convergence. Twelve mathematical clauses and
-seven complete direct leaf units have independent source correspondence and a
-real pinned Lean build, four fresh kernel replays and all-theorem axiom audit.
-The selected bundle contains 1,271 files and 11,508 theorems (36 newly selected).
-See `source91-piece01/ledger-v1.json` and
-`../../reports/full-coverage/source91-piece01/completion-v1.json`.
+The crash recovery is locally verified. 113 opening exercises were reassessed
+and 56 solutions expanded. All 50 Primer0 exercises were included. All 556
+questions/hints and every unselected solution preserve their exact prior bytes.
+See `../solutions/releases/source92-opening-v1/README.md` for review provenance.
 
-The whole exercise remains partial. Next: **Exercise 1.5 part(ii)**, Gaussian
-tail probabilities, expectation of the finite indicator sum, deterministic
-zero-noise handling and the integral definition of erfc. Part(iii) numerical
-enclosures and joint-failure interpretation follow as later pieces.
+Exercise 1.5(i) retains 12 reviewed clauses and seven complete leaves. Piece02
+adds 15 mathematical clauses and five complete leaves from part(ii). The exact
+whole exercise and reviewed fragments are unchanged in Source92; both mappings
+are rebased in `../solutions/releases/source92-opening-v1/formal-rebase-v1.json`.
+The Source92 selected audit passes 1,272 files / 11,522 theorems, including the
+14 new part(ii) theorem bodies. Zero whole exercises become complete.
 
-The Source91 inventory has 556 exercises and 14,270 overlapping material units.
-Only this exact piece has new current-source formal completion credit. Original
-Source90 counts (539 complete / 6 partial / 11 pending; 4,878 reviewed material
-units) remain historical, with their exact owner ledgers and original proofs.
-Rebase further entries explicitly; successful compilation alone is not source
-correspondence. Keep every earlier proof and failure record.
+Next: the mixed part(ii) erfc paragraph needs a genuine numerical model deriving
+CDF rounding to one and tail underflow from actual positive Gaussian tails.
+Real-valued positivity alone does not prove a floating-point implementation.
+Then treat part(iii)'s numerical enclosures and joint-failure interpretation.
+All parent scopes and full formal coverage remain pending. Historical Source90
+539 complete / 6 partial / 11 pending totals are not current Source92 counts.
 
-All 556 student solutions remain independently depth-reviewed and published:
-251 expanded, 305 retained. The questions and hints stay preserved. Source91's
-solution release content/metadata commits are e98d4675 / 54a8fac0.
+Canonical proof sources retain unselected work. Use the exact frozen workspace
+runtime `../../reports/solution-review/runtime-source92-piece02-v1` for the current
+audit. Publication contains only the selected proofs at their normal paths.
+Fresh native attempt names preserve interrupted and failed evidence.
 
-This formal piece is locally complete; its own commit/push/Pages/live delivery
-is recorded separately. Publication checkout: `../../reports/book/publication-repo`.
-Run the exact selected audit in `../../reports/full-coverage/runtime-source91-piece01-v1`.
-Canonical working proofs still include eight unselected future modules. Native
-commands use `checks/checkpoint35-root/record_native35.py`; interrupted or failed
-attempts require fresh names. Never copy archives, source objects or .lake caches
-into publication. Final bloat cleanup remains due after full coverage and final
-publication. Client/application crash causes remain undiagnosed.
+Delivery is separate from local completion. Publication checkout:
+`../../reports/book/publication-repo`. Final device cleanup remains due after
+full formal coverage and final publication. Keep unique unpublished evidence;
+do not copy .lake caches or source-archive trees into publication.
+Client/application crash causes remain undiagnosed.
