@@ -1,9 +1,15 @@
 # SafetyBased: Safe Learning study notes
 
-Current recovery: **56 further step-by-step solution expansions across 113 reviewed openings**.
-The selected Source92 Lean audit passes **11,522 theorems in 1,272 files**.
-Exercise 1.5 remains formally partial. See the [current release](book/solutions/releases/source92-opening-v1/README.md)
-and [formal continuation](book/coverage/CONTINUATION.md). Earlier Source91/Source90 counts below are historical.
+Current release: **Block 0 has 80 exercises: 30 new guided problems and expanded
+worked explanations for all 50 original questions.** Practice starts with signed
+numbers, fractions and inequalities, then builds through the seven foundation
+sections into the application lab and mixed review. The book now has 586 exercises.
+See the [foundation release](book/solutions/releases/source93-foundations-v1/README.md)
+and [formal continuation](book/coverage/CONTINUATION.md). Arithmetic checks cover all
+80 questions; browser, print and integration checks pass. The selected Source93
+Lean audit passes **11,522 theorems in 1,272 unchanged proof files**. New explanations
+are queued for exact formal correspondence; Exercise 1.5 remains partial. Earlier
+Source92/Source91/Source90 counts below are historical.
 
 Interactive research notes on safe RL, safe learning-based control and certified neural networks. The Trimpe group
 (RWTH Aachen, DSME) and Patricia Pauli (TU/e) get extra depth. Six math primers (0, A–E) take a reader from one first

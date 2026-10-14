@@ -1,31 +1,45 @@
-# Continue from Source92, one formal piece at a time
+# Continue from Source93
 
-The crash recovery is locally verified. 113 opening exercises were reassessed
-and 56 solutions expanded. All 50 Primer0 exercises were included. All 556
-questions/hints and every unselected solution preserve their exact prior bytes.
-See `../solutions/releases/source92-opening-v1/README.md` for review provenance.
+The user's latest request is implemented: Block 0 has 80 exercises, with 30
+new guided questions and expanded worked solutions for all 50 original
+questions. Six algebra warm-ups precede 63 local practice exercises, four
+application questions and seven mixed review problems. The whole book has
+586 exercises. The current release is
+`../solutions/releases/source93-foundations-v1/README.md`.
 
-Exercise 1.5(i) retains 12 reviewed clauses and seven complete leaves. Piece02
-adds 15 mathematical clauses and five complete leaves from part(ii). The exact
-whole exercise and reviewed fragments are unchanged in Source92; both mappings
-are rebased in `../solutions/releases/source92-opening-v1/formal-rebase-v1.json`.
-The Source92 selected audit passes 1,272 files / 11,522 theorems, including the
-14 new part(ii) theorem bodies. Zero whole exercises become complete.
+Arithmetic checks cover all eighty exercises. Browser checks pass at 320,
+390, 768, 820 and 1280 pixels with disclosures expanded. Print behaviour and
+all twenty-one integrated labs pass. Source93's new material is self-reviewed;
+no new independent agent review is claimed. The original questions, hints,
+IDs, scripts and theory are preserved, and every other reader asset is exact.
 
-Next: the mixed part(ii) erfc paragraph needs a genuine numerical model deriving
-CDF rounding to one and tail underflow from actual positive Gaussian tails.
-Real-valued positivity alone does not prove a floating-point implementation.
-Then treat part(iii)'s numerical enclosures and joint-failure interpretation.
-All parent scopes and full formal coverage remain pending. Historical Source90
-539 complete / 6 partial / 11 pending totals are not current Source92 counts.
+The current inventory is
+`../solutions/releases/source93-foundations-v1/source93-inventory/inventory.json`.
+The selected audit ran in
+`../../reports/solution-review/runtime-source93-foundations-v1`; it passes 1,272
+unchanged proof files and 11,522 theorems. Use a new report directory when
+auditing a later revision. Canonical proof sources still contain eight
+unselected future files; publication contains only the selected proofs.
 
-Canonical proof sources retain unselected work. Use the exact frozen workspace
-runtime `../../reports/solution-review/runtime-source92-piece02-v1` for the current
-audit. Publication contains only the selected proofs at their normal paths.
-Fresh native attempt names preserve interrupted and failed evidence.
+The thirty new questions and fifty expanded answers receive no automatic
+formal completion credit. Review
+`../solutions/releases/source93-foundations-v1/foundation-formal-status.json`
+before using an old Primer 0 mapping: adding warm-ups and local practice has
+shifted ordinal keys. Exact correspondence for all eighty current answers
+is pending; the other 506 reader exercise bodies are unchanged from Source92.
 
-Delivery is separate from local completion. Publication checkout:
-`../../reports/book/publication-repo`. Final device cleanup remains due after
-full formal coverage and final publication. Keep unique unpublished evidence;
-do not copy .lake caches or source-archive trees into publication.
-Client/application crash causes remain undiagnosed.
+Landscape Exercise 1.5 remains byte-identical, so its mapping is rebased in
+`../solutions/releases/source93-foundations-v1/formal-rebase.json`. It retains
+27 proved clauses and 12 complete leaves, with zero whole-exercise completion.
+The next unfinished formal piece is still the mixed part(ii) erfc paragraph:
+derive CDF rounding and tail underflow in a genuine numerical model, then
+handle part(iii)'s numerical enclosures and joint-failure interpretation.
+Full book coverage remains in progress. Source90's 539 complete / 6 partial /
+11 pending totals and the older 556-exercise inventories are historical.
+
+Publish only exact verified sources and selected evidence to
+`../../reports/book/publication-repo`. Record GitHub Pages jobs and live asset
+hashes separately from local checks. Unique failed/interrupted candidate
+evidence is retained. Final storage cleanup remains due after full formal
+coverage and final publication; build caches are excluded from publication.
+The cause of the earlier application crash remains undiagnosed.

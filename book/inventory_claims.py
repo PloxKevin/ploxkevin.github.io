@@ -75,10 +75,22 @@ def inventory():
                 source_sha256=sources[relative], inventory_kind=(
                     'source_unit_needs_claim_review' if original_math_unit else
                     'surrounding_prose_needs_semantic_classification')))
-    assert len(exercise_rows)==556, len(exercise_rows)
+    # Current additions must have a deliberate count contract. Historical
+    # isolated candidate trees predate this contract and retain the old total.
+    contract_path=ROOT/'book/exercise-counts.json'
+    contract=json.loads(contract_path.read_text()) if contract_path.exists() else None
+    if contract:
+        actual=dict(Counter(row['source'] for row in exercise_rows))
+        assert actual==contract['exercises_by_page'], ('exercise count contract',actual)
+        assert len(exercise_rows)==contract['expected_total'], len(exercise_rows)
+        assert sum(contract['exercises_by_page'].values())==contract['expected_total']
+    else:
+        assert len(exercise_rows)==556, len(exercise_rows)
     assert len({row['key'] for row in exercise_rows})==len(exercise_rows)
     report=dict(schema_version=1, generated_at_utc=datetime.now(timezone.utc).isoformat(),
         status='inventory_only_no_coverage_claim', source_sha256=sources,
+        exercise_count_contract=({'file':'book/exercise-counts.json','sha256':sha(contract_path)}
+                                 if contract else {'historical_total':556}),
         counts=dict(exercises=len(exercise_rows),material_source_units=len(material_rows),
                     exercises_by_page=dict(Counter(row['source'] for row in exercise_rows))),
         exercises=exercise_rows, material_source_units=material_rows,

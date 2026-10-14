@@ -1,24 +1,34 @@
-# Source92 opening solutions
+# Source93 foundation exercises and worked solutions
 
-**113 exercises are reassessed; 56 solutions receive further step-by-step
-expansions and 57 are retained.** The pass includes all 50 Primer0 exercises and
-the first three actual document-order exercises on every other exercise page.
-All 556 questions, hints, exercise order, anchors and scripts are preserved.
-Every unselected and retained answer keeps its exact Source91 bytes.
+**Block 0 grows from 50 to 80 exercises.** Thirty guided problems build the
+individual steps needed for the original graded practice. All fifty original
+worked answers receive more explanation; four previously compressed answers
+are rewritten as complete numbered derivations. Questions, hints, anchors,
+theory and interactive scripts are retained. The book now has 586 exercises.
 
-The [current release](releases/source92-opening-v1/README.md) records actual
-installation, 18-page reader/rendered-math checks, arithmetic checks and review
-provenance. The prior Source91 release independently reviewed all 556 solutions
-and expanded 251. In this recovery, 35 saved replacements receive a separate
-recovery review; 21 newly authored replacements are explicitly self-reviewed.
-The release does not claim a new independent review of all current 556 bodies.
+The six algebra warm-ups cover signs, fractions, powers, finite sums,
+inequality directions, absolute values and logarithmic stopping budgets.
+Twenty-four further problems bridge sets, quantifier order, functions, proofs,
+limits, bounds, topology and rates. Each has a separate hint, review link and
+step-by-step answer. The reading route distinguishes first-pass practice from
+harder return visits.
 
-Formal piece02 adds 14 theorem bodies about actual Gaussian tails, indicator
-count expectations, zero-noise cases and erfc. The selected Source92 audit passes
-1,272 files / 11,522 theorems. Exact unchanged Exercise1.5 fragments retain and
-extend correspondence to 27 mathematical clauses and 12 complete leaves, with
-zero complete whole-exercise credit. The floating-point warning and part(iii)
-remain pending. Source90 totals remain historical.
+The [release record](releases/source93-foundations-v1/README.md) includes exact
+preservation checks, calculations for all eighty exercises, actual browser
+checks from 320 to 1280 pixels, print checks and static integration of all
+twenty-one labs. The author reviews the new material and expanded answers;
+no new independent agent review or student comprehension study is claimed.
+The other 506 exercise bodies retain their exact Source92 reader bytes.
 
-Actual publication/delivery is tracked separately in
-`../../reports/solution-review/source92-delivery-v1.json` when confirmed.
+The selected Source93 Lean audit passes 1,272 files and 11,522 theorems. Proof
+sources are unchanged; the build and axiom audit are fresh, and identical
+per-module kernel checks retain their exact prior evidence. This does not
+give new full formal coverage credit to the additions. All eighty current
+foundation answers are queued for exact source correspondence, with shifted
+ordinal keys explicitly recorded. The unchanged Landscape Exercise 1.5 retains
+27 proved clauses and 12 complete leaves; its whole-exercise status is partial.
+
+Source92's 556-exercise inventory and previous independent Source91 review
+records remain historical evidence. Source93 delivery is recorded separately
+under `reports/solution-review/`; the source and validation artifacts live in
+`releases/source93-foundations-v1/`.

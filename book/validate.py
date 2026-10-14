@@ -188,12 +188,15 @@ def build_idempotence():
                     files_compared=len(after_second))
 
 
-def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=None):
-    """Validate the actual site, with an optional audited solution restore chain.
+def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=None,
+             approved_practice_additions=None):
+    """Validate the actual site, with an optional audited content restore chain.
 
-    Only the solution-release wrapper supplies this internal argument, after
-    checking every current page against its independently approved decisions
-    and verifying exact preservation of all other bytes. Restored Source90
+    Only an exact release wrapper supplies these internal arguments, after
+    checking every current page against its recorded edits and verifying exact
+    preservation of all other bytes. Practice additions are explicit per-page
+    counts, checked by the wrapper against the actual inserted problems, not a
+    relaxation of preservation. Restored Source90
     text is used solely for the historical pre-book comparison; links, labs,
     counts, scripts and build checks always inspect the actual current site.
     """
@@ -202,6 +205,10 @@ def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=
     checks = []
     pages = {}
     source_reports = []
+    practice_additions = approved_practice_additions or {}
+    if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0
+               for n in practice_additions.values()):
+        raise ValueError('Approved practice additions require nonnegative integer counts')
     corrections_path=ROOT/'book/coverage/material-corrections.json'
     corrections=(json.loads(corrections_path.read_text())['corrections']
                  if allow_reviewed_corrections else [])
@@ -260,6 +267,8 @@ def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=
     modules = json.loads((ROOT/'modules_min.json').read_text())['modules']
     expected_chapters = primers + modules
     expected_files = [c['file'] for c in expected_chapters]
+    if set(practice_additions) - set(expected_files):
+        raise ValueError('Approved practice additions must refer to catalog chapters')
     catalog_files = [c['file'] for c in catalog['chapters']]
     if len(expected_files) != 21 or catalog_files != expected_files:
         error('catalog_chapters', 'reports/book/catalog.json', 'Catalog does not match the 21 primer/module files in order',
@@ -364,9 +373,11 @@ def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=
         base_items = exercises(Document(original).root)
         total_baseline_exercises += len(base_items)
         current_items = exercises(doc.root)
-        if len(current_items) != len(base_items)+len(new_items):
-            error('exercise_count_preservation', name, 'Current exercise count does not equal baseline plus new lab count',
-                  baseline=len(base_items), new=len(new_items), current=len(current_items))
+        approved_additions = practice_additions.get(name, 0)
+        if len(current_items) != len(base_items)+len(new_items)+approved_additions:
+            error('exercise_count_preservation', name, 'Current exercise count does not equal baseline plus lab and exact approved practice additions',
+                  baseline=len(base_items), new=len(new_items),
+                  approved_practice_additions=approved_additions, current=len(current_items))
         p = dict(file=name, original_sha256=digest(original), stripped_current_sha256=digest(stripped),
                  original_teaching_body_byte_identical=equal)
         if comparison_source is not None:
@@ -385,6 +396,7 @@ def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=
         lab_reports.append(dict(file=name, fragment=str(source_path.relative_to(ROOT)),
                                 source_sha256=digest(source), source_fragment_current=len(blocks)==1 and blocks[0].strip()==source.strip(),
                                 baseline_exercise_counts=counts(base_items), new_exercise_counts=counts(new_items),
+                                approved_practice_additions=approved_additions,
                                 integrated_exercise_counts=counts(current_items), new_exercises=new_items))
 
     integrated_labs = sum('book-lab' in p.by_id for p in pages.values())
@@ -519,6 +531,7 @@ def validate(allow_reviewed_corrections=False, *, approved_preservation_sources=
                 counts=dict(html_pages=len(pages),expected_html_pages=29,application_labs=integrated_labs,
                             expected_application_labs=21,baseline_teaching_exercises=total_baseline_exercises,
                             new_chapter_exercises=total_new_exercises,new_project_exercises=len(project_items),
+                            approved_practice_additions=sum(practice_additions.values()),
                             all_current_exercises=len(all_exercises),all_current_levels=counts([x for _,x in all_exercises]),
                             local_references=local_reference_count),
                 checks=checks,errors=errors,warnings=warnings,
