@@ -44,3 +44,5 @@ fresh output directory. In the published checkout the selected proofs are at
 `verification/lean`; run `lake exe cache get` and `python3 verify.py --output
 ../../reports/source92-reproduction` there. Omitting reuse replays every module.
 Actual commit/push/Pages/live hashes are recorded separately after delivery.
+
+Source92 content is delivered at `2495eddaff0f0b014edb188ad4dd50d80189c79b`. All three Pages jobs and all 31 live asset hashes pass. Final metadata delivery is checked separately; its receipt is retained locally for the next checkpoint.

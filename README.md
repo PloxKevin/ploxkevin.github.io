@@ -149,3 +149,5 @@ of the reviewed Source91 answers is recorded separately in the
 
 Source91 content `e98d46758478cf51f5be2e6f66381596756ab572` is published. All three Pages jobs and all 31
 live asset hashes pass; delivery metadata is recorded separately.
+
+Source92 content is delivered at `2495eddaff0f0b014edb188ad4dd50d80189c79b`. All three Pages jobs and all 31 live asset hashes pass. Final metadata delivery is checked separately; its receipt is retained locally for the next checkpoint.

@@ -118,3 +118,5 @@ Source91 content is delivered at `e98d46758478cf51f5be2e6f66381596756ab572`. All
 31 live asset hashes pass. Metadata delivery at `54a8fac0` is complete; see
 [the actual final receipt](../solution-review/source91-publication-finish-v1.json).
 See [actual content delivery](../../reports/solution-review/source91-content-delivery-attempt4.json).
+
+Source92 content is delivered at `2495eddaff0f0b014edb188ad4dd50d80189c79b`. All three Pages jobs and all 31 live asset hashes pass. Final metadata delivery is checked separately; its receipt is retained locally for the next checkpoint.
