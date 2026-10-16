@@ -53,3 +53,8 @@ Publish only exact verified selected sources/evidence to
 asset hashes separately. Preserve unique failed/interrupted evidence. Final
 cleanup remains deferred until full coverage and final publication; exclude
 build caches. The cause of the earlier application crash is undiagnosed.
+
+Content delivery is confirmed at `7aea86c0d948935fd5af7268ca3e26cec6618d93`: all 31 reader
+asset hashes and all three Pages jobs pass. The final metadata receipt will
+be retained locally after its actual delivery, then included at the next
+checkpoint without creating a recursive third metadata commit.

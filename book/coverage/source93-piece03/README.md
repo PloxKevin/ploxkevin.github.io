@@ -62,3 +62,8 @@ In a clean published checkout the same selected proofs occupy their normal
 paths. Preserve prior reports when reproducing. Actual content and metadata
 delivery are recorded separately; a final receipt is kept locally after the
 last observed delivery and included with the next checkpoint.
+
+Content delivery is confirmed at `7aea86c0d948935fd5af7268ca3e26cec6618d93`: all 31 reader
+asset hashes and all three Pages jobs pass. The final metadata receipt will
+be retained locally after its actual delivery, then included at the next
+checkpoint without creating a recursive third metadata commit.
