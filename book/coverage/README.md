@@ -4,9 +4,12 @@ This audit extends the earlier selected-statement audit. It is not complete
 until every exercise and every established mathematical teaching claim has a
 reviewed correspondence to checked Lean declarations.
 
-Run `python3 book/inventory_claims.py` to freeze the 556 exercise sources and
-the review queue of mathematical source units. The queue itself is not proof
-coverage. Review surrounding prose too; mathematical assertions can lack TeX.
+The current [Source93 inventory](../solutions/releases/source93-foundations-v1/source93-inventory/inventory.json)
+contains 586 exercises and 14,889 overlapping source units. Regenerate inventories
+in a fresh versioned output directory; retain historical inventories unchanged.
+The queue itself is not proof coverage. Review surrounding prose too; mathematical
+assertions can lack TeX. The [continuation](CONTINUATION.md) identifies the latest
+selected audit and distinguishes kernel checks from independent source review.
 
 Domain ledgers are `foundations.json` (0/A/B), `applied.json` (C/D/E),
 `modules.json` (1–7 and12–15), and `core.json` (8–11, projects and reference

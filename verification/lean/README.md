@@ -1,12 +1,27 @@
-# Current Source92 selection
+# Current Source93 selection
 
 The current frozen workspace runtime is
-`../../reports/solution-review/runtime-source92-piece02-v1`.
-It audits 1,272 selected files / 11,522 theorems. The published checkout has
-those selected sources at their normal paths. Exercise1.5 correspondence covers
-27 mathematical clauses and 12 complete leaves; the exercise remains partial.
-See `../../book/solutions/releases/source92-opening-v1/formal-rebase-v1.json`.
-Older source/version counts below describe their historical snapshots.
+`../../reports/full-coverage/runtime-source93-piece03-v1`.
+It audits **1,274 selected files / 11,544 theorems**. Two new modules add
+22 theorems for finite-format Gaussian-tail rounding and a same-process
+expected-count counterexample. Their kernel replays, aggregate build and
+all-theorem standard-axiom audit pass. The remaining 1,272 module checks retain
+exact prior source/import and pinned dependency evidence.
+
+The [piece ledger](../../book/coverage/source93-piece03/ledger-v1.json) records
+the finite format, nearest rounding model, exact source hashes and limits.
+The new mapping is self-reviewed; independent source-to-statement review is
+pending. The current independently reviewed total stays at 27 mathematical
+clauses and 12 complete leaves, with Exercise 1.5 partial. The new model
+supports three further candidate clauses and one candidate leaf, with zero
+new completion credit until that review. The book has 586 exercises; all
+eighty expanded foundation answers still need exact current correspondence.
+
+The published checkout contains exactly the selected proof set at normal paths.
+The canonical workspace also retains eight unselected future modules: do not
+run its directory-wide verifier as if they were selected. Use the frozen runtime
+above, or a clean published checkout. Do not overwrite historical audit output.
+All source/version counts below describe their historical snapshots.
 
 Source91 formal piece 01 closes **Exercise 1.5(i)** in the Landscape module:
 12 mathematical clauses and seven complete direct leaf units, with zero newly

@@ -1,48 +1,55 @@
-# Continue from Source93
+# Continue from Source93 formal piece 03
 
-The user's latest request is implemented: Block 0 has 80 exercises, with 30
-new guided questions and expanded worked solutions for all 50 original
-questions. Six algebra warm-ups precede 63 local practice exercises, four
-application questions and seven mixed review problems. The whole book has
-586 exercises. The current release is
-`../solutions/releases/source93-foundations-v1/README.md`.
-
-Arithmetic checks cover all eighty exercises. Browser checks pass at 320,
-390, 768, 820 and 1280 pixels with disclosures expanded. Print behaviour and
-all twenty-one integrated labs pass. Source93's new material is self-reviewed;
-no new independent agent review is claimed. The original questions, hints,
-IDs, scripts and theory are preserved, and every other reader asset is exact.
+Block 0 retains 80 exercises: six algebra warm-ups, 63 local exercises, four
+application questions and seven mixed review problems. Thirty exercises were
+added and all fifty original solutions expanded. The book has 586 exercises.
+All eighty arithmetic checks, browser checks from 320 to 1280 pixels, print
+and all twenty-one lab integration checks remain tied to the unchanged reader
+assets. Source93's additions are self-reviewed; no independent review is claimed.
 
 The current inventory is
 `../solutions/releases/source93-foundations-v1/source93-inventory/inventory.json`.
-The selected audit ran in
-`../../reports/solution-review/runtime-source93-foundations-v1`; it passes 1,272
-unchanged proof files and 11,522 theorems. Use a new report directory when
-auditing a later revision. Canonical proof sources still contain eight
-unselected future files; publication contains only the selected proofs.
+All eighty current foundation answers still need exact formal correspondence.
+The thirty additions and fifty expanded answers receive no automatic credit.
+Consult `../solutions/releases/source93-foundations-v1/foundation-formal-status.json`;
+ordinal exercise and material-unit keys shifted. Rematch retained theory by
+exact HTML/text and context, never by old node positions. The other 506 reader
+exercise bodies are unchanged from Source92.
 
-The thirty new questions and fifty expanded answers receive no automatic
-formal completion credit. Review
-`../solutions/releases/source93-foundations-v1/foundation-formal-status.json`
-before using an old Primer 0 mapping: adding warm-ups and local practice has
-shifted ordinal keys. Exact correspondence for all eighty current answers
-is pending; the other 506 reader exercise bodies are unchanged from Source92.
-Inserting practice also shifts ordinal material-unit keys on Primer 0.
-Rematch retained theory leaves by exact HTML/text and context; do not carry
-their old node positions forward as current proof correspondence.
+The current passing selected audit is
+`../../reports/full-coverage/runtime-source93-piece03-v1/reports/lean-verification/verification.json`:
+1,274 files and 11,544 theorems. Two new modules add 22 theorem bodies and
+received fresh kernel replays. All other 1,272 checks reuse exact prior
+source/import and pinned dependency evidence; the aggregate build and every
+theorem's axiom audit are fresh. Only propext, Classical.choice and Quot.sound
+occur. Use a fresh output directory for later audits. The canonical tree still
+has eight unselected future modules; only the selected set is published.
 
-Landscape Exercise 1.5 remains byte-identical, so its mapping is rebased in
-`../solutions/releases/source93-foundations-v1/formal-rebase.json`. It retains
-27 proved clauses and 12 complete leaves, with zero whole-exercise completion.
-The next unfinished formal piece is still the mixed part(ii) erfc paragraph:
-derive CDF rounding and tail underflow in a genuine numerical model, then
-handle part(iii)'s numerical enclosures and joint-failure interpretation.
-Full book coverage remains in progress. Source90's 539 complete / 6 partial /
-11 pending totals and the older 556-exercise inventories are historical.
+The latest exact mapping is `source93-piece03/ledger-v1.json`, tied to
+Landscape Exercise 1.5(ii), leaf `landscape.html::node-1461`. The finite
+exponent/fraction model constructs nearest rounding on binary64 values in
+[0,1]. Actual Gaussian tails tend to zero and remain positive at every finite
+threshold. The proofs derive CDF false zeros and direct-tail underflow, then
+produce a finite threshold with true tail 2^-60: direct rounding preserves it,
+while CDF subtraction gives zero. A valid one-step original recurrence has
+that same positive expected count and a zero CDF evaluation.
 
-Publish only exact verified sources and selected evidence to
-`../../reports/book/publication-repo`. Record GitHub Pages jobs and live asset
-hashes separately from local checks. Unique failed/interrupted candidate
-evidence is retained. Final storage cleanup remains due after full formal
-coverage and final publication; build caches are excluded from publication.
-The cause of the earlier application crash remains undiagnosed.
+These 22 new proofs pass the kernel and are self-reviewed. A separate review
+agent needs explicit user authorization under the session's delegation rule;
+authorization was requested asynchronously and has not been received. No
+independent review or completion promotion is claimed. The reviewed total
+therefore stays at 27 mathematical clauses and 12 complete leaves. Three new
+candidate clauses and the mixed numerical leaf await independent source review.
+The model rounds exact real function values; it does not certify a library
+implementation, hardware primitives, input rounding or part(iii)'s numbers.
+
+Next: independently check the exact mapping and model limits, then prove
+part(iii)'s nine-digit numerical enclosures, stationary comparison and actual
+joint-failure interpretation. The whole Exercise 1.5 and full book coverage
+remain incomplete. Source90's 539/6/11 exercise totals remain historical.
+
+Publish only exact verified selected sources/evidence to
+`../../reports/book/publication-repo`. Record all Pages jobs and all 31 live
+asset hashes separately. Preserve unique failed/interrupted evidence. Final
+cleanup remains deferred until full coverage and final publication; exclude
+build caches. The cause of the earlier application crash is undiagnosed.

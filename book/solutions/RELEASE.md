@@ -20,13 +20,19 @@ twenty-one labs. The author reviews the new material and expanded answers;
 no new independent agent review or student comprehension study is claimed.
 The other 506 exercise bodies retain their exact Source92 reader bytes.
 
-The selected Source93 Lean audit passes 1,272 files and 11,522 theorems. Proof
-sources are unchanged; the build and axiom audit are fresh, and identical
-per-module kernel checks retain their exact prior evidence. This does not
-give new full formal coverage credit to the additions. All eighty current
-foundation answers are queued for exact source correspondence, with shifted
-ordinal keys explicitly recorded. The unchanged Landscape Exercise 1.5 retains
-27 proved clauses and 12 complete leaves; its whole-exercise status is partial.
+The latest selected Source93 Lean audit passes 1,274 files and 11,544 theorems.
+The [rounding proof piece](../coverage/source93-piece03/README.md) adds 22
+theorems for false-zero CDF subtraction, direct-tail underflow and an actual
+positive expected-count example whose CDF evaluation is zero. Its finite
+nearest-rounding model and original-process bridge are kernel-checked and
+self-reviewed; independent correspondence review is pending. No new whole
+leaf or exercise credit is claimed. The previously reviewed total remains
+27 clauses and 12 complete leaves, with Landscape Exercise 1.5 partial.
+
+All eighty current foundation answers remain queued for exact source
+correspondence, with shifted ordinal keys explicitly recorded. This proof-only
+continuation preserves all thirty-one reader assets and the existing browser,
+print, arithmetic and integration evidence bound to those exact assets.
 
 Source92's 556-exercise inventory and previous independent Source91 review
 records remain historical evidence. Source93 delivery is recorded separately

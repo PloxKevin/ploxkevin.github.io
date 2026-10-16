@@ -7,8 +7,12 @@ sections into the application lab and mixed review. The book now has 586 exercis
 See the [foundation release](book/solutions/releases/source93-foundations-v1/README.md)
 and [formal continuation](book/coverage/CONTINUATION.md). Arithmetic checks cover all
 80 questions; browser, print and integration checks pass. The selected Source93
-Lean audit passes **11,522 theorems in 1,272 unchanged proof files**. New explanations
-are queued for exact formal correspondence; Exercise 1.5 remains partial. Earlier
+Lean audit passes **11,544 theorems in 1,274 selected proof files**. The latest
+[formal piece](book/coverage/source93-piece03/README.md) adds 22 checked theorems
+for Gaussian-tail rounding, underflow and the original expected count. Its source
+mapping is self-reviewed; independent review is pending, with no new full-coverage
+credit. All eighty foundation answers remain queued for exact correspondence,
+and Exercise 1.5 remains partial. Earlier
 Source92/Source91/Source90 counts below are historical.
 
 Interactive research notes on safe RL, safe learning-based control and certified neural networks. The Trimpe group
