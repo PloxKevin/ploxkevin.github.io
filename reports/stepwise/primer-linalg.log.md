@@ -1,0 +1,28 @@
+- la-ex-norms-1 | kept | already computes dot product and each norm with displayed arithmetic plus norm-ordering check
+- la-ex-norms-2 | kept | upper bound + feasible attaining point for both balls, all numbers shown and verified
+- la-ex-norms-3 | kept | numbered proof via infimum/triangle inequality, explicit distance computation and bound
+- la-ex-matrix-norms-1 | expanded | stated column/row-sum rules without justification; added derivation, displayed sums, Ax computation and inf-norm attainment check
+- la-ex-matrix-norms-2 | expanded | asserted diagonal spectral norms and product bound; added derivation, explicit product, direction-tracking of the gap
+- la-ex-matrix-norms-3 | kept | numbered steps with geometric sum, spectral norm comparison and integer cutoff check
+- la-ex-spectral-1 | expanded | multiplications compressed; added displayed products, linearity reason, orthonormality algebra, outer-product rebuild and trace/det check
+- la-ex-spectral-2 | expanded | cited eigenvalue bounds without derivation; added eigenbasis expansion proving the bounds, numeric check, equality characterisation
+- la-ex-spectral-3 | expanded | eigenvalues/forms stated briefly; added characteristic polynomial, eigenvector deficiency, S/K split, transpose argument and audit of theorem hypothesis
+- la-ex-psd-1 | expanded | forms evaluated without expansion; added polynomial expansion, definitions, null vector, determinant/eigenvalue cross-check
+- la-ex-psd-2 | kept | numbered Cholesky construction, two triangular solves with substitution check, determinant from factor
+- la-ex-psd-3 | kept | numbered change of variables, Cauchy-Schwarz bound, attainment and feasibility check
+- la-ex-svd-1 | expanded | SVD guessed and asserted; added A^T A derivation, construction of V and U, product check, norm formulas and circle-to-ellipse algebra
+- la-ex-svd-2 | expanded | pseudo-inverse formula unexplained; added SVD derivation, parametrisation of all solutions, Pythagoras expansion and numeric check
+- la-ex-svd-3 | expanded | power-iteration numbers compressed; added true value, unit-vector lower-bound reason, iterate algebra, Frobenius >= spectral proof and ordering check
+- la-ex-blocks-1 | expanded | block determinant rule cited without reason; added row and block products, cofactor expansion and eigenvalue trace/det check
+- la-ex-blocks-2 | kept | numbered completed square, PSD/PD classification with converse and boundary null vector
+- la-ex-blocks-3 | kept | numbered determinant lemma and Sherman-Morrison with entrywise numbers and independent multiplication check
+- la-ex-structured-1 | expanded | length preservation and reflection claim asserted; added Q^T Q algebra, det = +-1 argument, rotation determinant and Q^2 = I check
+- la-ex-structured-2 | expanded | orthogonality of residual asserted; added P^2/P^T checks, general residual-orthogonality algebra, Pythagoras, norm derivation
+- la-ex-structured-3 | kept | numbered Cayley computation, invertibility proof and eigenvalue -1 exclusion
+- la-ex-functions-1 | expanded | integrals stated without antiderivatives; added evaluated integrals, linearity step for c, Pythagoras arithmetic and Cauchy-Schwarz check
+- la-ex-functions-2 | expanded | Gram-to-sum-of-squares identity jumped; added Gram entries, double-sum collapse, polynomial cross-check, PD argument and det/eigenvalue check
+- la-ex-functions-3 | expanded | compressed fit/inverse/bound; added 2x2 inverse with verification, representer reconciliation of both norms, tightness and domain checks
+- book-a-ex-1 | kept | numbered reconstruction, error propagation with attaining errors, interval comparison for both bounds
+- book-a-ex-2 | kept | numbered parametrisation, length minimisation, nonnegativity range and explicit counterexample
+- book-a-ex-3 | kept | numbered unit substitution, Cauchy-Schwarz bound with attaining direction and box comparison
+- book-a-ex-4 | kept | numbered normal equations, elimination, exact residual orthogonality, uniqueness and error comparison

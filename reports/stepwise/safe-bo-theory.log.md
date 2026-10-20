@@ -1,0 +1,21 @@
+# safe-bo-theory stepwise log
+- book-m5-b1 | kept | already stepwise: containment of realization interval, both endpoint inequalities, test of 1.5, boundary check (numbers verified)
+- book-m5-b2 | kept | already stepwise: conditional tail, union bound, solved inequality, E=0.667575 and r=0.353031 verified in python
+- practice-1 | kept | already stepwise: noise step, Lipschitz transfer, solved absolute-value inequality, both points checked
+- practice-2 | expanded | stated the selection without the restricted argmax and asserted GP-independence of safety without showing the chain
+- practice-3 | expanded | tight radius 0.15 and invalidity of L=1 were asserted; added derivation of r=s/L, validity argument, and a concrete unsafe point at d=0.3
+- practice-4 | expanded | intersection stated without combining inequalities; added max/min derivation and per-point membership checks
+- practice-5 | expanded | radii/intervals/union given in one line; added rearranged cone test, interval arithmetic, overlap argument, negative-slack inequality and boundary checks
+- practice-6 | expanded | Lipschitz constant M asserted; added piecewise form, cross-piece triangle-inequality proof, lower bound L>=M via pair (0,1/2)
+- practice-7 | expanded | beta and lower band given as final numbers only; added prefactor, natural-log term, assembly, band, and critical multiplier 3 check (python-verified 3.5700526, 0.1429947)
+- practice-8 | expanded | three inequalities compressed into one sentence; split into noise/space/time steps with numeric substitution and v=0 sanity check
+- practice-9 | expanded | reverse triangle inequality and the f(x)<h step were asserted; added admissibility of noise, derivation of reverse triangle inequality, explicit inequality, boundary check
+- practice-10 | kept | already shows every inner max/min and the final min/max, with the witness explanation
+- practice-11 | expanded | orthogonality of s and g and ||s||^2=y^T K^-1 y were asserted; added interpolant coefficients, bilinear expansion, Gram computation and the general lower-bound argument
+- practice-12 | expanded | p<1, p^T and the probability-1 claim were asserted; added standardization, positivity of tail, product by independence, limit, continuity from above, numeric check (p^25=0.312, p^100=0.0095 verified)
+- (no id) Exercise 5.1 | kept | full induction proof with base cases, noise step, Lipschitz step and chained inequality; E_l explanation given
+- (no id) Exercise 5.2 | kept | complete projection construction, norm computation and step-by-step three-point example (Gram matrix, f, sigma^2=(0,1,5), l(1)=-0.5 re-verified)
+- (no id) Exercise 5.3 | expanded | proof 'as in Proposition 1' without induction, radius stated without solving C d^alpha<=s, comparison iff stated; added induction, monotone inversion, numeric back-substitution, u(u-1)>0 comparison
+- (no id) Exercise 5.4 | kept | every radius, interval, grid intersection and the counterexample function's joins/slopes shown (re-verified 1.2, 0.6, 0.05)
+- (no id) Exercise 5.5 | expanded | part (a) gave 0.0455 and 0.69 without the standardization, symmetry or complement/independence steps; (a) rewritten stepwise with check, parts (b)-(d) already stepwise and kept verbatim (0.0455, 0.6878, 4.12727 verified)
+- (no id) Exercise 5.6 | kept | each beta evaluated with intermediate numbers and interpreted (11.0298141, 10.2408856, 889.1784 re-verified)

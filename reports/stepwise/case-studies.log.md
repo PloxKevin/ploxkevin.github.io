@@ -1,0 +1,9 @@
+- book-project-tank-b1 | kept | already stepwise: both uncertainty sources combined, interval solved, nearest action and correction computed, both extremes audited
+- book-project-tank-b2 | kept | already stepwise: interval recomputed with 1.3, boundary measurement gives empty intersection, exact-state check separates conservatism from obstruction
+- book-project-tank-b3 | expanded | added plan, derivation of Y, monotonicity reduction to endpoint inequalities, interval-intersection criterion with endpoint bounds, constant-input contradiction, extreme-measurement check
+- book-project-tuning-b1 | kept | already stepwise: lower margin 0.13, absolute-value inequality solved to [0,0.46], query at 0.5 evaluated, endpoint check
+- book-project-tuning-b2 | kept | already stepwise: certified interval stated, missing objective written as an optimization problem, two counterexample objectives with computed maximizers
+- book-project-tuning-b3 | kept | already stepwise: L=0 forces constancy from the defining inequality, positive and negative lower-margin cases both handled with reasons
+- book-project-score-b1 | expanded | added plan, displayed normalization with 0.2<=0.3 validity check, term-by-term bound with reasons, attainment, physical-unit recomputation, concrete raw-radius mismatch, four-corner check
+- book-project-score-b2 | expanded | added plan, displayed rank with reason for ceiling, infinite-threshold coverage argument, derivation of the 1/20 maximum probability from exchangeability, r/(n+1) check and minimum n=99
+- book-project-score-b3 | kept | already stepwise: union bound stated as dependence-free, complement 0.6, independence caveat with 0.6561, budget 4q<=0.1 solved

@@ -1,0 +1,21 @@
+# Stepwise solutions log: lipschitz-by-design.html
+
+- book-m13-b1 | kept | already plans, substitutes, computes the gradient norm, justifies necessity via openness and interprets
+- book-m13-b2 | kept | already bounds each stage by the triangle inequality, composes, solves for the scale and checks the radius
+- practice-easy-1 | kept | already derives the spectral norm, both normalizations with numbers and interpretation
+- practice-easy-2 | kept | already computes inverse, product, image vector and both norms with reasons
+- practice-easy-3 | expanded | three one-line steps; added the product computations, the quadratic-form reason for each direction, a rank check and interpretation
+- practice-easy-4 | kept | already includes the normalization in the difference, derives the gap constant and solves for the radius with a comparison
+- practice-medium-1 | expanded | eigenvalues were asserted from sum and product; added Gram product, row sums, entrywise rescaling, characteristic polynomial factoring, eigenvector check
+- practice-medium-2 | expanded | slopes and Lipschitz constants were stated; added substitution, case split at the kink, proof that max |slope| is the constant, numeric check
+- practice-medium-3 | expanded | coefficients and residuals were stated; added positive homogeneity through ReLU, gain from slopes, common-denominator arithmetic, cross-check against the general half-multiplier formula
+- practice-medium-4 | expanded | terms were stated; added A^2=0 computation, each outer product, the series reason for the Gramian equation, determinant/PD and controllability checks
+- practice-hard-1 | kept | already a full stepwise derivation with numbers, reasons and interpretation
+- practice-hard-2 | kept | already a full stepwise derivation with numbers, reasons and interpretation
+- practice-hard-3 | kept | already a full stepwise derivation with numbers, reasons and interpretation
+- practice-hard-4 | expanded | log step and energy were stated; added division by 3, log monotonicity and the sign flip, rounding with neighbour check, substitution and storage discussion
+- exercise-13.1 (no id; summary "Exercise 13.1") | expanded | dense one-paragraph proof; split into steps with the transpose trick, kernel argument, commutation expansion, determinant rules, 2x2 inverse/product, half-angle derivation and reflection eigenvalues
+- exercise-13.2 (no id; summary "Exercise 13.2") | kept | already a full stepwise derivation with displayed computations, justified assumptions and interpretation
+- exercise-13.3 (no id; summary "Exercise 13.3") | kept | already a full stepwise derivation with displayed computations, justified assumptions and interpretation
+- exercise-13.4 (no id; summary "Exercise 13.4") | kept | already a full stepwise derivation with displayed computations, justified assumptions and interpretation
+- exercise-13.5 (no id; summary "Exercise 13.5") | kept | already a full stepwise derivation with displayed computations, justified assumptions and interpretation

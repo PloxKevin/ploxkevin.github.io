@@ -1,0 +1,20 @@
+- book-m11-b1 | kept | already stepwise: error combination, tube inequality solved, tightening and direct band check with numbers
+- book-m11-b2 | kept | already stepwise: radius inequality solved line by line, tightening, quantifier explanation
+- book-m11-b3 | kept | already stepwise: probability mass, MSE/RMSE computed, max error, (0.995)^200 verified = 0.366958
+- exercise-11-p1 | expanded | stated ΔV, set and image without justifying sqrt step, interval mapping or strictness; added steps and a numeric check
+- exercise-11-p2 | expanded | radii stated without deriving the ellipse form; added expansion of x^T P x, radius derivation, check and Euclidean comparison
+- exercise-11-p3 | expanded | successor interval and max V stated without derivation; added interval arithmetic, monotonicity reason, general |x|>0.2 check and ultimate-bound interpretation
+- exercise-11-p4 | expanded | one-line computation; split into discount/add/compare/slack steps with boundary-case check
+- exercise-11-p5 | expanded | sum stated without saying which inequality supplies each term; added estimation and Lipschitz steps, threshold radius 0.02 check
+- exercise-11-p6 | expanded | compressed triangle-inequality chain; split into invariance, state and input tightening steps with induction remark and tightness check
+- exercise-11-p7 | expanded | projection rule asserted without justification; added chain rule, monotonicity on interval, endpoint comparison and unconstrained-cost check
+- exercise-11-p8 | expanded | radius given without stating Hoeffding or solving for t; added inequality, solve-for-t algebra, required n=14979, and exact zero-failure comparison as check
+- exercise-11-p9 | expanded | expansion, invariance and contradiction argument compressed (bound -l^2 unjustified); added each step with reasons, monotone convergence, period-2 orbit computation and numeric check
+- exercise-11-p10 | expanded | closed loop, induction and equilibrium computation skipped; added each step, explicit solution x_t=0.2+0.5^t(x0-0.2), tightness and ultimate-bound check
+- exercise-11-p11 | expanded | log step and union bound stated without the event argument; added (1-p)^n monotonicity, sign flip, integer checks 0.99^298/299 and 596/597, doubling check
+- exercise-11-p12 | expanded | event logic and union bound asserted; added E subset S, monotonicity, De Morgan + union bound, 100-state counting example (0 and 0.366) and tightness check
+- 11.1 (no id; "Strict decrease on a compact sublevel set") | expanded | proof compressed (closedness of A, extreme value theorem, final x_t->0 step, counterexample algebra); added each step with its theorem, factored ΔV, induction for x_t=1+2^-t and check
+- 11.2 (no id; "Lipschitz interpolation bound") | expanded | (a) one-line chain, (c) bounds on each term asserted; added triangle/Lipschitz steps, 1-norm stacking reason, u_n>=0 reason, Cauchy-Schwarz bounds, Lip(F_pi) derivation and ratio 50.4
+- 11.4 (no id; "Scenario design and validation, numerically") | expanded | log/sign steps, tail evaluation, Hoeffding inversion and truncation chain skipped; added each with numbers; (d) shows c(1-eps-eps_val)=0.8835 >= 0.88 (answer unchanged)
+- 11.3 (no id; "Validating an approximate MPC with Hoeffding") | kept | already stepwise with all intermediate numbers (41394/35978, m<=45 boundary, 53967/48552) and assumptions
+- 11.5 (no id; "Chow LP on a three-state MDP") | kept | already stepwise: policy evaluation, visits, LP vertex, both L vectors, mixture limits 0, 13/44, 39/64 all derived

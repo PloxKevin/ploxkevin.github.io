@@ -1,0 +1,20 @@
+- practice-easy-2 | ok | re-derived 1.28x^2, -0.72x^2, 8 -> 5.12, decrease 2.88; answer unchanged
+- practice-easy-4 | ok | values 0/0 and 0.5/0, kinks at -1 and +1, check at s=-2 verified; answer unchanged
+- practice-medium-1 | fixed | numbers verified (0.76159416, 0.41997434, 0.363137, 0.162888); Check line said "at v->0 both bounds tend to 1" for two constants, reworded as the limit of tanh(vbar)/vbar and 1-tanh^2 vbar as vbar->0
+- practice-medium-2 | ok | centre 6, radius 1.9, [4.1,7.9], corners (1.2,-1.5)/(0.8,-0.5) verified; answer unchanged
+- practice-medium-3 | ok | m(d)=1.2-0.5d, alpha>0.4, [0.7,0.95] verified; answer unchanged
+- practice-medium-4 | ok | terms 1,-1/4, sums 1,3/4, identity and N=1 telescoping check verified; answer unchanged
+- practice-hard-1 | ok | invariance induction, 4^-t decay, divergence 1.1*2^t verified; answer unchanged
+- practice-hard-2 | fixed | matrix, det 0.17, eigenvalues -0.0761001/-2.23390, edge checks verified; Step 4 sign argument (why det>0 and M11<0 exclude two positive eigenvalues) spelled out
+- practice-hard-3 | ok | recursion unrolling, 0.04+0.21*0.5^t, invariance 0.145<=0.25, limsup radius 0.2 verified; answer unchanged
+- practice-hard-4 | fixed | shifted maps and -0.04 coupled-QC violation verified; added the one-line proof that ||M_new-M_old||<eps with M_old<=-eps I gives M_new<0
+- ex-14.2 (no id) | ok | tanh'=1-tanh^2, h'(v)=2v tanh v(1-tanh^2 v), sector/slope tightness, 0.762/0.420 and 0.482/0.071 verified; answer unchanged
+- ex-14.3 (no id) | ok | g,c, lambda*=0.33, M(1,0.33), eigenvalues (-33+-3sqrt37)/100, det -4l^2+2.64l-0.36 roots (33+-3sqrt21)/100, local entries vs walkthrough Step 6, det factorisation 99p^2(4a-1)/(500(1-a)), r in (3.9973,3.9974), trajectory table, (c) bounds 0.1007/-0.63 all verified with sympy/numpy; answer unchanged
+- ex-14.4 (no id) | fixed | v=(-2.85,2.80), V(x0)=2.627, simulation table (t=0,3,4,11,20), containment radii 2.512/2.866, saddle at x1=2.9847 verified against explorer model (H=0.1,a=2,W0B,W1B); added the telescoping-sum argument for x_t->0 in the induction step
+- ex-14.5 (no id) | ok | equilibrium equations, Newton iterates 0.1252440/0.1164985, contraction slopes, xi=-5/6, char. polys l^2-1.2l+0.4 and l^2-1.14l+0.38 with moduli sqrt0.4, sqrt0.38 verified; answer unchanged
+- ex-14.6 (no id) | ok | shifted maps, QC=(v1-v2)(phi1-phi2), -0.259684 and -0.130, products 0.762/0.753, oddness check -0.2024 vs -0.0310 verified; answer unchanged
+- spot-check kept practice-easy-1 | ok | already stepwise
+- spot-check kept practice-easy-3 | ok | already stepwise (rescaling, Cauchy-Schwarz, attaining point)
+- spot-check kept ex-14.1 (no id) | ok | already stepwise (block matrix, evaluation order, R_V/R_phi dimensions)
+- mirror | ok | book/chapters/nn-in-the-loop.html contains only book-m14-b1/b2 (unchanged, byte-identical to snapshot); none of the edited exercises are mirrored; summaries and ids unchanged vs snapshot
+- qa | ok | qa/check.mjs on SafeLearning/nn-in-the-loop.html after fixes: no console/page/KaTeX errors, no leftover $, no mobile overflow (expanded or collapsed)

@@ -1,0 +1,25 @@
+- rle-ready-1 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-1 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-2 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-3 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-4 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-5 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-6 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-7 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-9 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-13 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-14 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-16 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-17 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-18 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-19 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-20 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-22 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-23 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-26 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-27 | ok | re-derived from question; all steps/numbers verified in python; final answer unchanged; only solution body changed
+- rle-extra-25 | fixed | Check claimed lead 'survives exactly when margin > 0.8'; reworded to 'is guaranteed to survive every allowed change' and noted a tie is possible at margin exactly 0.8; answer unchanged
+- rle-ready-2 | ok | kept; spot-checked, full subtract-and-cancel derivation present
+- rle-extra-8 | ok | kept; spot-checked, Bellman system solved step by step, Q and advantage derived
+- rle-extra-21 | ok | kept; spot-checked, weights, norms, piecewise f(x)=x and both radii derived
+- page | ok | outside-solution bytes identical to snapshot (42 solution bodies masked); no raw < > in math; mirror not needed (no rle-* in book/chapters/primer-rl-nn.html, book-e-* unchanged); qa/check.mjs clean after final edits

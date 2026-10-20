@@ -1,0 +1,21 @@
+- book-m10-b1 | kept | already stepwise: lower clearance, interval inequality solved line by line, projection, terminal check and reuse audit
+- book-m10-b2 | kept | already stepwise: feasible interval derived, threshold 0.05 solved, zero-clearance and faster-sampling argument explicit
+- book-m10-b3 | kept | already stepwise: delay integral, triangle inequality, held-input inequality, correction and reuse audit all shown
+- exercise-10-p1 | expanded | added solving x^2<=1 with reasons, explicit h evaluations, boundary check
+- exercise-10-p2 | expanded | added chain-rule derivation of hdot, inequality algebra, equality check at u=-1
+- exercise-10-p3 | expanded | added derivative/monotonicity argument for endpoint, explicit numbers, KKT multiplier check
+- exercise-10-p4 | expanded | added verification that formula solves ODE, explicit endpoint inequalities, numeric check
+- exercise-10-p5 | expanded | added partial derivatives, case mu=0 ruled out, full KKT check and geometric distance check
+- exercise-10-p6 | expanded | derived u>=1-x, explicit intersections, added feasibility threshold x>=0.8 and boundary check
+- exercise-10-p7 | expanded | justified worst case w=-0.3 by monotonicity, explicit numbers, both-extreme check
+- exercise-10-p8 | expanded | showed both differentiations, evaluated at (1,-0.4), nested argument and explicit crossing h(t)=e^{-t}(0.1-0.9t) (sympy-checked)
+- exercise-10-p9 | expanded | explicit trajectory and h(x(t)), why test passes, regularity hypothesis named, regular h~=x check
+- exercise-10-p10 | expanded | solved both loops with checks, derived Delta<=1 via monotone minimum, margin comparison at t=1
+- exercise-10-p11 | expanded | rolled plan forward with every bound checked, terminal invariance shown, shifted plan computed and checked
+- exercise-10-p12 | expanded | explicit fixed-point iteration W0->W1, per-input successor checks for nominal and robust shields, cycle check
+- exercise-10.1 (no id; 'Forward invariance via the comparison lemma') | expanded | (a) chain rule, integrating factor, integration and D-exit argument; (b) explicit monotone comparison proof via (e_+)^2, uniqueness and y>=0; (c) split into steps
+- exercise-10.2 (no id; 'Closed form of a weighted CBF-QP') | expanded | gradient of quadratic form, explicit case split, active-constraint algebra, change-of-variables geometry, numbers with stationarity and cost checks
+- exercise-10.3 (no id; 'An exponential CBF for the double integrator') | kept | already stepwise: derivatives, eta_b/F/G, ECBF inequality, pole matching, nested initial tests, admissible gains and nested invariance proof
+- exercise-10.4 (no id; 'Input-to-state safety for a bounded disturbance') | kept | already stepwise: escape-time solution via y=1/x, local ISSf boundary bound, completing the square, integrating factor, ISSf functions identified
+- exercise-10.5 (no id; 'Discounted safety Bellman equation') | kept | already stepwise: fixed-point family verified, each of four sweeps computed per state, fixed point checked and contraction rate read off
+- exercise-10.6 (no id; 'Recursive feasibility of the predictive safety filter') | kept | already stepwise: feasible set constructed, filter optimization solved at each step, counterexample plan with interval bounds, sampled CBF bound derived

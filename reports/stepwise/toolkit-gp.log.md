@@ -1,0 +1,20 @@
+- book-m3-b1 | kept | already three numbered steps with structured solve, every intermediate number (alpha, v, mu=24/13, sigma^2=4/13) and decision check; numbers re-verified
+- book-m3-b2 | kept | separate bounds, sum, numeric test 60.1476 and threshold 56.3524 all shown and verified; interpretation present
+- practice-1 | kept | full matrix, eigenvector multiplication, evaluations and c^T K c all displayed; verified
+- practice-2 | expanded | original stated four numbers in one line; added formulas, 1x1 inverse, per-point substitution, scalar-formula and limiting-case checks
+- practice-3 | expanded | one-line result; added sqrt reason, half-width, band, explicit certification test and largest-certifying-sigma check (1/6)
+- practice-4 | expanded | conversions were asserted; added coefficient-matching argument, monotone-sqrt reason, squaring-back check
+- practice-5 | expanded | interpolant and theorem were quoted; added s_1 derivation, power function arithmetic, theorem assumptions, direct Cauchy-Schwarz re-derivation (0.64) and the point-a case
+- practice-6 | expanded | 'v solves that system' was asserted; added setup, ansatz solve with uniqueness (PD), substitution, n=0 and averaged-reading checks
+- practice-7 | expanded | determinant asserted; added eigenvalue-shift argument, det=product reason, log split with numbers, definition-based I<=gamma_2, direct 2x2 det check and K=I comparison
+- practice-8 | kept | already three numbered steps with sqrt(lambda), 2log20, beta=3.4992885, half-width 0.6998577 (all verified) and an assumptions note
+- practice-9 | kept | full lower bound via Cauchy-Schwarz, attaining interpolant, both evaluations (4, 200) and interpretation
+- practice-10 | kept | decomposition, triangle inequality, term-by-term numbers 0.05+0.2+0.04=0.29 and floor interpretation
+- practice-11 | expanded | compressed telescoping/limit; added partial fractions, written-out telescoping, union bound with event notation, continuity-from-below step, constant-budget 1-0.99^T contrast, T=3 check
+- practice-12 | kept | four numbered steps: eigenvector solve, elimination for v, mean 1/2 and variance 13/16, PD consistency check (all verified)
+- exercise-3.1 (no id attr) | kept | parts (a)-(c) each derived: Cauchy-Schwarz, kernel distance expansion, 1-e^{-a}<=a via monotone g, equality case
+- exercise-3.2 (no id attr) | expanded | 'multiplication and completion of the square give' was a jump; added covariance derivation, Schur complement as residual variance, block-by-block inverse verification, explicit completed square, residual-based derivation of the rank-one update, one-look and batch checks (numerically verified)
+- exercise-3.3 (no id attr) | kept | representer reduction, explicit objective J, gradient, convexity via eigenvalues, both lambda limits with remainder bound already derived
+- exercise-3.4 (no id attr) | expanded | one dense paragraph; split into 8 steps: Gram=XX^T, Weinstein-Aronszajn with reason, eigen-decomposition, trace=sum of squared norms, Jensen with concavity, equality conditions and design, rank argument + compactness for T<d, true T<d maximum, numeric checks (log 3, 0.347<0.405)
+- exercise-3.5 (no id attr) | expanded | arithmetic compressed into three italic paragraphs; added B/R translation reasons (squared norm, Hoeffding), term-by-term numbers (ln2000, ln^3, 27.991, 5.291), ratio 454~450, width argument kept, convention check; derivation collapsible kept
+- exercise-3.6 (no id attr) | expanded | two dense paragraphs; split into (a) 4 steps (specialize, eigenvalue-wise determinant comparison, prefactor + strictness, numbers 3.26/0.26/12.6) and (b) 4 steps (posterior/norm rescaling with RKHS inner-product check, invariant corrected band, shrinking original band, concrete coverage failure 0.017 vs 0.999); all numbers verified

@@ -1,0 +1,10 @@
+- pr-extra-2 | ok | re-derived E[X^2]=5, Var=11/4, SD=sqrt(11)/2, E[Y]=11/2, Var(Y)=99/4 (fractions + direct Y check); derivation of shortcut correct; answer unchanged
+- pr-extra-6 | ok | mean 2, within 1, cross term 0 (conditional-mean argument correct), between 4, total 5; second-moment check 9-4=5; answer unchanged
+- pr-extra-11 | ok | completing square checked (5/4*144/25=36/5, identity checked at sample f); posterior N(12/5,4/5), predictive 9/5; answer unchanged
+- pr-extra-27 | ok | four interval brackets and slopes -9,-1,0.5,1 checked against g(nu) evaluated directly; continuity values 65,55,100; min g(10)=55 matches C.S26; answer unchanged
+- C.6 | ok | E=0.8, P=0.2, VaR=2, CVaR=6 both ways; Var 4.96, q=1.28155, phi(q)=0.175498, Gaussian CVaR 4.7085; constraints verdict unchanged
+- structure | ok | page skeleton outside solution bodies identical to snapshot; div/details/summary/p balanced; no raw < or > in new math; book/chapters/primer-probability.html byte-identical to snapshot (no changed exercise is mirrored there)
+- spot-check pr-extra-14 | ok | ln40/0.02=184.444, bounds at 184/185 = 0.05045/0.04945, N=185; every step shown
+- spot-check pr-extra-19 | ok | martingale step complete and justified
+- spot-check book-c-b2 | fixed | added the step P(-c<=Z<=c)=Phi(c)-Phi(-c)=2Phi(c)-1 via symmetry, with Phi(1.54919)=0.93933; answer 0.87866 unchanged; mirrored byte-identically in book/chapters/primer-probability.html
+- render-qa | ok | qa/check.mjs clean: no KaTeX errors, no leftover $, no mobileOverflow/mobileOverflowExpanded

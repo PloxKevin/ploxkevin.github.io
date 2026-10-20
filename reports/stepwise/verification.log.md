@@ -1,0 +1,20 @@
+- book-m15-b1 | kept | already stepwise: ReLU status per branch, both affine branches optimized with endpoint values, zero-margin decision explained
+- book-m15-b2 | kept | already stepwise: k<=n solved for n>=99, max-score event translated to joint bound, 59.35+0.3+0.32=59.97 checked, union-bound contrast
+- practice-easy-1 | kept | already stepwise: p=f2-f1 expanded, monotone worst case, counterexample forward-checked, upper-bound direction interpreted
+- practice-easy-2 | expanded | endpoints were stated directly; added sign-aware term bounds, simultaneous attainment, ReLU monotonicity, centre-radius cross-check
+- practice-easy-3 | expanded | chord and lower-line validity were asserted; added chord derivation, two-case proofs of both inequalities, explicit evaluations, soundness reasoning and endpoint check
+- practice-easy-4 | expanded | added k computation with n+1 reason and k<=n check, explicit order statistic, interval algebra, coverage statement with assumptions, endpoint check
+- practice-medium-1 | expanded | added hidden-interval monotonicity, sign-aware IBP endpoint choice, exact substitution, reachable-set vs box picture and impossible corner
+- practice-medium-2 | expanded | added chord derivation, explicit sign flip when multiplying by -2, minimization of lower line, exact piecewise range, evaluation at z=-1/2 and endpoint check
+- practice-medium-3 | expanded | derived single-probability radius from Theorem 1 via normal symmetry, explicit norm inequality, tightness vector check, p_A=0.5 abstention reasoning
+- practice-medium-4 | kept | already stepwise: Hoeffding inequality solved with log and sign flip (M>=230.26 -> 231), lower bound 0.88, impossibility of 0.95 shown
+- practice-hard-1 | expanded | added centre/deviation decomposition, Cauchy-Schwarz with equality case, coordinate-wise l_inf bound, verified minimizers, soundness counterexample (0.8,2.2) and dual-norm summary
+- practice-hard-2 | expanded | named union bound and why no independence needed, explicit k computations with k<=n comparison, derived n>=39, union vs independent joint coverage
+- practice-hard-3 | kept | already stepwise: explicit count 119.91->120, both binomial tails factored and evaluated (verified 0.05305, 0.04912), monotonicity coupling, probability interpretation
+- practice-hard-4 | expanded | added conditional-probability definition, total-probability decomposition, attaining scenario showing 0.96 unprovable, consistency check 0.5*0.92=0.46
+- exercise-15.1 (no id) | expanded | added centre-radius equivalence, row split, named triangle-inequality chain, attainment per row, inverse-map derivation of |z1|+|z2|<=2, corner check and area check via det
+- exercise-15.2 (no id) | expanded | added pre-activation radius arithmetic, IBP endpoint choices, full expansions of lower/upper affine bounds (sympy-free Fraction check), piecewise alpha optimization, branch-wise exact range and containment check
+- exercise-15.3 (no id) | expanded | proved uniform rank by swapping+summing, both directions of coverage<=>rank<=k, ceiling inequality derivation, numeric check of (b) at n=9 and n=10; (d) text kept
+- exercise-15.4 (no id) | kept | already stepwise: symmetry reduction, both radii computed (0.8225, 0.8815), Clopper-Pearson unanimous-count cap derived (verified Phi^-1(0.99931)=3.199, cap 1.599)
+- exercise-15.5 (no id) | expanded | added log evaluation, full Chernoff exponent step showing the dropped d^2 slack, ratio comparison, explicit n_k count; (c)/(d) remarks kept; 643/1396/1138 verified numerically
+- exercise-15.6 (no id) | kept | conceptual comparison with no computation to expand; each difference in kind is stated with its precise certified object

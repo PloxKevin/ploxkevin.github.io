@@ -1,0 +1,21 @@
+- book-m8-b1 | kept | already derives feasible range, optimum, multiplier via slope and Lagrangian with displayed algebra
+- book-m8-b2 | kept | already recomputes J_r, J_c at gamma=0.95, solves the budget, checks p=4/9 and explains allowance
+- book-m8-b3 | kept | already compares costs with z_2, computes z_3 in exact fractions, and checks at original time scale
+- exercise-8-p1 | expanded | stated J_r, J_c without the geometric-series step; added steps, slack, partial-sum check
+- exercise-8-p2 | expanded | occupancy asserted rather than derived from definition; added steps and pure-action check
+- exercise-8-p3 | expanded | skipped the lambda*residual products and sign handling; added steps and difference check
+- exercise-8-p4 | expanded | showed residuals, step sizes, unprojected values and when projection is active
+- exercise-8-p5 | expanded | tail sum and both flow-equation substitutions were asserted; now shown with transition values
+- exercise-8-p6 | expanded | one-step expectations and inequality solving were jumped; added steps, active-budget and endpoint checks
+- exercise-8-p7 | expanded | VaR/CVaR stated without CDF and tail-mass reasoning; added steps and Rockafellar-Uryasev check
+- exercise-8-p8 | expanded | added explicit updates, time-zero spending and unit conversion, with one-step check
+- exercise-8-p9 | kept | already derives Lagrangian, piecewise dual, its minimizer, and primal recovery via complementary slackness
+- exercise-8-p10 | expanded | added both evaluations, the general inequality between the two quantities, and the per-iterate conclusion
+- exercise-8-p11 | expanded | VaR/CVaR were quick assertions; added CDF reasoning, tail-mass split and Rockafellar-Uryasev check
+- exercise-8-p12 | kept | already proves weak duality and the subgradient inequality step by step before deriving the update
+- exercise-8.1 (no id; "Derive the occupancy LP") | kept | full derivation of normalization, flow constraints, LP, boundedness and convexity
+- exercise-8.2 (no id; "Convexity of the dual function") | expanded | convexity/weak-duality steps were compressed; (c) skipped endpoint maximization and P* derivation; added steps, mirror identity, numeric check
+- exercise-8.3 (no id; "two-state example by LP reasoning") | kept | already solves flows, LP bound with equality case, piecewise dual and randomization count with displayed arithmetic
+- exercise-8.4 (no id; "Sustained oscillation of dual ascent") | kept | already derives M, trace/det, modulus, numerical period/halving and Jury conditions step by step
+- exercise-8.5 (no id; "CVaR of a discrete cost") | kept | already computes mean, VaR, CVaR, full piecewise RU objective and Gaussian fit with numbers
+- exercise-8.6 (no id; "multiplier must be part of the state") | kept | already detailed: duality argument, vertex classification, attainability construction and full execution table

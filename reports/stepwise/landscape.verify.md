@@ -1,0 +1,14 @@
+# landscape.html — independent verification (2026-10-20)
+- practice-2 | ok | re-derived E[N]=0.5, P(N>=1)=0.1, verdicts pass/fail; Ex 1.3(i) reference checked
+- practice-3 | ok | union bound 0.96, 0.99^4=0.96059601, gap 0.00059601 verified
+- practice-4 | ok | symbol mapping, composition f_pi, point-mass check correct
+- practice-5 | ok | 0.001 per step, 0.6 bound, 0.999^20=0.98019, 0.98^20=0.66761 verified
+- practice-7 | ok | images [-0.5,0.5], [0.5,1]; x_t=2^(1-t); exits at t=0 (C1) and t=2 (C2) verified
+- practice-8 | fixed | Step 1 jumped from |d_j(x+δ)-d_j(x)|<=√2L||δ|| to the lower bound; added d_j(x+δ)>=d_j(x)-|diff| and margin step as aligned display; numbers 0.212132, 0.034315, -0.022254 verified
+- practice-9 | ok | quantifier negation chain and counterexample correct
+- practice-11 | ok | induction x_t=0.01t, first violation t=101, open-set check t=100 correct
+- practice-12 | ok | r>=0.2 sufficiency+necessity, r=0.19 gives 0.195>0.19 verified
+- practice-1 (kept, spot-check) | ok | interval [-2,2], h values 0/1.75/-5 and counterexample all stepwise
+- practice-6 (kept, spot-check) | ok | mean 0.8, VaR 2, CVaR 6, piecewise F verified numerically (min 6 at nu=2)
+- practice-10 (kept, spot-check) | ok | 0.9^50/0.1=0.0515378 verified; geometric-series steps shown
+- QA | ok | check.mjs clean (no katex errors, leftover $, or mobile overflow); no raw < or > in practice math; no mirror source contains practice exercises

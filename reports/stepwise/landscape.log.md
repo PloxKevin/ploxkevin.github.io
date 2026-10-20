@@ -1,0 +1,19 @@
+- book-m1-b1 | kept | union-bound allocation and independent product already derived step by step with numbers
+- book-m1-b2 | kept | mean, chance and CVaR (atom split plus variational check) already fully worked
+- practice-1 | kept | interval solving, three evaluations and counterexample already shown step by step
+- practice-2 | expanded | original gave E[N] and P(N>=1) in one line; added distribution, both computations, budget comparison, Markov-consistency check
+- practice-3 | expanded | added De Morgan complement step, why union bound holds without independence, numeric gap check vs 0.99^4
+- practice-4 | expanded | added explicit symbol dictionary, substitution, closed-loop composition, point-mass check linking deterministic and stochastic forms
+- practice-5 | expanded | added union formulation, solving 20*delta<=0.02, explicit 0.4 sum, tightness (disjoint events) and independence comparison checks
+- practice-6 | kept | mean, VaR via CDF, atom-split CVaR and piecewise variational check already fully worked
+- practice-7 | expanded | added invariance definition, monotone-image computation for both intervals, induction for x_t=2^(1-t), exact exit times, limit-in-set check
+- practice-8 | expanded | added why the sqrt2*L gap bound applies, radius arithmetic, explicit remaining-gap numbers for 0.2 and 0.22, boundary check
+- practice-9 | expanded | added explicit negation rules, quantifier-by-quantifier negation chain, concrete two-controller counterexample, implication-direction check
+- practice-10 | kept | indicator costs, geometric-series factorization with numbers and certain-failure event already step by step
+- practice-11 | expanded | added unrolling plus induction proof of x_t=0.01t, solving 0.01t>1 with boundary convention, invariance definition and open-set check
+- practice-12 | expanded | separated sufficiency (triangle inequality) from necessity (attained worst case), solved 0.5r+0.1<=r, induction, r=0.19 check
+- ex-1.1 (no id) | kept | each of the eight statements already classified with its formalisation, guarantee type and reasons
+- ex-1.2 (no id) | kept | mean, chance, VaR/CVaR at both levels with tail-average and RU formula plus subgradient optimality check
+- ex-1.3 (no id) | kept | all four parts proved with explicit constructions, geometric series and tightness examples
+- ex-1.4 (no id) | kept | conceptual assumption audit already itemised per assumption with failure consequences; no computation to expand
+- ex-1.5 (no id) | kept | full derivation of m_t, v_t, Gaussian tail sum with table of intermediate values and joint-vs-marginal comparison

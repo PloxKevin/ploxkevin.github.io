@@ -1,0 +1,16 @@
+# safe-bo-theory verify (independent pass, 2026-10-20)
+- practice-2 | ok | re-derived restricted argmax (b, 1.1) and cone chain f(b)>=f(z)-Ld>=y-E-Ld>=h; answer unchanged
+- practice-3 | ok | radii 0.3/0.1, tight 0.15, counterexample f=h+0.3-2d gives h-0.3 at d=0.3; answer unchanged
+- practice-4 | ok | max/min of endpoints gives [0.3,0.5]; 0.2/0.4/0.7 memberships correct
+- practice-5 | ok | r=0.2,0.3; [0,0.4]u[0.3,0.9]=[0,0.9]; boundary and x=0.95 checks (-0.45, 0.05) verified
+- practice-6 | ok | tent piecewise form, cross-piece triangle inequality, L>=M via (0,1/2) all correct
+- practice-7 | ok | beta=3.5700526, lower band 0.1429947, critical multiplier 3 verified in python
+- practice-8 | ok | three one-sided steps, 0.8-0.1-0.4-0.15=0.15 verified
+- practice-9 | ok | reverse triangle inequality derivation and strict inequality beyond r correct
+- practice-11 | fixed | Step 1 used sum_i alpha_i K_ij=(K alpha)_j without stating symmetry (added K_ij=K_ji); Step 6 "by Step 2's argument" replaced by the explicit reproducing-property computation and explicit expansion f=s+(f-s)
+- practice-12 | fixed | "almost surely broken within a few hundred queries" misused "almost surely"; replaced with the verified statement: broken within 100 queries with probability 1-0.0095~0.99 (p=0.9545, p^25=0.312, p^100=0.0095 verified)
+- (no id) Exercise 5.3 | ok | induction, monotone inversion of u^(1/alpha), radii 0.1/0.01 and u(u-1)>0 comparison correct; (b)/(c) answers unchanged
+- (no id) Exercise 5.5 | fixed | (a) Check ended with ungrammatical "So ... so ..." and lost the link to 0.69; reworded. Numbers 0.0455, 0.02275, 0.312, 0.69, 1.14 verified; (b)-(d) byte-identical to snapshot
+- spot-check kept practice-1, practice-10, Exercise 5.1, book-m5-b1 | ok | all steps shown, numbers verified; no expansion needed
+- mirror | ok | none of the changed solutions occur in book/chapters/safe-bo-theory.html or book/case-studies.html; chapters file byte-identical to snapshot
+- markup/QA | ok | diff hunks only inside solution bodies; no raw < or > in exercise math (only pre-existing '$L>0$' in a JS quiz string, untouched); qa/check.mjs clean (no KaTeX errors, leftover $, or mobile overflow)

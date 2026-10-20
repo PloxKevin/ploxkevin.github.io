@@ -1,0 +1,20 @@
+- book-m14-b1 | kept | already stepwise: nominal map split, MVT bounds, triangle inequality, actuator check, induction and geometric-sum unrolling all shown
+- book-m14-b2 | kept | already stepwise: characteristic polynomial, discriminant, root modulus, explicit one-step violation and actuator check
+- practice-easy-1 | kept | already stepwise: substitution, equilibrium solve, back-check, shifted dynamics and origin check
+- practice-easy-2 | expanded | showed squaring of 0.8, coefficient subtraction, numeric evaluation and cross-check of -2.88
+- practice-easy-3 | kept | already stepwise: rescaling, Cauchy-Schwarz with attaining point, comparison with the box
+- practice-easy-4 | expanded | explicit max(.,0) evaluations, location of the kinks, proof that shifts preserve chord slopes, extra check point
+- practice-medium-1 | expanded | justified where each minimum is attained, computed QC values with alpha and mu, explained the extra functions admitted by [mu,1]
+- practice-medium-2 | expanded | centre/deviation split, triangle-inequality radius, attaining corners for both endpoints, midpoint/width check
+- practice-medium-3 | expanded | reduction to x+=m(d)x with stability criterion, endpoint range by monotonicity, inequality solved, both cases and boundary checked
+- practice-medium-4 | expanded | signals derived, identity verified by expansion, telescoping explained, N=1 cross-check against the direct partial sum
+- practice-hard-1 | expanded | containment of sublevel set in local domain, explicit induction order, unrolled decay bound, divergence induction at 1.1, boundary check
+- practice-hard-2 | expanded | both expansions shown, coefficient table, matrix read-off, det/trace eigenvalue reasoning, S-procedure decrease rate, local-set argument, sector-edge checks
+- practice-hard-3 | expanded | disturbance bound derived, recursion unrolled with induction, geometric sum formula, explicit finite-time bound, fixed-point and t=0 checks
+- practice-hard-4 | expanded | shifted maps computed, explicit coupled-QC violation (-0.04), negative IQC sample example, margin-based repair for weight updates
+- ex-14.1 (no id) | kept | already stepwise: block matrix assembled, evaluation order for well-posedness, R_V/R_phi with dimensions, output-feedback and bias changes explained
+- ex-14.2 (no id) | expanded | derived tanh' via quotient rule, MVT chord argument, QC expansion, full monotonicity proof of tanh(v)/v with h' computed, tightness of both ends, averaging argument for the comparison
+- ex-14.3 (no id) | expanded | added feasibility arithmetic, entry-by-entry matrix, eigenvalue and admissible-interval quadratic formula, M_alpha substitution and determinant factorisation, containment, union argument, exact-ROA monotone-sequence proof, (c) bounds derived
+- ex-14.4 (no id) | expanded | stated the missing implication, explicit v and V(x0) arithmetic, simulation table (verified), Schur/Cauchy-Schwarz containment with numbers, induction and non-circularity spelled out
+- ex-14.5 (no id) | expanded | equilibrium equations derived with cancellation, uniqueness, Newton iterates and residual check, contraction proof, integrator equilibrium and linearisation partials, characteristic polynomials and root moduli
+- ex-14.6 (no id) | expanded | shifted maps and chord-slope invariance shown, QC factored into product of differences, all intermediate tanh values, bias-free argument layer by layer, surviving multipliers with numeric and oddness checks

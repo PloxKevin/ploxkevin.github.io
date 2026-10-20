@@ -1,0 +1,14 @@
+- practice-3 (2.P3) | fixed | re-derived (Schur t-4, completed square, null vector, eig 0/5 checked numpy); replaced "tr M(4)=5" eigenvalue claim with explicit M(4)v=5v justification
+- practice-4 (2.P4) | ok | cases, coefficient matching, checks (3,3)->0 and (2,1)->1 verified; sector interpretation correct
+- practice-5 (2.P5) | ok | P=25/9, V diff -x^2, 16/9-25/9=-1, 1.21-1=0.21 verified; answer unchanged
+- practice-7 (2.P7) | ok | Schur with I_2, completed square identity, t=25, null vector (1,-3,-4), eig 0,1,26 verified
+- practice-8 (2.P8) | ok | telescoping, bound 12, sqrt(12)=3.4641, gain 2 verified
+- practice-9 (2.P9) | ok | completed square constant lambda-lambda^2/4 re-derived; g(0,1,2,4)=0,.75,1,0; matches P1 (x*=1, lambda*=2)
+- practice-10 (2.P10) | ok | test t=-(|a|+1)/(2b) gives <=-1; minors; pseudoinverse/range condition consistent with Section 3 remark; eig (1+-sqrt5)/2 verified
+- practice-11 (2.P11) | ok | Lipschitz 6, rho=36, F(0)=-1, F(1)=5, attainment for x>-1/2 verified
+- exercise-2.1 (no id) | ok | (a)-(c) re-derived; D(lambda)=max{1+lambda,-lambda}, min over R = 1/2 at -1/2, over lambda>=0 = 1 verified
+- exercise-2.3 (no id) | fixed | block identities verified on random matrices (numpy), scalar check eig -3,-1,0 and -2,0 verified; walkthrough 2x2 LMI matches; clarified that B^T is the third block row minus its -I corner
+- practice-6 (2.P6) [kept, spot-check] | ok | residual (2-tau)+(tau-1)x^2, tau in [1,2], every step justified
+- practice-12 (2.P12) [kept, spot-check] | ok | A^TA-I, P=(4/3,16/9,356/27) verified A^TPA-P=-I with numpy, det 1168/81
+- exercise-2.4 (no id) [kept, spot-check] | ok | S-lemma steps, S eig 0,5/4 all shown
+- render QA | ok | check.mjs clean (no KaTeX errors, leftover $, or mobile overflow); details/summary counts 55/55 unchanged; mirror file book/chapters/toolkit-lmi.html holds only 2.B1/2.B2 (unchanged), no mirroring needed

@@ -1,0 +1,16 @@
+- opt-ex-descent-1 | fixed | numbers verified; added the missing intermediate line -2<-4eta<0 and the reasons (subtract 1, multiply by -1 flips, divide by 4) when solving |1-4eta|<1
+- opt-ex-matrix-calculus-1 | ok | gradient (-2,-4), Hessian diag(2,8), x*=(1,1/2) re-derived with numpy; uniqueness argument sound; answer unchanged
+- opt-ex-lipschitz-1 | ok | L=4 sharpness argument (delta=(4-L)/2, y=2-delta in [-2,2]) checked; no global constant; f' 2-Lipschitz; answer unchanged
+- opt-ex-lipschitz-2 | ok | r=0.05, 0.05sqrt3; bounds 0.05, -0.023205; Delta<=0.086603; N=12 gives +0.005662, N=11 gives -0.00746; 2197 points verified
+- opt-ex-convexity-1 | ok | interval chain inequalities, midpoint counterexample, triangle inequality + homogeneity proof correct; checks correct
+- opt-ex-convexity-3 | ok | completing the square identity, case split, f*=max(y,0)^2/2, Fenchel-Young equalities and unrestricted-conjugate counterexample (1/2>0) verified
+- opt-ex-descent-2 | ok | grad (4,-8), Newton step (-2,1) to (1,1), GD to (2.5,1), f values 3,-5,-2.75, gap 2.25 and (I-eta H) error map verified
+- opt-ex-programs-1 | ok | expansion, Q=diag(2,4), c=(-2,4), const 3, A,b, minimiser (1,-1), QP value -3 verified
+- opt-ex-programs-2 | ok | pairwise intersections, feasibility filter, vertex values 0,4,5,3, certificate 2x+y<=5 and uniqueness verified
+- opt-ex-minmax-1 | ok | sup argument (x=(max(m,0)+1)/2) valid; empty argmax; 0.99 meets page's eps-optimal definition f>=sup-eps; argmax {-1,1}
+- opt-ex-minmax-3 | ok | min-max = max-min = 0 checked on grid; saddle inequalities; joint-min value -4 at (1,0); checks L(1,-3)=-1, L(0,-2)=L(2,-2)=1 verified
+- opt-ex-derivatives-2 | ok | spot-check (kept): both routes give -2t-4t^3, -6 at t=1; complete
+- opt-ex-constraints-1 | ok | spot-check (kept): x*=1, lambda=4; x<=4 case x=3, lambda=0; all KKT conditions shown
+- opt-ex-minmax-2 | ok | spot-check (kept): elementary min/max comparison fully shown (B, 0.3; C unsafe)
+- book/chapters/primer-optimization.html | ok | unchanged vs snapshot; none of the changed solutions appear there or in case-studies.html
+- render QA | ok | qa/check.mjs clean after fix (no KaTeX errors, leftover $, mobileOverflow or mobileOverflowExpanded)

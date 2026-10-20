@@ -1,0 +1,17 @@
+# toolkit-gp verify (2026-10-20)
+- practice-2 | ok | re-derived mu(a)=1.6, s2(a)=0.2, mu(b)=0.8, s2(b)=0.8; checks valid; answer unchanged
+- practice-3 | ok | band [0.4,1.6], not certified, sigma<=1/6 check correct
+- practice-4 | ok | beta=3, B=4; coefficient matching and monotone sqrt argument correct
+- practice-5 | ok | s_1(b)=0.6f(a), P=0.8, bound 1.6, CS re-derivation 1-0.72+0.36=0.64 verified
+- practice-6 | ok | v=1/(n+1), uniqueness via PD, averaging check correct
+- practice-7 | ok | det 15/4, 0.458145+0.202733=0.660878 verified; example K from 3.P1 has same eigenvalues
+- practice-11 | fixed | telescoping/union/continuity correct; clarified that 1-0.99^T needs each failure prob exactly 0.01 (1-0.99^100=0.634 verified)
+- exercise-3.2 | ok | block inverse verified numerically (err 4e-16), completed square, residual-variance Schur complement and rank-one update re-derived
+- exercise-3.4 | fixed | Weinstein-Aronszajn reason now states eigenspace dimensions match (multiplicity); Step 7 contradiction now correctly uses equality condition sum mu_i = T instead of asserting it; numbers log3, 0.347<0.405 verified
+- exercise-3.5 | ok | ln2000=7.6009, ln^3=439.13, c=1147.8, CG c=2.529, ratio 453.8 verified
+- exercise-3.6 | ok | 3.26/0.26/12.6, w_orig=0.01413 coverage 0.0169, w_corr=2.174 coverage 0.9989 verified; lambda>=1 remark consistent with page's corrected formula
+- mirror | ok | none of the changed exercises appear in book/chapters/toolkit-gp.html (byte-identical to snapshot)
+- qa | ok | check.mjs clean (no KaTeX errors, no leftover dollar, no mobile overflow); diff touches only solution bodies; no raw angle brackets in new math
+- practice-8 (kept spot-check) | ok | numbers 3.4992885, 0.6998577 verified; steps complete
+- practice-10 (kept spot-check) | ok | decomposition and 0.29 verified
+- exercise-3.3 (kept spot-check) | ok | representer, gradient, convexity and both limits derived step by step

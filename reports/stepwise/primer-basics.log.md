@@ -1,0 +1,80 @@
+- mb-extra-w1 | kept | each power and absolute value expanded factor by factor, distance interpretation given
+- mb-extra-w2 | kept | common denominators shown explicitly, equation solved and substituted back
+- mb-extra-w3 | kept | exponent rules, index listing, term count and both sums computed in eighths
+- mb-extra-w4 | kept | sign reversal justified, endpoint/interior/excluded checks for both inequalities
+- mb-extra-w5 | kept | absolute value resolved by cases, strict vs non-strict endpoints checked
+- mb-extra-w6 | kept | log with sign reversal justified, exact integer check at k=4 and k=5
+- mb-extra-gs1 | kept | every membership/subset test justified, vacuous truth explained, cardinalities
+- mb-extra-gs2 | kept | product enumerated, rows filtered, intersection computed, pair order discussed
+- mb-extra-gs3 | kept | truth table, three substitutions, general proof via transitivity
+- mb-extra-gs4 | kept | constructive u=-x with domain check, universal check, layered negation
+- mb-ex-s1 | kept | table tests every element, membership/subset reasoned, interval cross-check
+- mb-ex-s2 | kept | each operation element by element with partition and counting check
+- mb-ex-s3 | kept | four claims proved/disproved with case split, witness and contradiction
+- mb-ex-s4 | kept | negations derived layer by layer, witnesses checked, strictness discussed
+- mb-ex-s5 | kept | factorisation proof, counterexample -4, contrapositive by cases, set view
+- mb-ex-s6 | kept | both inclusions for union, Archimedean step displayed for intersection, numeric example
+- mb-ex-s7 | kept | intervals computed, membership chain of equivalences, endpoint checks
+- mb-ex-s8 | kept | per-state input sets, both statements and negation assessed with set tests
+- mb-ex-s9 | kept | necessity at x=1 and sufficiency for a>=1 proved, shared-input impossibility shown
+- mb-extra-gf1 | kept | domain derived, substitutions shown, equation solved with nonzero-denominator check
+- mb-extra-gf2 | kept | image via both inclusions, preimage chain displayed, inverse verified both ways
+- mb-extra-gf3 | kept | level sets solved via |x|<=2, three inputs evaluated, input/output roles separated
+- mb-extra-gf4 | kept | interval intersection derived, five states evaluated, feasibility range by endpoint comparison
+- mb-ex-f1 | kept | all five outputs computed, injectivity/surjectivity witnessed, repairs discussed
+- mb-ex-f2 | kept | both compositions numerically and symbolically expanded with cross-check
+- mb-ex-f3 | kept | fixed point solved, three iterates with common denominators, error recursion and closed form
+- mb-ex-f4 | kept | image via both inclusions, preimage by sign cases, empty preimage justified
+- mb-ex-f5 | kept | four cases with witnesses, factorisation injectivity proof incl. zero case, inverse checked
+- mb-ex-f6 | kept | fixed point, iterates, contraction identity, exact error by induction, k=7/8 checked
+- mb-ex-f7 | kept | counterexample computed, both inclusions proved, necessity of injectivity shown
+- mb-ex-f8 | kept | iteration displayed set by set, monotonicity proved, minimality argument
+- mb-ex-f9 | kept | each hypothesis checked, fixed-point equations solved, trajectories described
+- mb-extra-gp1 | kept | both implications derived with order-preservation reasons, endpoint check
+- mb-extra-gp2 | kept | definition-based witnesses m+n and m+n+1 with integer-closure reason
+- mb-extra-gp3 | kept | base, hypothesis, step with explicit (2n+2)-(n+2)=n comparison
+- mb-extra-gp4 | kept | add-subtract decomposition, triangle inequality, interval certificate, attainment example
+- mb-ex-p1 | kept | completing the square expanded, equality case both directions
+- mb-ex-p2 | kept | contrapositive set up, (2m+1)^2 expanded line by line with integer witness
+- mb-ex-p3 | kept | three counterexamples with premise and conclusion checked, corrected statements
+- mb-ex-p4 | kept | base, hypothesis, four-line displayed step with reasons, numeric replay
+- mb-ex-p5 | kept | gap located, counterexample traced, two repairs, sign-case discussion
+- mb-ex-p6 | kept | one-step bounds displayed, induction, outside-start check, closed-form cross-check
+- mb-ex-p7 | kept | d<=d/3 argument without division, existence counterexample checked
+- mb-ex-p8 | kept | joint induction with displayed chain and reasons, numeric bounds and two example maps
+- mb-ex-p9 | kept | trajectory listed, pigeonhole and periodicity argument, time-varying counterexample
+- mb-extra-gl1 | kept | terms evaluated, explicit T=floor(1/eps)+1 with reciprocal reasoning, eps=1/4 check
+- mb-extra-gl2 | kept | partial sums, shift-and-subtract derivation, tail computed and checked at T=4
+- mb-extra-gl3 | kept | terms, displayed cancellation with independent check, general partial sum and limit
+- mb-ex-sequences-1 | kept | equivalence chain displayed, integer cutoff 30 with failing t=29, epsilon proof
+- mb-ex-sequences-2 | kept | triangle-inequality bound, four-term example, tail formula, 2^8/2^9 check, attainment
+- mb-ex-sequences-3 | kept | telescoping sum displayed, budget 6, convergence and excursion count 150, late-excursion example
+- mb-extra-gb1 | kept | duplicates removed, tight bounds argued by failing larger/smaller candidates
+- mb-extra-gb3 | kept | full value table, min value vs argmin set, changed domain recomputed
+- mb-extra-gb2 | kept | upper bound and epsilon argument, no-maximum and minimum, concrete n=101 check
+- mb-ex-bounds-1 | kept | bounds then attainment for both sets, explicit midpoint and strict-improvement algebra
+- mb-ex-bounds-2 | kept | parity split displayed, sup/inf/limsup/liminf argued with explicit tail examples
+- mb-ex-bounds-3 | kept | payoff table, inner/outer optimisations in six labelled steps, gap explained
+- mb-extra-gt1 | kept | openness and closedness tested separately with explicit witness points and sequence
+- mb-extra-gt2 | kept | output difference simplified, delta=eps/2 verified, numeric interval at a=1
+- mb-extra-gt3 | kept | factorisation bound on [0,2], unbounded pair n+1,n, explicit continuity delta
+- mb-ex-topology-1 | kept | interior radius verified, closure and boundary derived, compactness of A and B argued
+- mb-ex-topology-2 | kept | EVT assumptions stated, three domains analysed directly with improvement argument
+- mb-ex-topology-3 | kept | nearest-grid bound 0.05 displayed, distance-function counterexample with Lipschitz proof
+- mb-extra-gr1 | kept | explicit witnesses C=7,n0=1; C=3 refuted; C=4 threshold 4 with failing n=3
+- mb-extra-gr2 | kept | three ratios formed, values at 10^4, limits and sublinear interpretation
+- mb-extra-gr3 | kept | bound values compared, crossover 10^6 solved, budgets for both tolerances
+- mb-ex-asymptotics-1 | kept | lower and upper constants derived termwise, ratio limit for little-o
+- mb-ex-asymptotics-2 | kept | both inequalities solved and rounded with neighbour checks, work compared
+- mb-ex-asymptotics-3 | kept | division, L'Hopital with assumptions and derivatives expanded, numeric 0.4605, product counterexample
+- book-0-ex-1 | kept | information interval derived, both readings checked, acceptance interval with necessity check
+- book-0-ex-2 | kept | successor interval for fixed u, containment inequalities displayed, actuator intersection, quantifier audit
+- book-0-ex-3 | kept | steady value subtracted, induction envelope, 2^k>=64 solved, strict case k=7, trace check
+- book-0-ex-4 | kept | necessity at x=5,w=d displayed, feedback -0.2x sufficiency, induction to all time, threshold checks
+- exercise-0.6 (no id; "Reading rates and costs") | expanded | triple L'Hopital and numeric cutoff 246,639 were asserted without the derivative chain or bracketing; now 11 steps with fraction-free endpoint check
+- exercise-0.1 (no id; quantifier order) | kept | negation, witness u=-x, endpoint contradiction, command sets U(x) computed
+- exercise-0.2 (no id; monotone set operator) | kept | radii computed per witness round by round, all gateway margins checked
+- exercise-0.3 (no id; discounted sums) | kept | induction step displayed with reasons, order exchange justified by nonnegativity, numeric 90 and 9
+- exercise-0.4 (no id; suprema/minimax) | kept | output set derived with surjectivity check, parity split, angle-addition, inner/outer optimisations
+- exercise-0.5 (no id; minimizer existence) | kept | five parts each with theorem or direct witness, two-square identity expanded, parameter cases
+- exercise-0.7 (no id; Banach for cos) | kept | self-map, MVT contraction, log with sign reversal (86.21 -> 87), a posteriori sum derived; numbers re-verified

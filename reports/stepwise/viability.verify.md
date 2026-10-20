@@ -1,0 +1,19 @@
+- practice-2 | ok | per-action classification and count 3, fraction 0.6 re-derived; answer unchanged
+- practice-3 | ok | 0.9^3=0.729, -14.58 vs -20, difference 5.42 checked
+- practice-4 | ok | strict inequality p>1, tie at p=1, cases verified
+- practice-5 | ok | all pruning rounds re-run; kernel {A,D}
+- practice-6 | ok | G_n=2+gamma^n(J-2) verified symbolically; threshold p>4, V(A)=2
+- practice-7 | ok | log3=1.09861, log4=1.38629, log(4/3)=0.28768; softmax positivity argument sound
+- practice-8 | ok | triangle-inequality sufficiency and endpoint necessity (both signs of z) checked; 0.9 and 1.1
+- practice-9 | ok | least-upper-bound arguments correct; check V_p(A)=max{2,4-p/2} correct
+- practice-10 | ok | 2.71-16.2=-13.49, attainment and R=-1 counterexample verified
+- practice-11 | ok | derivation and 0.002/0.05=0.04 correct
+- practice-12 | ok | viability induction and total-probability step sound; independent-case 1-(0.994)^50=0.2599 matches sum of first-time terms
+- ex-7.1 | fixed | Step 10 claimed Lambda>0 because full braking (a single point, measure 0) is viable; replaced by a proof that all d in [0,min{a,a eps/(v Delta)}) are viable (sim check a=v=1, eps=0.05, Delta=0.5: viable d in [0,0.128) contains [0,0.1), inside [0,0.2)); rest (roots, 2-sqrt2, wall condition, x2=-0.3 example) verified
+- ex-7.3 | ok | all values (6.89,4.42,13.73,4.32,4.97,5.68), min tau=1.4512 p*=4.2379, series coeff -7 and tau^-2 coeff 11 (explains 5.65 vs 5.68) verified with sympy
+- ex-7.6 | ok | p1 formula matches walkthrough Step 4; 13.30, 23.21, 14.45, 27.82, increments 1.15/4.61 verified; (a) unchanged
+- ex-7.2 (kept) | ok | spot-checked: slow-fall condition c<p(1-gamma) and gamma^2 c gap verified; complete derivation
+- ex-7.4 (kept) | fixed | spot-checked values (-1.75, p<1, V(3)=-1.5, p*=7.5, p_Z=5.5, 3.122, -2.23) all correct; replaced 5 raw < / > inside math with \lt/\gt (no text change)
+- ex-7.5 (kept) | fixed | spot-checked; conceptual proof adequate; replaced raw > in {lambda>=0: lambda>p*} with \gt
+- mirror | ok | no changed/kept-edited solution appears in book/chapters/viability.html or book/case-studies.html (chapters file identical to snapshot)
+- qa | ok | node check.mjs: no KaTeX errors, no leftover $, no mobile overflow; 55/55 details, summaries identical to snapshot

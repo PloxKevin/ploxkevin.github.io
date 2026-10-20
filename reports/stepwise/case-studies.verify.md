@@ -1,0 +1,8 @@
+- book-project-tank-b3 | ok | re-derived Y, endpoint inequalities, interval-overlap test and boundary checks (u in [0.4,1] at y=-0.1, [-1,-0.4] at y=10.1); answer unchanged; mirrored
+- book-project-score-b1 | ok | normalized box [-0.2,0.2]^2, bound 0 attained at e=(-0.1,0.4), physical form 4e1-e2/2, corners 0.4/0/1.2/0.8 verified; answer unchanged; mirrored
+- book-project-score-b2 | fixed | rank 20, 19/20=0.95 verified; "at least 99 cases" only checked n=98,99 -> added algebra (n+1)(0.99)<=n iff n>=99 (both files)
+- book-project-tank-b1 | ok | spot-check kept: all steps shown (9.5+u,10.1+u; [-1,-0.1]; 9.4/10)
+- book-project-tuning-b2 | ok | spot-check kept: conceptual, counterexample p1/p2 complete
+- book-project-score-b3 | ok | spot-check kept: union bound 0.4, 0.6, 0.9^4=0.6561, q=0.025 all shown
+- book-project-score-b1 | fixed | mobile overflow: split normalized-bound display into aligned rows; split corner list in Check into separate inline math (both files)
+- QA | ok | check.mjs clean (no katex/leftover/overflow); only the 3 solution bodies differ from snapshot; book/case-studies.html bodies byte-identical

@@ -1,0 +1,14 @@
+- exercise-8-p1 | ok | J_r=4, J_c=1/2, slack 1/10, partial sums re-checked with sympy
+- exercise-8-p2 | ok | rho=(0.3,0.7), J_r=3.2, J_c=1.2, pure-action check 6/2 verified
+- exercise-8-p3 | ok | L=6.5 and 9.5, difference 3=lambda*2 verified
+- exercise-8-p4 | ok | lambda_1=0.3, lambda_2=0 (unprojected -0.1) verified
+- exercise-8-p5 | ok | rho=(1/2,1/2), both flow equations and J_r=2 verified
+- exercise-8-p6 | ok | 0<=p<=1/4, p*=1/4, J_r=7/2 verified
+- exercise-8-p7 | ok | E=2, VaR=10, CVaR=10; RU pieces 20-nu and 20-9nu verified numerically
+- exercise-8-p8 | ok | z1=2, z2=1, 1.75 spent, 0.25 = gamma^2 z2 verified
+- exercise-8-p10 | fixed | numbers ok (0 vs 1/2); spelled out the max{0,a}<=b step in Step 3 and justified why a zero bound on the second quantity forces every [e_k]_+=0 in Step 4
+- exercise-8-p11 | fixed | numbers ok (E=1, P=0.01, VaR=0, CVaR=20, RU 20+0.8nu / 20-19nu); completed the CDF (value 1 for z>=100) in Step 3
+- exercise-8.2 (no id) | fixed | results ok (D=max(1-lam,lam), D*=P*=1/2, check values); Step 4 now states the affine identity for J^lambda explicitly before using it; Step 9 no longer cites (a) for max-of-two-lines convexity, points to the Steps 1-2 argument
+- spot-check book-m8-b1 (kept) | ok | feasible range, p*=1/4, J_r=27.5, lambda*=50/3 all shown step by step
+- spot-check exercise-8-p9 (kept) | ok | piecewise D, lambda*=3/2, D*=7/2, p*=1/4 via complementary slackness fully derived
+- spot-check exercise-8.5 (kept) | ok | mean 2.8, VaR 10, CVaR 46, piecewise RU, Gaussian 31.98 re-verified with scipy

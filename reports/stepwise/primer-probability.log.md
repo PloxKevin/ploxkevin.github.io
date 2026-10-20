@@ -1,0 +1,45 @@
+# Stepwise solution pass: primer-probability.html
+- pr-ready-1 | kept | complement computed with reason (disjoint, sum to 1) and interpreted
+- pr-ready-2 | kept | weighted average shown two ways with interpretation
+- pr-ready-3 | kept | outer product and quadratic form fully multiplied out, PSD vs PD checked
+- pr-extra-1 | kept | normalisation, event sum and mean all computed with reasons
+- pr-extra-2 | expanded | variance shortcut E[X^2]-m^2 was quoted, not derived; added derivation, definition check and direct check for Y
+- pr-extra-3 | kept | all moments, variances, covariance and dependence counterexample computed explicitly
+- pr-extra-4 | kept | events listed, intersection and conditional formula evaluated, interpreted
+- pr-extra-5 | kept | count table, total probability and Bayes ratio fully shown
+- pr-extra-6 | expanded | total-variance decomposition was sketched ("expand the square, cross term zero"); now each term is averaged explicitly
+- pr-extra-7 | kept | both matrix-vector steps written out coordinate by coordinate with check
+- pr-extra-8 | kept | linear equation solved step by step, second coordinate checked, interpreted
+- pr-extra-9 | kept | both variances computed, repeated-data average simplified explicitly
+- pr-extra-10 | kept | standardisation, inequality direction and symmetry all justified
+- pr-extra-11 | expanded | completing-the-square step was a jump; added Bayes setup, expansion, square completion, precision cross-check, predictive variance reasoning
+- pr-extra-12 | kept | quadratic form, standardisation, monotone inversion and rounding direction all justified
+- pr-extra-13 | kept | Markov bound derived from event argument and both thresholds evaluated
+- pr-extra-14 | kept | Hoeffding inequality solved line by line with log/sign justification and rounding check
+- pr-extra-15 | kept | mean, explicit MGF counterexample at lambda=1/4, centring and Hoeffding parameter all shown
+- pr-extra-16 | kept | union bound justified, complement taken, independence contrast computed
+- pr-extra-17 | kept | budget split, Hoeffding solved, union total checked
+- pr-extra-18 | kept | telescoping sum written out, countable union limit and divergence counterexample shown
+- pr-extra-19 | kept | decomposition, measurability and conditional mean computed
+- pr-extra-20 | kept | predictability used explicitly, conditional Hoeffding parameter justified
+- pr-extra-21 | kept | both outcomes enumerated, failed step identified
+- pr-extra-22 | kept | both entropies evaluated term by term
+- pr-extra-23 | kept | TV and both KL directions evaluated term by term
+- pr-extra-24 | kept | support mismatch explained, TV and Pinsker evaluated
+- pr-extra-25 | kept | CDF tabulated, each VaR level read off with equality case discussed
+- pr-extra-26 | kept | split-atom tail average, mean and conditional mean all computed
+- pr-extra-27 | expanded | only one of four interval simplifications was shown and the minimum argument was brief; all four pieces, slope cross-check, continuity and monotonicity argument added
+- pr-extra-28 | kept | single-pattern probability, binomial count and complement all computed
+- pr-extra-29 | kept | equation solved line by line, root choice and test inversion justified, interpreted
+- pr-extra-30 | kept | uniform rank, rank-threshold equivalence and sum computed, subgroup counterexample given
+- book-c-b1 | kept | joint routes, posterior, expected costs of both rules and silence case all computed
+- book-c-b2 | kept | predictive variance justified by independence, standardisation and comparison shown
+- book-c-b3 | kept | average decomposed, variance computed, limit and covariance explanation given
+- book-c-b4 | kept | union bound and exact independent bound solved line by line, example checked against both
+- C.1 (no id) | kept | proportion, SE, interval and exact zero-failure bound all computed line by line
+- C.2 (no id) | kept | Bayes routes, expected count vs independent probability, Bonferroni level and quantile inversion shown
+- C.3 (no id) | kept | precision addition, standardisation and m-2s bound computed with failure probability
+- C.4 (no id) | kept | worst-case variance derived, both sample sizes solved, uniform MGF bound proved
+- C.5 (no id) | kept | both KL directions and TV evaluated term by term, Pinsker checked, support issue explained
+- C.6 (no id) | expanded | Gaussian CVaR step compressed (why tail = W>=q, conditional-mean form, antiderivative); VaR reading terse; restructured into numbered steps with check
+- C.7 (no id) | kept | order statistic, Beta CDF derived by counting, moments integrated, total variance applied

@@ -1,0 +1,13 @@
+- practice-2 | ok | radius 0.25, interval [-0.05,0.45], margin 0.1, endpoint margin 0 all re-derived and checked
+- practice-3 | fixed | FTC justification now states derivative integrable (differentiable alone is not enough); numbers 0.06/0.12 ok
+- practice-5 | ok | membership tests, gap (0.1,0.3), length check 1.1-0.9=0.2 verified
+- practice-6 | ok | tail/uniqueness argument and infimum-over-subset reasoning correct
+- practice-8 | ok | union bound, 0.97, 0.01/3, 1-0.99^3=0.0297 verified
+- practice-9 | fixed | Step 1 called ||x-x'|| a "bound"; reworded (known measured distance). Lipschitz steps correct
+- practice-10 | ok | inclusion proof steps correct; check 0.25 -> 0.15 verified
+- 6.1 (no id) | fixed | replaced informal "min(>=0,>=0)" notation with a sentence; rest (Picard-Lindelof, tail integral, 0.8+0.8=1.6>1) correct
+- mirror | ok | none of the changed exercises appear in book/chapters/gosafe.html or book/case-studies.html; chapters file unchanged vs snapshot
+- 6.6 (no id) | fixed | kept solution skipped steps (why max gives >=, why min over i preserves order, dividing by L_x and subtracting Xi); expanded first paragraph into 5 steps, answer unchanged, second paragraph untouched
+- practice-11 | ok | spot-check: 0.01 s and 0.006 s re-derived, steps complete
+- 6.4 (no id) | ok | spot-check: 40^2=1600, 625*1600=1e6, 120^6=2.985984e12, 625*120^6=1.86624e15 verified
+- QA | ok | check.mjs clean (no KaTeX errors, leftover $, or mobile overflow), same as snapshot; summaries/ids/details counts unchanged; no raw < or > in math

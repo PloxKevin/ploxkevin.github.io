@@ -1,0 +1,19 @@
+- book-m4-b1 | kept | already numbered derivation: transfer inequality, test at 0.4, solve both constraints, boundary check, interpretation
+- book-m4-b2 | kept | already full: triangle inequality, robust radius 0.26, nominal vs worst-case check of 0.28 with numbers
+- practice-1 | expanded | added explicit measurement computation, safety-definition step, worked counterexample and noise-bound check
+- practice-2 | expanded | showed Lipschitz transfer derivation, step-by-step solving for radius 0.25, explicit tests at 0.2/0.25/0.3 and budget check
+- practice-3 | expanded | added reason for the M test, candidate-by-candidate comparison, overlap check
+- practice-4 | expanded | explicit union, width comparison, reason d is excluded (G,M subsets of S)
+- practice-5 | expanded | stated intersection rule with reason, order checks for both cases, contrapositive argument for emptiness
+- practice-6 | expanded | stated G/M/acquisition definitions, per-point optimistic and pessimistic transfers, width table and selection
+- practice-7 | expanded | justified min-over-constraints test, per-parameter computation, intersection check
+- practice-8 | expanded | wrote the R_0 map, each iteration with all transfer computations, fixed-point argument and bottleneck check
+- practice-9 | expanded | explicit induction statement, numbered inequalities (1)-(3) each tagged with the assumption it uses, d=0 check
+- practice-10 | expanded | displayed each regret, sum/average, simple regret, explicit 8+3k counterexample
+- practice-11 | expanded | separate upper/lower bound steps with reasons, sign-reversal and addition of inequalities, nonnegativity check
+- practice-12 | expanded | witness choice, Lipschitz transfer with numbers, arbitrary-point generalization, required clearance Lr=0.10 check
+- exercise-4.1 (no id) | kept | already a full induction for (a),(b) with each inequality justified; (c) explains seed role
+- exercise-4.2 (no id) | kept | already step-by-step with displayed max/min updates, explicit counterexample table and proof-step identification
+- exercise-4.3 (no id) | kept | already full: telescoping Lipschitz check, witness-radius table, fixed-point check; numbers verified
+- exercise-4.4 (no id) | expanded | proof part split into steps (z never certified, first crossing, witness, distance comparison, contradiction); RKHS/GoSafe paragraphs unchanged, numbers re-verified
+- exercise-4.5 (no id) | kept | already step-by-step with formulas and numbers; re-verified p_min=0.62885, H=0.65957, E[H_A+]=0.15738, E[H_B+]=0.65541, info ratios

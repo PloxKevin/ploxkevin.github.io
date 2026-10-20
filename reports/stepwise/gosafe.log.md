@@ -1,0 +1,20 @@
+- book-m6-b1 | kept | already three numbered steps with every number (distance, inequality solve, test at 0.2 s) and interpretation
+- book-m6-b2 | kept | each backup tested separately with full distance arithmetic, reserve added, union interpretation given
+- practice-1 | kept | every sample evaluated in a displayed computation, minimum taken, intersample violation checked and interpreted
+- practice-2 | expanded | radius/interval/margin were stated in one line; now derived from the margin inequality with an endpoint check
+- practice-3 | expanded | integral bound jumped in one line; now FTC, norm-of-integral step, speed bound, doubling, units/limit check
+- practice-4 | kept | both counts computed explicitly (10^2*100, 10^6*100) with the Cartesian-product reason and interpretation
+- practice-5 | expanded | memberships were asserted; now endpoint inequalities per state, enclosing-interval gap derived and length-checked
+- practice-6 | expanded | suffix identity and infimum comparison were one sentence; now uniqueness/autonomy step, change of variable, subset-infimum argument
+- practice-7 | kept | paths for reachability and return given edge by edge; trap at C explained
+- practice-8 | expanded | union bound used without statement; now events named, union bound derived, complement, budget split, independence sanity check
+- practice-9 | expanded | Lipschitz lower bound used in one chain; now triangle step, one-sided Lipschitz, substitution, min-over-i argument, limiting/numeric check
+- practice-10 | expanded | "taking minima preserves" skipped; now explicit witness, argmin argument, radius inequality, conclusion, counter-check of the monotonicity assumption
+- practice-11 | kept | two numbered steps with every algebra step (divide, subtract, divide) and equality interpretation
+- practice-12 | kept | conceptual answer that separates the safety statement from discoverability; nothing to compute
+- 6.1 (no id) | expanded | uniqueness/tail/minimum steps separated with reasons; budget split justified by c>=0; composition failure now shown with a numeric counterexample
+- 6.2 (no id) | kept | part (a) and (b) give the full Lipschitz/triangle chains with each assumption named and the role of +Xi explained
+- 6.3 (no id) | kept | each operator iterate computed set by set with the transition that adds each state; trap and modification discussed
+- 6.4 (no id) | kept | grid spacing derived, both counts computed (verified 120^6*625=1.86624e15), per-measurement cost counted
+- 6.5 (no id) | kept | radii, both distances (verified sqrt17/20, sqrt5/20), margins, error allowance and probability all computed step by step
+- 6.6 (no id) | kept | inclusion proof keeps the witness and justifies monotone bounds; fail-set rechecking explained with Lemma A.17

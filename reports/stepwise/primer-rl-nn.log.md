@@ -1,0 +1,34 @@
+- rle-ready-1 | expanded | one-line answer; added outcome list, expectation definition, single-run comparison and long-run check
+- rle-ready-2 | kept | partial sum derived by subtract-and-cancel, limit taken, geometric formula cross-check and undiscounted contrast
+- rle-ready-3 | kept | both partials derived from explicit increments with the other argument held fixed, interpretation given
+- rle-extra-1 | expanded | per-round regrets were stated without subtraction; added benchmark, each gap, sums, simple regret and range check
+- rle-extra-2 | expanded | added why UCB adds and LCB subtracts the radius, the certified set, interval check and interpretation
+- rle-extra-3 | expanded | added explicit totals for both fixed arms and per-round maxima, ordering check (dynamic >= static)
+- rle-extra-4 | expanded | added return definition with explicit weights, time-origin shift, factoring for the recursion and range check
+- rle-extra-5 | expanded | named the Q and V Bellman formulas used, why reward is undiscounted, and an averaging-range check
+- rle-extra-6 | expanded | added random-variable description, event C>=1, Markov-inequality check and alternative-reading robustness check
+- rle-extra-7 | expanded | added why continuation is discounted, solve steps, geometric-series condition |q|<1 and substitution check
+- rle-extra-8 | kept | both Bellman equations written, substitution and solving shown, Q then advantage computed and interpreted
+- rle-extra-9 | expanded | added occupancy definition and sum, per-step expected reward/cost, feasible interval, monotonicity and endpoint checks
+- rle-extra-10 | kept | backup simplified with justification, three iterates, fixed point, geometric error formula
+- rle-extra-11 | kept | triangle inequality plus contraction derivation, rearrangement and inverse target computed
+- rle-extra-12 | kept | both models' Bellman equations, iterates by induction, geometric sum and trajectory interpretation
+- rle-extra-13 | expanded | derived sigmoid derivative p(1-p) via chain rule, log-derivative rule for both scores, zero-mean and score-function checks
+- rle-extra-14 | expanded | added Q=reward in a bandit, recalled scores, full weighted sum, and the linearity argument for why the baseline drops out
+- rle-extra-15 | kept | change of variables, Cauchy-Schwarz optimum, constraint saturation and gain verified in original coordinates
+- rle-extra-16 | expanded | named target/TD/update formulas, showed arithmetic, convex-combination check and terminal case
+- rle-extra-17 | expanded | exponentiate/normalise shown, entropy computed exactly so E[Q]+H=ln4, log-sum-exp bounds check
+- rle-extra-18 | expanded | law of total expectation/variance named and applied, second-moment cross-check, explicit indistinguishable-environment argument
+- rle-extra-19 | expanded | row-times-column products shown, active/inactive ReLU explained, dimensions read from the matrix shape
+- rle-extra-20 | expanded | forward pass tabulated, each local derivative named with ReLU-active justification, closed-form and finite-difference checks
+- rle-extra-21 | kept | weights written, spectral norms computed, piecewise proof that f(x)=x, both radii and boundary discussed
+- rle-extra-22 | expanded | output count n-k+1, each window dot product, row-by-row matrix construction, shape and row checks, flipped-kernel contrast
+- rle-extra-23 | expanded | derived the 1+L_g bound via triangle inequality, proved L=|c| for linear maps, equality condition explained
+- rle-extra-24 | kept | fixed point solved, iterates and residual computed, triangle+contraction certificate derived and compared to true error
+- rle-extra-25 | expanded | perturbation inequalities written per logit, both rival gaps derived, worst case attained and 2x0.4 rule checked
+- rle-extra-26 | expanded | proved L=2 exactly, solved 3-2|delta|>0, located boundary, evaluated f at the edge, explained why radius equals distance
+- rle-extra-27 | expanded | derived the sqrt2*L constant via Cauchy-Schwarz on e_c-e_j, explicit counting for both accuracy bounds and consistency check
+- book-e-b1 | kept | inequality manipulation justified, quotient-rule derivative, optimum evaluated with exact fractions and budget check
+- book-e-b2 | kept | cost Bellman equations solved, monotonicity in rho*p derived, worst case budget solved, p=0.5 evaluated
+- book-e-b3 | kept | nominal score, error interval via triangle inequality, explicit counterexample input and tie location computed
+- book-e-b4 | kept | transition matrix, stationary balance solved, rates and 20-shift expectation via linearity, contrast with discounted budget

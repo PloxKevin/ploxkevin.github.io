@@ -1,0 +1,18 @@
+- practice-1 | ok | re-derived y=-0.1, safe since 0.1>=0, counterexample f=-0.1,n=0.2; numbers checked
+- practice-2 | ok | radius 0.25 and tests 0.2/0.1/0 re-derived; algebra steps correct
+- practice-3 | ok | max l=0.6, M={a,b}, recommendation b; correct
+- practice-4 | ok | G∪M={a,b,c}, select b (0.5), d ineligible; correct
+- practice-5 | ok | [0.4,0.8] width 0.4; empty since 0.9>0.8; contrapositive correct
+- practice-6 | ok | definitions match page (lines 157-173); G={1}, M={0,1}, query 1; numbers checked
+- practice-7 | ok | certified {b,c}; a not queryable; correct
+- practice-8 | ok | closure {0,1,2} recomputed by script; 3 safe but unreachable
+- practice-9 | fixed | Check paragraph was vague/misleading ("make sure E is not violated at the seed"); rewrote to explain precisely that C_0=[h,inf) gives l_t>=h on seed (first witnesses) and that this bound is valid only because the seed is safe
+- practice-10 | ok | regrets 3,2,1,2; R=8, avg 2, simple 0.2; 8+3k counterexample correct
+- practice-11 | ok | gap <= 1.10-1.02=0.08, >=0; correct
+- practice-12 | ok | margin 0.12-0.10=0.02; nonneg grid gives -0.10; correct
+- exercise-4.4 | ok | 5-step contradiction proof re-checked (first crossing, witness x<z<x', |x-z|<|x-x'|, z certified, contradiction); example numbers 0.00672>0, f(0.1)=-0.00249 recomputed; rest unchanged
+- mirror | ok | none of the changed exercises appear in book/chapters/safe-bo.html or book/case-studies.html (B1/B2 only, unchanged)
+- exercise-4.1 (kept, spot-check) | ok | compact but every inequality has its reason; same chain fully expanded in practice-9
+- exercise-4.2 (kept, spot-check) | ok | displayed max/min updates and counterexample table re-checked (b_t 0.7/0.9/0.75)
+- exercise-4.3 (kept, spot-check) | ok | adjacent differences, closures {0..4} and transfers to 5 re-checked
+- render QA | ok | check.mjs clean: no KaTeX errors, no leftover $, no mobile overflow; no raw < or > inside math

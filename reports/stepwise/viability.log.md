@@ -1,0 +1,20 @@
+- book-m7-b1 | kept | already a numbered pruning computation with fixed-point check and interpretation
+- book-m7-b2 | kept | full derivation of safe cycle, unsafe route, strict threshold 5657/244, check at p=24 and at equality
+- practice-1 | kept | pruning rounds, kernel, and action check against kernel are all shown
+- practice-2 | expanded | stated the count without classifying each action; added per-action classification, count, and consistency check
+- practice-3 | expanded | gave only the final product; added return formula, power computation, both cases, and discounting sanity check
+- practice-4 | expanded | inequality stated without the strict-vs-tie reasoning; added case analysis p<1, p=1, p>1 and a numerical check
+- practice-5 | expanded | rounds listed without testing every state; added state-by-state tests per round, stopping argument, and trajectory check
+- practice-6 | expanded | geometric-sum algebra and solving J<2 were skipped; added full G_n derivation, sign argument, three cases, numeric checks
+- practice-7 | expanded | entropies and softmax positivity asserted; added entropy-of-uniform derivation, both policies, positivity argument, cap check
+- practice-8 | expanded | sufficiency/necessity compressed into one sentence; added triangle-inequality step, endpoint case split, both numerical tests, r=0 check
+- practice-9 | expanded | 'taking suprema preserves the inequality' was unjustified; added per-controller difference, least-upper-bound argument for both claims, check on 7.P6
+- practice-10 | expanded | sums and both inequality directions asserted; added return formula, term-wise bound, extension step with sign reason, penalty bound with sign flip, attainment check, R<0 counterexample
+- practice-11 | expanded | one-line proof; added fixed-point insertion, triangle inequality, contraction step, solving with finiteness/sign reasons, numeric step, limiting-case check
+- practice-12 | expanded | step 2 asserted the state stays viable and the conditional bound without reason; added viability induction, total-probability display, disjoint-union sum, independent-case check
+- ex-7.1 (no id; 'Exercise 7.1 — double integrator with a wall') | expanded | integration step for the braking bound, quadratic root, chain rule for stopping point and the wall condition were skipped; restructured into 11 steps with numeric checks, raw > in math replaced by \gt
+- ex-7.2 (no id; 'Prove Lemma 2(ii) in discrete time') | kept | proof displays both inequalities with their reasons (r bound, R>=0 extension, gamma^{t_f}>=gamma^{T_f}) and verifies the explorer cell with explicit algebra
+- ex-7.3 (no id; 'Numbers for the shelf') | expanded | minimum at tau~1.45 asserted without computation and per-case factors run together; added per-piece evaluation, value table, numerical minimization, series expansion with coefficient -7 and a check at tau=20,100
+- ex-7.4 (no id; 'A too-small penalty makes cutting the corner optimal') | kept | every value (V(2), jump, V(3), p*, p_Z, gamma=0.9 case) is computed with intermediate numbers and the inequality solved explicitly
+- ex-7.5 (no id; 'The penalty as a Lagrange multiplier') | kept | conceptual proof answer; each part cites the result used and why its hypotheses hold, with a worked counterexample from 7.4
+- ex-7.6 (no id; 'The entropy cap and the price of a decade of safety') | expanded | (b) substituted into p_1 in one line; added formula source, substitution, both temperatures, the delta=1e-3 increment and new thresholds, difference and alpha->0 checks; (a) proof kept

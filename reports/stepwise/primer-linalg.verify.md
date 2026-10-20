@@ -1,0 +1,20 @@
+- la-ex-matrix-norms-1 | fixed | re-derived norms 5,3,sqrt14, Ax=(-2,3), inf-attainment (3,-3) (numpy ok); Step 1 inequality chain split: added the intermediate sum_i sum_j |a_ij||x_j| line, the sum swap, and why replacing each column sum by the max is allowed; answer unchanged
+- la-ex-matrix-norms-2 | ok | ||A||=||B||=3, AB=1.5I, ||AB||=1.5, bound 9, ratio 6 checked; answer unchanged
+- la-ex-spectral-1 | ok | Aq+=4q+, Aq-=2q-, orthonormality, outer-product rebuild, trace/det check verified
+- la-ex-spectral-2 | fixed | 19, 3.8, c+=3/sqrt2, c-=-1/sqrt2, 9/2+1/2=5, 18+1=19 verified; added the expansion Ax=4c+q++2c-q- and the two multiplied-out lines showing why x^Tx=c+^2+c-^2 and x^TAx=4c+^2+2c-^2 (was asserted); answer unchanged
+- la-ex-spectral-3 | ok | eigenvalues 1,1 (one eigendirection), x^TNx=-2, S, K, eig(S)=3,-1, lambda_min bound 2 vs -2 all verified
+- la-ex-psd-1 | ok | P PSD singular, Q forms 10/-2, det Q=-5, eig 5,-1 verified
+- la-ex-svd-1 | ok | U=diag(1,-1), Sigma=diag(2,1), V=I, norms 2/sqrt5, kappa 2, ellipse equation verified
+- la-ex-svd-2 | fixed | A+=(1,2)/5, x*=(1,2), ||x||^2=5+5t^2, t=1 check verified; added proof that the null space is exactly multiples of n=(-2,1) (y1=-2y2) and the converse direction, so "x-x*=tn" is justified; answer unchanged
+- la-ex-svd-3 | ok | sqrt5=2.2361, x1=(9,1)/sqrt82, sqrt(730/82)=2.9837, 3/sqrt5=1.3416, 3/sqrt10=0.9487 verified
+- la-ex-blocks-1 | ok | Mz=(4,7,12), tr 9, det 20 via cofactor, eig (5+-sqrt5)/2 and 4 verified
+- la-ex-structured-1 | ok | Q^TQ=I, (3,-4) length 5, det -1 reflection verified
+- la-ex-structured-2 | ok | P^2=P, P^T=P, residual orthogonality identity, error (0,4), ||P||_2=1 verified
+- la-ex-functions-1 | ok | 1/2, norms 1 and 1/sqrt3, c=1/2, 1/12, 1/4+1/12=1/3 verified (fractions)
+- la-ex-functions-2 | fixed | K=[[1,1],[1,2]], sum of squares, PD, eig (3+-sqrt5)/2 verified; Check said "the 2x2 test from Section 4" but Section 4's 2x2 test is the PSD one; now cites Sylvester's criterion (leading minors positive) which is what proves PD
+- la-ex-functions-3 | ok | f=1+2x, norm 5 both ways, K^-1, alpha=(-1,2), bound sqrt5 sqrt(1+x^2), tightness at x=2, x=10 22.47, sqrt10 on [-1,1] verified
+- la-ex-norms-2 | ok | spot-check kept: box and Euclidean maxima 1.4 and 1 with bound + attaining point
+- la-ex-psd-3 | ok | spot-check kept: change of variables, Cauchy-Schwarz, feasibility and value sqrt17/2 all shown
+- la-ex-blocks-3 | ok | spot-check kept: determinant lemma, Sherman-Morrison entries, direct multiplication check
+- scope | ok | only the 15 solution bodies differ from snapshot; no new raw < or > in math; book/chapters/primer-linalg.html unchanged and contains none of the edited exercises (no mirror needed)
+- QA | ok | node check.mjs clean (no KaTeX errors, no leftover $, no mobile overflow)

@@ -1,0 +1,20 @@
+- book-m2-b1 | kept | already walks through box bound, norm bound, one-step propagation and units
+- book-m2-b2 | kept | full recursion, invariant radius algebra, geometric sum and counterexample equilibrium
+- practice-1 | kept | all KKT cases solved and verified, with globality and sensitivity check
+- practice-2 | kept | explicit matrix-vector products for both matrices and a witness vector
+- practice-3 | expanded | stated Schur result without identifying blocks; added completing-square proof, boundary nullspace and checks
+- practice-4 | expanded | coefficient matching of the quadratic form was skipped; added case steps, matching, numeric checks
+- practice-5 | expanded | compressed substitution; added explicit solve, V-change, stability conclusion, general-P step and numeric check
+- practice-6 | kept | residual expansion, necessity/sufficiency of tau range and use of certificate all shown
+- practice-7 | expanded | Schur step stated without block identification; added completing-square proof, numeric evaluation and nullspace check
+- practice-8 | expanded | telescoping and rearrangement compressed; added explicit sum, telescope, rearrangement, gain-units check
+- practice-9 | expanded | completing the square was not shown; added expansion, square completion, maximization with concavity reason, gap check
+- practice-10 | expanded | "sufficiently large" t left implicit; added explicit t, case b=0, minor cross-check, range-condition computation, numeric check
+- practice-11 | expanded | bias cancellation and Lipschitz step compressed; added each layer step, squaring reason, explicit ReLU formula and numeric check
+- practice-12 | kept | eigenvalues, P=I failure, full Stein-equation matching and PD check all shown
+- exercise-2.1 (no id) | expanded | sup arguments and the counterexample D(lambda) were stated without computation; added numbered steps, least-upper-bound reason, explicit D and crossing point
+- exercise-2.2 (no id) | kept | Lagrangian, dual function cases, both solves, certificate identity, complementary slackness and sensitivity all shown
+- exercise-2.3 (no id) | expanded | Schur steps lacked block identification, corner check and block products; added all, plus scalar sanity instance
+- exercise-2.4 (no id) | kept | S-lemma assumptions, residual necessity/sufficiency, congruence, attainment and numeric part (b) all shown
+- exercise-2.5 (no id) | kept | MVT arguments, QC expansion, numeric check and local sector derivation all shown
+- exercise-2.6 (no id) | kept | storage expansion, certificate check, determinant minimization and frequency-response check all shown

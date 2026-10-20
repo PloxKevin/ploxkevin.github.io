@@ -1,0 +1,14 @@
+- practice-easy-2 | ok | norms 3 and 2, product 6, f=2ReLU(x2), attaining pair (0,2),(0,1) re-derived; answer L*=2 unchanged
+- practice-easy-3 | ok | q values 2,-6,-6 and q=2u^2 s(1-s) rechecked; answer unchanged
+- practice-easy-4 | fixed | gradient lower-bound step tightened into an explicit epsilon argument (was "letting the margin shrink"); L=1.5, conflict answer unchanged
+- practice-medium-1 | ok | M factorisation, eigenvalues 0/-40, expansion of xi^T M xi = (Df)^2-36Dx^2+4q verified, T=4 optimal (rho=9T^2/(2T-4) min at T=4); answer unchanged
+- practice-medium-2 | ok | channel terms 6+3=9, diag(-3,2) -> -3, matrix check 9 verified; answer unchanged
+- practice-medium-4 | ok | layer equalities, chain to 9Dx^2, X1=4 forced verified; answer unchanged
+- practice-hard-2 | fixed | added the symmetry step (Dz^T T Dv = Dv^T T Dz) used to reach the hinted form; value -4 verified numerically; answer unchanged
+- practice-hard-4 | ok | PP^T, eigenvalues 3/4,1/4, sigma_max=0.866025 (numpy svd), x=(1,2,1) ratio 3/4, disjoint P'P'^T=I/2, bound-1 chain verified
+- ex-12.3 (no id) | ok | sech^2 common-denominator and subtraction algebra verified numerically at x=0.3,1.06,2.5; x*=1.061085, L*=0.9334926 rechecked
+- mirror | ok | none of the changed solutions occur in book/chapters/lipsdp.html or book/case-studies.html; chapters file unchanged vs snapshot
+- spot-check practice-easy-1 | ok | kept solution is stepwise; r2=0.212132, rinf=0.122474 rechecked
+- spot-check practice-hard-3 | ok | kept solution is stepwise; eigenvalues 0.1/-2.1, -0.1/-1.9, margin 0.06 rechecked
+- spot-check practice-medium-3 | ok | kept solution is stepwise; U=1, |x| sharpness argument complete
+- render QA | ok | check.mjs clean (no KaTeX errors, leftover $, or mobile overflow) after fixes

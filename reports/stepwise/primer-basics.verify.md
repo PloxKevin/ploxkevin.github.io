@@ -1,0 +1,5 @@
+- exercise-0.6 (no id) | ok | re-derived (a)-(d): L'Hopital chain s^3/e^{s/2}->48/e^{s/2}, T^{-1/6}, ln T/T^{1/3}, b'(T)=4T^{-3/2}(1-ln T/2), peak 8/e, all table values, 40lnT vs sqrtT at 246638/246639, 4^3=64 -> 3.2 s, 20^6=64,000,000, 20^10 checked in python3; final answers unchanged; only solution body changed; no raw < > in math; not present in book/ sources (no mirror needed)
+- mb-ex-f4 | ok | spot-check kept: image/preimage both inclusions and both branches shown
+- mb-extra-gb2 | ok | spot-check kept: sup via arbitrary epsilon, attainment, min, n=101 all stepwise
+- mb-ex-asymptotics-2 | ok | spot-check kept: 1600/160,000 and 80/80,000 derived with reasons
+- QA | ok | node check.mjs clean (no KaTeX errors, no leftover $, no mobile overflow)

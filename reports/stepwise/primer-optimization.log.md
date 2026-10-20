@@ -1,0 +1,29 @@
+# Stepwise solutions log — SafeLearning/primer-optimization.html
+- opt-ex-derivatives-1 | kept | already derives each partial, Hessian, gradient value, dot product and checks via a 1-D expansion
+- opt-ex-derivatives-2 | kept | both routes (substitution, chain rule) fully computed, sign interpreted
+- opt-ex-derivatives-3 | kept | Taylor model, Lagrange remainder with xi-interval, numeric bound and actual error all shown (verified numerically)
+- opt-ex-matrix-calculus-1 | expanded | original stated gradient/Hessian/minimiser without the matrix products, uniqueness reason or full scalar check
+- opt-ex-matrix-calculus-2 | kept | domain check, trace computation, determinant check and inverse-derivative identity all shown
+- opt-ex-matrix-calculus-3 | kept | differentiated system solved, explicit check, prediction error derived exactly
+- opt-ex-lipschitz-1 | expanded | sharpness of 4 and non-existence of a global constant were asserted, not proved; steps and check added
+- opt-ex-lipschitz-2 | expanded | covering radii, the transfer inequality and the 13^3 count were stated without derivation; added rounding argument and N=11/12 check
+- opt-ex-lipschitz-3 | kept | recurrence unrolled, geometric sum derived, margins computed and tightness example given (numbers verified)
+- opt-ex-convexity-1 | expanded | interval and disc proofs compressed; added explicit inequality multiplication, triangle inequality/homogeneity reasons and a check
+- opt-ex-convexity-2 | kept | eigen-directions, strong-convexity endpoints and subdifferential derived in both directions
+- opt-ex-convexity-3 | expanded | maximiser optimality, case split and Fenchel-Young values were asserted; added domain restriction, square argument, equality condition and checks
+- opt-ex-descent-1 | expanded | added explicit update derivation, objective values, per-case arithmetic and the inequality solving for the step range
+- opt-ex-descent-2 | expanded | added gradient formula, Newton linear solve, error-propagation (I-eta H) explanation, objective values and gap check
+- opt-ex-descent-3 | kept | Newton direction, domain rejections, Armijo test and interpretation all computed (verified 2.051205639)
+- opt-ex-constraints-1 | kept | all four KKT conditions computed for both bounds with reasons
+- opt-ex-constraints-2 | kept | active-set guess solved, all KKT conditions verified, global optimality argued two ways
+- opt-ex-constraints-3 | kept | penalty branches minimised and compared, residuals computed against the stated definition
+- opt-ex-programs-1 | expanded | expansion, coefficient matching with the 1/2 factor, constraint sign flip and feasibility logic were compressed; steps and value check added
+- opt-ex-programs-2 | expanded | vertices were listed without deriving them from line intersections; added pairwise intersections, feasibility filter, theorem assumptions and dual-weight check
+- opt-ex-programs-3 | kept | half-space projection, candidate, all KKT multipliers and the infeasible variant fully derived
+- opt-ex-minmax-1 | expanded | supremum claimed via "values approach 1" without the least-upper-bound argument; added both halves of the sup proof, empty argmax, epsilon definition check and tie set
+- opt-ex-minmax-2 | kept | elementary: safety test, each controller minimum, max-min choice and contrast with max single margin all computed and interpreted
+- opt-ex-minmax-3 | expanded | inner optima were stated without the square argument or membership of y=-2, x=1 in the sets; added inner/outer steps, saddle reasons, joint-min endpoint computation and checks
+- book-b-ex-1 | kept | cost, transfer polynomial expanded line by line, minimiser and full KKT/gradient explanation present
+- book-b-ex-2 | kept | active-set solution with validity range, KKT check, value function and exact finite-change expansion present
+- book-b-ex-3 | kept | residuals, minimum-norm repair via an identity, exact Taylor gap and direct check present
+- book-b-ex-4 | kept | worst-case reduction, square completion, multiplier, old-command test and feasibility limit all derived

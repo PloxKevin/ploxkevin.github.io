@@ -750,7 +750,23 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>The GP ranks candidates after the separate Lipschitz/noise test has restricted the domain.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The maximum among the certified candidates is 1.1 at $b$, so $b$ is selected. The score 3.0 at $c$ does not make it eligible. It would first need a valid independent safety certificate.</p><p>Under correct $L$, correct $E$, a safe seed and actual membership in the accumulated safe set, LoSBO's deterministic safety proof still holds even if the GP scores are poor. An inaccurate GP may waste samples or slow the search. It does not change the lower cones used for safety; returning a point outside those cones would change the argument.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> first decide which points are allowed (the safety filter), then rank only those (the GP), and finally trace which quantities the safety proof actually uses.</p>
+<p><strong>Step 1 — Determine the eligible set.</strong> LoSBO chooses the next query by maximizing the acquisition score $\alpha(x)$ over the current safe set, not over the whole domain:</p>
+<div class="math-block">$$x_{\text{next}}\in\arg\max_{x\in S}\alpha(x),\qquad S=\{a,b\}.$$</div>
+<p>The point $c$ is not in $S$, because no observation has certified it. Its score is therefore never compared with the others, however large it is.</p>
+<p><strong>Step 2 — Maximize the score over the eligible set.</strong> Only two numbers are compared:</p>
+<div class="math-block">$$\alpha(a)=0.8,\qquad\alpha(b)=1.1,\qquad\max\{0.8,\,1.1\}=1.1=\alpha(b).$$</div>
+<p>So $b$ is selected. The score $3.0$ at $c$ would only matter if $c$ first received a valid safety certificate of its own.</p>
+<p><strong>Step 3 — Trace what the safety proof uses.</strong> The point $b$ is in $S$ either because it is a seed point (assumed safe) or because some earlier observation $(z,y)$ satisfied the cone test $y-E-L\,d(z,b)\ge h$. In the second case,</p>
+<div class="math-block">$$\begin{aligned}
+f(b)&amp;\ge f(z)-L\,d(z,b)\\
+&amp;\ge y-E-L\,d(z,b)\\
+&amp;\ge h.
+\end{aligned}$$</div>
+<p>The first line is the Lipschitz bound, the second uses $f(z)=y-\epsilon\ge y-E$ (noise bound), and the third is the cone test. Every quantity in this chain is a measurement $y$, the noise bound $E$, the Lipschitz bound $L$, the threshold $h$, or a distance. None of them is a GP mean, variance or acquisition score.</p>
+<p><strong>Step 4 — Conclude what survives an inaccurate GP.</strong> Under correct $L$, correct $E$, a safe seed and actual membership in the accumulated safe set, LoSBO's deterministic safety proof still holds even if the GP scores are poor. An inaccurate GP may waste samples or slow the search by ranking a less useful certified point first. It does not change the lower cones used for safety; returning a point outside those cones would change the argument.</p>
+<p><strong>Check.</strong> If the score were maximized over all of $\{a,b,c\}$, the answer would be $c$ (score $3.0$), and the chain in Step 3 would have no witness observation to start from. That is exactly the case the safety filter excludes.</p>
+<p><em>Interpretation:</em> in LoSBO the GP decides <em>which</em> certified point to try, while the Lipschitz/noise cones alone decide <em>whether</em> a point may be tried.</p></div>
         </details>
       </div>
     </details>
@@ -762,7 +778,19 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Larger valid slope bounds shrink the region; smaller invalid ones can enlarge it incorrectly.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The radii are $0.3/1=0.3$ and $0.3/3=0.1$. Since the true constant is 2, the justified tight radius from this slack is 0.15. Choosing $L=3$ is a valid upper bound and gives the smaller, conservative radius 0.1. Choosing $L=1$ is not justified and its radius 0.3 need not be safe.</p><p>A valid bound need not equal the smallest possible constant. Safety survives overestimation, although exploration may slow. The guarantee requires an upper bound on all relevant slopes, rather than an estimate that is accurate only on previously observed pairs.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> compute the radius $r=(y-E-h)/L$ for each $L$, decide which $L$ is a valid Lipschitz bound for a function whose true constant is 2, and test the invalid radius with a concrete compatible function.</p>
+<p><strong>Step 1 — Recall where the radius comes from.</strong> Writing the slack as $s=y-E-h=0.3$, the cone test $y-E-L\,d\ge h$ is equivalent to $L\,d\le s$, that is $d\le s/L$ (dividing by $L\gt0$ keeps the inequality direction). So the radius is $r=s/L$.</p>
+<p><strong>Step 2 — Evaluate both radii.</strong></p>
+<div class="math-block">$$r_{L=1}=\frac{0.3}{1}=0.3,\qquad r_{L=3}=\frac{0.3}{3}=0.1.$$</div>
+<p><strong>Step 3 — Decide which bounds are valid.</strong> The true Lipschitz constant 2 means $|f(x)-f(x')|\le2\,d(x,x')$ for all pairs. If $L\ge2$, then $2\,d\le L\,d$, so $|f(x)-f(x')|\le L\,d(x,x')$ holds as well: every $L\ge2$ is a valid bound. $L=3$ is valid. $L=1$ is not, because a constant-2 function may change by $2d\gt1\cdot d$ over some distance $d\gt0$.</p>
+<p><strong>Step 4 — Compute the tight radius.</strong> With the smallest valid constant $L=2$,</p>
+<div class="math-block">$$r_{L=2}=\frac{0.3}{2}=0.15.$$</div>
+<p>So the valid choice $L=3$ certifies the smaller, conservative radius $0.1\le0.15$, while $L=1$ claims $0.3\gt0.15$.</p>
+<p><strong>Step 5 — Show that the radius 0.3 can include an unsafe point.</strong> Take the noise at its favorable extreme, $\epsilon=E$, so $f(z)=y-E=h+0.3$, and let $f$ fall at the true slope 2: $f(x)=h+0.3-2\,d(z,x)$. This is 2-Lipschitz and matches the observation. At distance $d=0.3$, which the $L=1$ rule certifies,</p>
+<div class="math-block">$$f(x)=h+0.3-2(0.3)=h-0.3\lt h.$$</div>
+<p>So the claimed radius 0.3 is not justified: it admits an unsafe point for a function satisfying all stated assumptions.</p>
+<p><strong>Check.</strong> At the tight radius $d=0.15$ the same function gives $f=h+0.3-0.3=h$, exactly at the threshold, and at $d=0.1$ it gives $h+0.1\ge h$. The ordering $0.1\lt0.15\lt0.3$ matches "overestimating $L$ shrinks, underestimating enlarges".</p>
+<p><em>Interpretation:</em> a valid bound need not equal the smallest possible constant. Safety survives overestimation, although exploration may slow. The guarantee requires an upper bound on all relevant slopes, rather than an estimate that is accurate only on previously observed pairs.</p></div>
         </details>
       </div>
     </details>
@@ -774,7 +802,21 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Keep points belonging to both intervals.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The intersection is $A_1\cap A_2=[0.3,0.5]$. Parameter 0.4 lies in both sets and is certified. Parameter 0.2 has only the first certificate, and 0.7 only the second, so neither is certified for the combined task.</p><p>Within each constraint, several historical observations can provide alternative witnesses and their regions are united. Across different constraints, every condition must hold, so those accumulated per-constraint sets are intersected. This order reflects “for each constraint, there exists a suitable witness.”</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> write membership in both intervals as two pairs of inequalities, combine them into one interval, then test each parameter against both sets.</p>
+<p><strong>Step 1 — Why an intersection.</strong> A parameter is safe for the combined task only if constraint 1 <em>and</em> constraint 2 hold there. The points certified for both are therefore those in $A_1$ and in $A_2$, i.e. $A_1\cap A_2$.</p>
+<p><strong>Step 2 — Combine the inequalities.</strong> Membership means</p>
+<div class="math-block">$$x\in A_1\cap A_2\iff\big(0.1\le x\le0.5\big)\ \text{and}\ \big(0.3\le x\le0.8\big).$$</div>
+<p>The two lower bounds together say $x\ge\max\{0.1,0.3\}=0.3$; the two upper bounds say $x\le\min\{0.5,0.8\}=0.5$. Hence</p>
+<div class="math-block">$$A_1\cap A_2=[0.3,\,0.5].$$</div>
+<p>The interval is nonempty because $0.3\le0.5$.</p>
+<p><strong>Step 3 — Check the three parameters.</strong></p>
+<ul style="margin:0 0 8px 18px;">
+<li>$x=0.2$: $0.1\le0.2\le0.5$, so $0.2\in A_1$; but $0.2\lt0.3$, so $0.2\notin A_2$. Not certified for both.</li>
+<li>$x=0.4$: $0.1\le0.4\le0.5$ and $0.3\le0.4\le0.8$, so it lies in both. Certified.</li>
+<li>$x=0.7$: $0.7\gt0.5$, so $0.7\notin A_1$; $0.3\le0.7\le0.8$, so $0.7\in A_2$. Not certified for both.</li>
+</ul>
+<p><strong>Check.</strong> The endpoints of $[0.3,0.5]$ come from different sets: $0.3$ is the left end of $A_2$ and lies inside $A_1$; $0.5$ is the right end of $A_1$ and lies inside $A_2$. So both endpoints really belong to both intervals.</p>
+<p><em>Interpretation:</em> within each constraint, several historical observations can provide alternative witnesses and their regions are united. Across different constraints, every condition must hold, so those accumulated per-constraint sets are intersected. This order reflects “for each constraint, there exists a suitable witness.”</p></div>
         </details>
       </div>
     </details>
@@ -787,7 +829,24 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Compute each radius independently, clip each ball to $D$, then unite them.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The radii are $r_1=0.35-0.05-0.1=0.2$ and $r_2=0.45-0.05-0.1=0.3$. The intervals are $[0,0.4]$ and $[0.3,0.9]$, whose overlap makes their union $[0,0.9]$. The full safe set also retains any known-safe seed points.</p><p>A negative slack gives no points satisfying the cone test, including its own center; it contributes an empty region, rather than a negative-radius interval. A query center that was already known safe stays safe through the stored seed or previous certificates. New data never revoke older valid certificates in the stationary bounded-noise setting.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> for each observation compute slack and radius, turn the ball into an interval clipped to $D$, then unite the intervals; finally solve the cone test when the slack is negative.</p>
+<p><strong>Step 1 — Radii.</strong> The cone test $y_i-E-L|x-z_i|\ge h$ rearranges to $|x-z_i|\le r_i:=(y_i-E-h)/L$. With $E=0.05$, $h=0.1$, $L=1$:</p>
+<div class="math-block">$$\begin{aligned}
+r_1&amp;=\frac{0.35-0.05-0.1}{1}=0.2,\\
+r_2&amp;=\frac{0.45-0.05-0.1}{1}=0.3.
+\end{aligned}$$</div>
+<p><strong>Step 2 — Intervals, clipped to $D=[0,1]$.</strong> $|x-z|\le r$ means $z-r\le x\le z+r$:</p>
+<div class="math-block">$$\begin{aligned}
+z_1=0.2:&amp;\quad[0.2-0.2,\;0.2+0.2]=[0,\,0.4],\\
+z_2=0.6:&amp;\quad[0.6-0.3,\;0.6+0.3]=[0.3,\,0.9].
+\end{aligned}$$</div>
+<p>Both already lie inside $[0,1]$, so clipping changes nothing.</p>
+<p><strong>Step 3 — Union.</strong> A point is safe if <em>at least one</em> observation certifies it, so the per-observation regions are united. The intervals overlap because the second starts at $0.3$, before the first ends at $0.4$. The union is therefore one interval from the smaller left end to the larger right end:</p>
+<div class="math-block">$$[0,0.4]\cup[0.3,0.9]=[0,\,0.9].$$</div>
+<p>The full safe set also retains any known-safe seed points.</p>
+<p><strong>Step 4 — Negative slack.</strong> If $y-E-h\lt0$, the test asks for $L|x-z|\le y-E-h\lt0$. The left side is never negative, so no $x$ satisfies it, not even the center $x=z$, where the left side is $0$. Such an observation contributes the empty set, rather than a negative-radius interval.</p>
+<p><strong>Check.</strong> At the right end $x=0.9$ the witness $z_2$ gives $0.45-0.05-1\cdot0.3=0.1=h$ (exactly at the threshold). At $x=0$ the witness $z_1$ gives $0.35-0.05-0.2=0.1=h$. A point just outside, $x=0.95$, gets $0.35-0.05-0.75=-0.45$ from $z_1$ and $0.45-0.05-0.35=0.05$ from $z_2$, both below $0.1$: not certified, as the union predicts.</p>
+<p><em>Interpretation:</em> a query center that was already known safe stays safe through the stored seed or previous certificates. New data never revoke older valid certificates in the stationary bounded-noise setting.</p></div>
         </details>
       </div>
     </details>
@@ -799,7 +858,22 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>A triangular bump can vanish at both endpoints while being tall at the midpoint.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>For any $M\gt0$, define $f_M(x)=M\min\{x,1-x\}$ on $[0,1]$. It matches both observations and has slope $M$ on $[0,1/2]$ and slope $-M$ on $[1/2,1]$. Its smallest global Lipschitz constant is exactly $M$, which can be arbitrarily large.</p><p>The observed secant slope gives a necessary lower bound on any valid global constant, not a sufficient upper bound. Without additional structural knowledge, unobserved regions can hide rapid changes. This elementary example explains why obtaining a safety assumption from the same sparse data needs more than fitting a slope estimate.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> build a family of "tent" functions through the two data points, prove each is $M$-Lipschitz and no better, and let $M$ grow.</p>
+<p><strong>Step 1 — Define the family.</strong> For any $M\gt0$ let $f_M(x)=M\min\{x,1-x\}$ on $[0,1]$. Since $x\le1-x$ exactly when $x\le\tfrac12$,</p>
+<div class="math-block">$$f_M(x)=\begin{cases}Mx,&amp;0\le x\le\tfrac12,\\ M(1-x),&amp;\tfrac12\le x\le1.\end{cases}$$</div>
+<p><strong>Step 2 — It matches the data.</strong> $f_M(0)=M\cdot0=0$ and $f_M(1)=M(1-1)=0$, for every $M$.</p>
+<p><strong>Step 3 — It is $M$-Lipschitz.</strong> Take $0\le x\le x'\le1$. If both lie in the same piece, $|f_M(x)-f_M(x')|=M|x-x'|$ because each piece is a line of slope $\pm M$. If $x\le\tfrac12\le x'$, pass through the peak and use the triangle inequality:</p>
+<div class="math-block">$$\begin{aligned}
+|f_M(x)-f_M(x')|&amp;\le|f_M(x)-f_M(\tfrac12)|+|f_M(\tfrac12)-f_M(x')|\\
+&amp;=M(\tfrac12-x)+M(x'-\tfrac12)=M(x'-x).
+\end{aligned}$$</div>
+<p>So $|f_M(x)-f_M(x')|\le M|x-x'|$ for all pairs.</p>
+<p><strong>Step 4 — No smaller constant works.</strong> Any valid constant $L$ must satisfy the inequality for the pair $0,\tfrac12$:</p>
+<div class="math-block">$$|f_M(\tfrac12)-f_M(0)|=\tfrac M2\le L\cdot\tfrac12\quad\Longrightarrow\quad L\ge M.$$</div>
+<p>Together with Step 3, the smallest global Lipschitz constant of $f_M$ is exactly $M$.</p>
+<p><strong>Step 5 — Let $M$ grow.</strong> Every $f_M$ fits both observations, yet $M$ can be any positive number (and $f_0\equiv0$ covers the constant 0). The data's secant slope $|f(1)-f(0)|/|1-0|=0$ is the same for all of them, so it cannot bound the global constant from above.</p>
+<p><strong>Check.</strong> For $M=10$, $f_{10}(\tfrac12)=5$: a peak of height 5 sits between two zero readings, and the slope from $0$ to $\tfrac12$ is $5/0.5=10=M$.</p>
+<p><em>Interpretation:</em> the observed secant slope gives a necessary lower bound on any valid global constant, not a sufficient upper bound. Without additional structural knowledge, unobserved regions can hide rapid changes. This elementary example explains why obtaining a safety assumption from the same sparse data needs more than fitting a slope estimate.</p></div>
         </details>
       </div>
     </details>
@@ -811,7 +885,18 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Here $R/\sqrt\lambda=1$. Evaluate the band with the resulting multiplier.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>The multiplier is $1+\sqrt{2+2\log10}\approx3.5700526$. The lower endpoint is $0.5-0.1(3.5700526)\approx0.1429947$, which is below 0.2, so the point is not certified.</p><p>The heuristic multiplier 2 would produce lower endpoint 0.3 and admit the point, but that calculation does not inherit the stated confidence theorem. A valid Real-beta band can prevent a query that a heuristic would allow. These numbers illustrate the decision difference; the theorem still depends on the kernel, norm and noise assumptions being correct.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> evaluate $\beta$ piece by piece (logarithms are natural), form the lower band $\mu-\beta\sigma$, and compare it with the threshold.</p>
+<p><strong>Step 1 — The prefactor.</strong> $\sqrt\lambda=\sqrt{0.04}=0.2$, so</p>
+<div class="math-block">$$\frac{R}{\sqrt\lambda}=\frac{0.2}{0.2}=1.$$</div>
+<p><strong>Step 2 — The term under the square root.</strong> $\log(1/\delta)=\log(1/0.1)=\log10\approx2.3025851$, so $2\log10\approx4.6051702$. Adding the supplied log determinant,</p>
+<div class="math-block">$$\log\det(I+K/\lambda)+2\log(1/\delta)\approx2+4.6051702=6.6051702.$$</div>
+<p><strong>Step 3 — Assemble $\beta$.</strong></p>
+<div class="math-block">$$\beta=1+1\cdot\sqrt{6.6051702}\approx1+2.5700526=3.5700526.$$</div>
+<p><strong>Step 4 — Lower band and decision.</strong> The lower confidence bound is the mean minus $\beta$ standard deviations:</p>
+<div class="math-block">$$\ell=\mu-\beta\sigma\approx0.5-3.5700526(0.1)=0.5-0.3570053=0.1429947.$$</div>
+<p>Since $0.1429947\lt0.2$, the band does not certify $f\ge0.2$ at this point.</p>
+<p><strong>Check.</strong> The largest multiplier that would still certify is $(\mu-h)/\sigma=(0.5-0.2)/0.1=3$. Our $\beta\approx3.57$ exceeds 3, consistent with rejection. With the heuristic $\beta=2$ the lower endpoint is $0.5-2(0.1)=0.3\ge0.2$, which would accept.</p>
+<p><em>Interpretation:</em> the heuristic multiplier 2 would produce lower endpoint 0.3 and admit the point, but that calculation does not inherit the stated confidence theorem. A valid Real-beta band can prevent a query that a heuristic would allow. These numbers illustrate the decision difference; the theorem still depends on the kernel, norm and noise assumptions being correct.</p></div>
         </details>
       </div>
     </details>
@@ -823,7 +908,17 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Transfer first across space at the observation time, then subtract the allowed temporal loss.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>At time $s$, $f_s(x)\ge f_s(z)-L|x-z|\ge y_s-E-L|x-z|$. The drift assumption gives $f_t(x)\ge f_s(x)-v|t-s|$, hence $f_t(x)\ge y_s-E-L|x-z|-v|t-s|$.</p><p>The numerical lower bound is $0.8-0.1-2(0.2)-0.05(3)=0.15$. Ignoring drift would claim 0.3 and overstate the margin by 0.15. This is a direct consequence of the extra stated drift bound, rather than a guarantee provided by stationary LoSBO; arbitrary unbounded changes invalidate old cones.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> chain three one-sided inequalities (noise at $z$, space from $z$ to $x$ at time $s$, time from $s$ to $t$ at $x$), then substitute the numbers.</p>
+<p><strong>Step 1 — Remove the noise at time $s$.</strong> From $y_s=f_s(z)+\epsilon_s$ and $\epsilon_s\le|\epsilon_s|\le E$,</p>
+<div class="math-block">$$f_s(z)=y_s-\epsilon_s\ge y_s-E.$$</div>
+<p><strong>Step 2 — Move in space at the fixed time $s$.</strong> The Lipschitz bound $|f_s(x)-f_s(z)|\le L|x-z|$ implies in particular $f_s(x)-f_s(z)\ge-L|x-z|$, so</p>
+<div class="math-block">$$f_s(x)\ge f_s(z)-L|x-z|\ge y_s-E-L|x-z|.$$</div>
+<p><strong>Step 3 — Move in time at the fixed point $x$.</strong> The drift bound $|f_t(x)-f_s(x)|\le v|t-s|$ likewise gives $f_t(x)\ge f_s(x)-v|t-s|$. Inserting Step 2:</p>
+<div class="math-block">$$f_t(x)\ge y_s-E-L|x-z|-v|t-s|.$$</div>
+<p><strong>Step 4 — Numbers.</strong> The three subtracted terms are $E=0.1$, $L|x-z|=2(0.2)=0.4$ and $v|t-s|=0.05(3)=0.15$:</p>
+<div class="math-block">$$f_t(x)\ge0.8-0.1-0.4-0.15=0.15.$$</div>
+<p><strong>Check.</strong> Without the drift term the bound would be $0.8-0.1-0.4=0.3$; the difference $0.3-0.15=0.15$ is exactly $v|t-s|$. With $v=0$ (stationary function) the formula reduces to the ordinary LoSBO cone. For a threshold $h$, the old observation now certifies the radius $(y_s-E-h-v|t-s|)/L$, which shrinks as $|t-s|$ grows.</p>
+<p><em>Interpretation:</em> ignoring drift would claim 0.3 and overstate the margin by 0.15. This is a direct consequence of the extra stated drift bound, rather than a guarantee provided by stationary LoSBO; arbitrary unbounded changes invalidate old cones.</p></div>
         </details>
       </div>
     </details>
@@ -836,7 +931,17 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use the downward cone itself as a possible true function and choose the observation noise at its positive extreme.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>Define $f(x)=y-E-L|x-z|$ and observation noise $\epsilon=E$. Then $f(z)+\epsilon=y$, so this function matches the observation. The reverse triangle inequality gives $||x-z|-|x'-z||\le|x-x'|$, proving that $f$ is $L$-Lipschitz.</p><p>If $|x-z|\gt(y-E-h)/L$, then $f(x)\lt h$. Thus the same measurement and the same valid assumptions allow a true function that is unsafe beyond the cone radius. Additional observations or structural assumptions may certify more, but this single observation and these two bounds alone cannot.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> exhibit one function and one noise value that satisfy every assumption, then show this function falls below $h$ just outside the radius.</p>
+<p><strong>Step 1 — Choose the worst-case function and noise.</strong> Define $f(x)=y-E-L|x-z|$ and the observation noise $\epsilon=E$. The noise is admissible because $|\epsilon|=E\le E$ (here $E\ge0$ is used).</p>
+<p><strong>Step 2 — It reproduces the measurement.</strong> At the center the distance is $0$, so</p>
+<div class="math-block">$$f(z)+\epsilon=(y-E-L\cdot0)+E=y.$$</div>
+<p><strong>Step 3 — It is $L$-Lipschitz.</strong> First the reverse triangle inequality. By the ordinary triangle inequality, $|x-z|\le|x-x'|+|x'-z|$, so $|x-z|-|x'-z|\le|x-x'|$; swapping the roles of $x$ and $x'$ gives $|x'-z|-|x-z|\le|x-x'|$. Both together say $\big||x-z|-|x'-z|\big|\le|x-x'|$. Then</p>
+<div class="math-block">$$|f(x)-f(x')|=L\,\big||x'-z|-|x-z|\big|\le L|x-x'|.$$</div>
+<p><strong>Step 4 — It is unsafe beyond the radius.</strong> Let $r=(y-E-h)/L\ge0$ and suppose $|x-z|\gt r$. Multiplying by $L\gt0$ keeps the direction, so $L|x-z|\gt y-E-h$, and rearranging,</p>
+<div class="math-block">$$f(x)=y-E-L|x-z|\lt y-E-(y-E-h)=h.$$</div>
+<p><strong>Step 5 — Conclude sharpness.</strong> The pair $(f,\epsilon)$ satisfies the noise bound, the Lipschitz bound and the measurement, yet $f(x)\lt h$ at every $x$ farther than $r$ from $z$. Any rule that certifies such an $x$ from this observation alone would be wrong for this admissible $f$. Conversely, Proposition 1 shows every $x$ with $|x-z|\le r$ is safe for <em>every</em> admissible $f$. So $r$ is exactly the largest radius these assumptions justify.</p>
+<p><strong>Check.</strong> At the boundary $|x-z|=r$, $f(x)=y-E-(y-E-h)=h$: the threshold is met with equality, consistent with the non-strict test $f\ge h$.</p>
+<p><em>Interpretation:</em> the same measurement and the same valid assumptions allow a true function that is unsafe beyond the cone radius. Additional observations or structural assumptions may certify more, but this single observation and these two bounds alone cannot.</p></div>
         </details>
       </div>
     </details>
@@ -860,7 +965,29 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>Use the reproducing property to evaluate $g$ at data points, then Pythagoras for the norm.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>At an observed input $x_i$, orthogonality gives $g(x_i)=\langle g,k(x_i,\cdot)\rangle_k=0$. Therefore $(s+cg)(x_i)=s(x_i)=y_i$ for every $c$. The interpolant lies in the span of the observed kernel sections, so $s\perp g$.</p><div class="math-block">$$\|s+cg\|_k^2=\|s\|_k^2+c^2\|g\|_k^2=y^\top K^{-1}y+c^2.$$</div><p>The exact data give the lower bound $\|f\|_k^2\ge y^\top K^{-1}y$, but no finite upper bound when such an unobserved direction exists. The explicit existence assumption matters: a fully observed finite-dimensional RKHS can instead determine the function completely.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> evaluate $g$ at the data with the reproducing property, expand the norm of $s+cg$ with the inner product, and compute $\|s\|_k^2$ from the interpolant's coefficients.</p>
+<p><strong>Step 1 — The interpolant.</strong> Let $V=\mathrm{span}\{k(x_1,\cdot),\dots,k(x_n,\cdot)\}$. The minimum-norm interpolant is $s=\sum_i\alpha_ik(x_i,\cdot)\in V$ with $\alpha=K^{-1}y$ ($K$ is invertible because it is positive definite). Indeed, using $k(x_i,x_j)=K_{ij}=K_{ji}$ (the kernel is symmetric),</p>
+<div class="math-block">$$s(x_j)=\sum_i\alpha_iK_{ij}=\sum_iK_{ji}\alpha_i=(K\alpha)_j=(KK^{-1}y)_j=y_j.$$</div>
+<p><strong>Step 2 — $g$ vanishes at the data.</strong> By the reproducing property $g(x_i)=\langle g,k(x_i,\cdot)\rangle_k$, and this is $0$ because $g$ is orthogonal to every observed kernel section. Hence, for every real $c$,</p>
+<div class="math-block">$$(s+cg)(x_i)=s(x_i)+c\,g(x_i)=y_i+0=y_i.$$</div>
+<p><strong>Step 3 — $s$ and $g$ are orthogonal.</strong> By linearity of the inner product,</p>
+<div class="math-block">$$\langle s,g\rangle_k=\sum_i\alpha_i\langle k(x_i,\cdot),g\rangle_k=\sum_i\alpha_i\cdot0=0.$$</div>
+<p><strong>Step 4 — Expand the norm (Pythagoras).</strong></p>
+<div class="math-block">$$\begin{aligned}
+\|s+cg\|_k^2&amp;=\langle s+cg,\,s+cg\rangle_k\\
+&amp;=\|s\|_k^2+2c\langle s,g\rangle_k+c^2\|g\|_k^2\\
+&amp;=\|s\|_k^2+0+c^2\cdot1.
+\end{aligned}$$</div>
+<p><strong>Step 5 — Compute $\|s\|_k^2$.</strong> Again by bilinearity and $\langle k(x_i,\cdot),k(x_j,\cdot)\rangle_k=k(x_i,x_j)$,</p>
+<div class="math-block">$$\begin{aligned}
+\|s\|_k^2&amp;=\sum_{i,j}\alpha_i\alpha_jK_{ij}=\alpha^\top K\alpha\\
+&amp;=y^\top K^{-1}KK^{-1}y=y^\top K^{-1}y,
+\end{aligned}$$</div>
+<p>where $(K^{-1})^\top=K^{-1}$ because $K$ is symmetric. Therefore</p>
+<div class="math-block">$$\|s+cg\|_k^2=y^\top K^{-1}y+c^2\ \ge\ c^2\ \xrightarrow{\;|c|\to\infty\;}\ \infty.$$</div>
+<p><strong>Step 6 — The lower bound for every interpolant.</strong> If $f\in\mathcal H_k$ matches the data, then $f-s$ vanishes at every $x_i$, so the reproducing property gives $\langle f-s,k(x_i,\cdot)\rangle_k=(f-s)(x_i)=y_i-y_i=0$ for all $i$. As in Step 3 (with $f-s$ in place of $g$), linearity then gives $\langle f-s,s\rangle_k=0$, i.e. $f-s\perp s$. Writing $f=s+(f-s)$ and expanding as in Step 4, $\|f\|_k^2=\|s\|_k^2+\|f-s\|_k^2\ge\|s\|_k^2=y^\top K^{-1}y$, since a squared norm is never negative.</p>
+<p><strong>Check.</strong> At $c=0$ the formula returns $\|s\|_k^2$, the minimum. A one-point example: $K=(1)$, $y=(2)$ gives $s=2k(x_1,\cdot)$ and $\|s\|_k^2=2\cdot1\cdot2=4=y^\top K^{-1}y$.</p>
+<p><em>Interpretation:</em> the exact data give the lower bound $\|f\|_k^2\ge y^\top K^{-1}y$, but no finite upper bound when such an unobserved direction exists. The explicit existence assumption matters: a fully observed finite-dimensional RKHS can instead determine the function completely.</p></div>
         </details>
       </div>
     </details>
@@ -872,7 +999,20 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;"><summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show hint</summary><p>A Gaussian has positive probability beyond every finite interval, so $p\lt1$.</p></details>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show worked solution</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p>For $E\ge0$, $p=2\Phi(E/\sigma)-1\lt1$. Independence gives $\Pr(|\epsilon_t|\le E\text{ for all }1\le t\le T)=p^T$, which tends to zero. Thus with probability 1 some noise value eventually exceeds every chosen finite fixed bound.</p><p>LoSBO's deterministic theorem assumes the bound holds at every query, so ordinary Gaussian noise with a finite $E$ does not satisfy it. This does not prove that a safety violation must occur: a bound exceedance may be harmless. It means the deterministic guarantee cannot be invoked. A finite-horizon probabilistic replacement must budget the tail probability and changes the statement being proved.</p></div>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p><em>Plan:</em> compute $p$ by standardizing, multiply the $T$ probabilities using independence, take the limit, and pass from "first $T$" to "all time".</p>
+<p><strong>Step 1 — Compute $p$.</strong> Standardize: $Z=\epsilon_t/\sigma\sim\mathcal N(0,1)$ with CDF $\Phi$. For $E\ge0$,</p>
+<div class="math-block">$$\begin{aligned}
+p&amp;=\Pr(-E\le\epsilon_t\le E)=\Pr(-E/\sigma\le Z\le E/\sigma)\\
+&amp;=\Phi(E/\sigma)-\Phi(-E/\sigma)=2\Phi(E/\sigma)-1,
+\end{aligned}$$</div>
+<p>using the symmetry $\Phi(-a)=1-\Phi(a)$. (For $E\lt0$ the event is empty and $p=0$.)</p>
+<p><strong>Step 2 — Why $p\lt1$.</strong> $1-\Phi(a)=\int_a^\infty\varphi(u)\,du\gt0$ for every finite $a$, because the Gaussian density $\varphi$ is strictly positive. So $\Phi(E/\sigma)\lt1$ and $p=2\Phi(E/\sigma)-1\lt1$.</p>
+<p><strong>Step 3 — First $T$ noises.</strong> Independence lets the joint probability factor:</p>
+<div class="math-block">$$\Pr\big(|\epsilon_t|\le E\ \text{for all }1\le t\le T\big)=\prod_{t=1}^T\Pr(|\epsilon_t|\le E)=p^T.$$</div>
+<p><strong>Step 4 — The limit.</strong> Since $0\le p\lt1$, $p^T\to0$ as $T\to\infty$ (for $p\gt0$ write $p^T=e^{T\ln p}$ with $\ln p\lt0$).</p>
+<p><strong>Step 5 — All time.</strong> The events $A_T=\{|\epsilon_t|\le E\text{ for }t\le T\}$ shrink as $T$ grows, and "the bound holds forever" is their intersection. Continuity of probability along a decreasing sequence gives $\Pr(\bigcap_TA_T)=\lim_T p^T=0$. Thus with probability 1 some noise value eventually exceeds every chosen finite fixed bound.</p>
+<p><strong>Check.</strong> With $E=2\sigma$: $p=2\Phi(2)-1\approx0.9545$, so $p^{25}\approx0.312$ and $p^{100}\approx0.0095$. So even this generous bound is broken at least once within 100 queries with probability $1-0.0095\approx0.99$.</p>
+<p><em>Interpretation:</em> LoSBO's deterministic theorem assumes the bound holds at every query, so ordinary Gaussian noise with a finite $E$ does not satisfy it. This does not prove that a safety violation must occur: a bound exceedance may be harmless. It means the deterministic guarantee cannot be invoked. A finite-horizon probabilistic replacement must budget the tail probability and changes the statement being proved.</p></div>
         </details>
       </div>
     </details>
@@ -926,9 +1066,25 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
           <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;">
-            <p style="margin-top:0;"><em>(a)</em> $S_t = S_{t-1} \cup \{x : y_{t-1} - E - C\,d(x_{t-1},x)^\alpha \ge h\}$. Proof as in Proposition 1 with $\phi(r) = Cr^\alpha$, which is continuous, strictly increasing, $\phi(0) = 0$: $f(x) \ge f(x_{t-1}) - C\,d(x_{t-1},x)^\alpha \ge y_{t-1} - E - C\,d(x_{t-1},x)^\alpha \ge h$. The GP is again untouched.</p>
-            <p><em>(b)</em> For a slack $y - E - h \ge 0$ the certified set is $\{x : d(x_{t-1},x) \le r\}$ with $r = \phi^{-1}(y - E - h) = \big((y-E-h)/C\big)^{1/\alpha}$; a negative slack certifies nothing (do not feed it to the formula, which for $\alpha = \tfrac12$ would square it into a positive radius). With slack $0.3$ and $C = 3$: $\alpha = 1$ gives $r = 0.1$; $\alpha = \tfrac12$ gives $r = 0.1^2 = 0.01$.</p>
-            <p style="margin-bottom:0;"><em>(c)</em> $r_{1/2} = (s/C)^2 \gt r_1 = s/C$ iff $s/C \gt 1$, i.e. only for slacks larger than $C$ (distances above 1 in the chosen units). For small slacks, the typical situation near the boundary of the safe set, a rougher regularity class certifies far less; this is the price of weaker prior knowledge. (The paper's Matérn-3/2 experiments still use a Lipschitz bound, so this effect is not what is measured there; the authors explain the slightly slower exploration on Matérn functions by their lower smoothness, to which a global Lipschitz bound is tied.)</p>
+            <p style="margin-top:0;"><em>Plan:</em> replace the Lipschitz term $L\,d$ by the H&ouml;lder term $C\,d^\alpha$ in the LoSBO rule, repeat Proposition 1's induction, then solve the cone test for the distance and compare the two radii.</p>
+            <p><strong>Step 1 — (a) The rule.</strong> $S_1=S_0$ and, for $t\ge2$,</p>
+            <div class="math-block">$$S_t = S_{t-1} \cup \{x\in D : y_{t-1} - E - C\,d(x_{t-1},x)^\alpha \ge h\}.$$</div>
+            <p>This is Proposition 1's rule with modulus $\phi(r) = Cr^\alpha$, which is continuous, strictly increasing, and has $\phi(0) = 0$.</p>
+            <p><strong>Step 2 — (a) Safety by induction.</strong> Claim: $f\ge h$ on every $S_t$. Base: $S_0$ (and $S_1=S_0$) is safe by the seed assumption. Inductive step: assume $f\ge h$ on $S_{t-1}$; a point of $S_t$ is either in $S_{t-1}$ (safe by hypothesis) or satisfies the new test. For the latter, the noise bound gives $f(x_{t-1})=y_{t-1}-\epsilon_{t-1}\ge y_{t-1}-E$, and the H&ouml;lder bound $|f(x)-f(x_{t-1})|\le C\,d(x_{t-1},x)^\alpha$ gives $f(x)\ge f(x_{t-1})-C\,d(x_{t-1},x)^\alpha$. Chaining,</p>
+            <div class="math-block">$$f(x) \ge f(x_{t-1}) - C\,d(x_{t-1},x)^\alpha \ge y_{t-1} - E - C\,d(x_{t-1},x)^\alpha \ge h.$$</div>
+            <p>Every query is chosen inside $S_t$, so every query is safe. The GP is again untouched.</p>
+            <p><strong>Step 3 — (b) Solve the test for the distance.</strong> Write $s=y-E-h$ for the slack. The test reads $C\,d^\alpha\le s$.</p>
+            <ul style="margin:0 0 8px 18px;">
+              <li>If $s\lt0$: the left side $C\,d^\alpha$ is never negative, so no $x$ passes and nothing is certified. Do not feed a negative slack to the radius formula below, which for $\alpha = \tfrac12$ would square it into a positive radius.</li>
+              <li>If $s\ge0$: divide by $C\gt0$ to get $d^\alpha\le s/C$. The map $u\mapsto u^{1/\alpha}$ is strictly increasing on $[0,\infty)$ (its exponent $1/\alpha$ is positive), so applying it to both sides keeps the direction: $d\le r:=(s/C)^{1/\alpha}=\phi^{-1}(s)$.</li>
+            </ul>
+            <p><strong>Step 4 — (b) Numbers.</strong> With $s=0.3$ and $C=3$, $s/C=0.1$:</p>
+            <div class="math-block">$$\alpha=1:\ r=0.1^{1}=0.1,\qquad\alpha=\tfrac12:\ r=0.1^{2}=0.01.$$</div>
+            <p>Check: $3\cdot0.1^1=0.3$ and $3\cdot0.01^{1/2}=3\cdot0.1=0.3$, so both radii put the boundary exactly at slack $0.3$.</p>
+            <p><strong>Step 5 — (c) Compare the radii.</strong> Put $u=s/C\gt0$. Then $r_{1/2}=u^2$ and $r_1=u$, and</p>
+            <div class="math-block">$$u^2\gt u\iff u(u-1)\gt0\iff u\gt1\iff s\gt C,$$</div>
+            <p>where dividing by $u\gt0$ is allowed. Equality holds at $u=1$. So $r_{1/2} \gt r_1$ only for slacks larger than $C$ (distances above 1 in the chosen units); for example $s=6$, $C=3$ gives $u=2$, $r_{1/2}=4\gt r_1=2$, whereas part (b) has $u=0.1$ and $0.01\lt0.1$.</p>
+            <p style="margin-bottom:0;"><em>Interpretation:</em> for small slacks, the typical situation near the boundary of the safe set, a rougher regularity class certifies far less; this is the price of weaker prior knowledge. (The paper's Matérn-3/2 experiments still use a Lipschitz bound, so this effect is not what is measured there; the authors explain the slightly slower exploration on Matérn functions by their lower smoothness, to which a global Lipschitz bound is tied.)</p>
           </div>
         </details>
       </div>
@@ -965,7 +1121,19 @@ E^2&amp;\ge2(0.15)^2\ln(20000).
         <p style="margin-top:0;">Let $\epsilon_t \sim \mathcal{N}(0,\sigma_n^2)$ i.i.d. and $E = 2\sigma_n$. (a) Compute the probability that a single measurement violates $|\epsilon_t| \le E$, and that at least one of $T = 25$ does. (b) Explain why not every exceedance causes an unsafe query. (c) Derive an $E_T$ such that all $T$ measurements satisfy $|\epsilon_t| \le E_T$ with probability $\ge 1-\delta$, and state what LoSBO then guarantees; evaluate for $T = 25$, $\delta = 0.01$. (d) What is the actual purpose of $E = 2B_\epsilon$ in the paper?</p>
         <details style="margin-top:10px;">
           <summary style="cursor:pointer;color:#2d5fa6;font-weight:600;">Show answer</summary>
-          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p style="margin-top:0;"><em>(a)</em> $\mathbb{P}[|\epsilon_t| \gt 2\sigma_n] = 2\Phi(-2) \approx 0.0455$, with $\Phi$ the standard normal CDF (<a href="primer-probability.html#pr-gaussian">Primer C</a>). Over 25 independent measurements, $1 - (1 - 0.0455)^{25} \approx 0.69$: an exceedance is the rule, not the exception, so Proposition 1 does not apply to Gaussian noise at all.</p>
+          <div style="margin-top:8px;padding:10px 14px;background:#f7f9fc;border-left:3px solid #2d5fa6;border-radius:0 4px 4px 0;"><p style="margin-top:0;"><em>Plan for (a):</em> standardize to a unit Gaussian, use symmetry for the single-measurement tail, then pass to the complement event "no exceedance in 25" and use independence.</p>
+<p><strong>(a) Step 1 — One measurement.</strong> With $Z=\epsilon_t/\sigma_n\sim\mathcal N(0,1)$ and $\Phi$ the standard normal CDF (<a href="primer-probability.html#pr-gaussian">Primer C</a>),</p>
+<div class="math-block">$$\begin{aligned}
+\mathbb{P}[|\epsilon_t| \gt 2\sigma_n]&amp;=\mathbb P[Z\gt2]+\mathbb P[Z\lt-2]\\
+&amp;=2\Phi(-2)\approx2(0.02275)=0.0455,
+\end{aligned}$$</div>
+<p>because by symmetry $\mathbb P[Z\gt2]=\mathbb P[Z\lt-2]=\Phi(-2)$.</p>
+<p><strong>(a) Step 2 — At least one of 25.</strong> "At least one exceedance" is the complement of "no exceedance". Each measurement stays within the bound with probability $1-0.0455=0.9545$, and independence multiplies these:</p>
+<div class="math-block">$$\begin{aligned}
+\mathbb P[\text{no exceedance in 25}]&amp;=(0.9545)^{25}\approx0.312,\\
+\mathbb P[\text{at least one}]&amp;\approx1-0.312\approx0.69.
+\end{aligned}$$</div>
+<p><strong>(a) Check.</strong> The union bound gives $25\times0.0455\approx1.14$, larger than 1 and hence useless here, but consistent with $0.69\le1.14$. Since at least one exceedance in 25 has probability about $0.69$, an exceedance is the rule, not the exception, so Proposition 1 does not apply to Gaussian noise at all.</p>
             <p><em>(b)</em> Safety needs $f(x_{t-1}) \ge y_{t-1} - E$, i.e. only $\epsilon_{t-1} \le E$ (one-sided, probability of failure $\Phi(-2) \approx 0.023$ per query); a violation also requires the over-certified ball to contain a point $x$ with $f(x) \lt h$. Rearranging the certificate, such an $x$ satisfies $f(x_{t-1}) - h \lt L\,d(x_{t-1},x) \le f(x_{t-1}) - h + (\epsilon_{t-1} - E)$, because $f(x) \ge f(x_{t-1}) - L\,d(x_{t-1},x)$ would otherwise give $f(x) \ge h$. Dividing by $L$, with $r_0 = (f(x_{t-1}) - h)/L$ the true reach of the cone: $r_0 \lt d(x_{t-1},x) \le r_0 + (\epsilon_{t-1} - E)/L$, a shell of width $(\epsilon_{t-1} - E)/L$ just beyond $r_0$, and there $f(x) \ge f(x_{t-1}) - L\,d(x_{t-1},x) \ge h - (\epsilon_{t-1} - E)$. This is only a necessary condition: points of the shell may well be safe. The query itself need not be near the boundary (for $f(x) = 1 - x$, $h = 0$, $L = 1$, a query at $x = 0$ with $\epsilon_{t-1} - E = 0.1$ certifies the unsafe point $x = 1.05$). Exceedances on flat parts of $f$, or with a conservative $L$, are harmless, which is why the explorer shows only occasional violations under Gaussian noise.</p>
             
 <p><strong>(c) A finite-horizon replacement.</strong> For $E_T\ge0$, the Gaussian tail estimate and union bound give</p>

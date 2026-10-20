@@ -1,0 +1,11 @@
+- exercise-9-p2 | ok | TV 1/4, KL(p'||p)=0.130812, log values, 3/4ln3-ln2 check and reverse KL 0.143841 all re-verified (sympy); answer unchanged
+- exercise-9-p5 | ok | H^{-1}g=(1,1/2), q=2, x=(1/sqrt2,1/(2sqrt2)), boundary, objective sqrt2, rescaled Cauchy-Schwarz and uniqueness argument verified; answer unchanged
+- exercise-9-p6 | ok | separable minimization, sign argument, (0.1,0.2), displacement (-0.5,0), 0.125 and half-space formula check verified; answer unchanged
+- exercise-9-p9 | ok | CS step, reduction, f', bound 0.204124 lt 1, x*=(0.2,2sqrt6/5), objective 1.179796, KKT lambda 0.510310, nu 0.795876, gap 0.234418 verified; answer unchanged
+- exercise-9-p10 | ok | h(0.1)=0.02, discriminant 1.8, roots 0.085410/-0.585410, (3sqrt5-5)/20 exact form, monotonicity verified; answer unchanged
+- exercise-9.2 (no id; "When CPO is TRPO...") | fixed | all numbers/identities re-derived with sympy (q,r,s, A,B,C, lambda_a=56/sqrt985, nu*=0.351505, x*, b^T x*=1/10, trust=1/20, expansion 29d0^2+5075, primal=dual=(7sqrt985+90)/1450, D_b=3397/12600, stationarity zero) and correct; fixed gaps: Step 7 now shows the minimum c^2/s on the hyperplane is attained at (-c/s)H^{-1}b; Step 8 derives 18/29 and -35/232 instead of "Numerically"; Step 13 shows why sqrt(AB)=7sqrt985/1450 (985=5*197, 1450^2=5/4*725*2320) instead of "one checks"; final Check gives the reason stationarity holds (x* constructed from it) instead of asserting it. Final answer unchanged
+- spot-check exercise-9-p11 | ok | ratios 50/99, 50 and average 1 shown; complete
+- spot-check exercise-9-p12 | ok | union bound 0.95 and both margins shown; complete
+- spot-check book-m9-b2 | ok | stationarity solved coordinatewise, both complementarity products shown; complete
+- integrity | ok | only solution-body lines differ from snapshot; no summaries/ids/questions/hints touched; none of the changed exercises exist in book/chapters/policy-optimization.html or book/case-studies.html (no mirror needed); no raw lt/gt in math
+- qa/check.mjs | ok | no console/page/KaTeX/leftover-$ errors, no broken anchors, mobileOverflow false, mobileOverflowExpanded empty

@@ -1,0 +1,20 @@
+- book-m12-b1 | kept | already stepwise: preprocessing of each error, box radius, SDP bound with units, exact box gradient analysis with attaining segment
+- book-m12-b2 | kept | already stepwise: PSD shown via aa^T, both ReLU evaluations, increments, QC value -2 and certificate consequence
+- practice-easy-1 | kept | already stepwise: Cauchy-Schwarz on logit gap, strict radius, l_inf conversion via sqrt3, equality discussed
+- practice-easy-2 | expanded | added W0^T W0 eigenvalues, row norm, explicit f=2ReLU(x2), upper-bound chain, attaining pair (0,2),(0,1), gap interpretation
+- practice-easy-3 | expanded | added explicit substitutions, slope rewrite q=2u^2 s(1-s) proving QC<=>slope interval, check via slope formula
+- practice-easy-4 | expanded | justified square root step, derived gradient-norm lower bound from directional derivative, explicit contradiction and consistent counter-case
+- practice-medium-1 | expanded | explicit substitution, factor check, eigenvalues, expansion showing (Delta f)^2<=36 Delta x^2 - 4q, attaining pair, t* cross-check
+- practice-medium-2 | expanded | channel split, each term computed, why q_i>=0 via slopes, negative-weight counterexample diag(-3,2) -> -3, matrix-form check
+- practice-medium-3 | kept | already stepwise: norms, U computed, half-Lipschitz remainder justified, |x| sharpness check
+- practice-medium-4 | expanded | increments per layer, each weighted inequality shown, chained to |Df|^2<=9|Dx|^2, composite check, X1=4 shown forced
+- practice-hard-1 | kept | already stepwise: piecewise formulas with endpoint checks, kink-splitting argument, shared weight-only bound reasoning
+- practice-hard-2 | expanded | PSD via outer product with eigenvalues, ReLU evaluations, reduction to channel differences, value -4, coupled slope 2, T=I comparison, matrix check
+- practice-hard-3 | kept | already stepwise: eigenvectors, both spectra, margin 0.1, Cauchy-Schwarz error bound, surviving margin 0.06
+- practice-hard-4 | expanded | built P and PP^T entrywise, eigenvalues, P^TP vs PP^T link, attaining x=(1,2,1), disjoint-window derivation of 1/sqrt2, general bound 1 check
+- ex-12.1 (no id) | kept | full proof of product bound, Schur-complement feasibility, walkthrough evaluation and optimized t all derived
+- ex-12.2 (no id) | kept | chord cases, denominator-clearing algebra line by line, numerical QC 3.24 with factored check, training discussion
+- ex-12.3 (no id) | expanded | part (c) jumped to the rational |f'| formula; added sech^2 common-denominator algebra and subtraction step (sympy-verified); x*~1.0611, L*~0.93349 rechecked numerically
+- ex-12.4 (no id) | kept | log-det derivative, block gradient with transpose/cycle argument, barrier sign and Cholesky argument all explicit
+- ex-12.5 (no id) | kept | matrix assembled, Schur complement, square identity for global minimum, tightness argument, numerical ReLU factorization
+- ex-12.6 (no id) | kept | realization with shapes, induction check, nilpotent transfer-function algebra, LMI size and telescoping sum, Roesser count

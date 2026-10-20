@@ -1,0 +1,16 @@
+- practice-easy-2 | ok | re-derived [0,8], corners (1,1),(2,-1), centre-radius 4±4; steps sound
+- practice-easy-3 | ok | chord 3/5(z+2), two-case proofs, -0.4<=0<=0.6 and 0.4<=1<=1.8 verified
+- practice-easy-4 | ok | k=8, q=0.8, [1.2,2.8], coverage 8/10 exact with distinct scores; correct
+- practice-medium-1 | ok | IBP [-1,1], exact {0}, impossible corner (1,0); correct
+- practice-medium-2 | ok | sign flip, l(2)=-3, exact range [-3,1], 1/3<1 at z=-1/2 verified
+- practice-medium-3 | ok | R=sigma*Phi^-1(pA)=1, l_inf 0.1 with tightness vector, pA=0.5 -> R=0 abstain; correct
+- practice-hard-1 | ok | ranges [-4,-2] and [-4.4,-1.6], minimizers (-0.12,0.16),(-0.2,0.2) checked numerically
+- practice-hard-2 | ok | alpha=0.025, k=39<=39, k=20>19, n>=39 derivation, 0.9^4=0.6561 verified
+- practice-hard-4 | ok | 0.08 / 0.92, total-probability 0.54 / 0.46, attaining scenario; correct
+- exercise-15.1 (no id) | fixed | Step 6 asserted max(|z1+z2|,|z1-z2|)=|z1|+|z2| with only a hint; added the same-sign/opposite-sign two-case justification
+- exercise-15.2 (no id) | ok | re-derived -31/9, 8/9, 55/18, centre 1/2, max 7, gamma^L piecewise max -8.5 at 1/2, IBP [-12,13]/[-7,3]; grid check exact ranges [-5,1], [-8.5,7]
+- exercise-15.3 (no id) | ok | rank uniformity, both directions of coverage<=>rank<=k, ceiling bounds, n=9/10 numbers; (d) text unchanged
+- exercise-15.5 (no id) | ok | 952.62->953, exact 643 and 1138, 2006 bound 1396, 1716.31->1717, Chernoff exponent algebra, ratios 1.48/2.17 all recomputed
+- spot-check practice-medium-4 (kept) | ok | Hoeffding solve already stepwise
+- spot-check practice-hard-3 (kept) | ok | tails 0.05305/0.04912 and monotonicity given; adequate
+- spot-check exercise-15.4 (kept) | fixed | (c) jumped from p^n to alpha^{1/n} and to the log approximation; added p^n=alpha derivation, monotonicity of the radius in p_A, and e^{-x}~1-x step (0.000691 checked)

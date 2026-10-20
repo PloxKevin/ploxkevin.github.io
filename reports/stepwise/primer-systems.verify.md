@@ -1,0 +1,18 @@
+- sys-extra-2 | fixed | re-derived (0.25 multiplier, x*=0, 4,1,0.25,0.0625); reworded vague "shrinks twice as fast" to exact 0.25=0.5^2 statement
+- sys-extra-4 | ok | x1=(1,-1.2), x2=(0.5,1.44), unstable; steps verified
+- sys-extra-5 | ok | x(t)=(3e^-t,4e^-2t), bound 5e^-t; t=1 check 1.511<3.383 verified
+- sys-extra-7 | ok | Vdot=-4V, V=x0^2 e^-4t, |x|=|x0|e^-2t verified
+- sys-extra-13 | ok | k>2; k=2 stable not attractive; definitions correct
+- sys-extra-16 | ok | x=(1-e^-2t)/2 -> 1/2 = G(0); substitution check verified
+- sys-extra-17 | ok | 0.5, 1/(2sqrt2)=0.353553, Hinf=0.5 verified
+- sys-extra-18 | fixed | norms 2, 2/sqrt3, gain 2 verified; step heading "bound is attained" corrected to "approached" (sup 2 is a limit, y_t=2(1-0.5^t) never equals 2)
+- sys-extra-19 | ok | three-piece case analysis correct, sector [0,1]
+- sys-extra-21 | ok | Vdot<=-2V, |x|<=|x0|e^-t, global existence argument and |phi|<=3|x| derivation correct
+- sys-extra-22 | ok | AB=(0.5,0), rank 1, not controllable
+- sys-extra-23 | ok | W2=2, min energy 1/2 via Cauchy-Schwarz, u=1/2
+- sys-extra-24 | ok | Bz=(2,1), Cz=(1/2,1), G=(2s+3)/((s+1)(s+2)) both (sympy)
+- sys-extra-25 | ok | g=2u^2+4u+4, u*=-1, x1=1, cost 2
+- book-d-b4 | ok | a,b, 5a-4, 4-6a, images, invariance verified (incl. dense numeric sweep of F on [-2,2]: range +-0.6728); mirror byte-identical in book/chapters/primer-systems.html
+- sys-extra-3 (kept, spot-check) | ok | equilibria 0,1, f'=-1+2x, Euler 0.082 all shown
+- sys-extra-10 (kept, spot-check) | ok | strict-increase differences and K_inf limits shown
+- sys-extra-27 (kept, spot-check) | ok | terminal feedback and shifted-plan feasibility fully argued

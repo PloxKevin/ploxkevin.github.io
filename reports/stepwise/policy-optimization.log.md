@@ -1,0 +1,21 @@
+- book-m9-b1 | kept | already computes all four quantities separately with displayed arithmetic and interprets them
+- book-m9-b2 | kept | already writes stationarity coordinatewise, solves lambda then nu, checks both complementarity products
+- book-m9-b3 | kept | already evaluates the bound at both steps with squared norms shown and separates bound vs identity
+- exercise-9-p1 | kept | every number shown (V, advantages, both averages) with the zero-mean check and interpretation
+- exercise-9-p2 | expanded | KL value stated without log values; added definition direction, log evaluations, alternate-form check, reverse KL
+- exercise-9-p3 | kept | expands the quadratic form, derives both axis radii and checks the given point on the boundary
+- exercise-9-p4 | kept | both residuals computed explicitly and the scope of the certificate explained
+- exercise-9-p5 | expanded | scale factor and Cauchy-Schwarz optimality were compressed; added rescaled-coordinate proof, equality case, interpretation
+- exercise-9-p6 | expanded | nearest point was asserted; added separable minimization, sign argument, half-space formula check
+- exercise-9-p7 | kept | numerator, squared denominator and quotient shown at both discounts, ratio 45 and interpretation given
+- exercise-9-p8 | kept | upper bounds computed for both estimates, compared with budget, and failed-check logic explained
+- exercise-9-p9 | expanded | derivative positivity and choice of x2 were asserted; added CS for unconstrained step, reduction, sign bound, KKT check
+- exercise-9-p10 | expanded | quadratic formula and monotonicity skipped; added Taylor model, discriminant, root selection, substitution check
+- exercise-9.2 (no id; "When CPO is TRPO, and a second CPO step by hand") | expanded | reduced dual, nu(lambda) clipping, x* recovery and trust expansion were asserted; now 14 derived steps with KKT check
+- exercise-9-p11 | kept | both ratios, their weighted average and the support condition are worked and explained
+- exercise-9-p12 | kept | union bound computed, both margins applied on the joint event, independence point explained
+- exercise-9.1 (no id; "The performance difference lemma, algebraically") | kept | full vector derivation, Neumann series reason, all Q/A/V/occupancy numbers shown and lemma checked both ways
+- exercise-9.3 (no id; "The FOCOPS policy for two actions") | kept | Gibbs normalization, tight-cost solve, KL test, both multiplier regimes and bracketing of p* all derived (numbers re-verified)
+- exercise-9.4 (no id; "The exact-penalty threshold behind P3O") | kept | region-by-region analysis of all three penalties with stationarity solved and limits checked (numbers re-verified)
+- exercise-9.5 (no id; "Reading the Safety Gym table") | kept | interpretive table reading; products and break-even ratios shown and match the SG18 table
+- exercise-9.6 (no id; "Designing CDT's cost-to-go conditioning") | kept | conceptual; PF(10)=6, token updates and relabelling shifts (+3,+5) shown explicitly

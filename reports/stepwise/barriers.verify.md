@@ -1,0 +1,18 @@
+- exercise-10-p1 | fixed | equivalence labels were off by one ("third step uses x^2=|x|^2"); relabelled and justified all four equivalences
+- exercise-10-p2 | ok | chain rule, inequality, equality check verified
+- exercise-10-p3 | ok | J' monotonicity, correction 2, value 2, KKT lambda=2 verified
+- exercise-10-p4 | ok | ODE solution, convex-combination bounds, x(ln2)=1.5 verified (sympy)
+- exercise-10-p5 | ok | KKT solve u=(1/2,1/2), mu=1/2, value 1/4 verified (sympy)
+- exercise-10-p6 | ok | u>=1-x, empty set at 0.1, full interval at 2, threshold x>=0.8 verified
+- exercise-10-p7 | ok | worst w=-0.3 by monotonicity, u>=0.1 vs -0.2 verified
+- exercise-10-p8 | fixed | integrating-factor step for psi_1 and the h link were asserted, now derived; crossing h(t)=e^{-t}(0.1-0.9t) now verified in text and the feedback u=-2v-p named (sympy-checked)
+- exercise-10-p9 | fixed | boundary characterization claimed "iff" without the uniqueness hypothesis; added locally Lipschitz f; side remark on extended class-K verified correct
+- exercise-10-p10 | ok | e^{-t}, 1-t, x(1.5)=-0.5, Delta<=1, e^{-1}~0.368 verified
+- exercise-10-p11 | ok | rollout, terminal invariance, shifted plan (-1/4,-1/4) verified
+- exercise-10-p12 | ok | fixed point {a,b}, nominal and robust shield inputs verified
+- exercise-10.1 (Forward invariance via the comparison lemma) | fixed | (c) sgn non-existence example was a heuristic ("would have to start with velocity -1"); replaced with a rigorous Caratheodory argument; (a),(b) re-derived, (e_+)^2 comparison and uniqueness argument correct
+- exercise-10.2 (Closed form of a weighted CBF-QP) | ok | KKT, change of variables z=H^{1/2}(u-u_nom), (1.8,1.2), mu=0.8, costs 0.4/0.625 verified (numpy+scipy)
+- exercise-10.3 (kept, spot-check) | ok | ECBF constraint u<=k1(1-p)-k2 v, nu_1, nu_2 expansion, p1>=1 and K=[4 4] re-derived; stepwise enough
+- exercise-10.4 (kept, spot-check) | ok | y=1/x escape at ln2, local bound 9/16, square completion and C_d re-derived
+- exercise-10.6 (kept, spot-check) | ok | feasible sets, u0 interval [-1/2,0], plan (-0.2,-0.5) -> 0.9,1.0 and growth 0.1k re-derived
+- QA | ok | qa/check.mjs on SafeLearning/barriers.html: no KaTeX errors, no leftover $, no mobile overflow; skeleton outside solution bodies identical to snapshot; book/chapters/barriers.html unchanged (holds only B1-B3, none edited)

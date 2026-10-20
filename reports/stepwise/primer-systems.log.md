@@ -1,0 +1,42 @@
+- sys-ready-1 | kept | fixed-point equation solved with every algebra step and a substitution check
+- sys-ready-2 | kept | chain rule shown explicitly, values at t=0 and interpretation given
+- sys-ready-3 | kept | Px, x^T P x and both comparison inequalities computed line by line with check 5<=9<=10
+- sys-extra-1 | kept | each of x1,x2,x3 is computed by explicit substitution and the equilibrium equation is shown
+- sys-extra-2 | expanded | closed-loop substitution, fixed-point algebra and the induction behind x_t=4(0.25)^t were only asserted
+- sys-extra-3 | kept | factorisation, linearisation via f'(x*), and the Euler arithmetic are all displayed with reasons
+- sys-extra-4 | expanded | decoupling, the multiplications giving x1,x2 and the |lambda|<1 test were stated without reasons
+- sys-extra-5 | expanded | scalar solutions, squared norm and the e^{-4t}<=e^{-2t} step needed justification and a check
+- sys-extra-6 | kept | binomial expansion with N^2=0, x_t, norms and the convergence argument are all derived
+- sys-extra-7 | expanded | the solution of dV/dt=-4V was asserted; added integrating factor, chain-rule reason and a direct check
+- sys-extra-8 | kept | A^T P+PA, the comparison with -2V and the integrating-factor bound are each displayed
+- sys-extra-9 | kept | dV/dt, the strict boundary inequality, existence/uniqueness and the c=1 counterexample are all argued
+- sys-extra-10 | kept | strict increase shown by three explicit differences and unboundedness checked for each function
+- sys-extra-11 | kept | integrating factor and every inequality manipulation (including sign reversal) are shown
+- sys-extra-12 | kept | dh/dt, the sign flip, the projection and the trajectory bound are each derived with reasons
+- sys-extra-13 | expanded | closed-loop solution and the three exponent cases (including the k=2 stability definition) were not argued
+- sys-extra-14 | kept | Riccati roots, completion of the square, optimal feedback, closed loop and the rejected root are all derived
+- sys-extra-15 | kept | comparison inequality, integrating factor, lower bound and the unsaturated region are derived step by step
+- sys-extra-16 | expanded | shift algebra, solution, limit and the meaning of G(0) were compressed; added substitution check
+- sys-extra-17 | expanded | modulus computation and the maximisation over omega were only asserted
+- sys-extra-18 | expanded | convolution bound, attainment by a constant input and the reason the norms differ were compressed
+- sys-extra-19 | expanded | the two saturated pieces were merged and |v|<=v^2 was asserted without the |v|>1 argument; added numerical checks
+- sys-extra-20 | kept | Lipschitz-to-sector step, dV/dt bound, integrating factor, existence and small-gain link are all shown
+- sys-extra-21 | expanded | dV/dt substitution, use of the sector sign, integration and the global-existence argument were compressed; small-gain failure explained
+- sys-extra-22 | expanded | AB product, rank computation and the reason the rank test applies were asserted; added direct coordinate check
+- sys-extra-23 | expanded | Gramian definition, endpoint integration and the Cauchy-Schwarz instance (with equality condition) were not shown
+- sys-extra-24 | expanded | transformation rules, matrix products and both transfer-function evaluations were asserted; added the general invariance proof
+- sys-extra-25 | expanded | expansion of (2+u)^2 and the cost evaluation were skipped; added completed square and alternative-cost check
+- sys-extra-26 | kept | completed squares at both stages, Bellman composition and the direct cost check are all displayed
+- sys-extra-27 | kept | terminal-feedback admissibility, shifted candidate plan, N=1 case and limitations are all argued
+- book-d-b1 | kept | q, x_k values at each reading, elapsed time and both held inputs are computed explicitly
+- book-d-b2 | kept | one-step bound, equivalence chain for k, heater-limit check and the exact interval are derived
+- book-d-b3 | kept | stopping-distance formula, worst case, counterexample arithmetic and the delay bound are all shown
+- book-d-b4 | expanded | endpoint values of each affine piece and the clipping-to-pieces derivation were asserted; mirrored in book/chapters/primer-systems.html
+- D.1 (no id) | kept | equilibria, Jacobians, characteristic roots and the Euler-vs-exact modulus are all computed
+- D.2 (no id) | kept | trace/determinant, unit-circle argument, Schur inequalities and the numeric case are derived
+- D.3 (no id) | kept | Lyapunov equation solved entrywise, Sylvester check, Delta V region and exact basin are proved
+- D.4 (no id) | kept | comparison shift, CBF half-line, piecewise trajectory and the concavity check are all shown
+- D.5 (no id) | kept | DARE algebra, gain-margin inequalities, P and PI equilibria and eigenvalues are derived
+- D.6 (no id) | kept | impulse response, three norms, Gramian check and the completed-square storage inequality are shown
+- D.7 (no id) | kept | small-gain bound, Re H minimisation by derivative and the constant-gain comparison are derived
+- D.8 (no id) | kept | Pre-set recursion, fixed radius, invariance proof, error set and tightened constraints are computed

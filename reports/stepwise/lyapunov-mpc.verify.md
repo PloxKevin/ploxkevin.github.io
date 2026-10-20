@@ -1,0 +1,20 @@
+- exercise-11-p1 | ok | re-derived dV=-0.64x^2, V(4)=[-2,2], image [-1.2,1.2], strict for x!=0; answer unchanged
+- exercise-11-p2 | fixed | numbers ok (0.89 in, 1.44 out, sqrt(0.41)=0.640); reworded "dividing 4x1^2=..." to "rewriting" (it is an identity, not a division)
+- exercise-11-p3 | fixed | interpretation claimed trajectories "end up and stay in [-0.2,0.2]"; false (w=0.1 gives x_t=0.2+0.5^t(x0-0.2)>0.2 forever). Replaced with derived invariance of [-0.2,0.2] plus halving of |x|-0.2 and approach-not-entry statement
+- exercise-11-p4 | ok | 0.4, 0.6, slack 0.1, boundary case 0.7 correct
+- exercise-11-p5 | ok | -0.10+5r: -0.05 / +0.05, threshold r<0.02 correct
+- exercise-11-p6 | ok | tube 0.2, |z|<=0.8, |v|<=0.9, tightness examples correct
+- exercise-11-p7 | ok | J'=6u+4x, u=-2/3, clip -1/2, J=7/4, J(-2/3)=5/3, J(1/2)=5.75 checked
+- exercise-11-p8 | ok | t=0.038702, n=14979, 0.99^1000=4.32e-5, 1-0.05^(1/1000)=0.299% checked
+- exercise-11-p9 | ok | factorization, c<2, monotone-limit contradiction, period-2 orbit, x=0.5 check correct
+- exercise-11-p10 | ok | 0.6^t bound, x_t=0.2+0.5^t(x0-0.2), ultimate bound 0.2(1-0.5^t) checked
+- exercise-11-p11 | ok | 298.073->299, 596.146->597, 0.99^298/299/596/597 values and ln400=2ln20 checked
+- exercise-11-p12 | fixed | logic ok (0.97, 0.99^100=0.366); fixed new mobile overflow: split the 0.97 display with aligned and moved two long \text{} event definitions out of inline math
+- 11.1 | ok | induction, compactness/EVT argument, counterexample x_t=1+2^-t, factor -(3x+1)(x-1)/4, sup not attained all verified
+- 11.2 | ok | L=13, margin 0.13, 0.35<0.37 passes, 0.1 cannot pass; refined 0.0806, composite 4.06, ratio 50.37 checked
+- 11.4 | ok | N=135 (0.95^134=1.035e-3, 0.95^135=0.983e-3), tail(580)=1.003e-5, tail(581)=9.67e-6, 861 (860.52), 5757/116, e^-0.0928=0.911, 0.8835>=0.88 checked; final 0.88 unchanged
+- book-m11-b1 | ok (spot-check kept) | stepwise; 0.18, [-0.82,0.82], 0.59 correct
+- book-m11-b3 | ok (spot-check kept) | stepwise; MSE 5e-5, RMSE 0.007071, 0.995^200=0.366958 correct
+- 11.5 | ok (spot-check kept) | stepwise; 28/95, visits (1,28/95,18/19), 39/56, 13/142, 13/44, 39/64 consistent
+- mirror | ok | book/chapters/lyapunov-mpc.html identical to snapshot and contains none of the changed exercises; nothing outside solution bodies changed (stripped-solution comparison equal); no raw < or > in exercise math
+- QA | ok | node check.mjs clean (no katex/leftover$/mobileOverflow/mobileOverflowExpanded) after P12 fix; snapshot also clean

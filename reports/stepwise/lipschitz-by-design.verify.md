@@ -1,0 +1,12 @@
+- practice-easy-3 | ok | re-derived W^TW=1, WW^T=diag(1,0), forward/backward norms and g=(0,2) test; answer unchanged
+- practice-medium-1 | ok | Gram matrix, T=diag(2,3), DP^TPD, char. poly (6l-1)(l-1), eigenvector (sqrt2,sqrt3) and congruence check verified with numpy; ||PD||=1 as original
+- practice-medium-2 | ok | h=x-(4/T)ReLU(2x), slopes 1/-1 (T=4) and 1/-3 (T=2), max-slope Lipschitz argument verified; answer unchanged
+- practice-medium-3 | fixed | numbers correct (U=2sqrt2/5, Y=6sqrt2/5, gain 24/25, residuals 0 and -4/25); Step 5 referred to an undefined "3x3 certificate matrix ... completed-square form" and the Check to an undefined "half-multiplier formula" — now cites Exercise 13.2's H, displays its scalar completed-square form and the choice z=1,p=U*Lambda,r=Y, and names Lambda=2=Psi^2/2 as the half-sized multiplier of 13.2(b)
+- practice-medium-4 | ok | A^2=0, BB^T, (AB)(AB)^T, X=I, Gramian equation, det/PD and controllability checks verified; P=X^{-1} matches Algorithm 2
+- practice-hard-4 | ok | log30, log0.8, t>=15.2422 -> 16, bounds 0.105553/0.0844425, energy 40, sqrt40=6.32456 verified; answer unchanged
+- exercise-13.1 | ok | Steps 1-11 re-derived (skew quadratic form, invertibility, commutation, transpose of inverse, det, -1 eigenvalue, 2x2 inverse/square, half-angle, a=0.5 -> Q=[[.6,-.8],[.8,.6]], 53.13 deg, reflections); answer unchanged
+- spot-check kept practice-easy-2 | ok | full derivation
+- spot-check kept practice-hard-2 | ok | full derivation
+- spot-check kept exercise-13.4 | ok | full derivation
+- mirror | ok | no changed exercise exists in book/chapters/lipschitz-by-design.html or book/case-studies.html; chapters file identical to snapshot
+- qa/check.mjs | ok | no console/KaTeX errors, no leftover $, no broken anchors, no mobile overflow (collapsed or expanded)
